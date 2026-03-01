@@ -1,6 +1,7 @@
 package ignite
 
 import std.collection.ArrayList
+import std.env.*
 import std.fs.{File, OpenMode}
 import stdx.net.http.{
     ServerBuilder, Server, HttpContext, HttpRequestHandler,
@@ -69,6 +70,23 @@ public class App {
         for (method in methods) {
             router.addRoute(method, path, wrapSingle(handler), option: option)
         }
+        this
+    }
+
+    // ── Static file serving ──
+
+    public func `static`(prefix: String, root: String): App {
+        let rootDir = root
+        let catchAllPath = if (prefix.size > 0 && prefix.toRuneArray()[prefix.size - 1] == r'/') {
+            prefix + "*"
+        } else {
+            prefix + "/*"
+        }
+        router.addRoute("GET", catchAllPath, wrapSingle({ ctx: Ctx =>
+            let filePath = ctx.params("*")
+            let fullPath = rootDir + "/" + filePath
+            ctx.sendFile(fullPath)
+        }))
         this
     }
 
@@ -163,13 +181,12 @@ public class App {
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
         let appName = config.appName
+        let routeCount = router.allRoutes.size
+        let currentPid = "${getProcessId()}"
 
         let server = builder
             .afterBind({ =>
-                println("[Ignite] ${appName} listening on ${scheme}://${addr}:${port}")
-                if (tlsEnabled) {
-                    println("[Ignite] TLS enabled with HTTP/2 support")
-                }
+                printBanner(appName, scheme, addr, port, routeCount, currentPid, tlsEnabled)
             })
             .build()
 
@@ -320,4 +337,101 @@ SwaggerUIBundle({ url: '"# + jsonUrl + #"', dom_id: '#swagger-ui' });
 </script>
 </body>
 </html>"#
+}
+
+// ── Startup Banner ──
+
+func bannerCenter(s: String, w: Int64): String {
+    if (s.size >= w) { return s }
+    let pad = w - s.size
+    let left = pad / 2
+    let right = pad - left
+    var result = ""
+    for (_ in 0..left) { result += " " }
+    result += s
+    for (_ in 0..right) { result += " " }
+    result
+}
+
+func bannerPadRight(s: String, w: Int64): String {
+    var result = s
+    while (result.size < w) { result += " " }
+    result
+}
+
+func bannerDotFill(label: String, value: String, w: Int64): String {
+    let dotsNeeded = w - label.size - value.size - 2
+    var dots = ""
+    if (dotsNeeded > 0) {
+        for (_ in 0..dotsNeeded) { dots += "." }
+    }
+    "${label} ${dots} ${value}"
+}
+
+func printBanner(
+    appName: String,
+    scheme: String,
+    addr: String,
+    port: UInt16,
+    handlerCount: Int64,
+    pid: String,
+    tlsEnabled: Bool
+): Unit {
+    let version = "0.1.6"
+    let innerWidth: Int64 = 53
+
+    let esc = "\u{1B}"
+    let R = esc + "[0m"
+    let CB = esc + "[1;36m"
+    let G = esc + "[92m"
+    let D = esc + "[2m"
+    let B = esc + "[1m"
+    let DOT = esc + "[38;5;240m"   // #555 灰色 (approx)
+
+    func bannerDotFillColor(label: String, value: String, w: Int64): String {
+        let dotsNeeded = w - label.size - value.size - 2
+        var dots = ""
+        if (dotsNeeded > 0) {
+            for (_ in 0..dotsNeeded) { dots += "." }
+        }
+        if (dots.size > 0) {
+            "${label} ${DOT}${dots}${R} ${value}"
+        } else {
+            "${label} ${value}"
+        }
+    }
+
+    let displayAddr = if (addr == "0.0.0.0") { "127.0.0.1" } else { addr }
+    let title = "${appName} v${version}"
+    let url = "${scheme}://${displayAddr}:${port}"
+    let bound = "(bound on host ${addr} and port ${port})"
+
+    let colW: Int64 = 23
+    let col1Line1 = bannerDotFillColor("Handlers", "${handlerCount}", colW)
+    let col2Line1 = bannerDotFillColor("Processes", "1", colW)
+    let statsLine1 = bannerPadRight(" " + col1Line1 + "  " + col2Line1, innerWidth)
+
+    let left2 = if (tlsEnabled) {
+        bannerDotFillColor("TLS", "Enabled", colW)
+    } else {
+        bannerDotFillColor("Prefork", "Disabled", colW)
+    }
+    let col2Line2 = bannerDotFillColor("PID", pid, colW)
+    let statsLine2 = bannerPadRight(" " + left2 + "  " + col2Line2, innerWidth)
+
+    var border = ""
+    for (_ in 0..innerWidth) { border += "─" }
+
+    let emptyInner = bannerCenter("", innerWidth)
+
+    println("")
+    println(" ${D}┌${border}┐${R}")
+    println(" ${D}│${R}${CB}${bannerCenter(title, innerWidth)}${R}${D}│${R}")
+    println(" ${D}│${R}${G}${bannerCenter(url, innerWidth)}${R}${D}│${R}")
+    println(" ${D}│${R}${D}${bannerCenter(bound, innerWidth)}${R}${D}│${R}")
+    println(" ${D}│${R}${emptyInner}${D}│${R}")
+    println(" ${D}│${R}${statsLine1}${D}│${R}")
+    println(" ${D}│${R}${statsLine2}${D}│${R}")
+    println(" ${D}└${border}┘${R}")
+    println("")
 }
