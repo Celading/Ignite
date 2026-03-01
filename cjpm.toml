@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "1.0.0"
+  version = "0.1.6"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -8,6 +8,9 @@
   description = "Ignite - A high-performance web framework for Cangjie, inspired by Fiber"
 
 [package.package-configuration."ignite.middleware"]
+  output-type = "static"
+
+[package.package-configuration."ignite.client"]
   output-type = "static"
 
 [target.aarch64-apple-darwin]

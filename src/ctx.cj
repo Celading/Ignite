@@ -2,7 +2,7 @@ package ignite
 
 import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
-import stdx.net.http.{HttpContext}
+import stdx.net.http.{HttpContext, WebSocket}
 
 public class Ctx {
     let _httpCtx: HttpContext
@@ -181,6 +181,32 @@ public class Ctx {
         _httpCtx.responseBuilder.status(204)
         _responded = true
         this
+    }
+
+    // ── Streaming ──
+
+    public func writer(): ResponseWriter {
+        _responded = true
+        ResponseWriter(_httpCtx)
+    }
+
+    public func sse(): SseWriter {
+        _responded = true
+        SseWriter(_httpCtx)
+    }
+
+    // ── WebSocket ──
+
+    public func upgradeWebSocket(): WsConn {
+        _responded = true
+        let ws = WebSocket.upgradeFromServer(_httpCtx)
+        WsConn(ws)
+    }
+
+    // ── Internal HttpContext access ──
+
+    public func httpContext(): HttpContext {
+        _httpCtx
     }
 
     // ── Flow control ──

@@ -56,6 +56,25 @@ public class Group {
         this
     }
 
+    // ── WebSocket ──
+
+    public func ws(path: String, handler: WsHandler): Group {
+        let fullPath = joinPath(_prefix, path)
+        let wsFunc: Handler = { ctx: Ctx =>
+            try {
+                let conn = ctx.upgradeWebSocket()
+                handler(conn)
+            } catch (e: Exception) {
+                println("[Ignite] WebSocket error: ${e.message}")
+            }
+        }
+        let allHandlers = ArrayList<Handler>()
+        collectMiddlewares(allHandlers)
+        allHandlers.add(wsFunc)
+        _app.router.addRoute("GET", fullPath, allHandlers)
+        this
+    }
+
     // ── Middleware ──
 
     public func use(handler: Handler): Group {
