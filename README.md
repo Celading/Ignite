@@ -6,7 +6,7 @@
 <div align="center">
 <pre>
 ┌───────────────────────────────────────────────────────┐
-│                 <span style="color:#88C0D0;">Ignite Benchmark v0.1.6</span>               │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.2.2</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
