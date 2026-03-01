@@ -51,8 +51,8 @@ public class Ctx {
         _params.get(key)
     }
 
-    public func query(key: String): ?String {
-        _httpCtx.request.form.get(key)
+     public func query(key: String): ?String {
+        _httpCtx.request.url.queryForm.get(key)
     }
 
     public func queryDefault(key: String, defaultVal: String): String {
