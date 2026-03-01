@@ -1,0 +1,6 @@
+./target
+_helper
+.DS_Store
+.vscode
+.idea
+.cursorrules
