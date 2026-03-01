@@ -1,10 +1,14 @@
 package ignite
 
 import std.collection.ArrayList
+import std.fs.{File, OpenMode}
 import stdx.net.http.{
     ServerBuilder, Server, HttpContext, HttpRequestHandler,
     HttpRequestDistributor
 }
+import stdx.net.tls.TlsServerConfig
+import stdx.crypto.x509.X509Certificate
+import stdx.crypto.x509.PrivateKey
 
 public class App {
     public let config: Config
@@ -23,7 +27,7 @@ public class App {
         App(config: config)
     }
 
-    // ── HTTP method routes (delegated to router root) ──
+    // ── HTTP method routes ──
 
     public func get(path: String, handler: Handler, option!: ?RouteOption = None): App {
         router.addRoute("GET", path, wrapSingle(handler), option: option)
@@ -65,6 +69,21 @@ public class App {
         for (method in methods) {
             router.addRoute(method, path, wrapSingle(handler), option: option)
         }
+        this
+    }
+
+    // ── WebSocket ──
+
+    public func ws(path: String, handler: WsHandler): App {
+        let wsFunc: Handler = { ctx: Ctx =>
+            try {
+                let conn = ctx.upgradeWebSocket()
+                handler(conn)
+            } catch (e: Exception) {
+                println("[Ignite] WebSocket error: ${e.message}")
+            }
+        }
+        router.addRoute("GET", path, wrapSingle(wsFunc))
         this
     }
 
@@ -120,7 +139,7 @@ public class App {
 
         let distributor = IgniteDistributor(this)
 
-        let server = ServerBuilder()
+        let builder = ServerBuilder()
             .addr(addr)
             .port(port)
             .distributor(distributor)
@@ -128,8 +147,29 @@ public class App {
             .writeTimeout(config.writeTimeout)
             .readHeaderTimeout(config.readHeaderTimeout)
             .maxRequestBodySize(config.bodyLimit)
+
+        let hasTls = config.tlsCertFile.size > 0 && config.tlsKeyFile.size > 0
+        if (hasTls) {
+            let certPem = readFileString(config.tlsCertFile)
+            let keyPem = readFileString(config.tlsKeyFile)
+            var tlsCfg = TlsServerConfig(
+                X509Certificate.decodeFromPem(certPem),
+                PrivateKey.decodeFromPem(keyPem)
+            )
+            tlsCfg.supportedAlpnProtocols = ["h2", "http/1.1"]
+            let _ = builder.tlsConfig(tlsCfg)
+        }
+
+        let scheme = if (hasTls) { "https" } else { "http" }
+        let tlsEnabled = hasTls
+        let appName = config.appName
+
+        let server = builder
             .afterBind({ =>
-                println("[Ignite] ${config.appName} listening on ${addr}:${port}")
+                println("[Ignite] ${appName} listening on ${scheme}://${addr}:${port}")
+                if (tlsEnabled) {
+                    println("[Ignite] TLS enabled with HTTP/2 support")
+                }
             })
             .build()
 
@@ -247,6 +287,21 @@ class IgniteMainHandler <: HttpRequestHandler {
     public func handle(ctx: HttpContext): Unit {
         app.handleRequest(ctx)
     }
+}
+
+func readFileString(path: String): String {
+    let file = File(path, OpenMode.Read)
+    let buf = ArrayList<UInt8>()
+    let tmp = Array<UInt8>(4096, repeat: 0)
+    while (true) {
+        let n = file.read(tmp)
+        if (n <= 0) { break }
+        for (i in 0..n) {
+            buf.add(tmp[i])
+        }
+    }
+    file.close()
+    String.fromUtf8(buf.toArray())
 }
 
 func swaggerUIHtml(basePath: String): String {

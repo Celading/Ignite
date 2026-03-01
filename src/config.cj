@@ -18,8 +18,10 @@ public struct Config {
 
     public var enableSwagger: Bool = false
     public var swaggerPath: String = "/swagger"
-
     public var enablePrintRoutes: Bool = false
+
+    public var tlsCertFile: String = ""
+    public var tlsKeyFile: String = ""
 
     public init(
         appName!: String = "Ignite",
@@ -31,7 +33,9 @@ public struct Config {
         writeTimeout!: Duration = Duration.second * 30,
         concurrency!: Int64 = 256 * 1024,
         enableSwagger!: Bool = false,
-        enablePrintRoutes!: Bool = false
+        enablePrintRoutes!: Bool = false,
+        tlsCertFile!: String = "",
+        tlsKeyFile!: String = ""
     ) {
         this.appName = appName
         this.serverHeader = serverHeader
@@ -43,5 +47,7 @@ public struct Config {
         this.concurrency = concurrency
         this.enableSwagger = enableSwagger
         this.enablePrintRoutes = enablePrintRoutes
+        this.tlsCertFile = tlsCertFile
+        this.tlsKeyFile = tlsKeyFile
     }
 }
