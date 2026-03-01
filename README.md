@@ -3,6 +3,18 @@
   <img src="https://img.shields.io/badge/version-0.1.6-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
+<div align="center">
+<pre>
+┌───────────────────────────────────────────────────────┐
+│                 <span style="color:#88C0D0;">Ignite Benchmark v0.1.6</span>               │
+│                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
+│          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
+│                                                       │
+│    Handlers <span style="color:#555;">...........</span> 16  Processes <span style="color:#555;">...........</span> 1   │
+│    Prefork <span style="color:#555;">......</span> Disabled  PID <span style="color:#555;">.............</span> 67271   │
+└───────────────────────────────────────────────────────┘
+</pre>
+</div>
 
 <h1 align="center">Ignite</h1>
 
@@ -21,6 +33,8 @@
 </p>
 
 ---
+
+
 
 ## 为什么选择 Ignite?
 
