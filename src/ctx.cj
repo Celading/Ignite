@@ -2,6 +2,8 @@ package ignite
 
 import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
+import std.fs.{File, OpenMode, Path}
+import std.unicode.*
 import stdx.net.http.{HttpContext, WebSocket}
 
 public class Ctx {
@@ -183,6 +185,39 @@ public class Ctx {
         this
     }
 
+    // ── File serving ──
+
+    public func sendFile(filePath: String): Ctx {
+        try {
+            let file = File(filePath, OpenMode.Read)
+            let buf = ArrayList<UInt8>()
+            let tmp = Array<UInt8>(8192, repeat: 0)
+            while (true) {
+                let n = file.read(tmp)
+                if (n <= 0) { break }
+                for (i in 0..n) {
+                    buf.add(tmp[i])
+                }
+            }
+            file.close()
+            let contentType = detectMimeType(filePath)
+            _httpCtx.responseBuilder
+                .header("content-type", contentType)
+                .body(buf.toArray())
+        } catch (_: Exception) {
+            _httpCtx.responseBuilder
+                .status(404)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body("File not found: ${filePath}")
+        }
+        _responded = true
+        this
+    }
+
+    public func formValue(key: String): ?String {
+        query(key)
+    }
+
     // ── Streaming ──
 
     public func writer(): ResponseWriter {
@@ -277,4 +312,52 @@ public class Ctx {
             case _ => "Unknown"
         }
     }
+}
+
+func detectMimeType(path: String): String {
+    let ext = extractExtension(path.toLower())
+    match (ext) {
+        case ".html" | ".htm" => "text/html; charset=utf-8"
+        case ".css" => "text/css; charset=utf-8"
+        case ".js" | ".mjs" => "application/javascript; charset=utf-8"
+        case ".json" => "application/json; charset=utf-8"
+        case ".png" => "image/png"
+        case ".jpg" | ".jpeg" => "image/jpeg"
+        case ".gif" => "image/gif"
+        case ".svg" => "image/svg+xml"
+        case ".ico" => "image/x-icon"
+        case ".webp" => "image/webp"
+        case ".txt" => "text/plain; charset=utf-8"
+        case ".xml" => "application/xml"
+        case ".pdf" => "application/pdf"
+        case ".zip" => "application/zip"
+        case ".gz" => "application/gzip"
+        case ".woff" => "font/woff"
+        case ".woff2" => "font/woff2"
+        case ".ttf" => "font/ttf"
+        case ".mp4" => "video/mp4"
+        case ".webm" => "video/webm"
+        case ".mp3" => "audio/mpeg"
+        case ".wav" => "audio/wav"
+        case _ => "application/octet-stream"
+    }
+}
+
+func extractExtension(path: String): String {
+    let runes = path.toRuneArray()
+    var i = runes.size - 1
+    while (i >= 0) {
+        if (runes[i] == r'.') {
+            var ext = ""
+            for (j in i..runes.size) {
+                ext += runes[j].toString()
+            }
+            return ext
+        }
+        if (runes[i] == r'/' || runes[i] == r'\\') {
+            return ""
+        }
+        i -= 1
+    }
+    ""
 }
