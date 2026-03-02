@@ -381,7 +381,7 @@ func printBanner(
     pid: String,
     tlsEnabled: Bool
 ): Unit {
-    let version = "0.3.1"
+    let version = "0.3.6"
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
