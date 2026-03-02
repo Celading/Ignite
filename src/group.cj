@@ -75,7 +75,7 @@ public class Group {
         this
     }
 
-    // ── Middleware ──
+    // ── Middleware (prepended to each route in this group; order: parent middlewares → this group middlewares → route handler) ──
 
     public func use(handler: Handler): Group {
         _middlewares.add(handler)

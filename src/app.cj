@@ -125,6 +125,10 @@ public class App {
         Group(this, prefix)
     }
 
+    public func removeRoute(method: String, path: String): Bool {
+        return router.removeRoute(method, path)
+    }
+
     // ── Swagger ──
 
     public func swagger(info: SwaggerInfo): App {
