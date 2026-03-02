@@ -55,11 +55,25 @@ public class Ctx {
     }
 
      public func query(key: String): ?String {
-        _httpCtx.request.url.queryForm.get(key)
+        if (let Some(urlQueryVal) <- _httpCtx.request.url.queryForm.get(key)) {
+            return urlQueryVal
+        }
+        if (let formVal <- _httpCtx.request.form.get(key)) {
+            return formVal
+        }
+        None
     }
 
     public func queryDefault(key: String, defaultVal: String): String {
         query(key) ?? defaultVal
+    }
+
+    public func queryFromUrl(key: String): ?String {
+        _httpCtx.request.url.queryForm.get(key)
+    }
+
+    public func queryFromForm(key: String): ?String {
+        _httpCtx.request.form.get(key)
     }
 
     public func header(key: String): ?String {
