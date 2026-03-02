@@ -23,6 +23,8 @@ public struct Config {
     public var tlsCertFile: String = ""
     public var tlsKeyFile: String = ""
 
+    public var allowRouteOverwrite: Bool = false
+
     public init(
         appName!: String = "Ignite",
         serverHeader!: String = "Ignite",
@@ -35,7 +37,8 @@ public struct Config {
         enableSwagger!: Bool = false,
         enablePrintRoutes!: Bool = false,
         tlsCertFile!: String = "",
-        tlsKeyFile!: String = ""
+        tlsKeyFile!: String = "",
+        allowRouteOverwrite!: Bool = false
     ) {
         this.appName = appName
         this.serverHeader = serverHeader
@@ -49,5 +52,6 @@ public struct Config {
         this.enablePrintRoutes = enablePrintRoutes
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
+        this.allowRouteOverwrite = allowRouteOverwrite
     }
 }

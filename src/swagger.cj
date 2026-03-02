@@ -15,8 +15,14 @@ public class RouteOption {
     public var responses: ArrayList<ResponseSpec> = ArrayList<ResponseSpec>()
     public var security: ArrayList<String> = ArrayList<String>()
     public var hidden: Bool = false
+    public var paramValidations: HashMap<String, String> = HashMap<String, String>()
 
     public init() {}
+
+    public func withParamValidation(name: String, pattern: String): RouteOption {
+        paramValidations.add(name, pattern)
+        this
+    }
 
     public func withSummary(s: String): RouteOption {
         this.summary = s
