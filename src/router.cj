@@ -242,6 +242,9 @@ public class Router {
                     segments.add(current)
                     current = ""
                 }
+                while (i + 1 < chars.size && chars[i + 1] == r'/') {
+                    i += 1
+                }
             } else {
                 current += chars[i].toString()
             }
