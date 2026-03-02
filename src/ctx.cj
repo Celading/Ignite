@@ -15,6 +15,9 @@ public class Ctx {
     var _handlers: ArrayList<Handler> = ArrayList<Handler>()
     var _handlerIndex: Int64 = -1
     var _responded: Bool = false
+    var _bodyBytesCache: ?Array<UInt8> = None
+    var _multipartForm: ?MultipartForm = None
+    var _responseBody: ?String = None
 
     public init(httpCtx: HttpContext, app: App) {
         this._httpCtx = httpCtx
@@ -67,20 +70,27 @@ public class Ctx {
         _httpCtx.request.body
     }
 
-    public func bodyString(): String {
+    public func bodyBytes(): Array<UInt8> {
+        if (let Some(cached) <- _bodyBytesCache) {
+            return cached
+        }
         let stream = _httpCtx.request.body
         let buf = ArrayList<UInt8>()
         let tmp = Array<UInt8>(4096, repeat: 0)
         while (true) {
             let n = stream.read(tmp)
-            if (n <= 0) {
-                break
-            }
+            if (n <= 0) { break }
             for (i in 0..n) {
                 buf.add(tmp[i])
             }
         }
-        String.fromUtf8(buf.toArray())
+        let bytes = buf.toArray()
+        _bodyBytesCache = bytes
+        bytes
+    }
+
+    public func bodyString(): String {
+        String.fromUtf8(bodyBytes())
     }
 
     public func cookies(name: String): ?String {
@@ -102,6 +112,43 @@ public class Ctx {
         None
     }
 
+    // ── Form data (urlencoded + multipart) ──
+
+    public func formValue(key: String): ?String {
+        let queryVal = query(key)
+        if (let Some(v) <- queryVal) {
+            return v
+        }
+        let ct = header("content-type") ?? ""
+        if (containsStr(ct.toLower(), "multipart")) {
+            return multipartForm().value(key)
+        }
+        None
+    }
+
+    public func multipartForm(): MultipartForm {
+        if (let Some(form) <- _multipartForm) {
+            return form
+        }
+        let contentType = header("content-type") ?? ""
+        let bytes = bodyBytes()
+        let form = parseMultipartForm(bytes, contentType)
+        _multipartForm = form
+        form
+    }
+
+    public func formFile(name: String): ?FormFile {
+        multipartForm().file(name)
+    }
+
+    public func formFiles(name: String): ArrayList<FormFile> {
+        multipartForm().files(name)
+    }
+
+    public func saveFile(file: FormFile, destPath: String): Unit {
+        saveFormFile(file, destPath)
+    }
+
     // ── Response methods ──
 
     public func status(code: UInt16): Ctx {
@@ -119,6 +166,7 @@ public class Ctx {
             .header("content-type", "application/json; charset=utf-8")
             .body(body)
         _responded = true
+        _responseBody = body
         this
     }
 
@@ -127,6 +175,7 @@ public class Ctx {
             .header("content-type", "text/plain; charset=utf-8")
             .body(body)
         _responded = true
+        _responseBody = body
         this
     }
 
@@ -135,6 +184,7 @@ public class Ctx {
             .header("content-type", "text/html; charset=utf-8")
             .body(body)
         _responded = true
+        _responseBody = body
         this
     }
 
@@ -145,8 +195,10 @@ public class Ctx {
     }
 
     public func sendStatus(code: UInt16): Ctx {
-        _httpCtx.responseBuilder.status(code).body(statusMessage(code))
+        let msg = statusMessage(code)
+        _httpCtx.responseBuilder.status(code).body(msg)
         _responded = true
+        _responseBody = msg
         this
     }
 
@@ -214,10 +266,6 @@ public class Ctx {
         this
     }
 
-    public func formValue(key: String): ?String {
-        query(key)
-    }
-
     // ── Streaming ──
 
     public func writer(): ResponseWriter {
@@ -268,6 +316,10 @@ public class Ctx {
 
     public func app(): App {
         _app
+    }
+
+    public prop responseBody: ?String {
+        get() { _responseBody }
     }
 
     public func route(): ?Route {
