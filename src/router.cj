@@ -67,6 +67,11 @@ public class Router {
         let normalizedPath = normalizePath(path)
         let segments = splitPath(normalizedPath)
         var current = root
+        
+        let existingRoute = findRoute(method, normalizedPath)
+        if (existingRoute.isSome()) {
+            println("[Warning] Route ${method} ${normalizedPath} already exists, overriding...")
+        }
 
         for (seg in segments) {
             if (seg.size > 0 && seg.toRuneArray()[0] == r':') {
@@ -110,6 +115,33 @@ public class Router {
         current.addHandler(method, handlers, route)
         allRoutes.add(route)
         route
+    }
+
+    func findRoute(method: String, path: String): ?Route {
+        let normalizedPath = normalizePath(path)
+        let segments = splitPath(normalizedPath)
+        var current = root
+
+        for (seg in segments) {
+            if (seg.size > 0 && seg.toRuneArray()[0] == r':') {
+                match (current.paramChild) {
+                    case Some(child) => current = child
+                    case None => return None
+                }
+            } else if (seg == "*") {
+                match (current.catchAllChild) {
+                    case Some(child) => current = child
+                    case None => return None
+                }
+            } else {
+                match (current.findStaticChild(seg)) {
+                    case Some(child) => current = child
+                    case None => return None
+                }
+            }
+        }
+
+        current.routeMap.get(method)
     }
 
     public func matchRoute(method: String, path: String): MatchResult {
