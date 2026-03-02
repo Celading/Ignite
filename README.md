@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.1.6-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.3.6-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.2.2</span>               │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.3.6</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -92,16 +92,20 @@ main() {
 
 | 特性 | 描述 |
 |:---|:---|
-| **Trie 路由** | 基于前缀树的高效路由匹配，支持路径参数 `:id` 和通配符 `*` |
+| **Trie 路由** | 基于前缀树的高效路由匹配，支持路径参数 `:id` 和通配符 `*`，可选参数校验（int/uint/num/alpha/alnum/uuid） |
 | **链式 API** | 流畅的链式调用设计，`app.get(...).post(...).use(...)` |
+| **静态文件** | `app.static(prefix, root)` 挂载目录，自动 MIME 类型与 `ctx.sendFile()` |
+| **路由管理** | `app.removeRoute(method, path)` 动态删除路由；`Config.allowRouteOverwrite` 允许覆盖同路径 |
 | **中间件** | 全局中间件 + 路由组中间件，`ctx.next()` 控制执行流 |
 | **路由组** | `app.group("/api")` 嵌套分组，前缀自动拼接 |
+| **表单与上传** | `formValue` / `multipartForm` / `formFile` / `formFiles` / `saveFile`，完整 multipart 解析 |
 | **WebSocket** | 一行代码升级 WebSocket 连接 |
 | **SSE** | 内置 Server-Sent Events 支持，实时推送 |
 | **流式响应** | Chunked Transfer Encoding，边生成边发送 |
-| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI |
+| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI，支持 `asHidden`、`withParamValidation` |
 | **TLS/HTTP2** | 原生 TLS 支持，自动 ALPN 协商 HTTP/2 |
-| **HTTP 客户端** | 内置 `RestClient`，Builder 模式构建请求 |
+| **启动 Banner** | 启动时输出版本、地址、Handlers 数、PID、TLS 状态等 |
+| **HTTP 客户端** | 内置 `RestClient`（可配置超时与连接池）、Builder 模式构建请求 |
 | **优雅关闭** | `onShutdown` 钩子，安全释放资源 |
 
 ## API 速览
@@ -119,6 +123,12 @@ app.delete("/users/:id", deleteUser)
 
 // 所有 HTTP 方法
 app.all("/health", healthCheck)
+
+// 静态文件：将 /public/* 映射到本地目录 ./assets
+app.static("/public", "./assets")
+
+// 动态删除路由（返回是否成功）
+let ok = app.removeRoute("GET", "/old-path")
 ```
 
 ### 路径参数 & 查询参数
@@ -129,6 +139,15 @@ app.get("/users/:id", { ctx =>
     let fields = ctx.queryDefault("fields", "all")
     ctx.json(#"{"id": "${userId}", "fields": "${fields}"}"#)
 })
+```
+
+路径参数支持校验（未通过时返回 404）。在 `RouteOption` 中指定 `withParamValidation(name, pattern)`，`pattern` 可选：`int`、`uint`、`num`、`alpha`、`alnum`、`uuid`。
+
+```cangjie
+app.get("/users/:id", getUser, option: RouteOption()
+    .withSummary("获取用户")
+    .withParamValidation("id", "int")
+)
 ```
 
 ### 请求上下文 (Ctx)
@@ -143,13 +162,25 @@ app.post("/upload", { ctx =>
     let clientIp = ctx.ip           // "127.0.0.1"
     let token    = ctx.header("Authorization")
 
-    // 请求体
+    // 请求体（bodyString 会解析并缓存，bodyBytes() 可获取原始字节）
     let body = ctx.bodyString()
+
+    // 表单：优先 query，再 multipart 字段
+    let name = ctx.formValue("name")
 
     // 响应
     ctx.status(201).json(#"{"status": "created"}"#)
 })
 ```
+
+**请求体与表单：**
+
+- `ctx.bodyBytes()`：原始请求体字节（带缓存）
+- `ctx.bodyString()`：UTF-8 字符串
+- `ctx.formValue(key)`：表单字段（query + multipart 字段）
+- `ctx.multipartForm()`：完整 `MultipartForm`（字段 + 文件）
+- `ctx.formFile(name)` / `ctx.formFiles(name)`：单个/多个上传文件
+- `ctx.saveFile(file, destPath)`：将 `FormFile` 保存到本地
 
 **响应方法一览：**
 
@@ -158,6 +189,7 @@ ctx.json(body)                   // application/json
 ctx.sendString(body)             // text/plain
 ctx.html(body)                   // text/html
 ctx.send(byteArray)              // 原始字节
+ctx.sendFile(filePath)           // 发送文件（自动 MIME，404 时返回说明）
 ctx.sendStatus(404)              // 状态码 + 默认消息
 ctx.redirect("/login")           // 302 重定向
 ctx.noContent()                  // 204 No Content
@@ -166,6 +198,7 @@ ctx.setCookie("token", value,    // Set-Cookie
     httpOnly: true,
     secure: true
 )
+// 可读属性：ctx.responseBody 为最后一次设置的响应体（若有）
 ```
 
 ### 路由组
@@ -190,12 +223,16 @@ admin.get("/stats", getStats)
 ```cangjie
 let app = App(config: Config(
     appName:       "MyService",
-    serverHeader:  "Ignite/0.1.6",
+    serverHeader:  "Ignite/0.3.6",
+    strictRouting: false,              // 是否严格匹配尾部斜杠
+    caseSensitive: false,             // 路径是否区分大小写
     bodyLimit:     10 * 1024 * 1024,   // 10MB
-    readTimeout:   std.time.Duration.second * 30,
-    writeTimeout:  std.time.Duration.second * 30,
+    readTimeout:   Duration.second * 30,
+    writeTimeout:  Duration.second * 30,
     enableSwagger: true,
-    enablePrintRoutes: true
+    swaggerPath:   "/swagger",
+    enablePrintRoutes: true,
+    allowRouteOverwrite: false         // 同 method+path 是否允许覆盖（默认冲突抛异常）
 ))
 ```
 
@@ -322,6 +359,22 @@ app.get("/stream", { ctx =>
 })
 ```
 
+### 文件上传（Multipart）
+
+```cangjie
+app.post("/upload", { ctx =>
+    let form = ctx.multipartForm()
+    let title = form.value("title") ?? ""
+
+    if (let Some(f) <- ctx.formFile("file")) {
+        ctx.saveFile(f, "./uploads/" + f.filename)
+        ctx.json(#"{"ok": true, "size": ${f.size()}}"#)
+    } else {
+        ctx.status(400).json(#"{"error": "missing file"}"#)
+    }
+})
+```
+
 ### Swagger / OpenAPI
 
 ```cangjie
@@ -339,18 +392,13 @@ app.swagger(SwaggerInfo(
 app.get("/users/:id", getUser, option: RouteOption()
     .withSummary("获取用户")
     .withDescription("根据 ID 获取用户详细信息")
-    .withTags(["Users"])
-    .withParams([ParamSpec(
-        name: "id",
-        location: ParamLocation.Path,
-        required: true,
-        description: "用户 ID"
-    )])
-    .withResponses([
-        ResponseSpec(status: 200, description: "成功"),
-        ResponseSpec(status: 404, description: "用户不存在")
-    ])
+    .withTag("Users")
+    .withParam(ParamSpec(name: "id", location: ParamLocation.Path, description: "用户 ID", required: true))
+    .withParamValidation("id", "int")
+    .withResponse(ResponseSpec(statusCode: 200, description: "成功"))
+    .withResponse(ResponseSpec(statusCode: 404, description: "用户不存在"))
 )
+// 隐藏路由不在 Swagger 中展示：.asHidden()
 
 // 访问 /docs 即可查看 Swagger UI
 // 访问 /docs/json 获取 OpenAPI JSON
@@ -370,20 +418,17 @@ app.listen("0.0.0.0", 443)
 
 **HTTP/2 可用性**：开启 TLS 后，服务端会协商 `h2`，客户端使用 HTTPS 即可走 HTTP/2。可用 `curl -sI --http2 https://localhost:3443/` 验证协议。
 
-### 测试 HTTP/2 与中间件
-
-仓库内可选测试项目 `IgniteTest`（需在项目外单独克隆或放在同级目录）用于验证所有中间件与 HTTP 行为：
-
-- 无 TLS 时：`http://localhost:3000`，协议为 HTTP/1.1。
-- 有 TLS 时：`https://localhost:3443`，可验证 HTTP/2。
-- 运行自动化测试：在 IgniteTest 目录下执行 `./run_tests.sh`（需先 `cjpm run` 启动服务）。
-
 ### HTTP 客户端
 
 ```cangjie
 import ignite.client.*
 
-let client = RestClient()
+// 默认或自定义超时、连接池大小
+let client = RestClient(
+    readTimeout:  Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize:     10
+)
 
 let resp = client.get("https://api.example.com/users")
 println(resp.body())
@@ -396,6 +441,15 @@ let resp2 = client.postJson(
 )
 println(resp2.status)
 resp2.discard()
+
+// 自定义请求（RequestBuilder 支持 bodyBytes）
+let resp3 = client.request()
+    .method("PUT")
+    .url("https://api.example.com/users/1")
+    .header("Authorization", "Bearer token")
+    .body(#"{"name": "Ignite"}"#)
+    .send()
+resp3.discard()
 
 client.close()
 ```
@@ -419,16 +473,17 @@ app.onShutdown({
 ```
 ignite/
 ├── src/
-│   ├── app.cj            # 应用核心：创建、路由注册、服务启停
-│   ├── config.cj          # 配置项：超时、限制、TLS、Swagger 等
-│   ├── ctx.cj             # 请求上下文：请求/响应 API
-│   ├── route.cj           # 路由元数据与匹配结果
-│   ├── router.cj          # Trie 路由引擎
+│   ├── app.cj             # 应用核心：创建、路由注册、静态文件、服务启停、启动 Banner
+│   ├── config.cj          # 配置项：超时、限制、TLS、Swagger、strictRouting、allowRouteOverwrite 等
+│   ├── ctx.cj             # 请求上下文：请求/响应/表单/文件上传/sendFile
+│   ├── route.cj           # 路由元数据与匹配结果（Route.withName / withOption）
+│   ├── router.cj          # Trie 路由引擎，路径参数校验，removeRoute
 │   ├── handler.cj         # Handler / ErrorHandler 类型定义
 │   ├── group.cj           # 路由组：前缀分组 + 组级中间件
 │   ├── stream.cj          # ResponseWriter / SseWriter
 │   ├── websocket.cj       # WebSocket 连接封装
-│   ├── swagger.cj         # OpenAPI 3.0 文档生成器
+│   ├── multipart.cj       # MultipartForm / FormFile 解析与 saveFormFile
+│   ├── swagger.cj         # OpenAPI 3.0 文档生成器（RouteOption.withParamValidation / asHidden）
 │   ├── middleware/
 │   │   ├── logger.cj, cors.cj, recover.cj   # 基础
 │   │   ├── security.cj, csrf.cj, basic_auth.cj, key_auth.cj, encrypt_cookie.cj
@@ -437,8 +492,8 @@ ignite/
 │   │   ├── proxy.cj, redirect.cj, rewrite.cj, static_file.cj, favicon.cj
 │   │   ├── health_check.cj, idempotency.cj, utils.cj
 │   └── client/
-│       └── client.cj      # HTTP 客户端 (RestClient)
-└── cjpm.toml              # 包管理配置
+│       └── client.cj      # HTTP 客户端 (RestClient / RequestBuilder.bodyBytes)
+└── cjpm.toml              # 包管理配置（version 0.3.6）
 ```
 
 ## 支持平台
@@ -449,6 +504,16 @@ ignite/
 | macOS | x86_64 (Intel) | ✅ |
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
+
+## 版本与变更（v0.3.x）
+
+- **版本号**：与 `cjpm.toml` 及启动 Banner 一致，当前为 **0.3.6**。
+- **应用**：`app.static(prefix, root)` 静态文件挂载；`app.removeRoute(method, path)` 动态删除路由。
+- **配置**：`Config` 支持 `strictRouting`、`caseSensitive`、`unescapePath`、`readHeaderTimeout`、`idleTimeout`、`concurrency`、`allowRouteOverwrite`；同路径重复注册默认抛异常，可设 `allowRouteOverwrite=true` 覆盖。
+- **上下文**：`ctx.bodyBytes()`、`ctx.formValue()`、`ctx.multipartForm()`、`ctx.formFile()` / `ctx.formFiles()`、`ctx.saveFile()`；`ctx.sendFile(path)` 发送文件并自动 MIME；`ctx.responseBody` 只读属性。
+- **路由**：路径参数校验 `RouteOption.withParamValidation(name, pattern)`，支持 `int` / `uint` / `num` / `alpha` / `alnum` / `uuid`；路由可命名 `Route.withName()`；Swagger 支持 `asHidden()`。
+- **启动**：监听成功后输出彩色 Banner（版本、地址、Handlers 数、PID、TLS 状态等）。
+- **客户端**：`RestClient` 支持 `readTimeout`、`writeTimeout`、`poolSize`；`RequestBuilder.bodyBytes()` 支持二进制请求体。
 
 ## 许可证
 
