@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
-<pre>
+<pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
 │                <span style="color:#88C0D0;">Ignite HttpServer v0.2.2</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
@@ -16,7 +16,7 @@
 </pre>
 </div>
 
-<h1 align="center">Ignite</h1>
+<h1 align="center">Ignite ( 叶燧 )</h1>
 
 <p align="center">
   <strong>为仓颉语言打造的高性能 Web 框架</strong><br>
@@ -203,23 +203,55 @@ let app = App(config: Config(
 
 ### 内置中间件
 
-Ignite 提供三个开箱即用的中间件：
+Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
+
+| 分类 | 中间件 | 说明 |
+|------|--------|------|
+| **安全** | `securityMiddleware` | 安全头：X-Content-Type-Options、X-Frame-Options、HSTS、CSP 等 |
+| | `corsMiddleware` | 跨域 CORS |
+| | `csrfMiddleware` | CSRF 双提交 Cookie 校验 |
+| | `basicAuthMiddleware` | HTTP Basic 认证 |
+| | `keyAuthMiddleware` | API Key 认证（Header/Query/Cookie） |
+| | `encryptCookieMiddleware` | Cookie 加解密（XOR + Base64） |
+| **日志监控** | `loggerMiddleware` | 请求方法、路径、耗时 |
+| | `accessLogMiddleware` | 访问日志（IP、延迟、User-Agent） |
+| | `requestIdMiddleware` | 请求 ID（X-Request-ID） |
+| | `recoverMiddleware` | Panic 恢复 |
+| **流量控制** | `rateLimitMiddleware` | 按 IP/自定义 key 限流 |
+| | `bodyLimitMiddleware` | 请求体大小限制 |
+| | `timeoutMiddleware` | 请求超时记录 |
+| **缓存优化** | `cacheMiddleware` | 内存缓存 GET 响应 |
+| | `etagMiddleware` | ETag + If-None-Match 304 |
+| **会话** | `sessionMiddleware` | 会话 ID Cookie + SessionStore |
+| **其他** | `redirectMiddleware` | URL 重定向规则 |
+| | `rewriteMiddleware` | URL 重写（写入 ctx locals） |
+| | `staticFileMiddleware` | 静态文件服务 |
+| | `faviconMiddleware` | favicon.ico |
+| | `healthCheckMiddleware` | 健康检查端点 |
+| | `idempotencyMiddleware` | 幂等键（X-Idempotency-Key） |
+| | `proxyMiddleware` | 反向代理 |
+
+示例：
 
 ```cangjie
 import ignite.middleware.*
 
-// 日志 - 记录每次请求的方法、路径和耗时
+// 日志与恢复
 app.use(loggerMiddleware())
+app.use(recoverMiddleware())
 
-// CORS - 跨域资源共享
+// CORS
 app.use(corsMiddleware(config: CorsConfig(
     allowOrigins: "https://example.com",
     allowCredentials: true,
     maxAge: 86400
 )))
 
-// Recover - 捕获 panic，防止服务崩溃
-app.use(recoverMiddleware())
+// 安全头
+app.use(securityMiddleware(config: SecurityConfig(hstsMaxAge: 31536000)))
+
+// 请求 ID
+app.use(requestIdMiddleware())
 ```
 
 ### 自定义中间件
@@ -332,9 +364,19 @@ let app = App(config: Config(
     tlsKeyFile:  "./key.pem"
 ))
 
-// 自动启用 TLS + HTTP/2 ALPN 协商
+// 自动启用 TLS + HTTP/2 ALPN 协商（ALPN: h2, http/1.1）
 app.listen("0.0.0.0", 443)
 ```
+
+**HTTP/2 可用性**：开启 TLS 后，服务端会协商 `h2`，客户端使用 HTTPS 即可走 HTTP/2。可用 `curl -sI --http2 https://localhost:3443/` 验证协议。
+
+### 测试 HTTP/2 与中间件
+
+仓库内可选测试项目 `IgniteTest`（需在项目外单独克隆或放在同级目录）用于验证所有中间件与 HTTP 行为：
+
+- 无 TLS 时：`http://localhost:3000`，协议为 HTTP/1.1。
+- 有 TLS 时：`https://localhost:3443`，可验证 HTTP/2。
+- 运行自动化测试：在 IgniteTest 目录下执行 `./run_tests.sh`（需先 `cjpm run` 启动服务）。
 
 ### HTTP 客户端
 
@@ -388,9 +430,12 @@ ignite/
 │   ├── websocket.cj       # WebSocket 连接封装
 │   ├── swagger.cj         # OpenAPI 3.0 文档生成器
 │   ├── middleware/
-│   │   ├── logger.cj      # 请求日志中间件
-│   │   ├── cors.cj        # CORS 中间件
-│   │   └── recover.cj     # Panic 恢复中间件
+│   │   ├── logger.cj, cors.cj, recover.cj   # 基础
+│   │   ├── security.cj, csrf.cj, basic_auth.cj, key_auth.cj, encrypt_cookie.cj
+│   │   ├── access_log.cj, request_id.cj, rate_limit.cj, body_limit.cj, timeout.cj
+│   │   ├── cache.cj, etag.cj, session.cj
+│   │   ├── proxy.cj, redirect.cj, rewrite.cj, static_file.cj, favicon.cj
+│   │   ├── health_check.cj, idempotency.cj, utils.cj
 │   └── client/
 │       └── client.cj      # HTTP 客户端 (RestClient)
 └── cjpm.toml              # 包管理配置
