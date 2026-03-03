@@ -1,3 +1,6 @@
+target
+.DS_Store
+.cursorrules
 .git/
 .vscode/
 .idea/
@@ -15,8 +18,10 @@ cjpm.lock
 *.gcda
 *.gcno
 
-
 # 其他
-log
-report
-tmp
+# log
+# report
+# tmp
+
+# 自定义
+_helper
