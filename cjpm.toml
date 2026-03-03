@@ -1,0 +1,30 @@
+[package]
+  cjc-version = "1.0.0"
+  version = "0.3.1"
+  name = "ignite"
+  output-type = "static"
+  src-dir = "src"
+  compile-option = "-Woff unused"
+  description = "Ignite - A high-performance web framework for Cangjie, inspired by Fiber"
+
+[package.package-configuration."ignite.middleware"]
+  output-type = "static"
+
+[package.package-configuration."ignite.client"]
+  output-type = "static"
+
+[target.aarch64-apple-darwin]
+  [target.aarch64-apple-darwin.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/cj_stdx_darwin_aarch64_llvm/static/stdx"]
+
+[target.x86_64-apple-darwin]
+  [target.x86_64-apple-darwin.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/cj_stdx_darwin_x86_64_llvm/static/stdx"]
+
+[target.x86_64-unknown-linux-gnu]
+  [target.x86_64-unknown-linux-gnu.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/linux_x86_64_llvm/static/stdx"]
+
+[target.aarch64-unknown-linux-gnu]
+  [target.aarch64-unknown-linux-gnu.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/linux_aarch64_llvm/static/stdx"]
