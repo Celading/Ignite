@@ -54,8 +54,8 @@ public class Ctx {
         _params.get(key)
     }
 
-     public func query(key: String): ?String {
-        if (let Some(urlQueryVal) <- _httpCtx.request.url.queryForm.get(key)) {
+    public func query(key: String): ?String {
+        if (let urlQueryVal <- _httpCtx.request.url.queryForm.get(key)) {
             return urlQueryVal
         }
         if (let formVal <- _httpCtx.request.form.get(key)) {
