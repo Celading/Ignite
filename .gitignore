@@ -13,6 +13,7 @@ output/
 module-resolve.json
 module-lock.json
 cjpm.lock
+cangjie-repo.toml
 .cjpm-history
 *.macrocall
 *.gcda
