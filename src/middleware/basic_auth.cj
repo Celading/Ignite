@@ -35,12 +35,12 @@ public func basicAuthMiddleware(config: BasicAuthConfig): Handler {
         for (i in 0..sepIdx) {
             username += runes[i].toString()
         }
-        var password = ""
+        var credentialPart = ""
         for (i in (sepIdx + 1)..runes.size) {
-            password += runes[i].toString()
+            credentialPart += runes[i].toString()
         }
 
-        if (config.validator(username, password)) {
+        if (config.validator(username, credentialPart)) {
             ctx.setLocal("username", username)
             ctx.next()
         } else {
