@@ -18,6 +18,8 @@ public struct Config {
 
     public var enableSwagger: Bool = false
     public var swaggerPath: String = "/swagger"
+    public var swaggerUICssUrl: String = ""
+    public var swaggerUIJsUrl: String = ""
     public var enablePrintRoutes: Bool = false
 
     public var tlsCertFile: String = ""
@@ -33,6 +35,8 @@ public struct Config {
         writeTimeout!: Duration = Duration.second * 30,
         concurrency!: Int64 = 256 * 1024,
         enableSwagger!: Bool = false,
+        swaggerUICssUrl!: String = "",
+        swaggerUIJsUrl!: String = "",
         enablePrintRoutes!: Bool = false,
         tlsCertFile!: String = "",
         tlsKeyFile!: String = ""
@@ -46,6 +50,8 @@ public struct Config {
         this.writeTimeout = writeTimeout
         this.concurrency = concurrency
         this.enableSwagger = enableSwagger
+        this.swaggerUICssUrl = swaggerUICssUrl
+        this.swaggerUIJsUrl = swaggerUIJsUrl
         this.enablePrintRoutes = enablePrintRoutes
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
