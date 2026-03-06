@@ -1,11 +1,12 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.3.1"
+  version = "0.3.20"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
   compile-option = "-Woff unused"
   description = "Ignite - A high-performance web framework for Cangjie, inspired by Fiber"
+  include = ["src","LICENSE"]
 
 [package.package-configuration."ignite.middleware"]
   output-type = "static"
