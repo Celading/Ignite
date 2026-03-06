@@ -47,10 +47,10 @@ public class SessionStore {
     }
 }
 
-public let defaultSessionStore = SessionStore()
+public let DEFAULT_SESSION_STORE: SessionStore = SessionStore()
 
 public func sessionMiddleware(config!: SessionConfig = SessionConfig(),
-                              store!: SessionStore = defaultSessionStore): Handler {
+                              store!: SessionStore = DEFAULT_SESSION_STORE): Handler {
     { ctx: Ctx =>
         var sessionId = ctx.cookies(config.cookieName) ?? ""
 
@@ -62,6 +62,7 @@ public func sessionMiddleware(config!: SessionConfig = SessionConfig(),
         }
 
         ctx.setLocal("session_id", sessionId)
+        let _ = store.get(sessionId, "")
         ctx.next()
     }
 }

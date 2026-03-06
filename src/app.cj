@@ -7,9 +7,7 @@ import stdx.net.http.{
     ServerBuilder, Server, HttpContext, HttpRequestHandler,
     HttpRequestDistributor
 }
-import stdx.net.tls.TlsServerConfig
-import stdx.crypto.x509.X509Certificate
-import stdx.crypto.x509.PrivateKey
+import ignite.api2
 
 public class App {
     public let config: Config
@@ -174,11 +172,7 @@ public class App {
         if (hasTls) {
             let certPem = readFileString(config.tlsCertFile)
             let keyPem = readFileString(config.tlsKeyFile)
-            var tlsCfg = TlsServerConfig(
-                X509Certificate.decodeFromPem(certPem),
-                PrivateKey.decodeFromPem(keyPem)
-            )
-            tlsCfg.supportedAlpnProtocols = ["h2", "http/1.1"]
+            let tlsCfg = api2.loadTlsServerConfigForHttp2(certPem, keyPem)
             let _ = builder.tlsConfig(tlsCfg)
         }
 
@@ -235,7 +229,17 @@ public class App {
 
         let uiPath = config.swaggerPath
         router.addRoute("GET", uiPath, wrapSingle({ ctx =>
-            let htmlContent = swaggerUIHtml(appRef.config.swaggerPath)
+            let cssUrl = if (appRef.config.swaggerUICssUrl.size > 0) {
+                appRef.config.swaggerUICssUrl
+            } else {
+                defaultSwaggerUICssUrl()
+            }
+            let jsUrl = if (appRef.config.swaggerUIJsUrl.size > 0) {
+                appRef.config.swaggerUIJsUrl
+            } else {
+                defaultSwaggerUIJsUrl()
+            }
+            let htmlContent = swaggerUIHtml(appRef.config.swaggerPath, cssUrl, jsUrl)
             ctx.html(htmlContent)
         }))
     }
@@ -278,6 +282,18 @@ public class App {
     }
 }
 
+class LambdaHttpHandler <: HttpRequestHandler {
+    let fn: (HttpContext) -> Unit
+
+    init(fn: (HttpContext) -> Unit) {
+        this.fn = fn
+    }
+
+    public func handle(ctx: HttpContext): Unit {
+        fn(ctx)
+    }
+}
+
 class IgniteDistributor <: HttpRequestDistributor {
     let app: App
     let mainHandler: IgniteMainHandler
@@ -287,13 +303,26 @@ class IgniteDistributor <: HttpRequestDistributor {
         this.mainHandler = IgniteMainHandler(app)
     }
 
-    public func register(_path: String, _handler: HttpRequestHandler): Unit {
+    private func usePathForLint(p: String): Unit {
+        if (p.size >= 0) { }
     }
 
-    public func register(_path: String, _handler: (HttpContext) -> Unit): Unit {
+    private func useHandlerForLint(h: HttpRequestHandler): Unit {
+        let _ = h
     }
 
-    public func distribute(_path: String): HttpRequestHandler {
+    public func register(path: String, handler: HttpRequestHandler): Unit {
+        usePathForLint(path)
+        useHandlerForLint(handler)
+    }
+
+    public func registerRoute(path: String, handler: (HttpContext) -> Unit): Unit {
+        usePathForLint(path)
+        useHandlerForLint(LambdaHttpHandler(handler))
+    }
+
+    public func distribute(path: String): HttpRequestHandler {
+        usePathForLint(path)
         mainHandler
     }
 }
@@ -308,6 +337,14 @@ class IgniteMainHandler <: HttpRequestHandler {
     public func handle(ctx: HttpContext): Unit {
         app.handleRequest(ctx)
     }
+}
+
+func defaultSwaggerUICssUrl(): String {
+    "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui.css"
+}
+
+func defaultSwaggerUIJsUrl(): String {
+    "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui-bundle.js"
 }
 
 func readFileString(path: String): String {
@@ -325,17 +362,17 @@ func readFileString(path: String): String {
     String.fromUtf8(buf.toArray())
 }
 
-func swaggerUIHtml(basePath: String): String {
+func swaggerUIHtml(basePath: String, cssUrl: String, jsUrl: String): String {
     let jsonUrl = basePath + "/json"
     #"<!DOCTYPE html>
 <html>
 <head>
 <title>Ignite API - Swagger UI</title>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<link rel="stylesheet" href=""# + cssUrl + #"">
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src=""# + jsUrl + #""></script>
 <script>
 SwaggerUIBundle({ url: '"# + jsonUrl + #"', dom_id: '#swagger-ui' });
 </script>
@@ -381,7 +418,7 @@ func printBanner(
     pid: String,
     tlsEnabled: Bool
 ): Unit {
-    let version = "0.3.1"
+    let version = "0.3.20"
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
