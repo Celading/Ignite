@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.1.6-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.3.20-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.2.2</span>               │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.3.20</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -29,6 +29,7 @@
   <a href="#api-速览">API 速览</a> ·
   <a href="#中间件">中间件</a> ·
   <a href="#高级用法">高级用法</a> ·
+  <a href="#叶燧星火">叶燧星火</a> ·
   <a href="#许可证">许可证</a>
 </p>
 
@@ -400,6 +401,20 @@ resp2.discard()
 client.close()
 ```
 
+**客户端能力一览**（对标标准 HTTP 客户端）：
+
+| 能力 | API |
+|------|-----|
+| 方法 | `get`, `post`, `put`, `patch`, `delete`, `head`, `options` |
+| JSON | `postJson(url, json)` |
+| 表单 | `postForm(url, ArrayList<(String,String)>)` |
+| Multipart | `postMultipart(url, fields, files)`，`MultipartFile(name, filename, contentType, data)` |
+| 请求构建 | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
+| BaseURL | `baseUrl("https://api.example.com")`，后续相对路径自动拼接 |
+| 默认头 | `defaultHeader(name, value)` |
+| Cookie | `useCookies()` 或 `useCookies(store)`，自动收存 Set-Cookie 并随请求发送 |
+| 响应 | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` |
+
 ### 错误处理 & 优雅关闭
 
 ```cangjie
@@ -449,6 +464,11 @@ ignite/
 | macOS | x86_64 (Intel) | ✅ |
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
+
+## 叶燧星火
+> Trusted by teams that move at the speed of light.
+
+<a href="https://gitcode.com/copur/lanlu">兰鹿</a> - 基于仓颉语言的漫画归档管理系统
 
 ## 许可证
 
