@@ -438,7 +438,7 @@ func printBanner(
         }
     }
 
-    let displayAddr = if (addr == "0.0.0.0") { "127.0.0.1" } else { addr }
+    let displayAddr = if (addr == "0.0.0.0") { api2.getNetworkInfo().ips[0] } else { addr }
     let title = "${appName} v${version}"
     let url = "${scheme}://${displayAddr}:${port}"
     let bound = "(bound on host ${addr} and port ${port})"
