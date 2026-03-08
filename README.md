@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.3.20-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.07-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.3.20</span>              │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.07</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -100,9 +100,11 @@ main() {
 | **WebSocket** | 一行代码升级 WebSocket 连接 |
 | **SSE** | 内置 Server-Sent Events 支持，实时推送 |
 | **流式响应** | Chunked Transfer Encoding，边生成边发送 |
-| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI |
+| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI，可缓存（`enableSwaggerCache`），`?refresh=1` 强制刷新 |
 | **TLS/HTTP2** | 原生 TLS 支持，自动 ALPN 协商 HTTP/2 |
 | **HTTP 客户端** | 内置 `RestClient`，Builder 模式构建请求 |
+| **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`，可配置 `Config.jsonEncoder`；`ignite.serializeJson` / `deserializeJson` |
+| **文件与 Range** | `ctx.sendFile`、`ctx.download`（附件名）、`ctx.sendFileRange`（HTTP Range 206/416） |
 | **优雅关闭** | `onShutdown` 钩子，安全释放资源 |
 
 ## API 速览
@@ -156,12 +158,17 @@ app.post("/upload", { ctx =>
 
 ```cangjie
 ctx.json(body)                   // application/json
+ctx.jsonSerialize(obj)           // 类型实现 StdxJsonSerializable 时序列化并返回 JSON
+ctx.jsonEncode(obj)              // 实现 JsonEncodable 或使用 Config.jsonEncoder 自定义编码
 ctx.sendString(body)             // text/plain
 ctx.html(body)                   // text/html
 ctx.send(byteArray)              // 原始字节
 ctx.sendStatus(404)              // 状态码 + 默认消息
 ctx.redirect("/login")           // 302 重定向
 ctx.noContent()                  // 204 No Content
+ctx.sendFile(path)               // 按路径发送文件
+ctx.download(path, filename)     // 附件下载（可选 filename）
+ctx.sendFileRange(path)          // 支持 HTTP Range，返回 206/416
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
@@ -190,13 +197,15 @@ admin.get("/stats", getStats)
 
 ```cangjie
 let app = App(config: Config(
-    appName:       "MyService",
-    serverHeader:  "Ignite/0.1.6",
-    bodyLimit:     10 * 1024 * 1024,   // 10MB
-    readTimeout:   std.time.Duration.second * 30,
-    writeTimeout:  std.time.Duration.second * 30,
-    enableSwagger: true,
-    enablePrintRoutes: true
+    appName:             "MyService",
+    serverHeader:        "Ignite/0.4",
+    bodyLimit:           10 * 1024 * 1024,   // 10MB
+    readTimeout:         std.time.Duration.second * 30,
+    writeTimeout:        std.time.Duration.second * 30,
+    enableSwagger:       true,
+    enableSwaggerCache:  true,   // Swagger JSON/UI 缓存，?refresh=1 强制刷新
+    enablePrintRoutes:   true,
+    jsonEncoder:         None   // 可选：自定义 JsonEncodable 序列化函数
 ))
 ```
 
