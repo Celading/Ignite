@@ -72,9 +72,11 @@
 
 ### 环境要求
 
-- 仓颉编译器 (`cjc`) v1.0.0+
+- 仓颉编译器 (`cjc`) v1.1.0+
 - 仓颉标准扩展库 (`stdx`)
-- 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)
+- 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)、Windows(x86_64)
+
+> **注意**：若使用私有/需认证的包仓库，请参考 `cangjie-repo.toml.example` 在本地创建 `cangjie-repo.toml` 并配置；**切勿将 `cangjie-repo.toml` 提交到仓库**（已列入 .gitignore）。
 
 ### Hello, Ignite!
 
@@ -478,11 +480,17 @@ ignite/
 | macOS | x86_64 (Intel) | ✅ |
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
+| Windows | x86_64 | ✅ |
 
 ## 叶燧星火
 > Trusted by teams that move at the speed of light.
 
 <a href="https://gitcode.com/copur/lanlu">兰鹿</a> - 基于仓颉语言的漫画归档管理系统
+
+### Ignite-Samples
+
+<a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> - 标准最佳实践
+<a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a>纯仓颉+HTML实现的TODO后端
 
 ## 许可证
 
