@@ -27,6 +27,10 @@ public struct Config {
 
     public var allowRouteOverwrite: Bool = false
 
+    public var enableSwaggerCache: Bool = true
+
+    public var jsonEncoder: ?JsonEncoder = None
+
     public init(
         appName!: String = "Ignite",
         serverHeader!: String = "Ignite",
@@ -42,7 +46,9 @@ public struct Config {
         enablePrintRoutes!: Bool = false,
         tlsCertFile!: String = "",
         tlsKeyFile!: String = "",
-        allowRouteOverwrite!: Bool = false
+        allowRouteOverwrite!: Bool = false,
+        enableSwaggerCache!: Bool = true,
+        jsonEncoder!: ?JsonEncoder = None
     ) {
         this.appName = appName
         this.serverHeader = serverHeader
@@ -59,5 +65,7 @@ public struct Config {
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.allowRouteOverwrite = allowRouteOverwrite
+        this.enableSwaggerCache = enableSwaggerCache
+        this.jsonEncoder = jsonEncoder
     }
 }

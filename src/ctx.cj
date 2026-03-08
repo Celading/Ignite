@@ -5,6 +5,9 @@ import std.io.{InputStream}
 import std.fs.{File, OpenMode, Path}
 import std.unicode.*
 import stdx.net.http.{HttpContext, WebSocket}
+import stdx.encoding.json.stream.{
+    JsonSerializable as StdxJsonSerializable
+}
 
 public class Ctx {
     let _httpCtx: HttpContext
@@ -251,6 +254,22 @@ public class Ctx {
         this
     }
 
+    // ── JSON serialization ──
+
+    public func jsonSerialize<T>(obj: T): Ctx where T <: StdxJsonSerializable {
+        let jsonStr = serializeJson<T>(obj)
+        json(jsonStr)
+    }
+
+    public func jsonEncode(obj: JsonEncodable): Ctx {
+        let jsonStr = if (let Some(encoder) <- _app.config.jsonEncoder) {
+            encoder(obj)
+        } else {
+            obj.toJsonString()
+        }
+        json(jsonStr)
+    }
+
     // ── File serving ──
 
     public func sendFile(filePath: String): Ctx {
@@ -270,6 +289,72 @@ public class Ctx {
             _httpCtx.responseBuilder
                 .header("content-type", contentType)
                 .body(buf.toArray())
+        } catch (_: Exception) {
+            _httpCtx.responseBuilder
+                .status(404)
+                .header("content-type", "text/plain; charset=utf-8")
+                .body("File not found: ${filePath}")
+        }
+        _responded = true
+        this
+    }
+
+    public func download(filePath: String, filename!: String = ""): Ctx {
+        let displayName = if (filename.size > 0) {
+            filename
+        } else {
+            extractFileName(filePath)
+        }
+        _httpCtx.responseBuilder.header("content-disposition", "attachment; filename=\"${displayName}\"")
+        sendFile(filePath)
+    }
+
+    public func sendFileRange(filePath: String): Ctx {
+        try {
+            let file = File(filePath, OpenMode.Read)
+            let buf = ArrayList<UInt8>()
+            let tmp = Array<UInt8>(8192, repeat: 0)
+            while (true) {
+                let n = file.read(tmp)
+                if (n <= 0) { break }
+                for (i in 0..n) {
+                    buf.add(tmp[i])
+                }
+            }
+            file.close()
+            let fileData = buf.toArray()
+            let totalSize = fileData.size
+            let contentType = detectMimeType(filePath)
+
+            let rangeHeader = header("range")
+            if (let Some(rangeVal) <- rangeHeader) {
+                let parsed = parseRangeHeader(rangeVal, totalSize)
+                if (let Some((start, end)) <- parsed) {
+                    let length = end - start + 1
+                    let slice = Array<UInt8>(length, repeat: 0)
+                    for (i in 0..length) {
+                        slice[i] = fileData[start + i]
+                    }
+                    _httpCtx.responseBuilder
+                        .status(206)
+                        .header("content-type", contentType)
+                        .header("content-range", "bytes ${start}-${end}/${totalSize}")
+                        .header("content-length", "${length}")
+                        .header("accept-ranges", "bytes")
+                        .body(slice)
+                } else {
+                    _httpCtx.responseBuilder
+                        .status(416)
+                        .header("content-range", "bytes */${totalSize}")
+                        .body("Range Not Satisfiable")
+                }
+            } else {
+                _httpCtx.responseBuilder
+                    .header("content-type", contentType)
+                    .header("content-length", "${totalSize}")
+                    .header("accept-ranges", "bytes")
+                    .body(fileData)
+            }
         } catch (_: Exception) {
             _httpCtx.responseBuilder
                 .status(404)
@@ -426,4 +511,75 @@ func extractExtension(path: String): String {
         i -= 1
     }
     ""
+}
+
+func extractFileName(path: String): String {
+    let runes = path.toRuneArray()
+    var i = runes.size - 1
+    while (i >= 0) {
+        if (runes[i] == r'/' || runes[i] == r'\\') {
+            var name = ""
+            for (j in (i + 1)..runes.size) {
+                name += runes[j].toString()
+            }
+            return name
+        }
+        i -= 1
+    }
+    path
+}
+
+func parseRangeHeader(rangeVal: String, totalSize: Int64): ?(Int64, Int64) {
+    let runes = rangeVal.toRuneArray()
+    if (runes.size < 6) { return None }
+    var prefix = ""
+    for (i in 0..6) {
+        prefix += runes[i].toString()
+    }
+    if (prefix.toLower() != "bytes=") { return None }
+
+    var rangeSpec = ""
+    for (i in 6..runes.size) {
+        rangeSpec += runes[i].toString()
+    }
+    let parts = rangeSpec.split("-", 2)
+    if (parts.size != 2) { return None }
+
+    let startStr = parts[0].trimAscii()
+    let endStr = parts[1].trimAscii()
+
+    if (startStr.size == 0 && endStr.size == 0) { return None }
+
+    if (startStr.size == 0) {
+        let suffix = parsePositiveInt(endStr)
+        if (suffix <= 0) { return None }
+        var start = totalSize - suffix
+        if (start < 0) { start = 0 }
+        return Some((start, totalSize - 1))
+    }
+
+    let start = parsePositiveInt(startStr)
+    if (start < 0 || start >= totalSize) { return None }
+
+    if (endStr.size == 0) {
+        return Some((start, totalSize - 1))
+    }
+
+    let end = parsePositiveInt(endStr)
+    if (end < start || end >= totalSize) {
+        return Some((start, totalSize - 1))
+    }
+    Some((start, end))
+}
+
+func parsePositiveInt(s: String): Int64 {
+    let runes = s.toRuneArray()
+    if (runes.size == 0) { return -1 }
+    var result: Int64 = 0
+    for (ch in runes) {
+        if (ch < r'0' || ch > r'9') { return -1 }
+        let digit = Int64(UInt32(ch)) - Int64(UInt32(r'0'))
+        result = result * 10 + digit
+    }
+    result
 }
