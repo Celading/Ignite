@@ -16,6 +16,8 @@ public class App {
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
+    var _swaggerJsonCache: ?String = None
+    var _swaggerHtmlCache: ?String = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -123,15 +125,26 @@ public class App {
         Group(this, prefix)
     }
 
+    // ── Route management ──
+
     public func removeRoute(method: String, path: String): Bool {
-        return router.removeRoute(method, path)
+        router.removeRoute(method, path)
     }
 
     // ── Swagger ──
 
     public func swagger(info: SwaggerInfo): App {
         _swaggerInfo = info
+        _swaggerJsonCache = None
+        _swaggerHtmlCache = None
         this
+    }
+
+    // ── Cache management ──
+
+    public func invalidateSwaggerCache(): Unit {
+        _swaggerJsonCache = None
+        _swaggerHtmlCache = None
     }
 
     // ── Error handling ──
@@ -222,13 +235,30 @@ public class App {
         let appRef = this
         let infoRef = _swaggerInfo
         router.addRoute("GET", swaggerPath, wrapSingle({ ctx =>
+            let forceRefresh = ctx.query("refresh") ?? ""
+            if (appRef.config.enableSwaggerCache && forceRefresh != "1") {
+                if (let Some(cached) <- appRef._swaggerJsonCache) {
+                    ctx.json(cached)
+                    return
+                }
+            }
             let gen = SwaggerGenerator(infoRef, appRef.router.getRoutes())
             let jsonStr = gen.generate()
+            if (appRef.config.enableSwaggerCache) {
+                appRef._swaggerJsonCache = jsonStr
+            }
             ctx.json(jsonStr)
         }))
 
         let uiPath = config.swaggerPath
         router.addRoute("GET", uiPath, wrapSingle({ ctx =>
+            let forceRefresh = ctx.query("refresh") ?? ""
+            if (appRef.config.enableSwaggerCache && forceRefresh != "1") {
+                if (let Some(cached) <- appRef._swaggerHtmlCache) {
+                    ctx.html(cached)
+                    return
+                }
+            }
             let cssUrl = if (appRef.config.swaggerUICssUrl.size > 0) {
                 appRef.config.swaggerUICssUrl
             } else {
@@ -240,6 +270,9 @@ public class App {
                 defaultSwaggerUIJsUrl()
             }
             let htmlContent = swaggerUIHtml(appRef.config.swaggerPath, cssUrl, jsUrl)
+            if (appRef.config.enableSwaggerCache) {
+                appRef._swaggerHtmlCache = htmlContent
+            }
             ctx.html(htmlContent)
         }))
     }
@@ -418,7 +451,7 @@ func printBanner(
     pid: String,
     tlsEnabled: Bool
 ): Unit {
-    let version = "0.3.20"
+    let version = "0.4.07"
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
