@@ -74,6 +74,8 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 - Cangjie standard extension library (`stdx`)
 - Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64)
 
+> **Note:** If you use a private or authenticated package registry, copy `cangjie-repo.toml.example` to `cangjie-repo.toml` and configure it locally. **Do not commit `cangjie-repo.toml`** to the repo (it is in .gitignore).
+
 ### Hello, Ignite!
 
 ```cangjie
