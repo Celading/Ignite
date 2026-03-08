@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.4.07"
+  version = "0.4.20"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -13,6 +13,10 @@
 
 [package.package-configuration."ignite.client"]
   output-type = "static"
+
+[target.x86_64-w64-mingw32]
+  [target.x86_64-w64-mingw32.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/cj_stdx_x86_64-w64-mingw32/static/stdx"]
 
 [target.aarch64-apple-darwin]
   [target.aarch64-apple-darwin.bin-dependencies]
