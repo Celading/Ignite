@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.4.07-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.07</span>              │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.27</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -70,9 +70,9 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 ### Requirements
 
-- Cangjie compiler (`cjc`) v1.0.0+
+- Cangjie compiler (`cjc`) v1.1.0+
 - Cangjie standard extension library (`stdx`)
-- Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64)
+- Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64)
 
 > **Note:** If you use a private or authenticated package registry, copy `cangjie-repo.toml.example` to `cangjie-repo.toml` and configure it locally. **Do not commit `cangjie-repo.toml`** to the repo (it is in .gitignore).
 
