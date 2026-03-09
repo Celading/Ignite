@@ -4,6 +4,19 @@
 
 ---
 
+## [Unreleased]（未发布）
+
+### 新增
+
+- **Config.appVersion**：可选应用版本字符串；用于启动 Banner 标题。为空时显示框架版本（如 0.4.27），非空时显示应用版本（如 1.0.0）。Banner 始终输出，不可关闭。
+
+### 变更
+
+- **Config.enablePrintRoutes**：补充说明——为 `true` 时启动时额外打印路由表；Banner 始终输出，不受此控制。
+- **printBanner**：标题行由 `AppName v${version}` 改为优先使用 `Config.appVersion`，为空则使用框架版本。
+
+---
+
 ## [0.4.27]（当前）
 
 ### 变更

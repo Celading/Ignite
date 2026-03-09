@@ -205,13 +205,14 @@ admin.get("/stats", getStats)
 ```cangjie
 let app = App(config: Config(
     appName:             "MyService",
+    appVersion:          "1.0.0",   // 可选；Banner 标题显示应用版本，空则显示框架版本
     serverHeader:        "Ignite/0.4",
     bodyLimit:           10 * 1024 * 1024,   // 10MB
     readTimeout:         std.time.Duration.second * 30,
     writeTimeout:        std.time.Duration.second * 30,
     enableSwagger:       true,
     enableSwaggerCache:  true,   // Swagger JSON/UI 缓存，?refresh=1 强制刷新
-    enablePrintRoutes:   true,
+    enablePrintRoutes:   false,  // 为 true 时启动时额外打印路由表；Banner 始终输出且不可关闭
     jsonEncoder:         None   // 可选：自定义 JsonEncodable 序列化函数
 ))
 ```

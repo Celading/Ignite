@@ -2,6 +2,8 @@ package ignite
 
 public struct Config {
     public var appName: String = "Ignite"
+    /// 应用版本，用于启动 Banner 标题；空则显示框架版本。Banner 始终输出，不可关闭。
+    public var appVersion: String = ""
     public var serverHeader: String = "Ignite"
 
     public var strictRouting: Bool = false
@@ -20,6 +22,7 @@ public struct Config {
     public var swaggerPath: String = "/swagger"
     public var swaggerUICssUrl: String = ""
     public var swaggerUIJsUrl: String = ""
+    /// 为 true 时启动时额外打印路由表；Banner 始终输出，不受此控制。
     public var enablePrintRoutes: Bool = false
 
     public var tlsCertFile: String = ""
@@ -33,6 +36,7 @@ public struct Config {
 
     public init(
         appName!: String = "Ignite",
+        appVersion!: String = "",
         serverHeader!: String = "Ignite",
         strictRouting!: Bool = false,
         caseSensitive!: Bool = false,
@@ -51,6 +55,7 @@ public struct Config {
         jsonEncoder!: ?JsonEncoder = None
     ) {
         this.appName = appName
+        this.appVersion = appVersion
         this.serverHeader = serverHeader
         this.strictRouting = strictRouting
         this.caseSensitive = caseSensitive

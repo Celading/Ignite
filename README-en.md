@@ -203,13 +203,14 @@ admin.get("/stats", getStats)
 ```cangjie
 let app = App(config: Config(
     appName:             "MyService",
+    appVersion:          "1.0.0",   // optional; shown in banner title; empty = framework version
     serverHeader:        "Ignite/0.4",
     bodyLimit:           10 * 1024 * 1024,   // 10MB
     readTimeout:         std.time.Duration.second * 30,
     writeTimeout:        std.time.Duration.second * 30,
     enableSwagger:       true,
     enableSwaggerCache:  true,   // Cache Swagger JSON/UI; ?refresh=1 to refresh
-    enablePrintRoutes:   true,
+    enablePrintRoutes:   false,  // when true, print route table at startup; banner always shown
     jsonEncoder:         None   // Optional custom JsonEncodable encoder
 ))
 ```

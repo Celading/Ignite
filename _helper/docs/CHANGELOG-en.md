@@ -4,6 +4,19 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Config.appVersion**: Optional application version string for the startup banner title. When empty, the framework version (e.g. 0.4.27) is shown; when set, the app version (e.g. 1.0.0) is shown. Banner is always printed and cannot be disabled.
+
+### Changed
+
+- **Config.enablePrintRoutes**: Clarified—when `true`, the route table is printed at startup; the banner is always shown regardless.
+- **printBanner**: Title line uses `Config.appVersion` when non-empty, otherwise the framework version.
+
+---
+
 ## [0.4.27] (current)
 
 ### Changed
