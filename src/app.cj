@@ -193,7 +193,10 @@ public class App {
         let tlsEnabled = hasTls
         let appName = config.appName
         let routeCount = router.allRoutes.size
-        let currentPid = "${getProcessId()}"
+        var currentPid = "?"
+        try {
+            currentPid = "${getProcessId()}"
+        } catch (_: Exception) { }
 
         let server = builder
             .afterBind({ =>
@@ -451,7 +454,7 @@ func printBanner(
     pid: String,
     tlsEnabled: Bool
 ): Unit {
-    let version = "0.4.07"
+    let version = "0.4.27"
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
@@ -475,7 +478,12 @@ func printBanner(
         }
     }
 
-    let displayAddr = if (addr == "0.0.0.0") { api2.getNetworkInfo().ips[0] } else { addr }
+    let displayAddr = if (addr == "0.0.0.0") {
+        let info = api2.getNetworkInfo()
+        if (info.ips.size > 0) { info.ips[0] } else { "0.0.0.0" }
+    } else {
+        addr
+    }
     let title = "${appName} v${version}"
     let url = "${scheme}://${displayAddr}:${port}"
     let bound = "(bound on host ${addr} and port ${port})"
