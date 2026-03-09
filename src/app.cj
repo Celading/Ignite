@@ -192,15 +192,17 @@ public class App {
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
         let appName = config.appName
+        let appVersion = config.appVersion
         let routeCount = router.allRoutes.size
-        var currentPid = "?"
+        var pidStr = "?"
         try {
-            currentPid = "${getProcessId()}"
+            pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
+        let currentPid = pidStr
 
         let server = builder
             .afterBind({ =>
-                printBanner(appName, scheme, addr, port, routeCount, currentPid, tlsEnabled)
+                printBanner(appName, appVersion, scheme, addr, port, routeCount, currentPid, tlsEnabled)
             })
             .build()
 
@@ -447,6 +449,7 @@ func bannerDotFill(label: String, value: String, w: Int64): String {
 
 func printBanner(
     appName: String,
+    appVersion: String,
     scheme: String,
     addr: String,
     port: UInt16,
@@ -454,7 +457,8 @@ func printBanner(
     pid: String,
     tlsEnabled: Bool
 ): Unit {
-    let version = "0.4.27"
+    let frameworkVersion = "0.4.27"
+    let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
@@ -484,7 +488,7 @@ func printBanner(
     } else {
         addr
     }
-    let title = "${appName} v${version}"
+    let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
     let bound = "(bound on host ${addr} and port ${port})"
 
