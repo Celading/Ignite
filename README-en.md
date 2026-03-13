@@ -110,6 +110,7 @@ Just **6 lines of code** to spin up an HTTP server.
 | **HTTP client** | Built-in `RestClient` with builder-style API |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`, optional `Config.jsonEncoder`; `ignite.serializeJson` / `deserializeJson` |
 | **Files & Range** | `ctx.sendFile`, `ctx.download` (attachment name), `ctx.sendFileRange` (HTTP Range 206/416) |
+| **static / staticSpa** | `app.static(prefix, root)` for static only; `app.staticSpa(prefix, root, indexFile)` for static-first + SPA fallback to index |
 | **Graceful shutdown** | `onShutdown` hook for cleanup |
 
 ## API Overview
@@ -332,6 +333,24 @@ app.get("/stream", { ctx =>
     writer.writeString("chunk 3\n")
 })
 ```
+
+### Static files & SPA fallback (static / staticSpa)
+
+**Static directory only:** `app.static(prefix, root)` maps URL path to files under `root`; only responds when the file exists, otherwise the request is passed to later routes or 404.
+
+**Static-first + SPA fallback:** For Next.js static export, Vite/React, or other SPAs, you often want “serve file if present, otherwise return index.html for client-side routing.” Use `app.staticSpa(prefix, root, indexFile)`:
+
+```cangjie
+// Under /: try file under frontend/out first; if missing, return frontend/out/index.html
+app.staticSpa("/", "frontend/out", "index.html")
+```
+
+- `prefix`: URL prefix (e.g. `"/"`); root path registers both GET/HEAD `/` and `/*`.
+- `root`: Static file root (e.g. Next.js `out`, Vite `dist`).
+- `indexFile`: Fallback file when no file matches; default `"index.html"`.
+- Path safety: Requests containing `..` are rejected and fall back to the index file.
+
+Register API routes first, then `staticSpa` last, so APIs are not shadowed by the catch-all.
 
 ### Swagger / OpenAPI
 
