@@ -2,7 +2,7 @@ package ignite
 
 import std.collection.ArrayList
 import std.env.*
-import std.fs.{File, OpenMode}
+import std.fs.{File, OpenMode, exists, FileInfo}
 import stdx.net.http.{
     ServerBuilder, Server, HttpContext, HttpRequestHandler,
     HttpRequestDistributor
@@ -87,6 +87,48 @@ public class App {
             let fullPath = rootDir + "/" + filePath
             ctx.sendFile(fullPath)
         }))
+        this
+    }
+
+    /// 静态优先 + SPA 回退：先按路径尝试发送静态文件，不存在则发送 indexFile（如 index.html），兜住所有请求转发前端。
+    /// 适用于 Next.js 静态导出、Vite/React 等前端；子路径如 login/_xxxxx.txt 会按 root 下相对路径解析。
+    /// 路径安全：拒绝含 ".." 的请求，回退到 indexFile。
+    public func staticSpa(prefix: String, root: String, indexFile!: String = "index.html"): App {
+        let rootDir = root
+        let fallbackPath = rootDir + "/" + indexFile
+        let serveFallback: Handler = { ctx: Ctx => ctx.sendFile(fallbackPath) }
+        let normalizedPrefix = if (prefix.size > 0 && prefix.toRuneArray()[prefix.size - 1] == r'/') {
+            let runes = prefix.toRuneArray()
+            var s = ""
+            for (i in 0..runes.size - 1) { s += runes[i].toString() }
+            if (s.size == 0) { "/" } else { s }
+        } else {
+            prefix
+        }
+        if (normalizedPrefix == "/" || normalizedPrefix.size == 0) {
+            router.addRoute("GET", "/", wrapSingle(serveFallback))
+            router.addRoute("HEAD", "/", wrapSingle(serveFallback))
+        }
+        let catchAllPath = if (normalizedPrefix.size > 0 && normalizedPrefix.toRuneArray()[normalizedPrefix.size - 1] == r'/') {
+            normalizedPrefix + "*"
+        } else {
+            normalizedPrefix + "/*"
+        }
+        let handler: Handler = { ctx: Ctx =>
+            let filePath = ctx.params("*")
+            if (filePath.contains("..")) {
+                ctx.sendFile(fallbackPath)
+                return
+            }
+            let fullPath = rootDir + "/" + filePath
+            if (exists(fullPath) && !FileInfo(fullPath).isDirectory()) {
+                ctx.sendFile(fullPath)
+            } else {
+                ctx.sendFile(fallbackPath)
+            }
+        }
+        router.addRoute("GET", catchAllPath, wrapSingle(handler))
+        router.addRoute("HEAD", catchAllPath, wrapSingle(handler))
         this
     }
 
