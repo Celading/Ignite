@@ -112,6 +112,7 @@ main() {
 | **HTTP 客户端** | 内置 `RestClient`，Builder 模式构建请求 |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`，可配置 `Config.jsonEncoder`；`ignite.serializeJson` / `deserializeJson` |
 | **文件与 Range** | `ctx.sendFile`、`ctx.download`（附件名）、`ctx.sendFileRange`（HTTP Range 206/416） |
+| **static / staticSpa** | `app.static(prefix, root)` 纯静态；`app.staticSpa(prefix, root, indexFile)` 静态优先 + SPA 回退 index |
 | **优雅关闭** | `onShutdown` 钩子，安全释放资源 |
 
 ## API 速览
@@ -339,6 +340,24 @@ app.get("/stream", { ctx =>
     writer.writeString("chunk 3\n")
 })
 ```
+
+### 静态文件与 SPA 兜底 (static / staticSpa)
+
+**纯静态目录**：`app.static(prefix, root)` 按 URL 路径映射到 `root` 下文件，仅当存在对应文件时响应，否则由后续路由或 404 处理。
+
+**静态优先 + SPA 回退**：前端为 Next.js 静态导出、Vite/React 等单页应用时，常需「有文件则发文件，否则一律返回 index.html 由前端路由接管」。使用 `app.staticSpa(prefix, root, indexFile)` 即可：
+
+```cangjie
+// 根路径下：先尝试 frontend/out 中对应文件，不存在则返回 frontend/out/index.html
+app.staticSpa("/", "frontend/out", "index.html")
+```
+
+- `prefix`：URL 前缀（如 `"/"`）；根路径会同时注册 GET/HEAD `/` 与 `/*`。
+- `root`：静态文件根目录（如 Next.js 的 `out`、Vite 的 `dist`）。
+- `indexFile`：未命中文件时的回退文件，默认 `"index.html"`。
+- 路径安全：含 `..` 的请求会被拒绝并回退到 index 文件。
+
+适合与 API 路由并存：先注册 API，最后再挂 `staticSpa`，避免 API 被通配吞掉。
 
 ### Swagger / OpenAPI
 
