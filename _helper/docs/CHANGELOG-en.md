@@ -9,6 +9,8 @@ All notable feature and behavior changes are documented here. Version numbers fo
 ### Added
 
 - **Config.appVersion**: Optional application version string for the startup banner title. When empty, the framework version (e.g. 0.4.27) is shown; when set, the app version (e.g. 1.0.0) is shown. Banner is always printed and cannot be disabled.
+- **App.staticSpa(prefix, root, indexFile)**: Static-first + SPA fallback. Registers GET/HEAD under `prefix`; serves file from `root` when it exists, otherwise serves `root/indexFile` (default `index.html`). Paths containing `..` fall back to index. Root prefix `"/"` registers both `/` and `/*`. For Next.js static export, Vite/React, etc.; README and English README updated; Lanlu migration prompt in `_helper/docs`.
+- **api2.getPreferredLocalIP()**: Get “local IP for internet access” via UDP connect to 8.8.8.8:53, no external commands, cross-platform; `getNetworkInfo()` uses it first, then falls back to command parsing (ipconfig/ip/ifconfig).
 
 ### Changed
 
