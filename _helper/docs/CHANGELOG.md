@@ -9,6 +9,8 @@
 ### 新增
 
 - **Config.appVersion**：可选应用版本字符串；用于启动 Banner 标题。为空时显示框架版本（如 0.4.27），非空时显示应用版本（如 1.0.0）。Banner 始终输出，不可关闭。
+- **App.staticSpa(prefix, root, indexFile)**：静态优先 + SPA 回退。在 `prefix` 下注册 GET/HEAD，先按路径在 `root` 下查找静态文件，存在则发送；不存在或路径含 `..` 则发送 `root/indexFile`（默认 `index.html`）。根路径 `"/"` 会同时注册 `/` 与 `/*`。适用于 Next.js 静态导出、Vite/React 等前端；README 与英文版已补充说明，`_helper/docs` 提供 Lanlu 迁移指导 prompt。
+- **api2.getPreferredLocalIP()**：通过 UDP 连接 8.8.8.8:53 取本机出口 IP，无外部命令、跨平台；`getNetworkInfo()` 优先使用该 IP，失败再回退到原有命令解析（ipconfig/ip/ifconfig）。
 
 ### 变更
 

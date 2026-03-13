@@ -4,8 +4,9 @@ import std.collection.ArrayList
 import std.process.executeWithOutput
 import std.fs.{File, exists}
 import std.regex.Regex
+import std.net.{UdpSocket, IPSocketAddress}
 
-/// 设备网络信息：本机 IP 列表、默认网关、DNS 服务器列表。
+/// Device network info: local IP list, default gateway, DNS server list.
 public struct NetworkInfo {
     public let ips: Array<String>
     public let gateway: ?String
@@ -18,25 +19,57 @@ public struct NetworkInfo {
     }
 }
 
-// ── 跨平台入口：单函数，编译时按 os 选择实现 ──
+// ── Kernel-level get local IP: UDP connect + localAddress, no external commands ──
+
+/// Get "local IP for accessing the internet" via UDP socket connect, no external commands, cross-platform.
+public func getPreferredLocalIP(): ?String {
+    try {
+        let sock = UdpSocket(bindAt: 0)
+        sock.bind()
+        sock.connect(IPSocketAddress.parse("8.8.8.8:53"))
+        let local = sock.localAddress
+        sock.close()
+        match (local) {
+            case sa: IPSocketAddress =>
+                let addr = sa.address
+                if (addr.isLoopback()) { None } else { Some(addr.toString()) }
+            case _ => None
+        }
+    } catch (_: Exception) {
+        None
+    }
+}
+
+// ── Miiltiplatform：ips main UDP，fallback to command parsing ──
 
 @When[os == "Windows"]
 public func getNetworkInfo(): NetworkInfo {
+    var ips = ArrayList<String>()
+    if (let Some(ip) <- getPreferredLocalIP()) {
+        ips.add(ip)
+    }
     let (_, stdout, _) = executeWithOutput("cmd", ["/C", "ipconfig", "/all"])
     let text = String.fromUtf8(stdout)
-    let ips = parseIPv4s(text)
-    let gw = parseWindowsGateway(text)
+    if (ips.size == 0) {
+        for (s in parseIPv4s(text)) { ips.add(s) }
+    }
+    let gateway = parseWindowsGateway(text)
     let dnsList = parseWindowsDns(text)
-    NetworkInfo(ips, gw, dnsList)
+    NetworkInfo(ips.toArray(), gateway, dnsList)
 }
 
 @When[os == "Linux"]
 public func getNetworkInfo(): NetworkInfo {
     var ips = ArrayList<String>()
-    let (code, stdout, _) = executeWithOutput("ip", ["-4", "addr", "show"])
-    if (code == 0) {
-        let text = String.fromUtf8(stdout)
-        for (s in parseIPv4s(text)) { ips.add(s) }
+    if (let Some(ip) <- getPreferredLocalIP()) {
+        ips.add(ip)
+    }
+    if (ips.size == 0) {
+        let (code, stdout, _) = executeWithOutput("ip", ["-4", "addr", "show"])
+        if (code == 0) {
+            let text = String.fromUtf8(stdout)
+            for (s in parseIPv4s(text)) { ips.add(s) }
+        }
     }
     var gateway: ?String = None
     let (code2, out2, _) = executeWithOutput("ip", ["route", "show", "default"])
@@ -50,10 +83,15 @@ public func getNetworkInfo(): NetworkInfo {
 @When[os == "macOS"]
 public func getNetworkInfo(): NetworkInfo {
     var ips = ArrayList<String>()
-    let (code, stdout, _) = executeWithOutput("ifconfig", [])
-    if (code == 0) {
-        let text = String.fromUtf8(stdout)
-        for (s in parseIPv4s(text)) { ips.add(s) }
+    if (let Some(ip) <- getPreferredLocalIP()) {
+        ips.add(ip)
+    }
+    if (ips.size == 0) {
+        let (code, stdout, _) = executeWithOutput("ifconfig", [])
+        if (code == 0) {
+            let text = String.fromUtf8(stdout)
+            for (s in parseIPv4s(text)) { ips.add(s) }
+        }
     }
     var gateway: ?String = None
     let (code2, out2, _) = executeWithOutput("route", ["-n", "get", "default"])
@@ -64,7 +102,7 @@ public func getNetworkInfo(): NetworkInfo {
     NetworkInfo(ips.toArray(), gateway, dnsList)
 }
 
-// ── 通用解析：IPv4、resolv.conf ──
+// ── Generic parsing: IPv4, resolv.conf ──
 
 func parseIPv4s(text: String): Array<String> {
     let re = Regex(#"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b"#)
