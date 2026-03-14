@@ -244,7 +244,7 @@ public class App {
 
         let server = builder
             .afterBind({ =>
-                printBanner(appName, appVersion, scheme, addr, port, routeCount, currentPid, tlsEnabled)
+                printBanner(appName, appVersion, scheme, addr, port, routeCount, currentPid, tlsEnabled, config.enableSwagger, config.swaggerPath, config.kmode)
             })
             .build()
 
@@ -497,9 +497,12 @@ func printBanner(
     port: UInt16,
     handlerCount: Int64,
     pid: String,
-    tlsEnabled: Bool
+    tlsEnabled: Bool,
+    enableSwagger: Bool,
+    swaggerPath: String,
+    kmode: Bool
 ): Unit {
-    let frameworkVersion = "0.4.27"
+    let frameworkVersion = getFrameworkVersion()
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
     let innerWidth: Int64 = 53
 
@@ -561,5 +564,11 @@ func printBanner(
     println(" ${D}│${R}${statsLine1}${D}│${R}")
     println(" ${D}│${R}${statsLine2}${D}│${R}")
     println(" ${D}└${border}┘${R}")
+    if (kmode) {
+        println(" ${CB}Ignite v${frameworkVersion} (kmode)${R}")
+    }
+    if (enableSwagger) {
+        println(" ${G}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
+    }
     println("")
 }
