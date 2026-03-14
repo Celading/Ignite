@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.4.41"   # single source of truth; run scripts/gen_version.sh to sync src/version.cj
+  version = "0.4.47"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -15,6 +15,8 @@
   output-type = "static"
 
 [target.x86_64-w64-mingw32]
+  link-option = "-lcrypt32"
+  compile-option = "--cfg \"ohos=false\""
   [target.x86_64-w64-mingw32.bin-dependencies]
     path-option = ["${CANGJIE_STDX_PATH}/windows_x86_64_cjnative/static/stdx"]
   [target.x86_64-w64-mingw32-Deprecated.bin-dependencies]
@@ -28,6 +30,14 @@
   [target.x86_64-apple-darwin.bin-dependencies]
     path-option = ["${CANGJIE_STDX_PATH}/cj_stdx_darwin_x86_64_llvm/static/stdx"]
 
+[target.x86_64-unknown-linux-gnu]
+  [target.x86_64-unknown-linux-gnu.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/linux_x86_64_llvm/static/stdx"]
+
+[target.aarch64-unknown-linux-gnu]
+  [target.aarch64-unknown-linux-gnu.bin-dependencies]
+    path-option = ["${CANGJIE_STDX_PATH}/linux_aarch64_llvm/static/stdx"]
+
 [target.aarch64-linux-ohos]
   compile-option = "-B \"${DEVECO_CANGJIE_HOME}/compiler/third_party/llvm/bin\" -B \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/aarch64-linux-ohos\" -L \"${DEVECO_CANGJIE_HOME}/musl/usr/lib/aarch64-linux-ohos\" --sysroot \"${DEVECO_CANGJIE_HOME}/musl\""
 
@@ -37,11 +47,3 @@
 [target.aarch64-linux-ohos-cjnative]
   [target.aarch64-linux-ohos-cjnative.bin-dependencies]
     path-option = ["${CANGJIE_STDX_PATH}/linux_ohos_aarch64_cjnative/static/stdx"]
-
-[target.x86_64-unknown-linux-gnu]
-  [target.x86_64-unknown-linux-gnu.bin-dependencies]
-    path-option = ["${CANGJIE_STDX_PATH}/linux_x86_64_llvm/static/stdx"]
-
-[target.aarch64-unknown-linux-gnu]
-  [target.aarch64-unknown-linux-gnu.bin-dependencies]
-    path-option = ["${CANGJIE_STDX_PATH}/linux_aarch64_llvm/static/stdx"]
