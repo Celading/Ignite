@@ -43,17 +43,21 @@ public func getPreferredLocalIP(): ?String {
 
 // ── 多平台：ips 主用 UDP（Linux/macOS），Windows 仅用 ipconfig 避免 UDP 引发误报端口占用 ──
 
-/// Windows：不调用 getPreferredLocalIP()，仅通过 ipconfig 取 IP，避免 UDP 创建影响后续 HTTP 绑定（实测会误报端口占用）。
-/// 仍依赖 cmd + ipconfig；若需无依赖可后续通过 Win32 GetAdaptersAddresses（需 FFI/cjnative）实现。
+/// Windows：不调用 getPreferredLocalIP()，仅通过 ipconfig 取 IP，避免 UDP 影响后续 HTTP 绑定。
+/// ipconfig 输出多为系统代码页（如 GBK），非 UTF-8，String.fromUtf8 会抛 "Invalid unicode scalar value"；解码失败时返回空结果，Banner 显示 0.0.0.0。
 @When[os == "Windows"]
 public func getNetworkInfo(): NetworkInfo {
-    let (_, stdout, _) = executeWithOutput("cmd", ["/C", "ipconfig", "/all"])
-    let text = String.fromUtf8(stdout)
-    var ips = ArrayList<String>()
-    for (s in parseIPv4s(text)) { ips.add(s) }
-    let gateway = parseWindowsGateway(text)
-    let dnsList = parseWindowsDns(text)
-    NetworkInfo(ips.toArray(), gateway, dnsList)
+    try {
+        let (_, stdout, _) = executeWithOutput("cmd", ["/C", "ipconfig", "/all"])
+        let text = tryDecodeUtf8OrLossy(stdout)
+        var ips = ArrayList<String>()
+        for (s in parseIPv4s(text)) { ips.add(s) }
+        let gateway = parseWindowsGateway(text)
+        let dnsList = parseWindowsDns(text)
+        NetworkInfo(ips.toArray(), gateway, dnsList)
+    } catch (_: Exception) {
+        NetworkInfo([], None, [])
+    }
 }
 
 @When[os == "Linux"]
@@ -139,6 +143,24 @@ func readResolvConf(path: String): Array<String> {
         list.toArray()
     } catch (_: Exception) {
         []
+    }
+}
+
+// ── Windows: ipconfig 输出多为系统代码页，UTF-8 解码失败时做仅保留 ASCII 的兜底（IPv4 为 ASCII）──
+
+func tryDecodeUtf8OrLossy(bytes: Array<UInt8>): String {
+    try {
+        return String.fromUtf8(bytes)
+    } catch (_: Exception) {
+        var asciiOnly = ArrayList<UInt8>()
+        for (b in bytes) {
+            if (b <= 127) { asciiOnly.add(b) }
+        }
+        try {
+            return String.fromUtf8(asciiOnly.toArray())
+        } catch (_: Exception) {
+            return ""
+        }
     }
 }
 
