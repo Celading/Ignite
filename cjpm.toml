@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.4.37"
+  version = "0.4.41"   # single source of truth; run scripts/gen_version.sh to sync src/version.cj
   name = "ignite"
   output-type = "static"
   src-dir = "src"
