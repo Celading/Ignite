@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.4.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.41-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.27</span>              │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.41</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -214,9 +214,13 @@ let app = App(config: Config(
     enableSwagger:       true,
     enableSwaggerCache:  true,   // Swagger JSON/UI 缓存，?refresh=1 强制刷新
     enablePrintRoutes:   false,  // 为 true 时启动时额外打印路由表；Banner 始终输出且不可关闭
+    kmode:               false,  // 为 true 时调试模式：Banner 必打 Ignite 版本，可配合 kmodeMiddleware
     jsonEncoder:         None   // 可选：自定义 JsonEncodable 序列化函数
 ))
 ```
+
+#### KeyMode 超级用户
+- 暂定为开发者专用的定义组件
 
 ## 中间件
 
@@ -232,7 +236,7 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `basicAuthMiddleware` | HTTP Basic 认证 |
 | | `keyAuthMiddleware` | API Key 认证（Header/Query/Cookie） |
 | | `encryptCookieMiddleware` | Cookie 加解密（XOR + Base64） |
-| **日志监控** | `loggerMiddleware` | 请求方法、路径、耗时 |
+| **日志监控** | `loggerMiddleware` | 请求方法、路径、耗时；支持 Logger 接口 + DefaultLogger，可注入自定义实现；`enableEntityLog` 可开实体日志 |
 | | `accessLogMiddleware` | 访问日志（IP、延迟、User-Agent） |
 | | `requestIdMiddleware` | 请求 ID（X-Request-ID） |
 | | `recoverMiddleware` | Panic 恢复 |
@@ -249,15 +253,43 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `healthCheckMiddleware` | 健康检查端点 |
 | | `idempotencyMiddleware` | 幂等键（X-Idempotency-Key） |
 | | `proxyMiddleware` | 反向代理 |
+| **调试** | `kmodeMiddleware` | kmode 调试模式：设置 ctx local `kmode`，配合 `Config.kmode`；启动时 Banner 必打 Ignite 版本 |
 
 示例：
 
 ```cangjie
 import ignite.middleware.*
 
-// 日志与恢复
+// 日志与恢复（可传入 LoggerConfig：logger 自定义实现、enableEntityLog 实体日志）
 app.use(loggerMiddleware())
 app.use(recoverMiddleware())
+// 自定义 Logger 实现与注入：
+//
+// 你可以自定义实现 Logger 接口（实现 log(msg: String): Unit 方法），以完全控制日志输出格式、目标（如写入文件、远程上报等）。
+// 通过 LoggerConfig(logger: ...) 注入到 loggerMiddleware。例如：
+//
+// ```cangjie
+// public class MyLogger: Logger {
+//     public func log(msg: String) {
+//         // 自定义输出逻辑
+//         println("[MyLogger] " + msg)
+//     }
+// }
+//
+// let loggerConfig = LoggerConfig(logger: MyLogger())
+// app.use(loggerMiddleware(config: loggerConfig))
+// ```
+//
+// 你也可以通过 LoggerConfig 的 output 参数快速自定义输出行为：
+//
+// ```cangjie
+// app.use(loggerMiddleware(config: LoggerConfig(output: { msg => 
+//     writeFile("/var/log/myapp.log", msg + "\n", append: true)
+// })))
+// ```
+
+// 调试模式（Config.kmode = true 时启动会打印 Ignite 版本与 Swagger URL）
+app.use(kmodeMiddleware(app.config.kmode))
 
 // CORS
 app.use(corsMiddleware(config: CorsConfig(
@@ -514,6 +546,10 @@ ignite/
 <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> - 纯仓颉+HTML实现的TODO后端
 
 <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> - 纯仓颉+HTML实现的聊天室后端
+
+## 维护说明
+
+- **版本号**：以 `cjpm.toml` 的 `[package].version` 为唯一来源。修改后请执行 `./scripts/gen_version.sh` 以同步 `src/version.cj`（Banner 等输出的框架版本）。
 
 ## 许可证
 

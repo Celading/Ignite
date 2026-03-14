@@ -19,9 +19,10 @@ public struct NetworkInfo {
     }
 }
 
-// ── Kernel-level get local IP: UDP connect + localAddress, no external commands ──
+// ── 获取本机出口 IP：UDP connect + localAddress，无外部命令（仅非 Windows 使用）──
 
-/// Get "local IP for accessing the internet" via UDP socket connect, no external commands, cross-platform.
+/// Get "local IP for accessing the internet" via UDP socket connect, no external commands.
+/// On Windows this is not used (see getNetworkInfo): Windows UDP connect/bind 可能影响进程内后续 bind，导致误报「端口占用」。
 public func getPreferredLocalIP(): ?String {
     try {
         let sock = UdpSocket(bindAt: 0)
@@ -40,19 +41,16 @@ public func getPreferredLocalIP(): ?String {
     }
 }
 
-// ── Miiltiplatform：ips main UDP，fallback to command parsing ──
+// ── 多平台：ips 主用 UDP（Linux/macOS），Windows 仅用 ipconfig 避免 UDP 引发误报端口占用 ──
 
+/// Windows：不调用 getPreferredLocalIP()，仅通过 ipconfig 取 IP，避免 UDP 创建影响后续 HTTP 绑定（实测会误报端口占用）。
+/// 仍依赖 cmd + ipconfig；若需无依赖可后续通过 Win32 GetAdaptersAddresses（需 FFI/cjnative）实现。
 @When[os == "Windows"]
 public func getNetworkInfo(): NetworkInfo {
-    var ips = ArrayList<String>()
-    if (let Some(ip) <- getPreferredLocalIP()) {
-        ips.add(ip)
-    }
     let (_, stdout, _) = executeWithOutput("cmd", ["/C", "ipconfig", "/all"])
     let text = String.fromUtf8(stdout)
-    if (ips.size == 0) {
-        for (s in parseIPv4s(text)) { ips.add(s) }
-    }
+    var ips = ArrayList<String>()
+    for (s in parseIPv4s(text)) { ips.add(s) }
     let gateway = parseWindowsGateway(text)
     let dnsList = parseWindowsDns(text)
     NetworkInfo(ips.toArray(), gateway, dnsList)

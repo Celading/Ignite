@@ -6,20 +6,28 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ## [Unreleased]
 
-### Added
-
-- **Config.appVersion**: Optional application version string for the startup banner title. When empty, the framework version (e.g. 0.4.27) is shown; when set, the app version (e.g. 1.0.0) is shown. Banner is always printed and cannot be disabled.
-- **App.staticSpa(prefix, root, indexFile)**: Static-first + SPA fallback. Registers GET/HEAD under `prefix`; serves file from `root` when it exists, otherwise serves `root/indexFile` (default `index.html`). Paths containing `..` fall back to index. Root prefix `"/"` registers both `/` and `/*`. For Next.js static export, Vite/React, etc.; README and English README updated; Lanlu migration prompt in `_helper/docs`.
-- **api2.getPreferredLocalIP()**: Get “local IP for internet access” via UDP connect to 8.8.8.8:53, no external commands, cross-platform; `getNetworkInfo()` uses it first, then falls back to command parsing (ipconfig/ip/ifconfig).
-
-### Changed
-
-- **Config.enablePrintRoutes**: Clarified—when `true`, the route table is printed at startup; the banner is always shown regardless.
-- **printBanner**: Title line uses `Config.appVersion` when non-empty, otherwise the framework version.
+(None.)
 
 ---
 
-## [0.4.27] (current)
+## [0.4.41] (current)
+
+### Added
+
+- **Config.kmode**: Debug mode. When `true`, banner always prints current Ignite version; use with `kmodeMiddleware`.
+- **kmodeMiddleware(kmode: Bool)**: When `kmode` is true, sets `ctx.setLocal("kmode", "true")` for downstream handlers.
+- **Logger interface + DefaultLogger**: `ignite.middleware.Logger` with `log(message: String)`; default impl `DefaultLogger` (override `output` or subclass `log`); custom Logger can be injected via LoggerConfig.
+- **LoggerConfig.enableEntityLog**: When true, log as entity (`method=GET path=/ latencyMs=...`); otherwise single line. Backward compat: `LoggerConfig(output: fn)` still supported.
+- **ignite.getFrameworkVersion()**: Returns current framework version (aligned with cjpm.toml) for banner and debug.
+
+### Changed
+
+- **Console output**: When `enableSwagger`, print `Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}` using actual bind address (e.g. first IP when bound on 0.0.0.0). When kmode, always print `Ignite v${version} (kmode)`.
+- **printBanner**: New params `enableSwagger`, `swaggerPath`, `kmode`; version from `getFrameworkVersion()`.
+
+---
+
+## [0.4.27]
 
 ### Changed
 
