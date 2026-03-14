@@ -6,20 +6,28 @@
 
 ## [Unreleased]（未发布）
 
-### 新增
-
-- **Config.appVersion**：可选应用版本字符串；用于启动 Banner 标题。为空时显示框架版本（如 0.4.27），非空时显示应用版本（如 1.0.0）。Banner 始终输出，不可关闭。
-- **App.staticSpa(prefix, root, indexFile)**：静态优先 + SPA 回退。在 `prefix` 下注册 GET/HEAD，先按路径在 `root` 下查找静态文件，存在则发送；不存在或路径含 `..` 则发送 `root/indexFile`（默认 `index.html`）。根路径 `"/"` 会同时注册 `/` 与 `/*`。适用于 Next.js 静态导出、Vite/React 等前端；README 与英文版已补充说明，`_helper/docs` 提供 Lanlu 迁移指导 prompt。
-- **api2.getPreferredLocalIP()**：通过 UDP 连接 8.8.8.8:53 取本机出口 IP，无外部命令、跨平台；`getNetworkInfo()` 优先使用该 IP，失败再回退到原有命令解析（ipconfig/ip/ifconfig）。
-
-### 变更
-
-- **Config.enablePrintRoutes**：补充说明——为 `true` 时启动时额外打印路由表；Banner 始终输出，不受此控制。
-- **printBanner**：标题行由 `AppName v${version}` 改为优先使用 `Config.appVersion`，为空则使用框架版本。
+（暂无。）
 
 ---
 
-## [0.4.27]（当前）
+## [0.4.41]（当前）
+
+### 新增
+
+- **Config.kmode**：调试模式开关。为 `true` 时启动后启用类似 debug 行为：Banner 必打当前 Ignite 版本；可配合 `kmodeMiddleware` 使用。
+- **kmodeMiddleware(kmode: Bool)**：kmode 中间件。当 `kmode` 为 true 时在请求上下文中设置 `ctx.setLocal("kmode", "true")`，便于后续 Handler 识别调试模式。
+- **Logger 接口 + DefaultLogger**：`ignite.middleware.Logger` 接口（`log(message: String)`），默认实现 `DefaultLogger`（可覆写 `output` 或子类覆写 `log`）；用户可注入自定义 Logger 实现。
+- **LoggerConfig.enableEntityLog**：为 true 时以实体形式记录日志（`method=GET path=/ latencyMs=...`），否则为单行 `[method] path latencyMs`。保留兼容：`LoggerConfig(output: fn)` 仍可用。
+- **ignite.getFrameworkVersion()**：返回当前框架版本（与 cjpm.toml 一致），用于 Banner 与 debug 输出。
+
+### 变更
+
+- **控制台输出**：Banner 后当 `enableSwagger` 时打印 `Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}`，以实际绑定地址（如 0.0.0.0 时取首 IP）为主，不再使用 localhost。kmode 时必打 `Ignite v${version} (kmode)`。
+- **printBanner**：增加参数 `enableSwagger`、`swaggerPath`、`kmode`；版本统一由 `getFrameworkVersion()` 提供。
+
+---
+
+## [0.4.27]
 
 ### 变更
 
