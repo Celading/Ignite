@@ -6,7 +6,13 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ## [Unreleased]
 
-(None.)
+### Added
+
+- **api2.getNetworkInfo() IP display order**: When multiple NICs exist, returned `ips` are sorted for display: private (10/172.16–31/192.168) first, then other/public, then link-local (169.254), then loopback. Banner uses `ips[0]` as the recommended address so 169.254 does not appear first.
+
+### Fixed
+
+- **api2.getNetworkInfo() (Windows)**: `ipconfig /all` output is often system code page (e.g. GBK), so `String.fromUtf8` could throw. Now uses `tryDecodeUtf8OrLossy`: try UTF-8, then ASCII-only fallback (IPv4 is ASCII); outer try/catch returns empty result so banner shows 0.0.0.0 instead of crashing.
 
 ---
 
