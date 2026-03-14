@@ -6,7 +6,9 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ## [Unreleased]
 
-(None.)
+### Fixed
+
+- **api2.getNetworkInfo() (Windows)**: `ipconfig /all` output is often system code page (e.g. GBK), so `String.fromUtf8` could throw. Now uses `tryDecodeUtf8OrLossy`: try UTF-8, then ASCII-only fallback (IPv4 is ASCII); outer try/catch returns empty result so banner shows 0.0.0.0 instead of crashing.
 
 ---
 

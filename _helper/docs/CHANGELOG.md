@@ -6,7 +6,9 @@
 
 ## [Unreleased]（未发布）
 
-（暂无。）
+### 修复
+
+- **api2.getNetworkInfo()（Windows）**：`ipconfig /all` 输出多为系统代码页（如 GBK），直接 `String.fromUtf8` 会抛错。现用 `tryDecodeUtf8OrLossy` 先尝试 UTF-8，失败则仅保留 ASCII（IPv4 为 ASCII）再解码；整体 try/catch 返回空结果时 Banner 显示 0.0.0.0，避免启动崩溃。
 
 ---
 
