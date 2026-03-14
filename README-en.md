@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.4.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.41-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.27</span>              │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.41</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -212,9 +212,13 @@ let app = App(config: Config(
     enableSwagger:       true,
     enableSwaggerCache:  true,   // Cache Swagger JSON/UI; ?refresh=1 to refresh
     enablePrintRoutes:   false,  // when true, print route table at startup; banner always shown
+    kmode:               false,  // when true, debug mode: banner prints Ignite version; use with kmodeMiddleware
     jsonEncoder:         None   // Optional custom JsonEncodable encoder
 ))
 ```
+
+#### kMode(KeyMode) SuperUser
+- Currently reserved for internal/developer-only component definitions
 
 ## Middleware
 
@@ -230,7 +234,7 @@ Import with `import ignite.middleware.*`:
 | | `basicAuthMiddleware` | HTTP Basic auth |
 | | `keyAuthMiddleware` | API Key (Header/Query/Cookie) |
 | | `encryptCookieMiddleware` | Cookie encrypt/decrypt (XOR + Base64) |
-| **Logging** | `loggerMiddleware` | Method, path, duration |
+| **Logging** | `loggerMiddleware` | Method, path, duration; Logger interface + DefaultLogger, custom impl; `enableEntityLog` for structured log |
 | | `accessLogMiddleware` | IP, latency, User-Agent |
 | | `requestIdMiddleware` | X-Request-ID |
 | | `recoverMiddleware` | Panic recovery |
@@ -247,14 +251,44 @@ Import with `import ignite.middleware.*`:
 | | `healthCheckMiddleware` | Health check endpoint |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
 | | `proxyMiddleware` | Reverse proxy |
+| **Debug** | `kmodeMiddleware` | kmode: sets ctx local; use with Config.kmode; banner prints Ignite version when kmode |
 
 Example:
 
 ```cangjie
 import ignite.middleware.*
 
+// Logging and recovery (LoggerConfig: custom logger, enableEntityLog for structured logs)
 app.use(loggerMiddleware())
 app.use(recoverMiddleware())
+// Custom Logger implementation and injection:
+//
+// You can implement the Logger interface (implementing log(msg: String): Unit)
+// to fully control log format and output (e.g., write to file, send remotely, etc).
+// Inject your custom logger into loggerMiddleware using LoggerConfig(logger: ...). For example:
+//
+// ```cangjie
+// public class MyLogger: Logger {
+//     public func log(msg: String) {
+//         // Custom log output logic
+//         println("[MyLogger] " + msg)
+//     }
+// }
+//
+// let loggerConfig = LoggerConfig(logger: MyLogger())
+// app.use(loggerMiddleware(config: loggerConfig))
+// ```
+//
+// You can also customize log output by providing the output function in LoggerConfig:
+//
+// ```cangjie
+// app.use(loggerMiddleware(config: LoggerConfig(output: { msg => 
+//     writeFile("/var/log/myapp.log", msg + "\n", append: true)
+// })))
+// ```
+
+// Debug mode (Config.kmode = true will print Ignite version and Swagger URL at startup)
+app.use(kmodeMiddleware(app.config.kmode))
 
 app.use(corsMiddleware(config: CorsConfig(
     allowOrigins: "https://example.com",
@@ -498,6 +532,10 @@ ignite/
 > Trusted by teams that move at the speed of light.
 
 <a href="https://gitcode.com/copur/lanlu">兰鹿 (Lanlu)</a> — Manga archive management system built with Cangjie
+
+## Maintainer note
+
+- **Version**: The single source of truth is `[package].version` in `cjpm.toml`. After changing it, run `./scripts/gen_version.sh` to sync `src/version.cj` (framework version used by banner, etc.).
 
 ## License
 
