@@ -8,7 +8,12 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ### Added
 
+- **api2.GetData (macro read cjpm.toml)**: Macro package `ignite.api2.GetData.cjpmInfo` reads [package] metadata from cjpm.toml at compile time; `GetDataClass.ModuleVer()` / `ModuleOrg()` / `ModuleName()` / `ModuleDesc()` for banner and other use. App startup banner version now uses `GetDataClass.ModuleVer()` aligned with cjpm.toml as single source.
 - **api2.getNetworkInfo() IP display order**: When multiple NICs exist, returned `ips` are sorted for display: private (10/172.16–31/192.168) first, then other/public, then link-local (169.254), then loopback. Banner uses `ips[0]` as the recommended address so 169.254 does not appear first.
+
+### Removed
+
+- **version.cj and scripts/gen_version.sh**: Framework version now read from cjpm.toml via GetData macro; script and version.cj removed.
 
 ### Fixed
 

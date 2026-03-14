@@ -8,7 +8,12 @@
 
 ### 新增
 
+- **api2.GetData（宏读 cjpm.toml）**：通过宏包 `ignite.api2.GetData.cjpmInfo` 在编译时读取 `cjpm.toml` 的 [package] 元数据；`GetDataClass.ModuleVer()` / `ModuleOrg()` / `ModuleName()` / `ModuleDesc()` 供 Banner 等使用。App 启动 Banner 版本改为 `GetDataClass.ModuleVer()`，与 cjpm.toml 单一来源一致。
 - **api2.getNetworkInfo() IP 显示顺序**：多网卡时对返回的 `ips` 按「适合展示」排序：私有地址（10/172.16–31/192.168）优先，其次其他/公网，再次链路本地（169.254），最后回环。Banner 取 `ips[0]` 即为推荐展示地址，避免 169.254 排在前面。
+
+### 移除
+
+- **version.cj 与 scripts/gen_version.sh**：框架版本改由 GetData 宏从 cjpm.toml 读取，不再使用生成脚本与 version.cj。
 
 ### 修复
 
