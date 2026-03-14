@@ -54,7 +54,7 @@ public func getNetworkInfo(): NetworkInfo {
         for (s in parseIPv4s(text)) { ips.add(s) }
         let gateway = parseWindowsGateway(text)
         let dnsList = parseWindowsDns(text)
-        NetworkInfo(ips.toArray(), gateway, dnsList)
+        NetworkInfo(orderIPsForDisplay(ips.toArray()), gateway, dnsList)
     } catch (_: Exception) {
         NetworkInfo([], None, [])
     }
@@ -79,7 +79,7 @@ public func getNetworkInfo(): NetworkInfo {
         gateway = parseLinuxGateway(String.fromUtf8(out2))
     }
     let dnsList = readResolvConf("/etc/resolv.conf")
-    NetworkInfo(ips.toArray(), gateway, dnsList)
+    NetworkInfo(orderIPsForDisplay(ips.toArray()), gateway, dnsList)
 }
 
 @When[os == "macOS"]
@@ -101,7 +101,7 @@ public func getNetworkInfo(): NetworkInfo {
         gateway = parseMacOsGateway(String.fromUtf8(out2))
     }
     let dnsList = readResolvConf("/etc/resolv.conf")
-    NetworkInfo(ips.toArray(), gateway, dnsList)
+    NetworkInfo(orderIPsForDisplay(ips.toArray()), gateway, dnsList)
 }
 
 // ── Generic parsing: IPv4, resolv.conf ──
@@ -124,6 +124,57 @@ func parseIPv4s(text: String): Array<String> {
         }
     }
     list.toArray()
+}
+
+// ── 多网卡自适应：IP 显示优先级，避免 169.254（链路本地）排在前面 ──
+
+/// 0=回环 1=链路本地(169.254) 2=其他/公网 3=私有(10/172.16-31/192.168)，数值越大越优先显示。
+func ipDisplayPriority(ip: String): Int64 {
+    let parts = ip.split(".")
+    if (parts.size != 4) { return 2 }
+    let a = parseOctet(parts[0])
+    let b = parseOctet(parts[1])
+    if (a < 0 || b < 0) { return 2 }
+    if (a == 127) { return 0 }
+    if (a == 169 && b == 254) { return 1 }
+    if (a == 10) { return 3 }
+    if (a == 172 && b >= 16 && b <= 31) { return 3 }
+    if (a == 192 && b == 168) { return 3 }
+    2
+}
+
+func parseOctet(s: String): Int64 {
+    let runes = s.toRuneArray()
+    if (runes.size == 0) { return -1 }
+    var n: Int64 = 0
+    for (c in runes) {
+        if (c < r'0' || c > r'9') { return -1 }
+        let d = Int64(UInt32(c)) - Int64(UInt32(r'0'))
+        n = n * 10 + d
+    }
+    if (n > 255) { return -1 }
+    n
+}
+
+/// 将 IP 列表按「适合展示」排序：私有 > 其他/公网 > 链路本地(169.254) > 回环，Banner 取 ips[0] 即为推荐地址。
+func orderIPsForDisplay(ips: Array<String>): Array<String> {
+    var priv = ArrayList<String>()
+    var other = ArrayList<String>()
+    var linkLocal = ArrayList<String>()
+    var loopback = ArrayList<String>()
+    for (ip in ips) {
+        let p = ipDisplayPriority(ip)
+        if (p == 3) { priv.add(ip) }
+        else if (p == 2) { other.add(ip) }
+        else if (p == 1) { linkLocal.add(ip) }
+        else { loopback.add(ip) }
+    }
+    var out = ArrayList<String>()
+    for (ip in priv) { out.add(ip) }
+    for (ip in other) { out.add(ip) }
+    for (ip in linkLocal) { out.add(ip) }
+    for (ip in loopback) { out.add(ip) }
+    out.toArray()
 }
 
 func readResolvConf(path: String): Array<String> {
