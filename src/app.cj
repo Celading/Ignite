@@ -8,6 +8,7 @@ import stdx.net.http.{
     HttpRequestDistributor
 }
 import ignite.api2
+import ignite.api2.GetData
 
 public class App {
     public let config: Config
@@ -502,7 +503,7 @@ func printBanner(
     swaggerPath: String,
     kmode: Bool
 ): Unit {
-    let frameworkVersion = getFrameworkVersion()
+    let frameworkVersion = GetData.GetDataClass.ModuleVer()
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
     let innerWidth: Int64 = 53
 

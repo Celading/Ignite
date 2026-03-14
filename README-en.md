@@ -20,7 +20,7 @@
 
 <p align="center">
   <strong>A high-performance web framework for the Cangjie language</strong><br>
-  <sub>Minimal API · Trie router · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
+  <sub>High flexibility · Minimal API · Trie router · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
 </p>
 
 <p align="center">
@@ -44,25 +44,27 @@
 
 > **"Light the first fire of Cangjie web development."**
 
-Cangjie is a programming language by Huawei. **Ignite** is a web framework built for the Cangjie ecosystem—inspired by Go [Fiber](https://gofiber.io/)'s minimal design, bringing its core ideas into Cangjie's type system so you can build high-performance HTTP services with minimal code.
+Cangjie is a programming language by Huawei. **Ignite** is a web framework built for the Cangjie ecosystem—inspired by [Fiber](https://gofiber.io/)'s minimal design philosophy, aiming to deliver **minimal API, high performance, and low resource usage** for Cangjie developers, bringing its core ideas into Cangjie's type system so you can build high-performance HTTP services with minimal code.
+
+We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
 ```
                 ┌─────────────────────────────────────────┐
-                │             Ignite Architecture          │
+                │            Ignite Architecture          │
                 │                                         │
                 │   Request ──► Router (Trie) ──► Match   │
-                │                                  │      │
-                │              Middleware Chain ◄───┘      │
-                │              │   │   │                   │
-                │              ▼   ▼   ▼                   │
-                │           Logger CORS Recover            │
-                │              │                           │
-                │              ▼                           │
-                │           Handler ──► Ctx ──► Response   │
-                │                       │                  │
-                │              ┌────────┼────────┐         │
-                │              ▼        ▼        ▼         │
-                │            JSON     SSE    WebSocket     │
+                │                                   │     │
+                │              Middleware Chain ◄───┘     │
+                │              │     │     │              │
+                │              ▼     ▼     ▼              │
+                │          Logger   CORS   Recover        │
+                │            │                            │
+                │            ▼                            │
+                │       Handler ──► Ctx ──► Response      │
+                │                    │                    │
+                │           ┌────────┼────────┐           │
+                │           ▼        ▼        ▼           │
+                │         JSON     SSE    WebSocket       │
                 └─────────────────────────────────────────┘
 ```
 
@@ -70,11 +72,27 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 ### Requirements
 
-- Cangjie compiler (`cjc`) v1.1.0+
-- Cangjie standard extension library (`stdx`)
-- Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64)
+- Cangjie SDK [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
+- Cangjie standard extension library [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.0.5.1)
+  - For [Cangjie nightly (with stdx)](https://gitcode.com/Cangjie/nightly_build) if needed
+- Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64), HarmonyOS
 
-> **Note:** If you use a private or authenticated package registry, copy `cangjie-repo.toml.example` to `cangjie-repo.toml` and configure it locally. **Do not commit `cangjie-repo.toml`** to the repo (it is in .gitignore).
+### Adding dependencies
+
+#### Add dependency in `cangjie.toml`
+
+```toml
+[package]
+..... # In the dependency group under [package], add:
+[dependencies]
+    Ignite = "https://gitcode.com/Cinyu/Ignite-cangjie"
+```
+
+#### Using the package registry
+
+Refer to `cangjie-repo.toml.example` to create and configure `cangjie-repo.toml` locally.
+
+> **Note:** If you use a private or authenticated package registry, **do not commit `cangjie-repo.toml`** to the repo (it is listed in .gitignore).
 
 ### Hello, Ignite!
 
@@ -217,8 +235,8 @@ let app = App(config: Config(
 ))
 ```
 
-#### kMode(KeyMode) SuperUser
-- Currently reserved for internal/developer-only component definitions
+#### KeyMode (kMode) Super user
+- Currently reserved for developer-only component definitions
 
 ## Middleware
 
@@ -251,52 +269,30 @@ Import with `import ignite.middleware.*`:
 | | `healthCheckMiddleware` | Health check endpoint |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
 | | `proxyMiddleware` | Reverse proxy |
-| **Debug** | `kmodeMiddleware` | kmode: sets ctx local; use with Config.kmode; banner prints Ignite version when kmode |
+| **Debug** | `kmodeMiddleware` | kmode debug: sets ctx local `kmode`; use with `Config.kmode`; banner always prints Ignite version when kmode |
 
 Example:
 
 ```cangjie
 import ignite.middleware.*
 
-// Logging and recovery (LoggerConfig: custom logger, enableEntityLog for structured logs)
-app.use(loggerMiddleware())
-app.use(recoverMiddleware())
-// Custom Logger implementation and injection:
-//
-// You can implement the Logger interface (implementing log(msg: String): Unit)
-// to fully control log format and output (e.g., write to file, send remotely, etc).
-// Inject your custom logger into loggerMiddleware using LoggerConfig(logger: ...). For example:
-//
-// ```cangjie
-// public class MyLogger: Logger {
-//     public func log(msg: String) {
-//         // Custom log output logic
-//         println("[MyLogger] " + msg)
-//     }
-// }
-//
-// let loggerConfig = LoggerConfig(logger: MyLogger())
-// app.use(loggerMiddleware(config: loggerConfig))
-// ```
-//
-// You can also customize log output by providing the output function in LoggerConfig:
-//
-// ```cangjie
-// app.use(loggerMiddleware(config: LoggerConfig(output: { msg => 
-//     writeFile("/var/log/myapp.log", msg + "\n", append: true)
-// })))
-// ```
-
-// Debug mode (Config.kmode = true will print Ignite version and Swagger URL at startup)
+// Debug mode (when Config.kmode = true, startup prints Ignite version and Swagger URL)
 app.use(kmodeMiddleware(app.config.kmode))
 
+// Logging
+app.use(loggerMiddleware())
+
+// CORS
 app.use(corsMiddleware(config: CorsConfig(
     allowOrigins: "https://example.com",
     allowCredentials: true,
     maxAge: 86400
 )))
 
+// Security headers
 app.use(securityMiddleware(config: SecurityConfig(hstsMaxAge: 31536000)))
+
+// Request ID
 app.use(requestIdMiddleware())
 ```
 
@@ -325,6 +321,35 @@ Response ◄── Logger ◄── CORS ◄── Auth ◄───┘
 ```
 
 ## Advanced Usage
+
+### Function override
+
+Use middleware with optional config (e.g. LoggerConfig: custom logger, enableEntityLog for structured logs):
+
+```cangjie
+app.use(loggerMiddleware())
+app.use(recoverMiddleware())
+```
+
+**Custom Logger implementation:** Implement the `Logger` interface (`log(msg: String): Unit`) to control log format and destination (file, remote, etc.). Inject via `LoggerConfig(logger: ...)`:
+
+```cangjie
+public class MyLogger: Logger {
+    public func log(msg: String) {
+        println("[MyLogger] " + msg)
+    }
+}
+let loggerConfig = LoggerConfig(logger: MyLogger())
+app.use(loggerMiddleware(config: loggerConfig))
+```
+
+Or customize output with `LoggerConfig.output`:
+
+```cangjie
+app.use(loggerMiddleware(config: LoggerConfig(output: { msg => 
+    writeFile("/var/log/myapp.log", msg + "\n", append: true)
+})))
+```
 
 ### WebSocket
 
@@ -386,6 +411,16 @@ app.staticSpa("/", "frontend/out", "index.html")
 
 Register API routes first, then `staticSpa` last, so APIs are not shadowed by the catch-all.
 
+#### What if I just want SPA?
+
+Ignite matches routes **top to bottom**. For **security**, if you need greedy static matching, **register it last**:
+
+```cangjie
+app.static("/app", "frontend/out")
+app.static("/", "frontend/out")
+app.static("/*", "frontend/out")
+```
+
 ### Swagger / OpenAPI
 
 ```cangjie
@@ -432,14 +467,6 @@ app.listen("0.0.0.0", 443)
 ```
 
 **HTTP/2**: With TLS, the server negotiates `h2`. Verify with `curl -sI --http2 https://localhost:3443/`.
-
-### Testing HTTP/2 and middleware
-
-The optional test project `IgniteTest` (clone separately or place alongside) verifies middleware and HTTP behavior:
-
-- Without TLS: `http://localhost:3000` (HTTP/1.1).
-- With TLS: `https://localhost:3443` (HTTP/2).
-- Run tests: in IgniteTest, `./run_tests.sh` (start server with `cjpm run` first).
 
 ### HTTP client
 
@@ -496,8 +523,8 @@ app.onShutdown({
 ```
 ignite/
 ├── src/
-│   ├── app.cj            # App core: create, routes, start/stop
-│   ├── config.cj         # Config: timeouts, limits, TLS, Swagger
+│   ├── app.cj            # App core: create, routes, serve, lifecycle
+│   ├── config.cj         # Config: timeouts, limits, TLS, Swagger, etc.
 │   ├── ctx.cj            # Request context: request/response API
 │   ├── route.cj          # Route metadata and match result
 │   ├── router.cj         # Trie router
@@ -507,15 +534,15 @@ ignite/
 │   ├── websocket.cj      # WebSocket connection
 │   ├── swagger.cj        # OpenAPI 3.0 generator
 │   ├── middleware/
-│   │   ├── logger.cj, cors.cj, recover.cj
+│   │   ├── logger.cj, cors.cj, recover.cj   # Base
 │   │   ├── security.cj, csrf.cj, basic_auth.cj, key_auth.cj, encrypt_cookie.cj
 │   │   ├── access_log.cj, request_id.cj, rate_limit.cj, body_limit.cj, timeout.cj
 │   │   ├── cache.cj, etag.cj, session.cj
 │   │   ├── proxy.cj, redirect.cj, rewrite.cj, static_file.cj, favicon.cj
 │   │   ├── health_check.cj, idempotency.cj, utils.cj
 │   └── client/
-│       └── client.cj     # RestClient
-└── cjpm.toml
+│       └── client.cj     # HTTP client (RestClient)
+└── cjpm.toml             # Package config
 ```
 
 ## Supported platforms
@@ -526,12 +553,23 @@ ignite/
 | macOS | x86_64 (Intel) | ✅ |
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
+| Windows | x86_64 | ✅ |
 
-## Showcase
+## Showcase (叶燧星火)
 
 > Trusted by teams that move at the speed of light.
 
 <a href="https://gitcode.com/copur/lanlu">兰鹿 (Lanlu)</a> — Manga archive management system built with Cangjie
+
+### Ignite Samples
+
+- <a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> — Standard best practices
+- <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> — TODO backend with pure Cangjie + HTML
+- <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> — Chat backend with pure Cangjie + HTML
+
+## Detailed API docs
+
+- Coming soon.
 
 ## Maintainer note
 
