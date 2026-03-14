@@ -24,6 +24,8 @@ public struct Config {
     public var swaggerUIJsUrl: String = ""
     /// 为 true 时启动时额外打印路由表；Banner 始终输出，不受此控制。
     public var enablePrintRoutes: Bool = false
+    /// kmode（调试模式）：为 true 时启动后启用类似 debug 行为，Banner 中必打当前 Ignite 版本，并可配合 kmodeMiddleware 使用。
+    public var kmode: Bool = false
 
     public var tlsCertFile: String = ""
     public var tlsKeyFile: String = ""
@@ -48,6 +50,7 @@ public struct Config {
         swaggerUICssUrl!: String = "",
         swaggerUIJsUrl!: String = "",
         enablePrintRoutes!: Bool = false,
+        kmode!: Bool = false,
         tlsCertFile!: String = "",
         tlsKeyFile!: String = "",
         allowRouteOverwrite!: Bool = false,
@@ -67,6 +70,7 @@ public struct Config {
         this.swaggerUICssUrl = swaggerUICssUrl
         this.swaggerUIJsUrl = swaggerUIJsUrl
         this.enablePrintRoutes = enablePrintRoutes
+        this.kmode = kmode
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.allowRouteOverwrite = allowRouteOverwrite
