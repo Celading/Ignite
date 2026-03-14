@@ -6,6 +6,10 @@
 
 ## [Unreleased]（未发布）
 
+### 新增
+
+- **api2.getNetworkInfo() IP 显示顺序**：多网卡时对返回的 `ips` 按「适合展示」排序：私有地址（10/172.16–31/192.168）优先，其次其他/公网，再次链路本地（169.254），最后回环。Banner 取 `ips[0]` 即为推荐展示地址，避免 169.254 排在前面。
+
 ### 修复
 
 - **api2.getNetworkInfo()（Windows）**：`ipconfig /all` 输出多为系统代码页（如 GBK），直接 `String.fromUtf8` 会抛错。现用 `tryDecodeUtf8OrLossy` 先尝试 UTF-8，失败则仅保留 ASCII（IPv4 为 ASCII）再解码；整体 try/catch 返回空结果时 Banner 显示 0.0.0.0，避免启动崩溃。
