@@ -6,6 +6,12 @@
 
 ## [Unreleased]（未发布）
 
+（暂无。）
+
+---
+
+## [0.4.51]（当前）
+
 ### 新增
 
 - **api2.GetData（宏读 cjpm.toml）**：通过宏包 `ignite.api2.GetData.cjpmInfo` 在编译时读取 `cjpm.toml` 的 [package] 元数据；`GetDataClass.ModuleVer()` / `ModuleOrg()` / `ModuleName()` / `ModuleDesc()` 供 Banner 等使用。App 启动 Banner 版本改为 `GetDataClass.ModuleVer()`，与 cjpm.toml 单一来源一致。
@@ -21,7 +27,7 @@
 
 ---
 
-## [0.4.41]（当前）
+## [0.4.41]
 
 ### 新增
 

@@ -6,6 +6,12 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ## [Unreleased]
 
+ (None.)
+
+---
+
+## [0.4.51] (current)
+
 ### Added
 
 - **api2.GetData (macro read cjpm.toml)**: Macro package `ignite.api2.GetData.cjpmInfo` reads [package] metadata from cjpm.toml at compile time; `GetDataClass.ModuleVer()` / `ModuleOrg()` / `ModuleName()` / `ModuleDesc()` for banner and other use. App startup banner version now uses `GetDataClass.ModuleVer()` aligned with cjpm.toml as single source.
@@ -21,7 +27,7 @@ All notable feature and behavior changes are documented here. Version numbers fo
 
 ---
 
-## [0.4.41] (current)
+## [0.4.41]
 
 ### Added
 
