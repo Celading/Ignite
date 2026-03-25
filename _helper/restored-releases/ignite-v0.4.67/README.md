@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.3.20-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.67-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.3.20</span>              │
+│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.67</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -19,8 +19,8 @@
 <h1 align="center">Ignite ( 叶燧 )</h1>
 
 <p align="center">
-  <strong>为仓颉语言打造的高性能 Web 框架</strong><br>
-  <sub>极简 API · Trie 路由 · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
+  <strong>以仓颉语言打造的高性能 Web 框架</strong><br>
+  <sub>高自由度 · 极简 API · Trie 路由 · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
 </p>
 
 <p align="center">
@@ -33,35 +33,43 @@
   <a href="#许可证">许可证</a>
 </p>
 
+<p align="center">
+  <a href="https://atomgit.com/Cinexus/ignite-cangjie">开源仓库</a> ·
+  <a href="https://pkg.cangjie-lang.cn/package/ignite">中心仓</a>
+</p>
+
 ---
 
-> Archive note: this directory is a restored source snapshot for `Ignite v0.3.20`, recovered from legacy history and lightly edited for release readability.
+> Archive note: this directory is a restored source snapshot for `Ignite v0.4.67`, prepared from the `_helper/Ignite-0.4.67` package and trimmed for archival and release use.
 
 
 
 ## 为什么选择 Ignite?
 
-> Ignite v0.3.20 represents a more complete pre-0.4 stage with expanded routing, middleware, and network capability growth.
+> **"点燃仓颉 Web 开发的第一把火。"**
 
-仓颉（Cangjie）是华为推出的自研编程语言，而 **Ignite** 是专为仓颉生态打造的 Web 框架——借鉴了 Go [Fiber](https://gofiber.io/) 的极简哲学，将其核心理念移植到仓颉的类型系统中，让你用最少的代码构建高性能 HTTP 服务。
+仓颉（Cangjie）是华为推出的自研编程语言，而 **Ignite** 是专为仓颉生态打造的 Web 框架——借鉴了，受 [Fiber](https://gofiber.io/) 的极简设计哲学启发，旨在为仓颉开发者带来 **极简 API、极致性能、极低资源占用** 的开发体验，将其核心理念移植到仓颉的类型系统中，让你用最少的代码构建高性能 HTTP 服务。
+
+我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
+因此我们取 **“叶”** 之灵动，取 **“燧”** 之开创，命名它为 **叶燧 (Ignite)**。
 
 ```
                 ┌─────────────────────────────────────────┐
-                │             Ignite Architecture          │
+                │            Ignite Architecture          │
                 │                                         │
                 │   Request ──► Router (Trie) ──► Match   │
-                │                                  │      │
-                │              Middleware Chain ◄───┘      │
-                │              │   │   │                   │
-                │              ▼   ▼   ▼                   │
-                │           Logger CORS Recover            │
-                │              │                           │
-                │              ▼                           │
-                │           Handler ──► Ctx ──► Response   │
-                │                       │                  │
-                │              ┌────────┼────────┐         │
-                │              ▼        ▼        ▼         │
-                │            JSON     SSE    WebSocket     │
+                │                                   │     │
+                │              Middleware Chain ◄───┘     │
+                │              │     │     │              │
+                │              ▼     ▼     ▼              │
+                │          Logger   CORS   Recover        │
+                │            │                            │
+                │            ▼                            │
+                │       Handler ──► Ctx ──► Response      │
+                │                    │                    │
+                │           ┌────────┼────────┐           │
+                │           ▼        ▼        ▼           │
+                │         JSON     SSE    WebSocket       │
                 └─────────────────────────────────────────┘
 ```
 
@@ -69,9 +77,24 @@
 
 ### 环境要求
 
-- 仓颉编译器 (`cjc`) v1.0.0+
-- 仓颉标准扩展库 (`stdx`)
-- 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)
+- 仓颉sdk环境 [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
+- 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.0.5.1)
+  >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
+- 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)、Windows(x86_64)、HarmonyOS
+
+### 插入依赖
+
+#### 在 `cangjie.toml` 中添加依赖
+``` toml
+[package]
+..... # 在[package] 最后一行的依赖组添加
+[dependencies]
+    Ignite = "https://gitcode.com/Cinyu/Ignite-cangjie"
+```
+
+#### 当然你也可以考虑使用 `中心仓`
+请参考 `cangjie-repo.toml.example` 在本地创建 `cangjie-repo.toml` 并配置
+> **注意**：若使用私有/需认证的包仓库，**切勿将 `cangjie-repo.toml` 提交到仓库**（已列入 .gitignore）。
 
 ### Hello, Ignite!
 
@@ -102,9 +125,12 @@ main() {
 | **WebSocket** | 一行代码升级 WebSocket 连接 |
 | **SSE** | 内置 Server-Sent Events 支持，实时推送 |
 | **流式响应** | Chunked Transfer Encoding，边生成边发送 |
-| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI |
+| **Swagger** | 自动生成 OpenAPI 3.0 文档 + 内置 Swagger UI，可缓存（`enableSwaggerCache`），`?refresh=1` 强制刷新 |
 | **TLS/HTTP2** | 原生 TLS 支持，自动 ALPN 协商 HTTP/2 |
 | **HTTP 客户端** | 内置 `RestClient`，Builder 模式构建请求 |
+| **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`，可配置 `Config.jsonEncoder`；`ignite.serializeJson` / `deserializeJson` |
+| **文件与 Range** | `ctx.sendFile`、`ctx.download`（附件名）、`ctx.sendFileRange`（HTTP Range 206/416） |
+| **static / staticSpa** | `app.static(prefix, root)` 纯静态；`app.staticSpa(prefix, root, indexFile)` 静态优先 + SPA 回退 index |
 | **优雅关闭** | `onShutdown` 钩子，安全释放资源 |
 
 ## API 速览
@@ -158,12 +184,17 @@ app.post("/upload", { ctx =>
 
 ```cangjie
 ctx.json(body)                   // application/json
+ctx.jsonSerialize(obj)           // 类型实现 StdxJsonSerializable 时序列化并返回 JSON
+ctx.jsonEncode(obj)              // 实现 JsonEncodable 或使用 Config.jsonEncoder 自定义编码
 ctx.sendString(body)             // text/plain
 ctx.html(body)                   // text/html
 ctx.send(byteArray)              // 原始字节
 ctx.sendStatus(404)              // 状态码 + 默认消息
 ctx.redirect("/login")           // 302 重定向
 ctx.noContent()                  // 204 No Content
+ctx.sendFile(path)               // 按路径发送文件
+ctx.download(path, filename)     // 附件下载（可选 filename）
+ctx.sendFileRange(path)          // 支持 HTTP Range，返回 206/416
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
@@ -192,15 +223,22 @@ admin.get("/stats", getStats)
 
 ```cangjie
 let app = App(config: Config(
-    appName:       "MyService",
-    serverHeader:  "Ignite/0.3.20",
-    bodyLimit:     10 * 1024 * 1024,   // 10MB
-    readTimeout:   std.time.Duration.second * 30,
-    writeTimeout:  std.time.Duration.second * 30,
-    enableSwagger: true,
-    enablePrintRoutes: true
+    appName:             "MyService",
+    appVersion:          "1.0.0",   // 可选；Banner 标题显示应用版本，空则显示框架版本
+    serverHeader:        "Ignite/0.4",
+    bodyLimit:           10 * 1024 * 1024,   // 10MB
+    readTimeout:         std.time.Duration.second * 30,
+    writeTimeout:        std.time.Duration.second * 30,
+    enableSwagger:       true,
+    enableSwaggerCache:  true,   // Swagger JSON/UI 缓存，?refresh=1 强制刷新
+    enablePrintRoutes:   false,  // 为 true 时启动时额外打印路由表；Banner 始终输出且不可关闭
+    kmode:               false,  // 为 true 时调试模式：Banner 必打 Ignite 版本，可配合 kmodeMiddleware
+    jsonEncoder:         None   // 可选：自定义 JsonEncodable 序列化函数
 ))
 ```
+
+#### KeyMode 超级用户
+- 暂定为开发者专用的定义组件
 
 ## 中间件
 
@@ -216,7 +254,8 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `basicAuthMiddleware` | HTTP Basic 认证 |
 | | `keyAuthMiddleware` | API Key 认证（Header/Query/Cookie） |
 | | `encryptCookieMiddleware` | Cookie 加解密（XOR + Base64） |
-| **日志监控** | `loggerMiddleware` | 请求方法、路径、耗时 |
+| **日志监控** | `loggerMiddleware` | 请求方法、路径、耗时；支持 Logger 接口 + DefaultLogger，可注入自定义实现；`enableEntityLog` 可开实体日志 |
+| | `auditMiddleware` | 统一审计事件（eventId/requestId/actor/ip/action/result/riskLevel），支持结构化输出与 Linux 风格终端打印 |
 | | `accessLogMiddleware` | 访问日志（IP、延迟、User-Agent） |
 | | `requestIdMiddleware` | 请求 ID（X-Request-ID） |
 | | `recoverMiddleware` | Panic 恢复 |
@@ -233,15 +272,21 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `healthCheckMiddleware` | 健康检查端点 |
 | | `idempotencyMiddleware` | 幂等键（X-Idempotency-Key） |
 | | `proxyMiddleware` | 反向代理 |
+| **调试** | `kmodeMiddleware` | 兼容旧模式（Bool）+ 新策略模式（`KModePolicy`：Header Key + IP 白名单 + capability） |
 
 示例：
 
 ```cangjie
 import ignite.middleware.*
 
-// 日志与恢复
+// 调试模式（Config.kmode = true 时启动会打印 Ignite 版本与 Swagger URL）
+app.use(kmodeMiddleware(app.config.kmode))
+
+// 启用日志系统
 app.use(loggerMiddleware())
-app.use(recoverMiddleware())
+
+// 审计系统（结构化事件）
+app.use(auditMiddleware())
 
 // CORS
 app.use(corsMiddleware(config: CorsConfig(
@@ -281,7 +326,61 @@ Request ──► Logger ──► CORS ──► Auth ──► Handler
 Response ◄── Logger ◄── CORS ◄── Auth ◄───┘
 ```
 
+### kMode 策略模式（0.4.67）
+
+在保留 `kmodeMiddleware(Bool)` 的同时，新增策略版接口：
+
+```cangjie
+import ignite.governance.*
+
+let policy = KModePolicy(
+    enabled: true,
+    headerName: "X-KMode-Key",
+    headerKey: "replace-me",
+    allowIPs: ["127.0.0.1", "::1"],
+    capabilities: [Diag, Read]
+)
+app.use(kmodeMiddleware(policy))
+```
+
+### Logger 0~9 等级与 kMode 双模式过滤
+
+- 普通模式：默认输出 `0~6`（Emerg~Info）
+- kMode 模式：默认输出 `0~9`（含 Debug/Trace/Verbose）
+- 保持 `loggerMiddleware(config: LoggerConfig(...))` 调用方式不变
+
 ## 高级用法
+
+### 函数覆写
+
+// 日志与恢复（可传入 LoggerConfig：logger 自定义实现、enableEntityLog 实体日志）
+
+``` cangjie
+app.use(loggerMiddleware())
+app.use(recoverMiddleware())
+```
+#### 自定义 Logger 实现与注入：
+你可以自定义实现 Logger 接口（实现 log(msg: String): Unit 方法），以完全控制日志输出格式、目标（如写入文件、远程上报等）。
+通过 LoggerConfig(logger: ...) 注入到 loggerMiddleware。例如：
+
+```cangjie
+public class MyLogger: Logger {
+    public func log(msg: String) {
+        // 自定义输出逻辑
+        println("[MyLogger] " + msg)
+    }
+}
+let loggerConfig = LoggerConfig(logger: MyLogger())
+app.use(loggerMiddleware(config: loggerConfig))
+```
+
+你也可以通过 LoggerConfig 的 output 参数快速自定义输出行为：
+
+```cangjie
+app.use(loggerMiddleware(config: LoggerConfig(output: { msg => 
+    writeFile("/var/log/myapp.log", msg + "\n", append: true)
+})))
+```
 
 ### WebSocket
 
@@ -323,6 +422,33 @@ app.get("/stream", { ctx =>
     writer.writeString("chunk 2\n")
     writer.writeString("chunk 3\n")
 })
+```
+
+### 静态文件与 SPA 兜底 (static / staticSpa)
+
+**纯静态目录**：`app.static(prefix, root)` 按 URL 路径映射到 `root` 下文件，仅当存在对应文件时响应，否则由后续路由或 404 处理。
+
+**静态优先 + SPA 回退**：前端为 Next.js 静态导出、Vite/React 等单页应用时，常需「有文件则发文件，否则一律返回 index.html 由前端路由接管」。使用 `app.staticSpa(prefix, root, indexFile)` 即可：
+
+> 根路径下：先尝试 frontend/out 中对应文件，不存在则返回 frontend/out/index.html
+```cangjie
+app.staticSpa("/", "frontend/out", "index.html")
+```
+
+- `prefix`：URL 前缀（如 `"/"`）；根路径会同时注册 GET/HEAD `/` 与 `/*`。
+- `root`：静态文件根目录（如 Next.js 的 `out`、Vite 的 `dist`）。
+- `indexFile`：未命中文件时的回退文件，默认 `"index.html"`。
+- 路径安全：含 `..` 的请求会被拒绝并回退到 index 文件。
+
+适合与 API 路由并存：先注册 API，最后再挂 `staticSpa`，避免 API 被通配吞掉。
+
+#### 但是就想要SPA怎么办？
+
+默认 Ignite处理顺序是**由上到下**，因**安全考虑**，如有贪婪匹配需求**请置底**：
+``` cangjie
+app.static("/app", "frontend/out")
+app.static("/", "frontend/out")
+app.static("/*", "frontend/out")
 ```
 
 ### Swagger / OpenAPI
@@ -372,14 +498,6 @@ app.listen("0.0.0.0", 443)
 ```
 
 **HTTP/2 可用性**：开启 TLS 后，服务端会协商 `h2`，客户端使用 HTTPS 即可走 HTTP/2。可用 `curl -sI --http2 https://localhost:3443/` 验证协议。
-
-### 测试 HTTP/2 与中间件
-
-仓库内可选测试项目 `IgniteTest`（需在项目外单独克隆或放在同级目录）用于验证所有中间件与 HTTP 行为：
-
-- 无 TLS 时：`http://localhost:3000`，协议为 HTTP/1.1。
-- 有 TLS 时：`https://localhost:3443`，可验证 HTTP/2。
-- 运行自动化测试：在 IgniteTest 目录下执行 `./run_tests.sh`（需先 `cjpm run` 启动服务）。
 
 ### HTTP 客户端
 
@@ -452,7 +570,12 @@ ignite/
 │   │   ├── access_log.cj, request_id.cj, rate_limit.cj, body_limit.cj, timeout.cj
 │   │   ├── cache.cj, etag.cj, session.cj
 │   │   ├── proxy.cj, redirect.cj, rewrite.cj, static_file.cj, favicon.cj
-│   │   ├── health_check.cj, idempotency.cj, utils.cj
+│   │   ├── health_check.cj, idempotency.cj, audit.cj, kmode.cj, utils.cj
+│   ├── governance/
+│   │   ├── audit.cj        # 审计事件模型与输出
+│   │   ├── kmode_policy.cj # kMode 策略（Header Key + IP + capability）
+│   │   ├── log_level.cj    # 0~9 日志等级与过滤策略
+│   │   └── redaction.cj    # 敏感信息脱敏
 │   └── client/
 │       └── client.cj      # HTTP 客户端 (RestClient)
 └── cjpm.toml              # 包管理配置
@@ -466,11 +589,24 @@ ignite/
 | macOS | x86_64 (Intel) | ✅ |
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
+| Windows | x86_64 | ✅ |
 
 ## 叶燧星火
 > Trusted by teams that move at the speed of light.
 
 <a href="https://gitcode.com/copur/lanlu">兰鹿</a> - 基于仓颉语言的漫画归档管理系统
+
+### Ignite-Samples
+
+<a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> - 标准最佳实践
+
+<a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> - 纯仓颉+HTML实现的TODO后端
+
+<a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> - 纯仓颉+HTML实现的聊天室后端
+
+## 详细接口文档
+
+- 正在蒸菜中...
 
 ## 许可证
 

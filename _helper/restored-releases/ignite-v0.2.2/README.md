@@ -192,7 +192,7 @@ admin.get("/stats", getStats)
 ```cangjie
 let app = App(config: Config(
     appName:       "MyService",
-    serverHeader:  "Ignite/0.1.6",
+    serverHeader:  "Ignite/0.2.2",
     bodyLimit:     10 * 1024 * 1024,   // 10MB
     readTimeout:   std.time.Duration.second * 30,
     writeTimeout:  std.time.Duration.second * 30,

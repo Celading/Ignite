@@ -2,14 +2,13 @@ package ignite
 
 import std.collection.ArrayList
 import std.env.*
-import std.fs.{File, OpenMode}
+import std.fs.{File, OpenMode, exists, FileInfo}
 import stdx.net.http.{
     ServerBuilder, Server, HttpContext, HttpRequestHandler,
     HttpRequestDistributor
 }
-import stdx.net.tls.TlsServerConfig
-import stdx.crypto.x509.X509Certificate
-import stdx.crypto.x509.PrivateKey
+import ignite.api2
+import ignite.api2.GetData
 
 public class App {
     public let config: Config
@@ -18,6 +17,8 @@ public class App {
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
+    var _swaggerJsonCache: ?String = None
+    var _swaggerHtmlCache: ?String = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -90,6 +91,48 @@ public class App {
         this
     }
 
+    /// 静态优先 + SPA 回退：先按路径尝试发送静态文件，不存在则发送 indexFile（如 index.html），兜住所有请求转发前端。
+    /// 适用于 Next.js 静态导出、Vite/React 等前端；子路径如 login/_xxxxx.txt 会按 root 下相对路径解析。
+    /// 路径安全：拒绝含 ".." 的请求，回退到 indexFile。
+    public func staticSpa(prefix: String, root: String, indexFile!: String = "index.html"): App {
+        let rootDir = root
+        let fallbackPath = rootDir + "/" + indexFile
+        let serveFallback: Handler = { ctx: Ctx => ctx.sendFile(fallbackPath) }
+        let normalizedPrefix = if (prefix.size > 0 && prefix.toRuneArray()[prefix.size - 1] == r'/') {
+            let runes = prefix.toRuneArray()
+            var s = ""
+            for (i in 0..runes.size - 1) { s += runes[i].toString() }
+            if (s.size == 0) { "/" } else { s }
+        } else {
+            prefix
+        }
+        if (normalizedPrefix == "/" || normalizedPrefix.size == 0) {
+            router.addRoute("GET", "/", wrapSingle(serveFallback))
+            router.addRoute("HEAD", "/", wrapSingle(serveFallback))
+        }
+        let catchAllPath = if (normalizedPrefix.size > 0 && normalizedPrefix.toRuneArray()[normalizedPrefix.size - 1] == r'/') {
+            normalizedPrefix + "*"
+        } else {
+            normalizedPrefix + "/*"
+        }
+        let handler: Handler = { ctx: Ctx =>
+            let filePath = ctx.params("*")
+            if (filePath.contains("..")) {
+                ctx.sendFile(fallbackPath)
+                return
+            }
+            let fullPath = rootDir + "/" + filePath
+            if (exists(fullPath) && !FileInfo(fullPath).isDirectory()) {
+                ctx.sendFile(fullPath)
+            } else {
+                ctx.sendFile(fallbackPath)
+            }
+        }
+        router.addRoute("GET", catchAllPath, wrapSingle(handler))
+        router.addRoute("HEAD", catchAllPath, wrapSingle(handler))
+        this
+    }
+
     // ── WebSocket ──
 
     public func ws(path: String, handler: WsHandler): App {
@@ -125,11 +168,26 @@ public class App {
         Group(this, prefix)
     }
 
+    // ── Route management ──
+
+    public func removeRoute(method: String, path: String): Bool {
+        router.removeRoute(method, path)
+    }
+
     // ── Swagger ──
 
     public func swagger(info: SwaggerInfo): App {
         _swaggerInfo = info
+        _swaggerJsonCache = None
+        _swaggerHtmlCache = None
         this
+    }
+
+    // ── Cache management ──
+
+    public func invalidateSwaggerCache(): Unit {
+        _swaggerJsonCache = None
+        _swaggerHtmlCache = None
     }
 
     // ── Error handling ──
@@ -170,23 +228,24 @@ public class App {
         if (hasTls) {
             let certPem = readFileString(config.tlsCertFile)
             let keyPem = readFileString(config.tlsKeyFile)
-            var tlsCfg = TlsServerConfig(
-                X509Certificate.decodeFromPem(certPem),
-                PrivateKey.decodeFromPem(keyPem)
-            )
-            tlsCfg.supportedAlpnProtocols = ["h2", "http/1.1"]
+            let tlsCfg = api2.loadTlsServerConfigForHttp2(certPem, keyPem)
             let _ = builder.tlsConfig(tlsCfg)
         }
 
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
         let appName = config.appName
+        let appVersion = config.appVersion
         let routeCount = router.allRoutes.size
-        let currentPid = "${getProcessId()}"
+        var pidStr = "?"
+        try {
+            pidStr = "${getProcessId()}"
+        } catch (_: Exception) { }
+        let currentPid = pidStr
 
         let server = builder
             .afterBind({ =>
-                printBanner(appName, scheme, addr, port, routeCount, currentPid, tlsEnabled)
+                printBanner(appName, appVersion, scheme, addr, port, routeCount, currentPid, tlsEnabled, config.enableSwagger, config.swaggerPath, config.kmode)
             })
             .build()
 
@@ -224,14 +283,44 @@ public class App {
         let appRef = this
         let infoRef = _swaggerInfo
         router.addRoute("GET", swaggerPath, wrapSingle({ ctx =>
+            let forceRefresh = ctx.query("refresh") ?? ""
+            if (appRef.config.enableSwaggerCache && forceRefresh != "1") {
+                if (let Some(cached) <- appRef._swaggerJsonCache) {
+                    ctx.json(cached)
+                    return
+                }
+            }
             let gen = SwaggerGenerator(infoRef, appRef.router.getRoutes())
             let jsonStr = gen.generate()
+            if (appRef.config.enableSwaggerCache) {
+                appRef._swaggerJsonCache = jsonStr
+            }
             ctx.json(jsonStr)
         }))
 
         let uiPath = config.swaggerPath
         router.addRoute("GET", uiPath, wrapSingle({ ctx =>
-            let htmlContent = swaggerUIHtml(appRef.config.swaggerPath)
+            let forceRefresh = ctx.query("refresh") ?? ""
+            if (appRef.config.enableSwaggerCache && forceRefresh != "1") {
+                if (let Some(cached) <- appRef._swaggerHtmlCache) {
+                    ctx.html(cached)
+                    return
+                }
+            }
+            let cssUrl = if (appRef.config.swaggerUICssUrl.size > 0) {
+                appRef.config.swaggerUICssUrl
+            } else {
+                defaultSwaggerUICssUrl()
+            }
+            let jsUrl = if (appRef.config.swaggerUIJsUrl.size > 0) {
+                appRef.config.swaggerUIJsUrl
+            } else {
+                defaultSwaggerUIJsUrl()
+            }
+            let htmlContent = swaggerUIHtml(appRef.config.swaggerPath, cssUrl, jsUrl)
+            if (appRef.config.enableSwaggerCache) {
+                appRef._swaggerHtmlCache = htmlContent
+            }
             ctx.html(htmlContent)
         }))
     }
@@ -274,6 +363,18 @@ public class App {
     }
 }
 
+class LambdaHttpHandler <: HttpRequestHandler {
+    let fn: (HttpContext) -> Unit
+
+    init(fn: (HttpContext) -> Unit) {
+        this.fn = fn
+    }
+
+    public func handle(ctx: HttpContext): Unit {
+        fn(ctx)
+    }
+}
+
 class IgniteDistributor <: HttpRequestDistributor {
     let app: App
     let mainHandler: IgniteMainHandler
@@ -283,13 +384,26 @@ class IgniteDistributor <: HttpRequestDistributor {
         this.mainHandler = IgniteMainHandler(app)
     }
 
-    public func register(_path: String, _handler: HttpRequestHandler): Unit {
+    private func usePathForLint(p: String): Unit {
+        if (p.size >= 0) { }
     }
 
-    public func register(_path: String, _handler: (HttpContext) -> Unit): Unit {
+    private func useHandlerForLint(h: HttpRequestHandler): Unit {
+        let _ = h
     }
 
-    public func distribute(_path: String): HttpRequestHandler {
+    public func register(path: String, handler: HttpRequestHandler): Unit {
+        usePathForLint(path)
+        useHandlerForLint(handler)
+    }
+
+    public func registerRoute(path: String, handler: (HttpContext) -> Unit): Unit {
+        usePathForLint(path)
+        useHandlerForLint(LambdaHttpHandler(handler))
+    }
+
+    public func distribute(path: String): HttpRequestHandler {
+        usePathForLint(path)
         mainHandler
     }
 }
@@ -304,6 +418,14 @@ class IgniteMainHandler <: HttpRequestHandler {
     public func handle(ctx: HttpContext): Unit {
         app.handleRequest(ctx)
     }
+}
+
+func defaultSwaggerUICssUrl(): String {
+    "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui.css"
+}
+
+func defaultSwaggerUIJsUrl(): String {
+    "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui-bundle.js"
 }
 
 func readFileString(path: String): String {
@@ -321,17 +443,17 @@ func readFileString(path: String): String {
     String.fromUtf8(buf.toArray())
 }
 
-func swaggerUIHtml(basePath: String): String {
+func swaggerUIHtml(basePath: String, cssUrl: String, jsUrl: String): String {
     let jsonUrl = basePath + "/json"
     #"<!DOCTYPE html>
 <html>
 <head>
 <title>Ignite API - Swagger UI</title>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+<link rel="stylesheet" href=""# + cssUrl + #"">
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src=""# + jsUrl + #""></script>
 <script>
 SwaggerUIBundle({ url: '"# + jsonUrl + #"', dom_id: '#swagger-ui' });
 </script>
@@ -370,14 +492,19 @@ func bannerDotFill(label: String, value: String, w: Int64): String {
 
 func printBanner(
     appName: String,
+    appVersion: String,
     scheme: String,
     addr: String,
     port: UInt16,
     handlerCount: Int64,
     pid: String,
-    tlsEnabled: Bool
+    tlsEnabled: Bool,
+    enableSwagger: Bool,
+    swaggerPath: String,
+    kmode: Bool
 ): Unit {
-    let version = "0.2.2"
+    let frameworkVersion = GetData.GetDataClass.ModuleVer()
+    let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
@@ -401,8 +528,13 @@ func printBanner(
         }
     }
 
-    let displayAddr = if (addr == "0.0.0.0") { "127.0.0.1" } else { addr }
-    let title = "${appName} v${version}"
+    let displayAddr = if (addr == "0.0.0.0") {
+        let info = api2.getNetworkInfo()
+        if (info.ips.size > 0) { info.ips[0] } else { "0.0.0.0" }
+    } else {
+        addr
+    }
+    let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
     let bound = "(bound on host ${addr} and port ${port})"
 
@@ -433,5 +565,11 @@ func printBanner(
     println(" ${D}│${R}${statsLine1}${D}│${R}")
     println(" ${D}│${R}${statsLine2}${D}│${R}")
     println(" ${D}└${border}┘${R}")
+    if (kmode) {
+        println(" ${CB}Ignite v${frameworkVersion} (kmode)${R}")
+    }
+    if (enableSwagger) {
+        println(" ${G}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
+    }
     println("")
 }

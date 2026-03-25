@@ -3,7 +3,7 @@
 Archive note: this package is restored from legacy history and prepared as a readable source snapshot.
 
 Suggested title:
-Ignite v0.2.2 Restored Source Package
+Ignite v0.2.2 Source Package
 
 Suggested summary:
-Early restored source package for Ignite v0.2.2, covering the first complete middleware expansion phase in the archived history.
+Archived source package for Ignite v0.2.2, covering the first complete middleware expansion phase recovered from the legacy history.
