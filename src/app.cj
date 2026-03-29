@@ -2,23 +2,43 @@ package ignite
 
 import std.collection.ArrayList
 import std.env.*
-import std.fs.{File, OpenMode, exists, FileInfo}
+import std.fs.{exists, FileInfo}
+import std.io.InputStream
+import std.time.DateTime
 import stdx.net.http.{
-    ServerBuilder, Server, HttpContext, HttpRequestHandler,
-    HttpRequestDistributor
+    HttpContext, HttpRequestHandler,
+    HttpRequestDistributor, HttpRequestBuilder,
+    HttpHeaders, ClientBuilder
 }
 import ignite.api2
 import ignite.api2.GetData
 
+public class AppTestResponse {
+    public let status: UInt16
+    public let body: String
+    public let headers: HttpHeaders
+
+    public init(status: UInt16, body: String, headers: HttpHeaders) {
+        this.status = status
+        this.body = body
+        this.headers = headers
+    }
+
+    public func header(name: String): ?String {
+        headers.getFirst(name)
+    }
+}
+
 public class App {
     public let config: Config
     public let router: Router
-    var _server: ?Server = None
+    var _engine: ServerEngine = StdxServerEngine()
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
+    var _swaggerRouteInstalled: Bool = false
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -122,7 +142,13 @@ public class App {
                 return
             }
             let fullPath = rootDir + "/" + filePath
-            if (exists(fullPath) && !FileInfo(fullPath).isDirectory()) {
+            let shouldServeStatic = if (exists(fullPath)) {
+                let fileInfo = FileInfo(fullPath)
+                !fileInfo.isDirectory()
+            } else {
+                false
+            }
+            if (shouldServeStatic) {
                 ctx.sendFile(fullPath)
             } else {
                 ctx.sendFile(fallbackPath)
@@ -174,6 +200,27 @@ public class App {
         router.removeRoute(method, path)
     }
 
+    public func nameRoute(method: String, path: String, name: String): Bool {
+        router.setRouteName(method, path, name)
+    }
+
+    /// 通过路由名反向生成 URL；优先使用显式 route name，其次使用 RouteOption.operationId。
+    /// 若缺少路径参数或路由不存在，返回 None。
+    public func urlFor(
+        name: String,
+        params!: Array<(String, String)> = [],
+        query!: Array<(String, String)> = []
+    ): ?String {
+        match (router.findRouteByName(name)) {
+            case Some(route) =>
+                if (let Some(path) <- buildPathFromTemplate(route.path, params)) {
+                    return Some(appendQueryPairs(path, query))
+                }
+                None
+            case None => None
+        }
+    }
+
     // ── Swagger ──
 
     public func swagger(info: SwaggerInfo): App {
@@ -204,6 +251,15 @@ public class App {
         this
     }
 
+    public func serverEngine(engine: ServerEngine): App {
+        _engine = engine
+        this
+    }
+
+    public func withServerEngine(engine: ServerEngine): App {
+        serverEngine(engine)
+    }
+
     // ── Server lifecycle ──
 
     public func listen(addr: String, port: UInt16): Unit {
@@ -214,24 +270,7 @@ public class App {
         }
 
         let distributor = IgniteDistributor(this)
-
-        let builder = ServerBuilder()
-            .addr(addr)
-            .port(port)
-            .distributor(distributor)
-            .readTimeout(config.readTimeout)
-            .writeTimeout(config.writeTimeout)
-            .readHeaderTimeout(config.readHeaderTimeout)
-            .maxRequestBodySize(config.bodyLimit)
-
         let hasTls = config.tlsCertFile.size > 0 && config.tlsKeyFile.size > 0
-        if (hasTls) {
-            let certPem = readFileString(config.tlsCertFile)
-            let keyPem = readFileString(config.tlsKeyFile)
-            let tlsCfg = api2.loadTlsServerConfigForHttp2(certPem, keyPem)
-            let _ = builder.tlsConfig(tlsCfg)
-        }
-
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
         let appName = config.appName
@@ -243,28 +282,117 @@ public class App {
         } catch (_: Exception) { }
         let currentPid = pidStr
 
-        let server = builder
-            .afterBind({ =>
-                printBanner(appName, appVersion, scheme, addr, port, routeCount, currentPid, tlsEnabled, config.enableSwagger, config.swaggerPath, config.kmode)
-            })
-            .build()
-
-        _server = server
+        let option = ServerEngineListenOption(
+            addr,
+            port,
+            config.readTimeout,
+            config.writeTimeout,
+            config.readHeaderTimeout,
+            config.bodyLimit,
+            config.tlsCertFile,
+            config.tlsKeyFile,
+            config.enableTlsPrecheck
+        )
         try {
-            server.serve()
+            _engine.listen(
+                option,
+                distributor,
+                {
+                    =>
+                    printBanner(
+                        appName,
+                        appVersion,
+                        scheme,
+                        addr,
+                        port,
+                        routeCount,
+                        currentPid,
+                        tlsEnabled,
+                        config.enableSwagger,
+                        config.swaggerPath,
+                        config.kmode
+                    )
+                }
+            )
+        } catch (e: api2.TlsConfigLoadException) {
+            let tlsStage = tlsStageFromSourceCode(e.sourceCode)
+            let tlsCode = e.code.toString()
+            let igniteCode = api2.tlsToIgniteErrorCode(e.code)
+            let hint = tlsHintForCode(e.code)
+            println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
+            println("[Ignite][TLS] tls_stage=${tlsStage} tls_error_code=${tlsCode} ignite_error_code=${igniteCode} source=${e.sourceCode}")
+            println("[Ignite][TLS] hint=${hint}")
         } catch (e: Exception) {
             println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
             println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
         }
     }
 
+    /// 无需 listen 的进程内测试入口：会走完整路由与中间件链，并返回可断言的响应快照。
+    public func handleForTest(
+        method: String,
+        path: String,
+        body!: String = "",
+        headers!: Array<(String, String)> = []
+    ): AppTestResponse {
+        setupSwaggerRoute()
+        let host = "127.0.0.1"
+        let port = chooseInprocTestPort(method, path)
+        let serverFuture = spawn {
+            this.listen(host, port)
+        }
+
+        let client = ClientBuilder()
+            .readTimeout(Duration.second * 1)
+            .writeTimeout(Duration.second * 1)
+            .poolSize(2)
+            .build()
+
+        try {
+            var attempt: Int64 = 0
+            while (attempt < 20) {
+                try {
+                    let url = normalizeTestUrl(path, host, port)
+                    let requestBuilder = HttpRequestBuilder()
+                        .method(normalizeHttpMethod(method))
+                        .url(url)
+                    for ((k, v) in headers) {
+                        requestBuilder.header(k, v)
+                    }
+                    if (body.size > 0) {
+                        requestBuilder.body(body)
+                    }
+
+                    let response = client.send(requestBuilder.build())
+                    let responseBody = readInputStreamUtf8(response.body)
+                    return AppTestResponse(response.status, responseBody, response.headers)
+                } catch (_: Exception) {
+                    if (attempt == 19) {
+                        throw Exception("handleForTest failed to connect path=${path}")
+                    }
+                    sleep(Duration.millisecond * 50)
+                    attempt += 1
+                }
+            }
+        } finally {
+            try {
+                client.close()
+            } catch (_: Exception) { }
+            _engine.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+        throw Exception("handleForTest unreachable")
+    }
+
     public func shutdown(): Unit {
         for (hook in _shutdownHooks) {
             hook()
         }
-        if (let Some(s) <- _server) {
-            s.closeGracefully()
-        }
+        _engine.shutdown()
     }
 
     // ── Internal ──
@@ -276,7 +404,7 @@ public class App {
     }
 
     func setupSwaggerRoute(): Unit {
-        if (!config.enableSwagger) {
+        if (!config.enableSwagger || _swaggerRouteInstalled) {
             return
         }
         let swaggerPath = config.swaggerPath + "/json"
@@ -323,6 +451,7 @@ public class App {
             }
             ctx.html(htmlContent)
         }))
+        _swaggerRouteInstalled = true
     }
 
     func handleRequest(httpCtx: HttpContext): Unit {
@@ -342,24 +471,255 @@ public class App {
             if (let Some(route) <- result.route) {
                 ctx.setRoute(route)
             }
-            try {
-                ctx.next()
-            } catch (e: Exception) {
-                if (let Some(errorHandler) <- _errorHandler) {
-                    errorHandler(ctx, e)
-                } else {
-                    httpCtx.responseBuilder
-                        .status(500)
-                        .header("content-type", "text/plain; charset=utf-8")
-                        .body("Internal Server Error")
+        } else {
+            let fallback = methodSemanticsHandler(
+                requestMethod,
+                requestPath,
+                result.allowedMethods
+            )
+            ctx.setHandlers(router.buildGlobalMiddlewareChain(fallback))
+        }
+
+        try {
+            ctx.next()
+        } catch (e: Exception) {
+            if (config.kmode) {
+                if (let Some(kmodePanicHandler) <- config.kmodePanicHandler) {
+                    if (kmodePanicHandler(ctx, e)) {
+                        return
+                    }
                 }
             }
-        } else {
-            httpCtx.responseBuilder
-                .status(404)
-                .header("content-type", "text/plain; charset=utf-8")
-                .body("Cannot ${requestMethod} ${requestPath}")
+            if (let Some(errorHandler) <- _errorHandler) {
+                errorHandler(ctx, e)
+            } else {
+                httpCtx.responseBuilder
+                    .status(500)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body("Internal Server Error")
+            }
         }
+    }
+
+    func methodSemanticsHandler(
+        requestMethod: String,
+        requestPath: String,
+        allowedMethods: ArrayList<String>
+    ): Handler {
+        { ctx: Ctx =>
+            if (allowedMethods.size > 0) {
+                let allowHeader = joinAllowHeader(allowedMethods)
+                ctx.setHeader("allow", allowHeader)
+                if (requestMethod == "OPTIONS") {
+                    let _ = ctx.noContent()
+                } else {
+                    let _ = ctx.status(405).sendString("Method Not Allowed")
+                }
+            } else {
+                let _ = ctx.status(404).sendString("Cannot ${requestMethod} ${requestPath}")
+            }
+        }
+    }
+
+    func joinAllowHeader(methods: ArrayList<String>): String {
+        var first = true
+        var out = ""
+        for (method in methods) {
+            if (!first) {
+                out += ", "
+            }
+            first = false
+            out += method
+        }
+        out
+    }
+}
+
+func normalizeHttpMethod(method: String): String {
+    let m = method.trimAscii().toAsciiUpper()
+    if (m.size == 0) {
+        return "GET"
+    }
+    m
+}
+
+func normalizeTestUrl(path: String, host: String, port: UInt16): String {
+    let trimmed = path.trimAscii()
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed
+    }
+    if (trimmed.size == 0) {
+        return "http://${host}:${port}/"
+    }
+    if (trimmed.toRuneArray()[0] == r'/') {
+        return "http://${host}:${port}" + trimmed
+    }
+    "http://${host}:${port}/" + trimmed
+}
+
+func buildPathFromTemplate(pathTemplate: String, params: Array<(String, String)>): ?String {
+    let chars = pathTemplate.toRuneArray()
+    var i: Int64 = 0
+    var result = ""
+    while (i < chars.size) {
+        if (chars[i] == r':') {
+            i += 1
+            var name = ""
+            while (i < chars.size && chars[i] != r'/') {
+                name += chars[i].toString()
+                i += 1
+            }
+            if (let Some(value) <- findRouteParam(params, name)) {
+                result += value
+            } else {
+                return None
+            }
+            continue
+        }
+        if (chars[i] == r'*') {
+            if (let Some(value) <- findRouteParam(params, "*")) {
+                result += value
+            } else {
+                return None
+            }
+            i += 1
+            continue
+        }
+        result += chars[i].toString()
+        i += 1
+    }
+    Some(result)
+}
+
+func findRouteParam(params: Array<(String, String)>, key: String): ?String {
+    for ((k, v) in params) {
+        if (k == key) {
+            return Some(v)
+        }
+    }
+    None
+}
+
+func appendQueryPairs(path: String, query: Array<(String, String)>): String {
+    if (query.size == 0) {
+        return path
+    }
+    var out = path + "?"
+    var first = true
+    for ((k, v) in query) {
+        if (!first) {
+            out += "&"
+        }
+        first = false
+        out += urlEncode(k) + "=" + urlEncode(v)
+    }
+    out
+}
+
+func urlEncode(input: String): String {
+    let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
+    var out = ""
+    for (r in input.toRuneArray()) {
+        let c = r.toString()
+        if (c == " ") {
+            out += "+"
+        } else if (strContainsRuneString(allowed, c)) {
+            out += c
+        } else {
+            let bytes = c.toArray()
+            for (b in bytes) {
+                let n = Int64(b)
+                out += "%"
+                if (n < 16) {
+                    out += "0"
+                }
+                out += intToHex(n)
+            }
+        }
+    }
+    out
+}
+
+func strContainsRuneString(haystack: String, needle: String): Bool {
+    let h = haystack.toRuneArray()
+    let n = needle.toRuneArray()
+    if (n.size == 0) {
+        return true
+    }
+    if (h.size < n.size) {
+        return false
+    }
+    for (i in 0..=(h.size - n.size)) {
+        var ok = true
+        for (j in 0..n.size) {
+            if (h[i + j] != n[j]) {
+                ok = false
+                break
+            }
+        }
+        if (ok) {
+            return true
+        }
+    }
+    false
+}
+
+func intToHex(n: Int64): String {
+    if (n < 10) {
+        return "${n}"
+    }
+    if (n < 16) {
+        return String.fromUtf8([UInt8(87 + n)])
+    }
+    intToHex(n / 16) + intToHex(n % 16)
+}
+
+func readInputStreamUtf8(stream: InputStream): String {
+    let out = ArrayList<UInt8>()
+    let buf = Array<UInt8>(4096, repeat: 0)
+    while (true) {
+        let n = stream.read(buf)
+        if (n <= 0) {
+            break
+        }
+        for (i in 0..n) {
+            out.add(buf[i])
+        }
+    }
+    String.fromUtf8(out.toArray())
+}
+
+func chooseInprocTestPort(method: String, path: String): UInt16 {
+    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+    let seed = nowMs + method.size + path.size
+    let raw = 42000 + (seed % 10000)
+    UInt16(raw)
+}
+
+func tlsStageFromSourceCode(sourceCode: String): String {
+    let normalized = sourceCode.trimAscii().toAsciiUpper()
+    if (normalized.startsWith("STDX_")) {
+        return "stdx_tls_build"
+    }
+    "jinguiSSL_precheck"
+}
+
+func tlsHintForCode(code: api2.TlsConfigLoadErrorCode): String {
+    match (code) {
+        case api2.TlsConfigLoadErrorCode.BadInput =>
+            "check cert/key pem format and ALPN list (h2,http/1.1)"
+        case api2.TlsConfigLoadErrorCode.VerifyFailed =>
+            "check certificate chain and private key match"
+        case api2.TlsConfigLoadErrorCode.KeyNotFound =>
+            "check key source and key id mapping"
+        case api2.TlsConfigLoadErrorCode.CryptoUnavailable =>
+            "check crypto runtime and dependency availability"
+        case api2.TlsConfigLoadErrorCode.ComplianceRejected =>
+            "check compliance policy and allowed algorithms"
+        case api2.TlsConfigLoadErrorCode.Unsupported =>
+            "check unsupported tls option or algorithm setting"
+        case api2.TlsConfigLoadErrorCode.InternalError =>
+            "check stdx tls build path and runtime exception details"
     }
 }
 
@@ -426,21 +786,6 @@ func defaultSwaggerUICssUrl(): String {
 
 func defaultSwaggerUIJsUrl(): String {
     "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui-bundle.js"
-}
-
-func readFileString(path: String): String {
-    let file = File(path, OpenMode.Read)
-    let buf = ArrayList<UInt8>()
-    let tmp = Array<UInt8>(4096, repeat: 0)
-    while (true) {
-        let n = file.read(tmp)
-        if (n <= 0) { break }
-        for (i in 0..n) {
-            buf.add(tmp[i])
-        }
-    }
-    file.close()
-    String.fromUtf8(buf.toArray())
 }
 
 func swaggerUIHtml(basePath: String, cssUrl: String, jsUrl: String): String {

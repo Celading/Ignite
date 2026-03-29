@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.4.51"
+  version = "0.5.21"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -13,6 +13,15 @@
 
 [package.package-configuration."ignite.client"]
   output-type = "static"
+
+[package.package-configuration."ignite.governance"]
+  output-type = "static"
+
+[package.package-configuration."ignite.security"]
+  output-type = "static"
+
+[dependencies]
+  jinguissl = { path = "../../jinkuiSSL" }
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"

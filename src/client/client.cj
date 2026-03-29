@@ -1,13 +1,11 @@
 package ignite.client
 
-import stdx.net.http.{
-    Client, ClientBuilder, HttpRequestBuilder, HttpRequest,
-    HttpResponse, HttpHeaders
-}
+import stdx.net.http.HttpRequestBuilder
 import std.collection.{ArrayList, HashMap}
-import std.io.InputStream
-import std.unicode.*
 import std.random.Random
+import std.time.MonoTime
+import std.unicode.*
+import ignite.api2
 
 // ── URL / Form 编码 ──
 
@@ -136,553 +134,512 @@ func buildMultipartBody(
 }
 
 func randomBoundary(): String {
-    let rng = Random()
-    let hex = "0123456789abcdef".toRuneArray()
-    var s = ""
-    for (_ in 0..32) {
-        s += hex[Int64(rng.nextUInt64() % 16)].toString()
+    try {
+        api2.clientCryptoRandomHex(32)
+    } catch (_: api2.ClientCryptoException) {
+        let rng = Random()
+        let hex = "0123456789abcdef".toRuneArray()
+        var s = ""
+        for (_ in 0..32) {
+            s += hex[Int64(rng.nextUInt64() % 16)].toString()
+        }
+        s
     }
-    s
 }
 
 // ── Cookie 存储 ──
 
-public class CookieStore {
-    var _store: HashMap<String, HashMap<String, String>> = HashMap<String, HashMap<String, String>>()
+class ClientCookieEntry {
+    var name: String
+    var value: String
+    var domain: String
+    var path: String
+    var hostOnly: Bool
+    var secure: Bool
+    var httpOnly: Bool
+    var sameSite: String
+    var setAt: MonoTime
+    var maxAgeMs: ?Int64
 
-    public init() {}
-
-    public func addFromResponse(host: String, response: ClientResponse): Unit {
-        let setCookies = response.headerValues("set-cookie")
-        for (line in setCookies) {
-            let parts = line.split(";", 2)
-            if (parts.size >= 1) {
-                let kv = parts[0].trimAscii().split("=", 2)
-                if (kv.size == 2) {
-                    let name = kv[0].trimAscii()
-                    let value = kv[1].trimAscii()
-                    if (!_store.contains(host)) {
-                        _store.add(host, HashMap<String, String>())
-                    }
-                    if (let Some(m) <- _store.get(host)) {
-                        m.add(name, value)
-                    }
-                }
-            }
-        }
-    }
-
-    public func getCookieHeader(host: String): String {
-        match (_store.get(host)) {
-            case Some(m) =>
-                var first = true
-                var result = ""
-                for ((name, value) in m) {
-                    if (!first) { result += "; " }
-                    first = false
-                    result += name + "=" + value
-                }
-                result
-            case None => ""
-        }
+    init(
+        name: String,
+        value: String,
+        domain: String,
+        path: String,
+        hostOnly: Bool,
+        secure: Bool,
+        httpOnly: Bool,
+        sameSite: String,
+        maxAgeMs: ?Int64
+    ) {
+        this.name = name
+        this.value = value
+        this.domain = domain
+        this.path = path
+        this.hostOnly = hostOnly
+        this.secure = secure
+        this.httpOnly = httpOnly
+        this.sameSite = sameSite
+        this.setAt = MonoTime.now()
+        this.maxAgeMs = maxAgeMs
     }
 }
 
-// ── RestClient ──
+public class CookieStore {
+    var _store: HashMap<String, ClientCookieEntry> = HashMap<String, ClientCookieEntry>()
 
-public class RestClient {
-    let _client: Client
-    var _baseUrl: String = ""
-    var _defaultHeaders: HashMap<String, String> = HashMap<String, String>()
-    var _cookieStore: ?CookieStore = None
+    public init() {}
 
-    public init() {
-        _client = ClientBuilder().build()
-    }
-
-    public init(
-        readTimeout!: Duration = Duration.second * 15,
-        writeTimeout!: Duration = Duration.second * 15,
-        poolSize!: Int64 = 10
-    ) {
-        _client = ClientBuilder()
-            .readTimeout(readTimeout)
-            .writeTimeout(writeTimeout)
-            .poolSize(poolSize)
-            .build()
-    }
-
-    public func baseUrl(url: String): RestClient {
-        _baseUrl = url
-        this
-    }
-
-    public func defaultHeader(name: String, value: String): RestClient {
-        _defaultHeaders.add(name, value)
-        this
-    }
-
-    public func useCookies(): RestClient {
-        _cookieStore = CookieStore()
-        this
-    }
-
-    public func useCookies(store: CookieStore): RestClient {
-        _cookieStore = store
-        this
-    }
-
-    func resolveUrl(url: String): String {
-        if (_baseUrl.size == 0) { return url }
-        if (strStartsWith(url, "http://") || strStartsWith(url, "https://")) {
-            return url
+    public func addFromResponse(urlOrHost: String, response: ClientResponse): Unit {
+        let setCookies = response.headerValues("set-cookie")
+        for (line in setCookies) {
+            addSetCookie(urlOrHost, line)
         }
-        let base = _baseUrl
-        if (base.toRuneArray()[base.size - 1] == r'/') {
-            if (url.size > 0 && url.toRuneArray()[0] == r'/') {
-                return base + substringFrom(url, 1)
+    }
+
+    public func addSetCookie(urlOrHost: String, line: String): Unit {
+        let req = parseUrlOrHost(urlOrHost)
+        let tokens = line.split(";")
+        if (tokens.size == 0) {
+            return
+        }
+
+        let pair = tokens[0].trimAscii()
+        let nv = pair.split("=", 2)
+        if (nv.size != 2) {
+            return
+        }
+        let name = nv[0].trimAscii()
+        let value = nv[1].trimAscii()
+        if (name.size == 0) {
+            return
+        }
+
+        var hostOnly = true
+        var domain = req.host
+        var path = defaultCookiePath(req.path)
+        var secure = false
+        var httpOnly = false
+        var sameSite = ""
+        var maxAgeMs: ?Int64 = None
+
+        for (i in 1..tokens.size) {
+            let token = tokens[i].trimAscii()
+            if (token.size == 0) {
+                continue
             }
-            return base + url
+            let attr = token.split("=", 2)
+            let key = attr[0].trimAscii().toAsciiLower()
+            let hasValue = attr.size == 2
+            let attrValue = if (hasValue) { attr[1].trimAscii() } else { "" }
+            if (key == "domain" && hasValue) {
+                let d = normalizeDomain(attrValue)
+                if (d.size > 0 && domainMatchesHost(req.host, d)) {
+                    domain = d
+                    hostOnly = false
+                }
+            } else if (key == "path" && hasValue) {
+                if (isValidCookiePath(attrValue)) {
+                    path = attrValue
+                }
+            } else if (key == "secure") {
+                secure = true
+            } else if (key == "httponly") {
+                httpOnly = true
+            } else if (key == "samesite" && hasValue) {
+                sameSite = normalizeSameSite(attrValue)
+            } else if (key == "max-age" && hasValue) {
+                if (let Some(seconds) <- parseInt64(attrValue)) {
+                    maxAgeMs = seconds * 1000
+                }
+            }
         }
-        if (url.size > 0 && url.toRuneArray()[0] == r'/') {
-            return base + url
+
+        let entryKey = cookieKey(domain, path, name, hostOnly)
+        if (let Some(ms) <- maxAgeMs) {
+            if (ms <= 0) {
+                _store.remove(entryKey)
+                return
+            }
         }
-        base + "/" + url
+
+        _store.add(
+            entryKey,
+            ClientCookieEntry(
+                name,
+                value,
+                domain,
+                path,
+                hostOnly,
+                secure,
+                httpOnly,
+                sameSite,
+                maxAgeMs
+            )
+        )
     }
 
-    func hostFromUrl(url: String): String {
-        var start = 0
-        if (strStartsWith(url, "https://")) { start = 8 }
-        else if (strStartsWith(url, "http://")) { start = 6 }
-        let rest = substringFrom(url, start)
-        let slash = findChar(rest, r'/')
-        if (slash < 0) { rest } else { rest.split("/", 2)[0] }
-    }
+    public func getCookieHeader(urlOrHost: String): String {
+        let req = parseUrlOrHost(urlOrHost)
+        let staleKeys = ArrayList<String>()
+        let items = ArrayList<(String, String)>()
 
-    func findChar(s: String, ch: Rune): Int64 {
-        let runes = s.toRuneArray()
-        for (i in 0..runes.size) {
-            if (runes[i] == ch) { return i }
+        for ((key, cookie) in _store) {
+            if (isExpired(cookie)) {
+                staleKeys.add(key)
+                continue
+            }
+            if (!cookieMatchesRequest(cookie, req.host, req.path, req.secure)) {
+                continue
+            }
+            items.add((cookie.name, cookie.value))
         }
-        -1
+
+        for (k in staleKeys) {
+            _store.remove(k)
+        }
+
+        var first = true
+        var out = ""
+        for ((name, value) in items) {
+            if (!first) {
+                out += "; "
+            }
+            first = false
+            out += name + "=" + value
+        }
+        out
     }
 
-    func strStartsWith(s: String, prefix: String): Bool {
-        if (s.size < prefix.size) { return false }
-        let sArr = s.toRuneArray()
-        let pArr = prefix.toRuneArray()
-        for (i in 0..pArr.size) {
-            if (sArr[i] != pArr[i]) { return false }
+    func parseUrlOrHost(urlOrHost: String): CookieRequestContext {
+        let raw = urlOrHost.trimAscii()
+        if (startsWith(raw, "https://")) {
+            return parseAbsoluteUrl(raw, true, 8)
+        }
+        if (startsWith(raw, "http://")) {
+            return parseAbsoluteUrl(raw, false, 7)
+        }
+        let host = normalizeHost(raw)
+        CookieRequestContext(host, "/", false)
+    }
+
+    func parseAbsoluteUrl(raw: String, secure: Bool, prefixLen: Int64): CookieRequestContext {
+        let tail = sliceFrom(raw, prefixLen)
+        let slash = indexOfChar(tail, r'/')
+        if (slash < 0) {
+            return CookieRequestContext(normalizeHost(tail), "/", secure)
+        }
+        let hostPart = sliceRange(tail, 0, slash)
+        var path = sliceFrom(tail, slash)
+        if (path.size == 0 || path.toRuneArray()[0] != r'/') {
+            path = "/"
+        }
+        CookieRequestContext(normalizeHost(hostPart), path, secure)
+    }
+
+    func normalizeHost(hostPortRaw: String): String {
+        let hostPort = hostPortRaw.trimAscii()
+        if (hostPort.size == 0) {
+            return ""
+        }
+        if (hostPort.toRuneArray()[0] == r'[') {
+            let close = indexOfChar(hostPort, r']')
+            if (close > 0) {
+                return sliceRange(hostPort, 1, close).toAsciiLower()
+            }
+            return hostPort.toAsciiLower()
+        }
+        let colon = indexOfChar(hostPort, r':')
+        if (colon < 0) {
+            return hostPort.toAsciiLower()
+        }
+        sliceRange(hostPort, 0, colon).toAsciiLower()
+    }
+
+    func normalizeDomain(raw: String): String {
+        let trimmed = raw.trimAscii().toAsciiLower()
+        if (trimmed.size == 0) {
+            return ""
+        }
+        if (trimmed.toRuneArray()[0] == r'.') {
+            return sliceFrom(trimmed, 1)
+        }
+        trimmed
+    }
+
+    func normalizeSameSite(raw: String): String {
+        let v = raw.trimAscii().toAsciiLower()
+        if (v == "lax") { return "Lax" }
+        if (v == "strict") { return "Strict" }
+        if (v == "none") { return "None" }
+        ""
+    }
+
+    func domainMatchesHost(host: String, domain: String): Bool {
+        if (host == domain) {
+            return true
+        }
+        if (host.size <= domain.size) {
+            return false
+        }
+        if (!endsWith(host, "." + domain)) {
+            return false
         }
         true
     }
 
-    func substringFrom(s: String, start: Int64): String {
-        let runes = s.toRuneArray()
-        var result = ""
-        for (i in start..runes.size) {
-            result += runes[i].toString()
+    func isValidCookiePath(path: String): Bool {
+        path.size > 0 && path.toRuneArray()[0] == r'/'
+    }
+
+    func defaultCookiePath(reqPath: String): String {
+        if (reqPath.size == 0) {
+            return "/"
         }
-        result
-    }
-
-    public func get(url: String): ClientResponse {
-        let u = resolveUrl(url)
-        let resp = ClientResponse(_client.get(u))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func post(url: String, body: String): ClientResponse {
-        let u = resolveUrl(url)
-        let resp = ClientResponse(_client.post(u, body))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func postJson(url: String, json: String): ClientResponse {
-        let u = resolveUrl(url)
-        let req = HttpRequestBuilder()
-            .post()
-            .url(u)
-            .header("content-type", "application/json")
-            .body(json)
-            .build()
-        let resp = ClientResponse(_client.send(req))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func postForm(url: String, params: ArrayList<(String, String)>): ClientResponse {
-        let u = resolveUrl(url)
-        let body = buildFormUrlEncoded(params)
-        let req = HttpRequestBuilder()
-            .post()
-            .url(u)
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(body)
-            .build()
-        let resp = ClientResponse(_client.send(req))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func postMultipart(
-        url: String,
-        fields: ArrayList<(String, String)>,
-        files: ArrayList<MultipartFile>
-    ): ClientResponse {
-        let u = resolveUrl(url)
-        let boundary = randomBoundary()
-        let body = buildMultipartBody(boundary, fields, files)
-        let req = HttpRequestBuilder()
-            .post()
-            .url(u)
-            .header("content-type", "multipart/form-data; boundary=${boundary}")
-            .body(body)
-            .build()
-        let resp = ClientResponse(_client.send(req))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func put(url: String, body: String): ClientResponse {
-        let u = resolveUrl(url)
-        let resp = ClientResponse(_client.put(u, body))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func delete(url: String): ClientResponse {
-        let u = resolveUrl(url)
-        let resp = ClientResponse(_client.delete(u))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func head(url: String): ClientResponse {
-        let u = resolveUrl(url)
-        ClientResponse(_client.head(u))
-    }
-
-    public func options(url: String): ClientResponse {
-        let u = resolveUrl(url)
-        let req = HttpRequestBuilder()
-            .method("OPTIONS")
-            .url(u)
-            .build()
-        let resp = ClientResponse(_client.send(req))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func patch(url: String, body: String): ClientResponse {
-        let u = resolveUrl(url)
-        let req = HttpRequestBuilder()
-            .method("PATCH")
-            .url(u)
-            .body(body)
-            .build()
-        let resp = ClientResponse(_client.send(req))
-        maybeStoreCookies(u, resp)
-        resp
-    }
-
-    public func request(): RequestBuilder {
-        RequestBuilder(_client, _baseUrl, _defaultHeaders, _cookieStore)
-    }
-
-    public func close(): Unit {
-        _client.close()
-    }
-
-    func maybeStoreCookies(url: String, resp: ClientResponse): Unit {
-        if (let Some(store) <- _cookieStore) {
-            let host = hostFromUrl(url)
-            store.addFromResponse(host, resp)
+        let runes = reqPath.toRuneArray()
+        if (runes[0] != r'/') {
+            return "/"
         }
+        if (runes.size == 1) {
+            return "/"
+        }
+        let lastSlash = lastIndexOfChar(reqPath, r'/')
+        if (lastSlash <= 0) {
+            return "/"
+        }
+        sliceRange(reqPath, 0, lastSlash)
     }
-}
 
-// ── RequestBuilder ──
+    func cookieKey(domain: String, path: String, name: String, hostOnly: Bool): String {
+        let ho = if (hostOnly) { "1" } else { "0" }
+        domain + "|" + path + "|" + name + "|" + ho
+    }
 
-public class RequestBuilder {
-    let _client: Client
-    let _baseUrl: String
-    let _defaultHeaders: HashMap<String, String>
-    let _cookieStore: ?CookieStore
-    let _builder: HttpRequestBuilder = HttpRequestBuilder()
-    var _currentUrl: String = ""
-    var _queryParams: ArrayList<(String, String)> = ArrayList<(String, String)>()
-    var _formParams: ?ArrayList<(String, String)> = None
-    var _multipartFields: ?ArrayList<(String, String)> = None
-    var _multipartFiles: ?ArrayList<MultipartFile> = None
-
-    init(
-        client: Client,
-        baseUrl: String,
-        defaultHeaders: HashMap<String, String>,
-        cookieStore: ?CookieStore
-    ) {
-        _client = client
-        _baseUrl = baseUrl
-        _defaultHeaders = defaultHeaders
-        _cookieStore = cookieStore
-        for ((k, v) in defaultHeaders) {
-            _builder.header(k, v)
+    func isExpired(cookie: ClientCookieEntry): Bool {
+        match (cookie.maxAgeMs) {
+            case Some(ms) => (MonoTime.now() - cookie.setAt).toMilliseconds() >= ms
+            case None => false
         }
     }
 
-    public func method(m: String): RequestBuilder {
-        _builder.method(m)
-        this
-    }
-
-    public func url(u: String): RequestBuilder {
-        var full = u
-        if (_baseUrl.size > 0 && u.toRuneArray().size > 0) {
-            let runes = u.toRuneArray()
-            let isAbs = (u.size >= 7 && u.toRuneArray()[0] == r'h' && u.toRuneArray()[1] == r't')
-            if (!isAbs) {
-                if (runes[0] == r'/') {
-                    full = _baseUrl + u
-                } else {
-                    let baseRunes = _baseUrl.toRuneArray()
-                    if (baseRunes.size > 0 && baseRunes[baseRunes.size - 1] == r'/') {
-                        full = _baseUrl + u
-                    } else {
-                        full = _baseUrl + "/" + u
-                    }
-                }
+    func cookieMatchesRequest(cookie: ClientCookieEntry, host: String, path: String, secure: Bool): Bool {
+        if (cookie.hostOnly) {
+            if (host != cookie.domain) {
+                return false
+            }
+        } else {
+            if (!domainMatchesHost(host, cookie.domain)) {
+                return false
             }
         }
-        _currentUrl = full
-        _builder.url(full)
-        this
-    }
-
-    public func query(key: String, value: String): RequestBuilder {
-        _queryParams.add((key, value))
-        this
-    }
-
-    public func header(name: String, value: String): RequestBuilder {
-        _builder.header(name, value)
-        this
-    }
-
-    public func addHeader(name: String, value: String): RequestBuilder {
-        _builder.header(name, value)
-        this
-    }
-
-    public func basicAuth(user: String, pass: String): RequestBuilder {
-        let raw = user + ":" + pass
-        let encoded = base64EncodeBytes(raw.toArray())
-        _builder.header("Authorization", "Basic " + encoded)
-        this
-    }
-
-    public func bearerToken(token: String): RequestBuilder {
-        _builder.header("Authorization", "Bearer " + token)
-        this
-    }
-
-    func base64EncodeBytes(data: Array<UInt8>): String {
-        let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-        let chars = table.toRuneArray()
-        var result = ""
-        var i: Int64 = 0
-        while (i < data.size) {
-            let b0 = Int64(data[i])
-            let b1 = if (i + 1 < data.size) { Int64(data[i + 1]) } else { 0 }
-            let b2 = if (i + 2 < data.size) { Int64(data[i + 2]) } else { 0 }
-            let triple = (b0 << 16) | (b1 << 8) | b2
-            result += chars[(triple >> 18) & 0x3F].toString()
-            result += chars[(triple >> 12) & 0x3F].toString()
-            result += if (i + 1 < data.size) { chars[(triple >> 6) & 0x3F].toString() } else { "=" }
-            result += if (i + 2 < data.size) { chars[triple & 0x3F].toString() } else { "=" }
-            i += 3
+        if (cookie.secure && !secure) {
+            return false
         }
-        result
-    }
-
-    public func body(b: String): RequestBuilder {
-        _builder.body(b)
-        this
-    }
-
-    public func bodyBytes(b: Array<UInt8>): RequestBuilder {
-        _builder.body(b)
-        this
-    }
-
-    public func form(params: ArrayList<(String, String)>): RequestBuilder {
-        _formParams = params
-        _multipartFields = None
-        _multipartFiles = None
-        this
-    }
-
-    public func multipart(
-        fields: ArrayList<(String, String)>,
-        files: ArrayList<MultipartFile>
-    ): RequestBuilder {
-        _multipartFields = fields
-        _multipartFiles = files
-        _formParams = None
-        this
-    }
-
-    public func send(): ClientResponse {
-        var finalUrl = _currentUrl
-        if (_queryParams.size > 0) {
-            let qs = buildQueryString(_queryParams)
-            if (containsStr(_currentUrl, "?")) {
-                finalUrl = _currentUrl + "&" + qs
-            } else {
-                finalUrl = _currentUrl + "?" + qs
-            }
-            _builder.url(finalUrl)
+        if (!pathMatches(path, cookie.path)) {
+            return false
         }
-
-        if (let Some(params) <- _formParams) {
-            _builder.header("content-type", "application/x-www-form-urlencoded")
-            _builder.body(buildFormUrlEncoded(params).toArray())
-        }
-        if (let Some(fields) <- _multipartFields) {
-            if (let Some(files) <- _multipartFiles) {
-                let boundary = randomBoundary()
-                _builder.header("content-type", "multipart/form-data; boundary=${boundary}")
-                _builder.body(buildMultipartBody(boundary, fields, files))
-            }
-        }
-
-        let urlForHost = if (finalUrl.size > 0) { finalUrl } else { _currentUrl }
-        if (let Some(store) <- _cookieStore) {
-            let host = hostFromUrl(urlForHost)
-            let cookieHeader = store.getCookieHeader(host)
-            if (cookieHeader.size > 0) {
-                _builder.header("Cookie", cookieHeader)
-            }
-        }
-
-        let resp = ClientResponse(_client.send(_builder.build()))
-        if (let Some(store) <- _cookieStore) {
-            store.addFromResponse(hostFromUrl(urlForHost), resp)
-        }
-        resp
+        true
     }
 
-    func containsStr(hay: String, needle: String): Bool {
-        let h = hay.toRuneArray()
-        let n = needle.toRuneArray()
-        if (n.size == 0) { return true }
-        if (h.size < n.size) { return false }
-        for (i in 0..=(h.size - n.size)) {
-            var ok = true
-            for (j in 0..n.size) {
-                if (h[i + j] != n[j]) { ok = false; break }
-            }
-            if (ok) { return true }
+    func pathMatches(reqPathRaw: String, cookiePath: String): Bool {
+        let reqPath = if (reqPathRaw.size == 0) { "/" } else { reqPathRaw }
+        if (reqPath == cookiePath) {
+            return true
+        }
+        if (!startsWith(reqPath, cookiePath)) {
+            return false
+        }
+        if (cookiePath.toRuneArray()[cookiePath.size - 1] == r'/') {
+            return true
+        }
+        if (reqPath.size > cookiePath.size && reqPath.toRuneArray()[cookiePath.size] == r'/') {
+            return true
         }
         false
     }
 
-    func hostFromUrl(url: String): String {
-        var start: Int64 = 0
-        let runes = url.toRuneArray()
-        if (runes.size >= 8) {
-            if (runes[0] == r'h' && runes[1] == r't' && runes[2] == r't' && runes[3] == r'p' && runes[4] == r's' && runes[5] == r':' && runes[6] == r'/' && runes[7] == r'/') {
-                start = 8
+    func parseInt64(raw: String): ?Int64 {
+        let s = raw.trimAscii()
+        if (s.size == 0) {
+            return None
+        }
+        let runes = s.toRuneArray()
+        var sign: Int64 = 1
+        var i: Int64 = 0
+        if (runes[0] == r'-') {
+            sign = -1
+            i = 1
+        } else if (runes[0] == r'+') {
+            i = 1
+        }
+        if (i >= runes.size) {
+            return None
+        }
+        var value: Int64 = 0
+        while (i < runes.size) {
+            let ch = runes[i]
+            if (ch < r'0' || ch > r'9') {
+                return None
+            }
+            let digit = Int64(UInt32(ch)) - Int64(UInt32(r'0'))
+            value = value * 10 + digit
+            i += 1
+        }
+        Some(value * sign)
+    }
+
+    func startsWith(s: String, prefix: String): Bool {
+        let a = s.toRuneArray()
+        let b = prefix.toRuneArray()
+        if (a.size < b.size) {
+            return false
+        }
+        for (i in 0..b.size) {
+            if (a[i] != b[i]) {
+                return false
             }
         }
-        if (start == 0 && runes.size >= 7) {
-            if (runes[0] == r'h' && runes[1] == r't' && runes[2] == r't' && runes[3] == r'p' && runes[4] == r':' && runes[5] == r'/' && runes[6] == r'/') {
-                start = 7
+        true
+    }
+
+    func endsWith(s: String, suffix: String): Bool {
+        let a = s.toRuneArray()
+        let b = suffix.toRuneArray()
+        if (a.size < b.size) {
+            return false
+        }
+        let offset = a.size - b.size
+        for (i in 0..b.size) {
+            if (a[offset + i] != b[i]) {
+                return false
             }
         }
-        var result = ""
+        true
+    }
+
+    func indexOfChar(s: String, ch: Rune): Int64 {
+        let runes = s.toRuneArray()
+        for (i in 0..runes.size) {
+            if (runes[i] == ch) {
+                return i
+            }
+        }
+        -1
+    }
+
+    func lastIndexOfChar(s: String, ch: Rune): Int64 {
+        let runes = s.toRuneArray()
+        var i = runes.size
+        while (i > 0) {
+            i -= 1
+            if (runes[i] == ch) {
+                return i
+            }
+        }
+        -1
+    }
+
+    func sliceFrom(s: String, start: Int64): String {
+        let runes = s.toRuneArray()
+        if (start <= 0) {
+            return s
+        }
+        if (start >= runes.size) {
+            return ""
+        }
+        var out = ""
         for (i in start..runes.size) {
-            if (runes[i] == r'/') { break }
-            result += runes[i].toString()
+            out += runes[i].toString()
         }
-        result
+        out
+    }
+
+    func sliceRange(s: String, start: Int64, end: Int64): String {
+        let runes = s.toRuneArray()
+        if (start >= end || start >= runes.size || end <= 0) {
+            return ""
+        }
+        var st = start
+        var ed = end
+        if (st < 0) { st = 0 }
+        if (ed > runes.size) { ed = runes.size }
+        var out = ""
+        for (i in st..ed) {
+            out += runes[i].toString()
+        }
+        out
     }
 }
 
-// ── ClientResponse ──
+class CookieRequestContext {
+    let host: String
+    let path: String
+    let secure: Bool
 
-public class ClientResponse {
-    let _resp: HttpResponse
-    var _bodyCache: ?Array<UInt8> = None
-
-    public init(resp: HttpResponse) {
-        _resp = resp
+    init(host: String, path: String, secure: Bool) {
+        this.host = host
+        this.path = path
+        this.secure = secure
     }
+}
 
-    public prop status: UInt16 {
-        get() { _resp.status }
-    }
+public type ClientRequestHook = (HttpRequestBuilder) -> Unit
+public type ClientResponseHook = (ClientResponse) -> Unit
+public type ClientErrorHook = (Exception) -> Unit
 
-    public prop headers: HttpHeaders {
-        get() { _resp.headers }
-    }
+public class ClientRetryConfig {
+    public var enabled: Bool
+    public var maxAttempts: Int64
+    public var idempotentOnly: Bool
+    public var baseDelayMs: Int64
+    public var maxDelayMs: Int64
+    public var jitterMs: Int64
+    public var retryStatusCodes: ArrayList<Int64>
 
-    public func isOk(): Bool {
-        let s = Int64(_resp.status)
-        s >= 200 && s < 300
-    }
-
-    public func isSuccess(): Bool {
-        isOk()
-    }
-
-    public func bodyStream(): InputStream {
-        _resp.body
-    }
-
-    public func body(): String {
-        String.fromUtf8(bodyBytes())
-    }
-
-    public func bodyBytes(): Array<UInt8> {
-        if (let Some(cached) <- _bodyCache) {
-            return cached
-        }
-        let buf = ArrayList<UInt8>()
-        let tmp = Array<UInt8>(4096, repeat: 0)
-        while (true) {
-            let n = _resp.body.read(tmp)
-            if (n <= 0) { break }
-            for (i in 0..n) {
-                buf.add(tmp[i])
+    public init(
+        enabled!: Bool = true,
+        maxAttempts!: Int64 = 3,
+        idempotentOnly!: Bool = true,
+        baseDelayMs!: Int64 = 100,
+        maxDelayMs!: Int64 = 1000,
+        jitterMs!: Int64 = 50,
+        retryStatusCodes!: ?ArrayList<Int64> = None
+    ) {
+        this.enabled = enabled
+        this.maxAttempts = if (maxAttempts < 1) { 1 } else { maxAttempts }
+        this.idempotentOnly = idempotentOnly
+        this.baseDelayMs = if (baseDelayMs < 0) { 0 } else { baseDelayMs }
+        this.maxDelayMs = if (maxDelayMs < this.baseDelayMs) { this.baseDelayMs } else { maxDelayMs }
+        this.jitterMs = if (jitterMs < 0) { 0 } else { jitterMs }
+        this.retryStatusCodes = ArrayList<Int64>()
+        if (let Some(list) <- retryStatusCodes) {
+            for (code in list) {
+                this.retryStatusCodes.add(code)
             }
+        } else {
+            this.retryStatusCodes.add(408)
+            this.retryStatusCodes.add(425)
+            this.retryStatusCodes.add(429)
+            this.retryStatusCodes.add(500)
+            this.retryStatusCodes.add(502)
+            this.retryStatusCodes.add(503)
+            this.retryStatusCodes.add(504)
         }
-        let arr = buf.toArray()
-        _bodyCache = arr
-        arr
     }
 
-    public func json(): String {
-        body()
-    }
-
-    public func header(name: String): ?String {
-        _resp.headers.getFirst(name)
-    }
-
-    public func headerValues(name: String): ArrayList<String> {
-        let list = ArrayList<String>()
-        match (_resp.headers.getFirst(name)) {
-            case Some(v) => list.add(v)
-            case None => ()
+    public func copy(): ClientRetryConfig {
+        let copied = ArrayList<Int64>()
+        for (code in retryStatusCodes) {
+            copied.add(code)
         }
-        list
-    }
-
-    public func discard(): Unit {
-        let tmp = Array<UInt8>(1024, repeat: 0)
-        while (_resp.body.read(tmp) > 0) {}
+        ClientRetryConfig(
+            enabled: enabled,
+            maxAttempts: maxAttempts,
+            idempotentOnly: idempotentOnly,
+            baseDelayMs: baseDelayMs,
+            maxDelayMs: maxDelayMs,
+            jitterMs: jitterMs,
+            retryStatusCodes: copied
+        )
     }
 }

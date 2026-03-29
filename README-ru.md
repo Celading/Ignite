@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.4.51-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.21-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.51</span>              │
+│               <span style="color:#88C0D0;">Ignite HttpServer v0.5.21</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -19,8 +19,8 @@
 <h1 align="center">Ignite (叶燧)</h1>
 
 <p align="center">
-  <strong>Высокопроизводительный веб-фреймворк для языка Cangjie</strong><br>
-  <sub>Гибкость · Минимальный API · Маршрутизация Trie · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
+  <strong>Веб-фреймворк для Cangjie, рассчитанный на реальную поставку сервисов</strong><br>
+  <sub>Эргономика в духе Fiber · Производственная управляемость · Совместная эволюция Server/Client</sub>
 </p>
 
 <p align="center">
@@ -44,9 +44,16 @@
 
 > **«Зажги первый огонь веб-разработки на Cangjie.»**
 
-Cangjie — язык программирования от Huawei. **Ignite** — веб-фреймворк для экосистемы Cangjie, вдохновлённый минималистичной философией [Fiber](https://gofiber.io/): **минимальный API, высокая производительность и низкое потребление ресурсов**. Идеи Fiber перенесены в систему типов Cangjie — вы можете строить высокопроизводительные HTTP-сервисы минимумом кода.
+Cangjie — язык программирования от Huawei. **Ignite** — веб-фреймворк для экосистемы Cangjie, вдохновлённый минималистичной философией [Fiber](https://gofiber.io/) и ориентированный на более непрерывный путь от первого endpoint до production governance. Вместо погоней за одной лишь benchmark-риторикой Ignite делает ставку на **лёгкую эргономику, встроенные операционные возможности по умолчанию и долгосрочную сопровождимость** для команд на Cangjie.
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
+
+## Текущее состояние (0.5.21)
+
+- `0.5.21` — это официальный рубеж внутри непрерывной линии `0.5.x`. Он отмечает текущую публикуемую базовую точку этапа `0500`, а не «внезапный маркетинговый скачок версии».
+- В этом выпуске упор сделан на то, что команда реально чувствует в работе: `bindJsonOr400`, `handleForTest`, `urlFor`, обновлённые samples, compression, JWT и более понятные границы TLS / release guard.
+- Этап `0500` ещё не закрыт полностью. Сейчас важнее довести документацию, release gates и доверие к материалам, чем просто наращивать число функций.
+- Следующим идёт `0600` как этап общего транспортного абстрагирования, но этот выпуск **не** обещает немедленной замены server stack по умолчанию.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -231,6 +238,8 @@ let app = App(config: Config(
     enableSwaggerCache:  true,   // кэш Swagger JSON/UI; ?refresh=1 для обновления
     enablePrintRoutes:   false,  // при true — печать таблицы маршрутов при старте; баннер всегда показывается
     kmode:               false,  // при true — режим отладки: баннер с версией Ignite; используется с kmodeMiddleware
+    kmodePanicHandler:   None,   // опциональный App-level panic hook; true = ошибка уже обработана
+    enableTlsPrecheck:   true,   // переключатель TLS precheck: по умолчанию сначала precheck через jinguissl, затем текущий путь сборки stdx TLS
     jsonEncoder:         None   // опционально: свой энкодер JsonEncodable
 ))
 ```
@@ -251,8 +260,10 @@ let app = App(config: Config(
 | | `csrfMiddleware` | CSRF, двойная отправка cookie |
 | | `basicAuthMiddleware` | HTTP Basic-аутентификация |
 | | `keyAuthMiddleware` | API Key (Header/Query/Cookie) |
-| | `encryptCookieMiddleware` | Шифрование/расшифровка cookie (XOR + Base64) |
+| | `jwtMiddleware` | JWT-аутентификация (baseline: HS256; Header/Query/Cookie + claims в `ctx locals`) |
+| | `encryptCookieMiddleware` | Шифрование/расшифровка cookie (AEAD v1 с миграцией dual-read для legacy XOR) |
 | **Логирование** | `loggerMiddleware` | Метод, путь, длительность; интерфейс Logger, DefaultLogger, своя реализация; `enableEntityLog` для структурированных логов |
+| | `auditMiddleware` | Унифицированный аудит (eventId/requestId/actor/ip/action/result/riskLevel + securityEvent/securityCode/securitySource) |
 | | `accessLogMiddleware` | IP, задержка, User-Agent |
 | | `requestIdMiddleware` | X-Request-ID |
 | | `recoverMiddleware` | Восстановление после panic |
@@ -260,6 +271,7 @@ let app = App(config: Config(
 | | `bodyLimitMiddleware` | Ограничение размера тела запроса |
 | | `timeoutMiddleware` | Таймаут запроса |
 | **Кэш** | `cacheMiddleware` | Кэш GET-ответов в памяти |
+| | `compressMiddleware` | Сжатие ответов (gzip/deflate, согласование по `Accept-Encoding`, настраиваемый порог размера) |
 | | `etagMiddleware` | ETag + If-None-Match 304 |
 | **Сессии** | `sessionMiddleware` | Cookie с ID сессии + SessionStore |
 | **Прочее** | `redirectMiddleware` | Правила редиректа URL |
@@ -268,7 +280,7 @@ let app = App(config: Config(
 | | `faviconMiddleware` | favicon.ico |
 | | `healthCheckMiddleware` | Эндпоинт проверки здоровья |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
-| | `proxyMiddleware` | Обратный прокси |
+| | `proxyMiddleware` | Обратный прокси (с опциональным X509 verify entry) |
 | **Отладка** | `kmodeMiddleware` | Режим kmode: устанавливает ctx local `kmode`; с `Config.kmode`; баннер всегда выводит версию Ignite при kmode |
 
 Пример:
@@ -281,6 +293,14 @@ app.use(kmodeMiddleware(app.config.kmode))
 
 // Логирование
 app.use(loggerMiddleware())
+
+// JWT (HS256)
+app.use(jwtMiddleware(JwtConfig(
+    secret: "replace-me"
+)))
+
+// Сжатие ответов (рекомендуется ставить перед cache/etag)
+app.use(compressMiddleware())
 
 // CORS
 app.use(corsMiddleware(config: CorsConfig(
@@ -318,6 +338,68 @@ app.use(authMiddleware)
 Request ──► Logger ──► CORS ──► Auth ──► Handler
                                           │
 Response ◄── Logger ◄── CORS ◄── Auth ◄───┘
+```
+
+### JWT middleware (0.5.21)
+
+```cangjie
+import ignite.middleware.*
+
+app.use(jwtMiddleware(JwtConfig(
+    secret: "replace-with-strong-secret",
+    requiredIssuer: "ignite",
+    requiredAudience: "web",
+    queryName: "access_token",   // опционально: query
+    cookieName: "access_token"   // опционально: cookie
+)))
+```
+
+- Поддерживаемый алгоритм: `HS256`
+- Проверки по умолчанию: `exp` / `nbf` / `iat` (`clockSkewSec` можно настроить)
+- После успешной проверки в `ctx locals`: `jwt_claims`, `jwt_sub`, `jwt_token`
+- Практика безопасности: HTTPS, короткий TTL токена, регулярная ротация секрета
+
+### Аварийный kMode failover (Recover + Client Probe)
+
+Если panic в `ig/app` перехватывается `recoverMiddleware`, в `kmode=true` можно запустить аварийный probe:
+
+```cangjie
+import ignite.governance.*
+import ignite.middleware.*
+
+let failoverOption = KModeFailoverOption(
+    enabled: true,
+    probeUrl: "http://localhost:8828",
+    probeMethod: "POST",
+    probePayload: "ignite-emergency",
+    expectedResponse: "RESTART",
+    probeTimeoutSec: 2,
+    maxAttempts: 5,
+    intervalMs: 500,
+    restartOnMatch: true,
+    terminateOnMiss: true
+)
+
+app.use(recoverMiddleware(config: RecoverConfig(
+    kmodeFailover: Some(failoverOption)
+)))
+```
+
+- Ответ совпал с `expectedResponse`: по умолчанию `503` + `app.shutdown()` (перезапуск делает внешний supervisor).
+- Ответ не совпал после лимитов: `503` + `app.shutdown()`.
+- Для кастомной логики используйте hooks `onKModeRestart` / `onKModeTerminate`.
+
+Если `recoverMiddleware` не используется, аналогичный fallback можно подключить через `Config.kmodePanicHandler` (верхний catch App).
+
+### Наблюдаемость Безопасности (0.5.04)
+
+`ignite.security` предоставляет структурированные счётчики: `decryptFailures`, `signatureFailures`, `certRejects`.
+
+```cangjie
+import ignite.security.*
+
+let snap = securityMetricsSnapshot()
+println("decrypt=${snap.decryptFailures}, sign=${snap.signatureFailures}, cert=${snap.certRejects}")
 ```
 
 ## Расширенное использование
@@ -411,6 +493,23 @@ app.staticSpa("/", "frontend/out", "index.html")
 
 Сначала регистрируйте API-маршруты, затем в конце — `staticSpa`, чтобы API не перекрывалось общим обработчиком.
 
+### IgniteKit: лёгкая сборка динамических HTML/CSS
+
+Когда не хочется смешивать генерацию HTML/CSS с основными API-роутами, используйте `IgniteKit` и подключайте ресурсы одним `mount`:
+
+```cangjie
+let kit = IgniteKit(prefix: "/web")
+_ = kit.css("/app.css", "body{font-family:monospace;}")
+_ = kit.html("/index.html", "<h1>{{title}}</h1>", vars: [("title", "IgniteKit")])
+_ = kit.dynamicHtml("/hello.html", { ctx =>
+    let name = (ctx.queryFromUrl("name") ?? "ignite").trimAscii()
+    kit.renderTemplate("<h1>Hello, {{name}}</h1>", vars: [("name", name)])
+})
+_ = kit.mount(app)
+```
+
+Подходит для admin-страниц, диагностических endpoint-страниц и быстрых шаблонов до выделения отдельного frontend-проекта.
+
 #### Нужна только SPA?
 
 Маршруты в Ignite обрабатываются **сверху вниз**. Из соображений **безопасности** при необходимости «жадной» статики **регистрируйте её последней**:
@@ -459,7 +558,8 @@ app.get("/users/:id", getUser, option: RouteOption()
 ```cangjie
 let app = App(config: Config(
     tlsCertFile: "./cert.pem",
-    tlsKeyFile:  "./key.pem"
+    tlsKeyFile:  "./key.pem",
+    enableTlsPrecheck: true // по умолчанию: precheck jinguissl перед текущей сборкой stdx TLS config
 ))
 
 // TLS + HTTP/2 ALPN (h2, http/1.1)
@@ -467,6 +567,19 @@ app.listen("0.0.0.0", 443)
 ```
 
 **HTTP/2:** при включённом TLS сервер согласует `h2`. Проверка: `curl -sI --http2 https://localhost:3443/`.
+
+`enableTlsPrecheck` можно отключить (`false`) для отката на текущий путь "только default TLS build". Рекомендуется только для аварийной диагностики.
+
+Текущая публичная основная линия по-прежнему считает **Ignite + сборку stdx TLS config** маршрутом HTTPS по умолчанию; `jinguissl` сейчас выступает как слой precheck и параллельной эволюции, а не как единственный путь HTTPS по умолчанию.  
+Если далее возникнут проблемы совместимости с `jinguissl`, версиями Cangjie или платформами, предпочтительно сначала поглощать их через `lisi`, а не разносить ветки совместимости прямо по основной ветке Ignite.
+
+Матрица диагностики старта TLS (поля в логах: `tls_stage` / `tls_error_code` / `hint`):
+
+| `tls_error_code` | Типичная причина | Что проверить |
+|------|------|------|
+| `BAD_INPUT` | Пустой PEM или некорректный ALPN | Проверить cert/key и ALPN (`h2,http/1.1`) |
+| `VERIFY_FAILED` | Несовпадение цепочки сертификатов и ключа | Перепроверить пару cert/key и порядок цепочки |
+| `INTERNAL_ERROR` | Сбой на этапе сборки stdx TLS config | Проверить runtime-зависимости, парсинг cert и пути к файлам |
 
 ### HTTP-клиент
 
@@ -487,6 +600,18 @@ let resp2 = client.postJson(
 println(resp2.status)
 resp2.discard()
 
+// X509 verify entry (Client)
+client.useX509Verify(X509VerifyOption(
+    enabled: true,
+    requireHttps: true,
+    expectedServerName: "api.example.com",
+    pinnedSha256: ["sha256:your-pin"],
+    hook: { ctx =>
+        // Подключите здесь вашу проверку цепочки сертификатов / pin-сверку
+        true
+    }
+))
+
 client.close()
 ```
 
@@ -496,12 +621,16 @@ client.close()
 |------|-----|
 | Методы | `get`, `post`, `put`, `patch`, `delete`, `head`, `options` |
 | JSON | `postJson(url, json)` |
+| Шифрованный JSON | `useCrypto(config)` + `postEncryptedJson(url, json, aad?)` + `request().encryptedBodyJson(json, aad?, config?)` |
 | Форма | `postForm(url, ArrayList<(String,String)>)` |
 | Multipart | `postMultipart(url, fields, files)`, `MultipartFile(name, filename, contentType, data)` |
+| Retry/Backoff | `useRetry(config)`, по умолчанию ретраи только для идемпотентных методов; `request().retry(config)` / `request().disableRetry()` |
+| X509 verify entry | `useX509Verify(option)`; `request().x509Verify(option)` / `request().disableX509Verify()` |
+| Hook-конвейер | `onRequest`, `onResponse`, `onError` (и в `RestClient`, и в `RequestBuilder`) |
 | Builder | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
 | Base URL | `baseUrl("https://api.example.com")` |
 | Заголовки по умолчанию | `defaultHeader(name, value)` |
-| Cookie | `useCookies()` или `useCookies(store)` |
+| Cookie | `useCookies()` или `useCookies(store)`; поддерживает `domain/path/max-age/secure/httpOnly/sameSite` и несколько `set-cookie` |
 | Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` |
 
 ### Обработка ошибок и корректное завершение
@@ -563,6 +692,24 @@ ignite/
 
 ### Примеры Ignite
 
+- `samples/hello` — минимальный серверный пример (`GET /` + `GET /health`)
+- `samples/api` — in-memory Todo CRUD (path/query параметры + `ctx.jsonEncode`)
+- `samples/client` — встроенный client round-trip demo (`demo_server.cj` + `demo_client.cj`)
+- `samples/ignitekit` — пример IgniteKit для динамических HTML/CSS (`kit.html` / `kit.css` / `kit.dynamicHtml`)
+
+### Что попробовать сначала в этом выпуске
+
+- Начните с `samples/hello`, если хотите пройти первый запуск за 5 минут.
+- Затем откройте `samples/api`, чтобы посмотреть маршрутизацию, JSON, CRUD-поток и `bindJsonOr400`.
+- После этого попробуйте `samples/client`, если нужен полный Server/Client round trip с encrypted JSON, multipart и builder-style запросами.
+
+## Как подключиться дальше
+
+- Сейчас Ignite в первую очередь ориентирован на пробное использование и принятие в проектах; сценарии внешнего участия мы подготавливаем параллельно.
+- Если хотите посмотреть на инженерный поток сопровождения и направление `0800`, начните с [`docs/ignite-0800-engineering-flow-summary.md`](docs/ignite-0800-engineering-flow-summary.md).
+
+### Другие проекты экосистемы
+
 - <a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> — Рекомендуемые практики
 - <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> — Бэкенд TODO на чистом Cangjie + HTML
 - <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> — Бэкенд чата на чистом Cangjie + HTML
@@ -573,7 +720,7 @@ ignite/
 
 ## Заметка для сопровождающих
 
-- **Версия:** Единственный источник истины — `[package].version` в `cjpm.toml`. После изменения запустите `./scripts/gen_version.sh`, чтобы синхронизировать `src/version.cj` (версия фреймворка в баннере и т.д.).
+- **Версия:** Единственный источник истины — `[package].version` в `cjpm.toml` (версия в баннере читается из метаданных пакета на этапе компиляции).
 
 ## Лицензия
 

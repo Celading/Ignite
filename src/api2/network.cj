@@ -27,7 +27,7 @@ public func getPreferredLocalIP(): ?String {
     try {
         let sock = UdpSocket(bindAt: 0)
         sock.bind()
-        sock.connect(IPSocketAddress.parse("8.8.8.8:53"))
+        sock.connect(IPSocketAddress.parse("10.255.255.255:53"))
         let local = sock.localAddress
         sock.close()
         match (local) {

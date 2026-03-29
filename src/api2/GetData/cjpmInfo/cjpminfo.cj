@@ -1,7 +1,7 @@
 /**
     Author: ystyle
     Description: A Cangjie package used to read project metadata from cjpm.toml at compile time.
-    Link: https://gitcode.com/ystyle/cjpminfo/blob/master/README.md
+    Link: local cjpmInfo metadata reader
 */
 macro package ignite.api2.GetData.cjpmInfo
 

@@ -26,9 +26,13 @@ public struct Config {
     public var enablePrintRoutes: Bool = false
     /// kmode（调试模式）：为 true 时启动后启用类似 debug 行为，Banner 中必打当前 Ignite 版本，并可配合 kmodeMiddleware 使用。
     public var kmode: Bool = false
+    /// kmode panic hook：用于 App 顶层异常兜底。返回 true 表示异常已处理（例如触发重启/终止流程），将跳过默认 500 处理。
+    public var kmodePanicHandler: ?KModePanicHandler = None
 
     public var tlsCertFile: String = ""
     public var tlsKeyFile: String = ""
+    /// 为 true 时启用 jinguiSSL TLS precheck；为 false 时仅使用 stdx TLS 构造路径（保留回退能力）。
+    public var enableTlsPrecheck: Bool = true
 
     public var allowRouteOverwrite: Bool = false
 
@@ -51,8 +55,10 @@ public struct Config {
         swaggerUIJsUrl!: String = "",
         enablePrintRoutes!: Bool = false,
         kmode!: Bool = false,
+        kmodePanicHandler!: ?KModePanicHandler = None,
         tlsCertFile!: String = "",
         tlsKeyFile!: String = "",
+        enableTlsPrecheck!: Bool = true,
         allowRouteOverwrite!: Bool = false,
         enableSwaggerCache!: Bool = true,
         jsonEncoder!: ?JsonEncoder = None
@@ -71,8 +77,10 @@ public struct Config {
         this.swaggerUIJsUrl = swaggerUIJsUrl
         this.enablePrintRoutes = enablePrintRoutes
         this.kmode = kmode
+        this.kmodePanicHandler = kmodePanicHandler
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
+        this.enableTlsPrecheck = enableTlsPrecheck
         this.allowRouteOverwrite = allowRouteOverwrite
         this.enableSwaggerCache = enableSwaggerCache
         this.jsonEncoder = jsonEncoder

@@ -46,24 +46,29 @@ public class SecurityConfig {
 }
 
 public func securityMiddleware(config!: SecurityConfig = SecurityConfig()): Handler {
+    let hstsMaxAge = if (config.hstsMaxAge < 0) { 0 } else { config.hstsMaxAge }
+    let xContentTypeOptions = if (config.xContentTypeOptions.size == 0) { "nosniff" } else { config.xContentTypeOptions }
+    let xFrameOptions = if (config.xFrameOptions.size == 0) { "SAMEORIGIN" } else { config.xFrameOptions }
+    let referrerPolicy = if (config.referrerPolicy.size == 0) { "no-referrer" } else { config.referrerPolicy }
+
     { ctx: Ctx =>
-        if (config.xContentTypeOptions.size > 0) {
-            ctx.setHeader("X-Content-Type-Options", config.xContentTypeOptions)
+        if (xContentTypeOptions.size > 0) {
+            ctx.setHeader("X-Content-Type-Options", xContentTypeOptions)
         }
-        if (config.xFrameOptions.size > 0) {
-            ctx.setHeader("X-Frame-Options", config.xFrameOptions)
+        if (xFrameOptions.size > 0) {
+            ctx.setHeader("X-Frame-Options", xFrameOptions)
         }
         if (config.xXssProtection.size > 0) {
             ctx.setHeader("X-XSS-Protection", config.xXssProtection)
         }
-        if (config.referrerPolicy.size > 0) {
-            ctx.setHeader("Referrer-Policy", config.referrerPolicy)
+        if (referrerPolicy.size > 0) {
+            ctx.setHeader("Referrer-Policy", referrerPolicy)
         }
         if (config.contentSecurityPolicy.size > 0) {
             ctx.setHeader("Content-Security-Policy", config.contentSecurityPolicy)
         }
-        if (config.hstsMaxAge > 0) {
-            var hsts = "max-age=${config.hstsMaxAge}"
+        if (hstsMaxAge > 0) {
+            var hsts = "max-age=${hstsMaxAge}"
             if (config.hstsIncludeSubDomains) { hsts += "; includeSubDomains" }
             if (config.hstsPreload) { hsts += "; preload" }
             ctx.setHeader("Strict-Transport-Security", hsts)

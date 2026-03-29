@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.4.51-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.21-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite HttpServer v0.4.51</span>              │
+│               <span style="color:#88C0D0;">Ignite HttpServer v0.5.21</span>              │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -19,8 +19,8 @@
 <h1 align="center">Ignite (叶燧)</h1>
 
 <p align="center">
-  <strong>A high-performance web framework for the Cangjie language</strong><br>
-  <sub>High flexibility · Minimal API · Trie router · WebSocket · SSE · Swagger · TLS/HTTP2</sub>
+  <strong>A web framework for the Cangjie language, built for real service delivery</strong><br>
+  <sub>Fiber-style ergonomics · Production governance · Server/Client evolution</sub>
 </p>
 
 <p align="center">
@@ -44,9 +44,16 @@
 
 > **"Light the first fire of Cangjie web development."**
 
-Cangjie is a programming language by Huawei. **Ignite** is a web framework built for the Cangjie ecosystem—inspired by [Fiber](https://gofiber.io/)'s minimal design philosophy, aiming to deliver **minimal API, high performance, and low resource usage** for Cangjie developers, bringing its core ideas into Cangjie's type system so you can build high-performance HTTP services with minimal code.
+Cangjie is a programming language by Huawei. **Ignite** is a web framework built for the Cangjie ecosystem—inspired by [Fiber](https://gofiber.io/)'s minimal design philosophy and focused on a more continuous path from first endpoint to production governance. Rather than only chasing benchmark narratives, Ignite prioritizes **lightweight ergonomics, default operational capabilities, and long-term maintainability** for Cangjie teams.
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
+
+## Current Status (0.5.21)
+
+- `0.5.21` is a formal milestone in the rolling `0.5.x` train. It marks the current releasable baseline of the `0500` closeout phase, not a sudden marketing jump.
+- This release centers on things teams can feel quickly: `bindJsonOr400`, `handleForTest`, `urlFor`, refreshed samples, compression, JWT, and clearer TLS / release-guard boundaries.
+- `0500` is still about production closeout. The remaining focus is documentation trustworthiness, release gates, and adoption readiness rather than adding feature count for its own sake.
+- `0600` comes next as shared transport abstraction work, but this version does **not** claim a default server-stack replacement.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -231,6 +238,8 @@ let app = App(config: Config(
     enableSwaggerCache:  true,   // Cache Swagger JSON/UI; ?refresh=1 to refresh
     enablePrintRoutes:   false,  // when true, print route table at startup; banner always shown
     kmode:               false,  // when true, debug mode: banner prints Ignite version; use with kmodeMiddleware
+    kmodePanicHandler:   None,   // optional App-level panic fallback hook; return true when handled
+    enableTlsPrecheck:   true,   // TLS precheck toggle: default = jinguissl precheck before the current stdx TLS build path
     jsonEncoder:         None   // Optional custom JsonEncodable encoder
 ))
 ```
@@ -251,8 +260,10 @@ Import with `import ignite.middleware.*`:
 | | `csrfMiddleware` | CSRF double-submit cookie |
 | | `basicAuthMiddleware` | HTTP Basic auth |
 | | `keyAuthMiddleware` | API Key (Header/Query/Cookie) |
-| | `encryptCookieMiddleware` | Cookie encrypt/decrypt (XOR + Base64) |
-| **Logging** | `loggerMiddleware` | Method, path, duration; Logger interface + DefaultLogger, custom impl; `enableEntityLog` for structured log |
+| | `jwtMiddleware` | JWT auth middleware (currently HS256; Header/Query/Cookie extraction + claims injection) |
+| | `encryptCookieMiddleware` | Cookie encrypt/decrypt (AEAD v1 with legacy XOR dual-read migration) |
+| **Logging** | `loggerMiddleware` | Method, path, duration; Logger interface + DefaultLogger, custom impl; `enableEntityLog` for structured log, `jsonLine` for JSON line output |
+| | `auditMiddleware` | Unified audit event (eventId/requestId/actor/ip/action/result/riskLevel + securityEvent/securityCode/securitySource) |
 | | `accessLogMiddleware` | IP, latency, User-Agent |
 | | `requestIdMiddleware` | X-Request-ID |
 | | `recoverMiddleware` | Panic recovery |
@@ -260,6 +271,7 @@ Import with `import ignite.middleware.*`:
 | | `bodyLimitMiddleware` | Request body size limit |
 | | `timeoutMiddleware` | Request timeout |
 | **Cache** | `cacheMiddleware` | In-memory GET response cache |
+| | `compressMiddleware` | Response compression (gzip/deflate, negotiated by `Accept-Encoding`, with size threshold config) |
 | | `etagMiddleware` | ETag + If-None-Match 304 |
 | **Session** | `sessionMiddleware` | Session ID cookie + SessionStore |
 | **Other** | `redirectMiddleware` | URL redirect rules |
@@ -268,7 +280,7 @@ Import with `import ignite.middleware.*`:
 | | `faviconMiddleware` | favicon.ico |
 | | `healthCheckMiddleware` | Health check endpoint |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
-| | `proxyMiddleware` | Reverse proxy |
+| | `proxyMiddleware` | Reverse proxy (with optional X509 verify entry) |
 | **Debug** | `kmodeMiddleware` | kmode debug: sets ctx local `kmode`; use with `Config.kmode`; banner always prints Ignite version when kmode |
 
 Example:
@@ -281,6 +293,14 @@ app.use(kmodeMiddleware(app.config.kmode))
 
 // Logging
 app.use(loggerMiddleware())
+
+// JWT (HS256)
+app.use(jwtMiddleware(JwtConfig(
+    secret: "replace-me"
+)))
+
+// Response compression (recommended before cache/etag)
+app.use(compressMiddleware())
 
 // CORS
 app.use(corsMiddleware(config: CorsConfig(
@@ -320,6 +340,68 @@ Request ──► Logger ──► CORS ──► Auth ──► Handler
 Response ◄── Logger ◄── CORS ◄── Auth ◄───┘
 ```
 
+### JWT middleware (0.5.21)
+
+```cangjie
+import ignite.middleware.*
+
+app.use(jwtMiddleware(JwtConfig(
+    secret: "replace-with-strong-secret",
+    requiredIssuer: "ignite",
+    requiredAudience: "web",
+    queryName: "access_token",   // optional: query extraction
+    cookieName: "access_token"   // optional: cookie extraction
+)))
+```
+
+- Algorithm support: `HS256` (current baseline)
+- Built-in checks: `exp` / `nbf` / `iat` (`clockSkewSec` configurable)
+- Context locals on success: `jwt_claims`, `jwt_sub`, `jwt_token`
+- Security model note: use HTTPS transport, short-lived tokens, and rotate secrets regularly
+
+### kMode Emergency Failover (Recover + Client Probe)
+
+When an `ig/app` panic is caught by `recoverMiddleware`, you can trigger an emergency probe in `kmode=true`:
+
+```cangjie
+import ignite.governance.*
+import ignite.middleware.*
+
+let failoverOption = KModeFailoverOption(
+    enabled: true,
+    probeUrl: "http://localhost:8828",
+    probeMethod: "POST",
+    probePayload: "ignite-emergency",
+    expectedResponse: "RESTART",
+    probeTimeoutSec: 2,
+    maxAttempts: 5,
+    intervalMs: 500,
+    restartOnMatch: true,
+    terminateOnMiss: true
+)
+
+app.use(recoverMiddleware(config: RecoverConfig(
+    kmodeFailover: Some(failoverOption)
+)))
+```
+
+- Response matches `expectedResponse`: returns `503` and calls `app.shutdown()` by default (supervisor restarts process).
+- Response mismatch after thresholds: returns `503` and calls `app.shutdown()`.
+- Override with `onKModeRestart` / `onKModeTerminate` hooks when custom behavior is needed.
+
+If you do not use `recoverMiddleware`, use `Config.kmodePanicHandler` to attach a similar fallback at App top-level catch.
+
+### Security Observability (0.5.04)
+
+`ignite.security` exposes structured counters: `decryptFailures`, `signatureFailures`, `certRejects`.
+
+```cangjie
+import ignite.security.*
+
+let snap = securityMetricsSnapshot()
+println("decrypt=${snap.decryptFailures}, sign=${snap.signatureFailures}, cert=${snap.certRejects}")
+```
+
 ## Advanced Usage
 
 ### Function override
@@ -350,6 +432,56 @@ app.use(loggerMiddleware(config: LoggerConfig(output: { msg =>
     writeFile("/var/log/myapp.log", msg + "\n", append: true)
 })))
 ```
+
+For ELK/Loki ingestion, enable JSON-line output:
+
+```cangjie
+let cfg = LoggerConfig()
+cfg.jsonLine = true
+app.use(loggerMiddleware(config: cfg))
+```
+
+### Request bind & validate (`bindJsonOr400`)
+
+Use `Ctx.bindJsonOr400<T>(decoder, validate?)` to centralize JSON decoding and readable `400` responses:
+
+```cangjie
+import stdx.encoding.json.{JsonValue, JsonObject}
+
+public class CreateUserReq {
+    public let name: String
+    public let age: Int64
+    public init(name: String, age: Int64) {
+        this.name = name
+        this.age = age
+    }
+}
+
+func decodeCreateUserReq(v: JsonValue): CreateUserReq {
+    let obj = v.asObject()
+    let name = obj.get("name").orThrow().asString()
+    let age = obj.get("age").orThrow().asInt64()
+    CreateUserReq(name, age)
+}
+
+app.post("/users", { ctx =>
+    if (let Some(req) <- ctx.bindJsonOr400<CreateUserReq>(
+        decodeCreateUserReq,
+        validate: { r =>
+            if (r.name.trimAscii().size == 0) { return Some("name is required") }
+            if (r.age <= 0) { return Some("age must be positive") }
+            None
+        }
+    )) {
+        _ = ctx.status(201).sendString("created:${req.name}:${req.age}")
+    }
+})
+```
+
+Failure responses return `400` JSON with reason:
+- `invalid_json`
+- `invalid_payload`
+- `validation_failed`
 
 ### WebSocket
 
@@ -411,6 +543,23 @@ app.staticSpa("/", "frontend/out", "index.html")
 
 Register API routes first, then `staticSpa` last, so APIs are not shadowed by the catch-all.
 
+### IgniteKit: lightweight dynamic page/style composition
+
+If you don't want HTML/CSS generation logic mixed into your main route file, use `IgniteKit` to group assets and mount once:
+
+```cangjie
+let kit = IgniteKit(prefix: "/web")
+_ = kit.css("/app.css", "body{font-family:monospace;}")
+_ = kit.html("/index.html", "<h1>{{title}}</h1>", vars: [("title", "IgniteKit")])
+_ = kit.dynamicHtml("/hello.html", { ctx =>
+    let name = (ctx.queryFromUrl("name") ?? "ignite").trimAscii()
+    kit.renderTemplate("<h1>Hello, {{name}}</h1>", vars: [("name", name)])
+})
+_ = kit.mount(app)
+```
+
+Useful for admin mini-pages, diagnostics pages, quick templated views before a full frontend split.
+
 #### What if I just want SPA?
 
 Ignite matches routes **top to bottom**. For **security**, if you need greedy static matching, **register it last**:
@@ -420,6 +569,33 @@ app.static("/app", "frontend/out")
 app.static("/", "frontend/out")
 app.static("/*", "frontend/out")
 ```
+
+### Route naming & reverse URL generation (`urlFor`)
+
+You can name routes via:
+- `RouteOption.withOperationId("name")`
+- `app.nameRoute(method, path, name)`
+
+```cangjie
+app.get(
+    "/users/:id/posts/:postId",
+    getUserPost,
+    option: RouteOption().withOperationId("user.post.detail")
+)
+
+let detailUrl = app.urlFor(
+    "user.post.detail",
+    params: [("id", "42"), ("postId", "7")],
+    query: [("include", "meta data")]
+) ?? "/fallback"
+// /users/42/posts/7?include=meta+data
+
+app.get("/assets/*", getAsset)
+let _ = app.nameRoute("GET", "/assets/*", "asset.file")
+let assetUrl = app.urlFor("asset.file", params: [("*", "img/logo.png")]) ?? "/assets/default.png"
+```
+
+If route name is missing or path params are incomplete, `urlFor` returns `None`.
 
 ### Swagger / OpenAPI
 
@@ -459,7 +635,8 @@ app.get("/users/:id", getUser, option: RouteOption()
 ```cangjie
 let app = App(config: Config(
     tlsCertFile: "./cert.pem",
-    tlsKeyFile:  "./key.pem"
+    tlsKeyFile:  "./key.pem",
+    enableTlsPrecheck: true // default on: jinguissl precheck before the current stdx TLS config build
 ))
 
 // TLS + HTTP/2 ALPN (h2, http/1.1)
@@ -467,6 +644,19 @@ app.listen("0.0.0.0", 443)
 ```
 
 **HTTP/2**: With TLS, the server negotiates `h2`. Verify with `curl -sI --http2 https://localhost:3443/`.
+
+`enableTlsPrecheck` can be set to `false` to fallback to the current "default TLS build only" path. Use this mainly for emergency troubleshooting windows.
+
+The current public mainline still treats **Ignite + stdx TLS config build** as the default HTTPS path; `jinguissl` is currently a precheck and parallel-evolution layer, not the sole default HTTPS path.  
+If future `jinguissl`, Cangjie-version, or platform compatibility issues appear, prefer absorbing them through `lisi` before pushing compatibility branches directly into Ignite mainline.
+
+TLS startup troubleshooting matrix (startup log fields: `tls_stage` / `tls_error_code` / `hint`):
+
+| `tls_error_code` | Typical cause | Suggested action |
+|------|------|------|
+| `BAD_INPUT` | Empty PEM input or invalid ALPN config | Check certificate/key content and ALPN list (`h2,http/1.1`) |
+| `VERIFY_FAILED` | Certificate chain and private key mismatch | Re-pair cert/key and verify chain order |
+| `INTERNAL_ERROR` | Exception during stdx TLS config build | Check runtime dependencies, cert parsing and file paths |
 
 ### HTTP client
 
@@ -487,8 +677,23 @@ let resp2 = client.postJson(
 println(resp2.status)
 resp2.discard()
 
+// X509 verify entry (Client)
+client.useX509Verify(X509VerifyOption(
+    enabled: true,
+    requireHttps: true,
+    expectedServerName: "api.example.com",
+    pinnedSha256: ["sha256:your-pin"],
+    hook: { ctx =>
+        // Plug in your certificate-chain / pin comparison logic here
+        true
+    }
+))
+
 client.close()
 ```
+
+More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe fields / streaming download):
+`_helper/docs/client-0.5.10-usage.md`
 
 **Client API:**
 
@@ -496,13 +701,36 @@ client.close()
 |------|-----|
 | Methods | `get`, `post`, `put`, `patch`, `delete`, `head`, `options` |
 | JSON | `postJson(url, json)` |
+| Encrypted JSON | `useCrypto(config)` + `postEncryptedJson(url, json, aad?)` + `request().encryptedBodyJson(json, aad?, config?)` |
 | Form | `postForm(url, ArrayList<(String,String)>)` |
 | Multipart | `postMultipart(url, fields, files)`, `MultipartFile(name, filename, contentType, data)` |
+| Retry/backoff | `useRetry(config)`, idempotent methods retry by default; `request().retry(config)` / `request().disableRetry()` |
+| X509 verify entry | `useX509Verify(option)`; `request().x509Verify(option)` / `request().disableX509Verify()` |
+| Hook pipeline | `onRequest`, `onResponse`, `onError` (both `RestClient` and `RequestBuilder`) |
+| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; error hook receives `[ignite.client.observe] ...` wrapper text |
 | Builder | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
 | Base URL | `baseUrl("https://api.example.com")` |
 | Default headers | `defaultHeader(name, value)` |
-| Cookies | `useCookies()` or `useCookies(store)` |
-| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` |
+| Cookies | `useCookies()` or `useCookies(store)`; supports `domain/path/max-age/secure/httpOnly/sameSite` and multi `set-cookie` |
+| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` (optimized for large payload paths) |
+
+### In-proc test entry (`handleForTest`)
+
+`App.handleForTest(...)` runs route + middleware assertions without manual `listen`:
+
+```cangjie
+let app = App(config: Config())
+app.use({ ctx =>
+    ctx.next()
+    _ = ctx.setHeader("x-mw", "hit")
+})
+app.get("/ping", { ctx => _ = ctx.sendString("pong") })
+
+let resp = app.handleForTest("GET", "/ping")
+@Assert(resp.status, 200)
+@Assert(resp.body, "pong")
+@Assert(resp.header("x-mw") ?? "", "hit")
+```
 
 ### Error handling & graceful shutdown
 
@@ -541,7 +769,10 @@ ignite/
 │   │   ├── proxy.cj, redirect.cj, rewrite.cj, static_file.cj, favicon.cj
 │   │   ├── health_check.cj, idempotency.cj, utils.cj
 │   └── client/
-│       └── client.cj     # HTTP client (RestClient)
+│       ├── client.cj          # Shared types/helpers (CookieStore/RetryConfig, etc.)
+│       ├── rest_client.cj     # RestClient entry
+│       ├── request_builder.cj # Request pipeline: Hook/Retry/Observe
+│       └── client_response.cj # Response wrapper and large-body read path
 └── cjpm.toml             # Package config
 ```
 
@@ -563,6 +794,24 @@ ignite/
 
 ### Ignite Samples
 
+- `samples/hello` — Minimal server sample (`GET /` + `GET /health`)
+- `samples/api` — In-memory Todo CRUD sample (path params + query params + `ctx.jsonEncode`)
+- `samples/client` — Built-in client round-trip demo (`demo_server.cj` + `demo_client.cj`, including encrypted JSON and multipart)
+- `samples/ignitekit` — IgniteKit dynamic HTML/CSS composition sample (`kit.html` / `kit.css` / `kit.dynamicHtml`)
+
+### What to try first in this release
+
+- Start with `samples/hello` if you want a 5-minute first run.
+- Move to `samples/api` if you want to see routing, JSON, middleware-friendly CRUD flow, and `bindJsonOr400`.
+- Try `samples/client` when you want a full Server/Client round trip with encrypted JSON, multipart, and request-building flow.
+
+## Contribute Next
+
+- Ignite is currently optimized for trial and adoption first; contribution paths are now being prepared behind that.
+- If you want to follow the maintainer workflow and the `0800` lab-mode direction, start with [`docs/ignite-0800-engineering-flow-summary.md`](docs/ignite-0800-engineering-flow-summary.md).
+
+### More ecosystem projects
+
 - <a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> — Standard best practices
 - <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> — TODO backend with pure Cangjie + HTML
 - <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> — Chat backend with pure Cangjie + HTML
@@ -573,7 +822,7 @@ ignite/
 
 ## Maintainer note
 
-- **Version**: The single source of truth is `[package].version` in `cjpm.toml`. After changing it, run `./scripts/gen_version.sh` to sync `src/version.cj` (framework version used by banner, etc.).
+- **Version**: The single source of truth is `[package].version` in `cjpm.toml` (banner version is read from package metadata at compile time).
 
 ## License
 

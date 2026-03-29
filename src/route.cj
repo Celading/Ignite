@@ -55,25 +55,29 @@ public struct MatchResult {
     public let params: HashMap<String, String>
     public let handlers: ArrayList<Handler>
     public let route: ?Route
+    public let allowedMethods: ArrayList<String>
 
     public init(
         matched!: Bool,
         params!: HashMap<String, String>,
         handlers!: ArrayList<Handler>,
-        route!: ?Route
+        route!: ?Route,
+        allowedMethods!: ArrayList<String> = ArrayList<String>()
     ) {
         this.matched = matched
         this.params = params
         this.handlers = handlers
         this.route = route
+        this.allowedMethods = allowedMethods
     }
 
-    public static func notFound(): MatchResult {
+    public static func notFound(allowedMethods!: ArrayList<String> = ArrayList<String>()): MatchResult {
         MatchResult(
             matched: false,
             params: HashMap<String, String>(),
             handlers: ArrayList<Handler>(),
-            route: None
+            route: None,
+            allowedMethods: allowedMethods
         )
     }
 }

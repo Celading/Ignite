@@ -1,0 +1,38 @@
+# Ignite Client Sample
+
+This sample demonstrates a local round-trip between:
+
+- `demo_server.cj`: a tiny Ignite server with JSON endpoints
+- `demo_client.cj`: `RestClient` usage for GET/POST/encrypted JSON/multipart + observe headers
+
+Run commands from the repository root containing `cjpm.toml` (current layout: `Ignite/`).
+
+## 1) Run end-to-end demo
+
+```bash
+./samples/client/run_demo.sh
+```
+
+This script will:
+
+- run `cjpm build`
+- compile `demo_server.cj` and `demo_client.cj`
+- start server on `127.0.0.1:18080`
+- run client round-trip calls and print observe headers
+
+Expected output includes:
+
+- `GET /ping -> 200`
+- `POST /echo-json -> 200`
+- `POST /secure-echo -> 200`
+- `POST /upload-multipart -> 200`
+- observe headers (`x-ignite-observe-*`)
+
+## Notes
+
+- This sample uses `StdxFallback` crypto provider for portability.
+- Client and server both use `aad = "route:/secure-echo"` for encrypted endpoint verification.
+- If stdx/runtime path cannot be auto-detected, set:
+  - `IGNITE_STDX_STATIC=/path/to/cj_stdx_*_llvm/static`
+  - `IGNITE_CJ_RUNTIME_LIB_DIR=/path/to/cangjie/runtime/lib/<platform>`
+- It is a standalone sample and does not participate in `cjpm test`.

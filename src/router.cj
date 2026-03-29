@@ -75,13 +75,14 @@ public class Router {
     }
 
     public func addRoute(method: String, path: String, handlers: ArrayList<Handler>, option!: ?RouteOption = None): Route {
+        let normalizedMethod = method.trimAscii().toAsciiUpper()
         let normalizedPath = normalizePath(path)
         let segments = splitPath(normalizedPath)
 
         if (!config.allowRouteOverwrite) {
-            match (findRoute(method, normalizedPath)) {
+            match (findRoute(normalizedMethod, normalizedPath)) {
                 case Some(_) =>
-                    throw Exception("[Ignite] Route conflict: ${method} ${normalizedPath} already registered. Set Config.allowRouteOverwrite=true to allow override.")
+                    throw Exception("[Ignite] Route conflict: ${normalizedMethod} ${normalizedPath} already registered. Set Config.allowRouteOverwrite=true to allow override.")
                 case None => ()
             }
         }
@@ -124,16 +125,21 @@ public class Router {
             }
         }
 
-        let route = Route(method, normalizedPath, handlers)
+        let route = Route(normalizedMethod, normalizedPath, handlers)
         if (let Some(opt) <- option) {
             route.option = opt
+            let opId = opt.operationId.trimAscii()
+            if (opId.size > 0) {
+                route.name = opId
+            }
         }
-        current.addHandler(method, handlers, route)
+        current.addHandler(normalizedMethod, handlers, route)
         allRoutes.add(route)
         route
     }
 
     public func removeRoute(method: String, path: String): Bool {
+        let normalizedMethod = method.trimAscii().toAsciiUpper()
         let normalizedPath = normalizePath(path)
         let segments = splitPath(normalizedPath)
         var current = root
@@ -158,12 +164,12 @@ public class Router {
             }
         }
 
-        let removed = current.removeHandler(method)
+        let removed = current.removeHandler(normalizedMethod)
         if (removed) {
             var i: Int64 = 0
             while (i < allRoutes.size) {
                 let r = allRoutes[i]
-                if (r.method == method && r.path == normalizedPath) {
+                if (r.method == normalizedMethod && r.path == normalizedPath) {
                     let _ = allRoutes.remove(at: i)
                     break
                 }
@@ -202,7 +208,22 @@ public class Router {
     }
 
     public func matchRoute(method: String, path: String): MatchResult {
+        let normalizedMethod = method.trimAscii().toAsciiUpper()
         let normalizedPath = normalizePath(path)
+        let exactResult = matchRouteExact(normalizedMethod, normalizedPath)
+        if (exactResult.matched) {
+            return exactResult
+        }
+        let allowed = allowedMethodsForPath(normalizedPath)
+        for (allowedMethod in allowed) {
+            if (allowedMethod == normalizedMethod) {
+                return MatchResult.notFound()
+            }
+        }
+        MatchResult.notFound(allowedMethods: allowed)
+    }
+
+    func matchRouteExact(method: String, normalizedPath: String): MatchResult {
         let segments = splitPath(normalizedPath)
         let params = HashMap<String, String>()
         let result = matchNode(root, segments, 0, method, params)
@@ -227,7 +248,8 @@ public class Router {
                         matched: true,
                         params: params,
                         handlers: allHandlers,
-                        route: route
+                        route: route,
+                        allowedMethods: ArrayList<String>()
                     )
                 case None => return MatchResult.notFound()
             }
@@ -276,7 +298,8 @@ public class Router {
                         matched: true,
                         params: params,
                         handlers: allHandlers,
-                        route: route
+                        route: route,
+                        allowedMethods: ArrayList<String>()
                     )
                 case None =>
                     params.remove("*")
@@ -285,6 +308,79 @@ public class Router {
         }
 
         MatchResult.notFound()
+    }
+
+    func allowedMethodsForPath(normalizedPath: String): ArrayList<String> {
+        let segments = splitPath(normalizedPath)
+        let methodSet = HashMap<String, Bool>()
+        collectAllowedMethods(root, segments, 0, methodSet)
+        orderedMethods(methodSet)
+    }
+
+    func collectAllowedMethods(
+        node: TrieNode,
+        segments: ArrayList<String>,
+        index: Int64,
+        methodSet: HashMap<String, Bool>
+    ): Unit {
+        if (index >= segments.size) {
+            for ((method, _handlers) in node.handlersMap) {
+                methodSet.add(method, true)
+            }
+            if (let Some(catchAllChild) <- node.catchAllChild) {
+                for ((method, _handlers) in catchAllChild.handlersMap) {
+                    methodSet.add(method, true)
+                }
+            }
+            return
+        }
+
+        let seg = segments[index]
+        if (seg.size == 0) {
+            collectAllowedMethods(node, segments, index + 1, methodSet)
+            return
+        }
+
+        for (child in node.children) {
+            if (matchSegment(child.segment, seg)) {
+                collectAllowedMethods(child, segments, index + 1, methodSet)
+            }
+        }
+
+        if (let Some(paramChild) <- node.paramChild) {
+            collectAllowedMethods(paramChild, segments, index + 1, methodSet)
+        }
+
+        if (let Some(catchAllChild) <- node.catchAllChild) {
+            for ((method, _handlers) in catchAllChild.handlersMap) {
+                methodSet.add(method, true)
+            }
+        }
+    }
+
+    func orderedMethods(methodSet: HashMap<String, Bool>): ArrayList<String> {
+        let ordered = ArrayList<String>()
+        let preferred = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        for (method in preferred) {
+            if (methodSet.contains(method)) {
+                ordered.add(method)
+            }
+        }
+        for ((method, _enabled) in methodSet) {
+            if (!containsString(ordered, method)) {
+                ordered.add(method)
+            }
+        }
+        ordered
+    }
+
+    func containsString(values: ArrayList<String>, target: String): Bool {
+        for (item in values) {
+            if (item == target) {
+                return true
+            }
+        }
+        false
     }
 
     func buildHandlerChain(routeHandlers: ArrayList<Handler>): ArrayList<Handler> {
@@ -300,6 +396,15 @@ public class Router {
 
     public func addGlobalMiddleware(handler: Handler): Unit {
         globalMiddlewares.add(handler)
+    }
+
+    public func buildGlobalMiddlewareChain(finalHandler: Handler): ArrayList<Handler> {
+        let chain = ArrayList<Handler>()
+        for (mw in globalMiddlewares) {
+            chain.add(mw)
+        }
+        chain.add(finalHandler)
+        chain
     }
 
     func matchSegment(pattern: String, actual: String): Bool {
@@ -380,6 +485,46 @@ public class Router {
 
     public func getRoutes(): ArrayList<Route> {
         allRoutes
+    }
+
+    public func setRouteName(method: String, path: String, name: String): Bool {
+        let normalizedMethod = method.trimAscii().toAsciiUpper()
+        let normalizedPath = normalizePath(path)
+        let routeName = name.trimAscii()
+        if (routeName.size == 0) {
+            return false
+        }
+        for (route in allRoutes) {
+            if (route.method == normalizedMethod && route.path == normalizedPath) {
+                route.name = routeName
+                return true
+            }
+        }
+        false
+    }
+
+    public func findRouteByName(name: String): ?Route {
+        let routeName = name.trimAscii()
+        if (routeName.size == 0) {
+            return None
+        }
+
+        for (route in allRoutes) {
+            if (route.name == routeName) {
+                return Some(route)
+            }
+        }
+
+        for (route in allRoutes) {
+            match (route.option) {
+                case Some(opt) =>
+                    if (opt.operationId.trimAscii() == routeName) {
+                        return Some(route)
+                    }
+                case None => ()
+            }
+        }
+        None
     }
 
     public func printRoutes(): Unit {

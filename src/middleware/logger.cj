@@ -1,7 +1,8 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
-import std.time.MonoTime
+import ignite.governance.*
+import std.time.{MonoTime, DateTime}
 
 /// Logger 接口：可由用户自定义实现并注入到 LoggerConfig，实现可覆写。
 public interface Logger {
@@ -41,6 +42,19 @@ public class LoggerConfig {
     public var logger: Logger = DefaultLogger()
     /// 为 true 时以实体形式记录（method=GET path=/ latencyMs=...），否则为单行 [method] path latencyMs。
     public var enableEntityLog: Bool = false
+    /// 0~9 十级语义，默认 6=INFO。
+    public var level: Int64 = 6
+    /// 默认普通模式输出 0~6，kmode 输出 0~9。
+    public var levelPolicy: LoggerLevelPolicy = LoggerLevelPolicy()
+    /// 类 Linux 风格输出（带颜色和请求标识）。
+    public var linuxStyle: Bool = true
+    /// 为 true 时按 JSON Line 输出，便于对接 ELK/Loki。
+    public var jsonLine: Bool = false
+    /// 脱敏敏感字段。
+    public var redactSensitiveFields: Bool = true
+    /// 自检与统计。
+    public var enableSelfCheck: Bool = true
+    public var selfCheckEvery: Int64 = 100
 
     public init(logger!: Logger = DefaultLogger(), enableEntityLog!: Bool = false) {
         this.logger = logger
@@ -54,7 +68,43 @@ public class LoggerConfig {
     }
 }
 
+class LoggerHealthState {
+    var total: Int64 = 0
+    var writeFail: Int64 = 0
+    var dropped: Int64 = 0
+    var maxLatencyMs: Int64 = 0
+}
+
 public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
+    let state = LoggerHealthState()
+
+    func safeLog(raw: String): Unit {
+        let msg = if (config.redactSensitiveFields) {
+            redactSensitive(raw)
+        } else {
+            raw
+        }
+        try {
+            config.logger.log(msg)
+        } catch (_: Exception) {
+            state.writeFail += 1
+            println("[Ignite Logger] write failed, fallback stdout: " + msg)
+        }
+    }
+
+    func emitSelfCheck(kmode: Bool): Unit {
+        if (!config.enableSelfCheck || config.selfCheckEvery <= 0) { return }
+        if (state.total % config.selfCheckEvery != 0) { return }
+        let line = linuxLogLine(
+            DateTime.now().toString(),
+            5,
+            "-",
+            "logger-selfcheck total=${state.total} writeFail=${state.writeFail} dropped=${state.dropped} maxLatencyMs=${state.maxLatencyMs}",
+            kmode
+        )
+        safeLog(line)
+    }
+
     { ctx: Ctx =>
         let start = MonoTime.now()
         let method = ctx.method
@@ -64,13 +114,100 @@ public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
 
         let elapsed = MonoTime.now() - start
         let latencyMs = elapsed.toMilliseconds()
+        if (latencyMs > state.maxLatencyMs) {
+            state.maxLatencyMs = latencyMs
+        }
 
-        if (config.enableEntityLog) {
-            let msg = "method=${method} path=${path} latencyMs=${latencyMs}"
-            config.logger.log(msg)
+        let status = ctx.responseStatus
+        let requestId = ctx.getLocal("request_id") ?? (ctx.header("X-Request-ID") ?? "-")
+        let kmode = (ctx.getLocal("kmode") ?? "false") == "true"
+        let level = clampLevel(config.level)
+        if (!config.levelPolicy.shouldLog(level, kmode)) {
+            state.dropped += 1
+            return
+        }
+
+        state.total += 1
+        let baseMsg = if (config.enableEntityLog) {
+            "method=${method} path=${path} status=${status} latencyMs=${latencyMs}"
         } else {
-            let msg = "[${method}] ${path} ${latencyMs}ms"
-            config.logger.log(msg)
+            "[${method}] ${path} ${status} ${latencyMs}ms"
+        }
+        let ts = DateTime.now().toString()
+        if (config.jsonLine) {
+            safeLog(
+                toJsonLogLine(
+                    ts,
+                    level,
+                    requestId,
+                    method,
+                    path,
+                    status,
+                    latencyMs,
+                    kmode,
+                    baseMsg
+                )
+            )
+        } else {
+            if (config.enableEntityLog) {
+                if (config.linuxStyle) {
+                    let line = linuxLogLine(ts, level, requestId, baseMsg, kmode)
+                    safeLog(line)
+                } else {
+                    safeLog(baseMsg)
+                }
+            } else {
+                if (config.linuxStyle) {
+                    let line = linuxLogLine(ts, level, requestId, baseMsg, kmode)
+                    safeLog(line)
+                } else {
+                    safeLog(baseMsg)
+                }
+            }
+        }
+        emitSelfCheck(kmode)
+    }
+}
+
+func toJsonLogLine(
+    timestamp: String,
+    level: Int64,
+    requestId: String,
+    method: String,
+    path: String,
+    status: UInt16,
+    latencyMs: Int64,
+    kmode: Bool,
+    message: String
+): String {
+    #"{"timestamp":""# + escapeJsonLog(timestamp) +
+        #"","level":"# + level.toString() +
+        #","levelName":""# + escapeJsonLog(levelName(level)) +
+        #"","requestId":""# + escapeJsonLog(requestId) +
+        #"","method":""# + escapeJsonLog(method) +
+        #"","path":""# + escapeJsonLog(path) +
+        #"","status":"# + status.toString() +
+        #","latencyMs":"# + latencyMs.toString() +
+        #","kmode":"# + kmode.toString() +
+        #","message":""# + escapeJsonLog(message) + #""}"#
+}
+
+func escapeJsonLog(input: String): String {
+    var out = ""
+    for (r in input.toRuneArray()) {
+        if (r == r'\\') {
+            out += "\\\\"
+        } else if (r == r'"') {
+            out += "\\\""
+        } else if (r == r'\n') {
+            out += "\\n"
+        } else if (r == r'\r') {
+            out += "\\r"
+        } else if (r == r'\t') {
+            out += "\\t"
+        } else {
+            out += r.toString()
         }
     }
+    out
 }

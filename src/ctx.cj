@@ -2,9 +2,11 @@ package ignite
 
 import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
-import std.fs.{File, OpenMode, Path}
+import std.fs.{exists, File, FileInfo, OpenMode}
 import std.unicode.*
-import stdx.net.http.{HttpContext, WebSocket}
+import ignite.security
+import stdx.net.http.{HttpContext, HttpResponseWriter, WebSocket}
+import stdx.encoding.json.JsonValue
 import stdx.encoding.json.stream.{
     JsonSerializable as StdxJsonSerializable
 }
@@ -18,6 +20,7 @@ public class Ctx {
     var _handlers: ArrayList<Handler> = ArrayList<Handler>()
     var _handlerIndex: Int64 = -1
     var _responded: Bool = false
+    var _statusCode: UInt16 = 200
     var _bodyBytesCache: ?Array<UInt8> = None
     var _multipartForm: ?MultipartForm = None
     var _responseBody: ?String = None
@@ -111,6 +114,10 @@ public class Ctx {
     }
 
     public func cookies(name: String): ?String {
+        match (_locals.get("__ignite_cookie_dec_${name}")) {
+            case Some(v) => return Some(v)
+            case None => ()
+        }
         let cookieHeaderOpt = header("cookie")
         if (let Some(cookieHeader) <- cookieHeaderOpt) {
             let parts = cookieHeader.split(";")
@@ -170,6 +177,7 @@ public class Ctx {
 
     public func status(code: UInt16): Ctx {
         _httpCtx.responseBuilder.status(code)
+        _statusCode = code
         this
     }
 
@@ -214,6 +222,7 @@ public class Ctx {
     public func sendStatus(code: UInt16): Ctx {
         let msg = statusMessage(code)
         _httpCtx.responseBuilder.status(code).body(msg)
+        _statusCode = code
         _responded = true
         _responseBody = msg
         this
@@ -224,13 +233,16 @@ public class Ctx {
             .status(code)
             .header("location", url)
             .body("")
+        _statusCode = code
         _responded = true
         this
     }
 
     public func setCookie(name: String, value: String, maxAge!: Int64 = 0, path!: String = "/",
-                          domain!: String = "", httpOnly!: Bool = false, secure!: Bool = false): Ctx {
-        var cookieStr = "${name}=${value}"
+                          domain!: String = "", httpOnly!: Bool = false, secure!: Bool = false,
+                          sameSite!: String = ""): Ctx {
+        let cookieValue = tryEncryptCookieValue(name, value)
+        var cookieStr = "${name}=${cookieValue}"
         if (maxAge > 0) {
             cookieStr += "; Max-Age=${maxAge}"
         }
@@ -244,12 +256,17 @@ public class Ctx {
         if (secure) {
             cookieStr += "; Secure"
         }
+        let normalizedSameSite = sameSite.trimAscii()
+        if (normalizedSameSite.size > 0) {
+            cookieStr += "; SameSite=${normalizedSameSite}"
+        }
         _httpCtx.responseBuilder.header("set-cookie", cookieStr)
         this
     }
 
     public func noContent(): Ctx {
         _httpCtx.responseBuilder.status(204)
+        _statusCode = 204
         _responded = true
         this
     }
@@ -270,30 +287,59 @@ public class Ctx {
         json(jsonStr)
     }
 
+    /// 解析请求 JSON；失败时返回 400，错误体：
+    /// {"error":"bad_request","reason":"invalid_json","message":"..."}
+    /// decoder 或 validate 抛错时同样返回 400（reason 分别为 invalid_payload / validation_failed）。
+    public func bindJsonOr400<T>(
+        decoder: (JsonValue) -> T,
+        validate!: ?(T) -> ?String = None
+    ): ?T {
+        let parsed = parseJsonBody()
+        if (let None <- parsed) {
+            return None
+        }
+        if (let Some(jsonValue) <- parsed) {
+            let decoded = tryDecodeJson<T>(jsonValue, decoder)
+            if (let None <- decoded) {
+                return None
+            }
+            if (let Some(value) <- decoded) {
+                if (let Some(validateFn) <- validate) {
+                    let validation = tryValidateJson<T>(value, validateFn)
+                    if (let Some(msg) <- validation) {
+                        jsonBadRequest("validation_failed", msg)
+                        return None
+                    }
+                }
+                return Some(value)
+            }
+        }
+        None
+    }
+
     // ── File serving ──
 
     public func sendFile(filePath: String): Ctx {
-        try {
-            let file = File(filePath, OpenMode.Read)
-            let buf = ArrayList<UInt8>()
-            let tmp = Array<UInt8>(8192, repeat: 0)
-            while (true) {
-                let n = file.read(tmp)
-                if (n <= 0) { break }
-                for (i in 0..n) {
-                    buf.add(tmp[i])
-                }
-            }
-            file.close()
-            let contentType = detectMimeType(filePath)
+        if (let Some((resolvedPath, totalSize)) <- resolveExistingFile(filePath)) {
+            let contentType = detectMimeType(resolvedPath)
             _httpCtx.responseBuilder
                 .header("content-type", contentType)
-                .body(buf.toArray())
-        } catch (_: Exception) {
+                .header("content-length", "${totalSize}")
+                .header("accept-ranges", "bytes")
+            _statusCode = 200
+            if (!isHeadRequest(method)) {
+                if (totalSize == 0) {
+                    _httpCtx.responseBuilder.body(Array<UInt8>(0, repeat: 0))
+                } else {
+                    streamWholeFile(_httpCtx, resolvedPath)
+                }
+            }
+        } else {
             _httpCtx.responseBuilder
                 .status(404)
                 .header("content-type", "text/plain; charset=utf-8")
                 .body("File not found: ${filePath}")
+            _statusCode = 404
         }
         _responded = true
         this
@@ -310,56 +356,57 @@ public class Ctx {
     }
 
     public func sendFileRange(filePath: String): Ctx {
-        try {
-            let file = File(filePath, OpenMode.Read)
-            let buf = ArrayList<UInt8>()
-            let tmp = Array<UInt8>(8192, repeat: 0)
-            while (true) {
-                let n = file.read(tmp)
-                if (n <= 0) { break }
-                for (i in 0..n) {
-                    buf.add(tmp[i])
-                }
-            }
-            file.close()
-            let fileData = buf.toArray()
-            let totalSize = fileData.size
-            let contentType = detectMimeType(filePath)
+        if (let Some((resolvedPath, totalSize)) <- resolveExistingFile(filePath)) {
+            let contentType = detectMimeType(resolvedPath)
 
             let rangeHeader = header("range")
             if (let Some(rangeVal) <- rangeHeader) {
                 let parsed = parseRangeHeader(rangeVal, totalSize)
                 if (let Some((start, end)) <- parsed) {
                     let length = end - start + 1
-                    let slice = Array<UInt8>(length, repeat: 0)
-                    for (i in 0..length) {
-                        slice[i] = fileData[start + i]
-                    }
                     _httpCtx.responseBuilder
                         .status(206)
                         .header("content-type", contentType)
                         .header("content-range", "bytes ${start}-${end}/${totalSize}")
                         .header("content-length", "${length}")
                         .header("accept-ranges", "bytes")
-                        .body(slice)
+                    _statusCode = 206
+                    if (!isHeadRequest(method)) {
+                        if (length == 0) {
+                            _httpCtx.responseBuilder.body(Array<UInt8>(0, repeat: 0))
+                        } else {
+                            streamFileSegment(_httpCtx, resolvedPath, start, length)
+                        }
+                    }
                 } else {
                     _httpCtx.responseBuilder
                         .status(416)
                         .header("content-range", "bytes */${totalSize}")
-                        .body("Range Not Satisfiable")
+                    if (!isHeadRequest(method)) {
+                        _httpCtx.responseBuilder.body("Range Not Satisfiable")
+                    }
+                    _statusCode = 416
                 }
             } else {
                 _httpCtx.responseBuilder
                     .header("content-type", contentType)
                     .header("content-length", "${totalSize}")
                     .header("accept-ranges", "bytes")
-                    .body(fileData)
+                _statusCode = 200
+                if (!isHeadRequest(method)) {
+                    if (totalSize == 0) {
+                        _httpCtx.responseBuilder.body(Array<UInt8>(0, repeat: 0))
+                    } else {
+                        streamWholeFile(_httpCtx, resolvedPath)
+                    }
+                }
             }
-        } catch (_: Exception) {
+        } else {
             _httpCtx.responseBuilder
                 .status(404)
                 .header("content-type", "text/plain; charset=utf-8")
                 .body("File not found: ${filePath}")
+            _statusCode = 404
         }
         _responded = true
         this
@@ -421,6 +468,10 @@ public class Ctx {
         get() { _responseBody }
     }
 
+    public prop responseStatus: UInt16 {
+        get() { _statusCode }
+    }
+
     public func route(): ?Route {
         _route
     }
@@ -463,6 +514,120 @@ public class Ctx {
             case _ => "Unknown"
         }
     }
+
+    func tryEncryptCookieValue(name: String, value: String): String {
+        let enabled = _locals.get("__ignite_cookie_enc_enabled") ?? "0"
+        if (enabled != "1") {
+            return value
+        }
+        let exceptCsv = _locals.get("__ignite_cookie_enc_except") ?? ""
+        if (cookieNameInCsv(name, exceptCsv)) {
+            return value
+        }
+        let keyHex = _locals.get("__ignite_cookie_enc_key_hex") ?? ""
+        let keyId = _locals.get("__ignite_cookie_enc_kid") ?? "k1"
+        let alg = _locals.get("__ignite_cookie_enc_alg") ?? "AES-256-GCM"
+        let providerText = _locals.get("__ignite_cookie_enc_provider") ?? "jinguiSSL"
+        if (keyHex.size == 0) {
+            return value
+        }
+        try {
+            let key = security.hexToBytes(keyHex)
+            let keyRing = HashMap<String, Array<UInt8>>()
+            keyRing.add(keyId, key)
+            let config = security.SecurityConfig(
+                providerKind: parseSecurityProviderKind(providerText),
+                activeKid: keyId,
+                keyRing: keyRing,
+                aeadAlgorithm: alg
+            )
+            security.sealCookieValueV1(config, value, cookieName: name)
+        } catch (_: Exception) {
+            value
+        }
+    }
+
+    func parseSecurityProviderKind(raw: String): security.SecurityProviderKind {
+        let v = raw.trimAscii().toAsciiLower()
+        if (v == "stdx-fallback") {
+            return security.SecurityProviderKind.StdxFallback
+        }
+        security.SecurityProviderKind.jinguiSSL
+    }
+
+    func cookieNameInCsv(name: String, csv: String): Bool {
+        if (csv.trimAscii().size == 0) {
+            return false
+        }
+        let parts = csv.split(",")
+        for (part in parts) {
+            if (part.trimAscii() == name) {
+                return true
+            }
+        }
+        false
+    }
+
+    func parseJsonBody(): ?JsonValue {
+        let raw = bodyString()
+        try {
+            Some(JsonValue.fromStr(raw))
+        } catch (_: Exception) {
+            jsonBadRequest("invalid_json", "request body is not valid json")
+            None
+        }
+    }
+
+    func tryDecodeJson<T>(jsonValue: JsonValue, decoder: (JsonValue) -> T): ?T {
+        try {
+            Some(decoder(jsonValue))
+        } catch (e: Exception) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "failed to decode payload: ${e.message}"
+            } else {
+                "failed to decode payload"
+            }
+            jsonBadRequest("invalid_payload", msg)
+            None
+        }
+    }
+
+    func tryValidateJson<T>(value: T, validateFn: (T) -> ?String): ?String {
+        try {
+            validateFn(value)
+        } catch (e: Exception) {
+            if (e.message.trimAscii().size > 0) {
+                Some("validation exception: ${e.message}")
+            } else {
+                Some("validation exception")
+            }
+        }
+    }
+
+    func jsonBadRequest(reason: String, message: String): Unit {
+        let payload = #"{"error":"bad_request","reason":""# + escapeJson(reason) + #"","message":""# + escapeJson(message) + #""}"#
+        _ = status(400).json(payload)
+    }
+
+    func escapeJson(input: String): String {
+        var out = ""
+        for (r in input.toRuneArray()) {
+            if (r == r'\\') {
+                out += "\\\\"
+            } else if (r == r'"') {
+                out += "\\\""
+            } else if (r == r'\n') {
+                out += "\\n"
+            } else if (r == r'\r') {
+                out += "\\r"
+            } else if (r == r'\t') {
+                out += "\\t"
+            } else {
+                out += r.toString()
+            }
+        }
+        out
+    }
 }
 
 func detectMimeType(path: String): String {
@@ -492,6 +657,104 @@ func detectMimeType(path: String): String {
         case ".wav" => "audio/wav"
         case _ => "application/octet-stream"
     }
+}
+
+let FILE_STREAM_BUFFER_SIZE: Int64 = 64 * 1024
+
+func resolveExistingFile(rawPath: String): ?(String, Int64) {
+    let path = rawPath.trimAscii()
+    if (path.size == 0) {
+        return None
+    }
+
+    let candidates = ArrayList<String>()
+    candidates.add(path)
+    if (startsWithSlash(path)) {
+        candidates.add("." + path)
+    }
+
+    for (candidate in candidates) {
+        if (!exists(candidate)) {
+            continue
+        }
+        try {
+            let info = FileInfo(candidate)
+            if (!info.isDirectory()) {
+                return Some((candidate, info.size))
+            }
+        } catch (_: Exception) {
+            ()
+        }
+    }
+    None
+}
+
+func streamWholeFile(httpCtx: HttpContext, path: String): Unit {
+    streamFileSegment(httpCtx, path, 0, -1)
+}
+
+func streamFileSegment(httpCtx: HttpContext, path: String, start: Int64, length: Int64): Unit {
+    let file = File(path, OpenMode.Read)
+    try {
+        skipFilePrefix(file, start)
+        let writer = HttpResponseWriter(httpCtx)
+        let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
+        var remaining = length
+        while (true) {
+            let window = if (remaining < 0) {
+                buffer
+            } else if (remaining < FILE_STREAM_BUFFER_SIZE) {
+                buffer[..remaining]
+            } else {
+                buffer
+            }
+            let readLen = file.read(window)
+            if (readLen <= 0) {
+                break
+            }
+            writer.write(window[..readLen])
+            if (remaining >= 0) {
+                remaining -= readLen
+                if (remaining <= 0) {
+                    break
+                }
+            }
+        }
+    } finally {
+        file.close()
+    }
+}
+
+func skipFilePrefix(file: File, bytesToSkip: Int64): Unit {
+    if (bytesToSkip <= 0) {
+        return
+    }
+    let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
+    var remaining = bytesToSkip
+    while (remaining > 0) {
+        let window = if (remaining < FILE_STREAM_BUFFER_SIZE) {
+            buffer[..remaining]
+        } else {
+            buffer
+        }
+        let readLen = file.read(window)
+        if (readLen <= 0) {
+            throw Exception("failed to skip file bytes")
+        }
+        remaining -= readLen
+    }
+}
+
+func isHeadRequest(method: String): Bool {
+    method.trimAscii().toAsciiUpper() == "HEAD"
+}
+
+func startsWithSlash(path: String): Bool {
+    let runes = path.toRuneArray()
+    if (runes.size == 0) {
+        return false
+    }
+    runes[0] == r'/' || runes[0] == r'\\'
 }
 
 func extractExtension(path: String): String {
