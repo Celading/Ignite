@@ -441,21 +441,27 @@ public class RequestBuilder {
 
     func classifyError(e: Exception): String {
         let msg = e.message.toAsciiLower()
-        if (containsStr(msg, "crypto") || containsStr(msg, "decrypt") || containsStr(msg, "envelope")) {
+        let hasCrypto = containsStr(msg, "crypto")
+        let hasDecrypt = containsStr(msg, "decrypt")
+        let hasEnvelope = containsStr(msg, "envelope")
+        if (hasCrypto || hasDecrypt || hasEnvelope) {
             return "CRYPTO"
         }
-        if (containsStr(msg, "timeout")) {
+        let hasTimeout = containsStr(msg, "timeout")
+        if (hasTimeout) {
             return "TIMEOUT"
         }
-        if (containsStr(msg, "tls") || containsStr(msg, "x509") || containsStr(msg, "certificate")) {
+        let hasTls = containsStr(msg, "tls")
+        let hasX509 = containsStr(msg, "x509")
+        let hasCertificate = containsStr(msg, "certificate")
+        if (hasTls || hasX509 || hasCertificate) {
             return "TLS"
         }
-        if (
-            containsStr(msg, "connection") ||
-            containsStr(msg, "network") ||
-            containsStr(msg, "refused") ||
-            containsStr(msg, "socket")
-        ) {
+        let hasConnection = containsStr(msg, "connection")
+        let hasNetwork = containsStr(msg, "network")
+        let hasRefused = containsStr(msg, "refused")
+        let hasSocket = containsStr(msg, "socket")
+        if (hasConnection || hasNetwork || hasRefused || hasSocket) {
             return "NETWORK"
         }
         "UNKNOWN"

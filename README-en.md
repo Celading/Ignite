@@ -51,8 +51,8 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 ## Current Status (0.5.21)
 
 - `0.5.21` is a formal milestone in the rolling `0.5.x` train. It marks the current releasable baseline of the `0500` closeout phase, not a sudden marketing jump.
-- This release centers on things teams can feel quickly: `bindJsonOr400`, `handleForTest`, `urlFor`, refreshed samples, compression, JWT, and clearer TLS / release-guard boundaries.
-- `0500` is still about production closeout. The remaining focus is documentation trustworthiness, release gates, and adoption readiness rather than adding feature count for its own sake.
+- This release centers on things teams can feel quickly: `bindJsonOr400`, `handleForTest`, `urlFor`, refreshed samples, compression, JWT, and clearer TLS / release-readiness boundaries.
+- `0500` is still about production closeout. The remaining focus is documentation trustworthiness, release-readiness checks, and adoption readiness rather than adding feature count for its own sake.
 - `0600` comes next as shared transport abstraction work, but this version does **not** claim a default server-stack replacement.
 
 ```
@@ -693,7 +693,7 @@ client.close()
 ```
 
 More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe fields / streaming download):
-`_helper/docs/client-0.5.10-usage.md`
+`samples/client/README.md`
 
 **Client API:**
 
@@ -816,9 +816,12 @@ ignite/
 - <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> — TODO backend with pure Cangjie + HTML
 - <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> — Chat backend with pure Cangjie + HTML
 
-## Detailed API docs
+## Docs and entrypoints
 
-- Coming soon.
+- `docs/README.md` for the public docs homepage, quickstart, and sample entry order.
+- `docs/CHANGELOG.md` for the user-facing milestone timeline.
+- `samples/client/README.md` for end-to-end client usage.
+- `samples/` for runnable first-run examples and round-trip demos.
 
 ## Maintainer note
 

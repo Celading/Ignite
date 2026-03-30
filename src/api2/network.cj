@@ -67,16 +67,28 @@ public func getNetworkInfo(): NetworkInfo {
         ips.add(ip)
     }
     if (ips.size == 0) {
-        let (code, stdout, _) = executeWithOutput("ip", ["-4", "addr", "show"])
-        if (code == 0) {
-            let text = String.fromUtf8(stdout)
-            for (s in parseIPv4s(text)) { ips.add(s) }
+        if (let Some(text) <- tryReadCommandText("ip", ["-4", "addr", "show"])) {
+            appendParsedIPv4s(ips, text)
+        }
+    }
+    if (ips.size == 0) {
+        if (let Some(text) <- tryReadCommandText("hostname", ["-I"])) {
+            appendParsedIPv4s(ips, text)
+        }
+    }
+    if (ips.size == 0) {
+        if (let Some(text) <- tryReadCommandText("ifconfig", [])) {
+            appendParsedIPv4s(ips, text)
         }
     }
     var gateway: ?String = None
-    let (code2, out2, _) = executeWithOutput("ip", ["route", "show", "default"])
-    if (code2 == 0) {
-        gateway = parseLinuxGateway(String.fromUtf8(out2))
+    if (let Some(text) <- tryReadCommandText("ip", ["route", "show", "default"])) {
+        gateway = parseLinuxGateway(text)
+    }
+    if (let None <- gateway) {
+        if (let Some(text) <- tryReadCommandText("route", ["-n"])) {
+            gateway = parseLinuxGatewayRouteTable(text)
+        }
     }
     let dnsList = readResolvConf("/etc/resolv.conf")
     NetworkInfo(orderIPsForDisplay(ips.toArray()), gateway, dnsList)
@@ -89,22 +101,46 @@ public func getNetworkInfo(): NetworkInfo {
         ips.add(ip)
     }
     if (ips.size == 0) {
-        let (code, stdout, _) = executeWithOutput("ifconfig", [])
-        if (code == 0) {
-            let text = String.fromUtf8(stdout)
-            for (s in parseIPv4s(text)) { ips.add(s) }
+        if (let Some(text) <- tryReadCommandText("ifconfig", [])) {
+            appendParsedIPv4s(ips, text)
         }
     }
     var gateway: ?String = None
-    let (code2, out2, _) = executeWithOutput("route", ["-n", "get", "default"])
-    if (code2 == 0) {
-        gateway = parseMacOsGateway(String.fromUtf8(out2))
+    if (let Some(text) <- tryReadCommandText("route", ["-n", "get", "default"])) {
+        gateway = parseMacOsGateway(text)
     }
     let dnsList = readResolvConf("/etc/resolv.conf")
     NetworkInfo(orderIPsForDisplay(ips.toArray()), gateway, dnsList)
 }
 
 // ── Generic parsing: IPv4, resolv.conf ──
+
+func tryReadCommandText(command: String, args: Array<String>): ?String {
+    try {
+        let (code, stdout, _) = executeWithOutput(command, args)
+        if (code != 0) {
+            return None
+        }
+        Some(tryDecodeUtf8OrLossy(stdout))
+    } catch (_: Exception) {
+        None
+    }
+}
+
+func appendParsedIPv4s(list: ArrayList<String>, text: String): Unit {
+    for (ip in parseIPv4s(text)) {
+        appendUnique(list, ip)
+    }
+}
+
+func appendUnique(list: ArrayList<String>, value: String): Unit {
+    for (item in list) {
+        if (item == value) {
+            return
+        }
+    }
+    list.add(value)
+}
 
 func parseIPv4s(text: String): Array<String> {
     let re = Regex(#"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b"#)
@@ -245,6 +281,16 @@ func parseWindowsDns(text: String): Array<String> {
 
 func parseLinuxGateway(text: String): ?String {
     let re = Regex(#"default\s+via\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"#)
+    let arr = re.findAll(text, group: true)
+    if (arr.size > 0 && arr[0].groupCount() >= 1) {
+        let s = arr[0].matchString(1)
+        if (s.size > 0) { return Some(s) }
+    }
+    None
+}
+
+func parseLinuxGatewayRouteTable(text: String): ?String {
+    let re = Regex(#"(?m)^(?:0\.0\.0\.0|default)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b"#)
     let arr = re.findAll(text, group: true)
     if (arr.size > 0 && arr[0].groupCount() >= 1) {
         let s = arr[0].matchString(1)

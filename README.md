@@ -75,7 +75,7 @@
 - `0.5.21` 是 `0.5.x` 迭代列车中的正式里程碑，用来标记这一轮可发布的能力收口，不是“突然跨代”的营销编号
 - 相较上一阶段，`0.5.21` 补齐了压缩中间件、JWT 中间件、`bindJsonOr400`、`handleForTest`、`urlFor`、IgniteKit 等高频能力
 - Server / Client 双线已经形成更完整的默认能力面，减少“服务端一套、客户端再重造一套”的割裂感
-- 当前仍处于 `0500` 生产级收尾阶段，重点是把 README、样例、发布门禁与 TLS 边界说明收口到可信状态，而不是在本轮承诺默认替代 Server 栈
+- 当前仍处于 `0500` 生产级收尾阶段，重点是把 README、样例、发布前校验与 TLS 边界说明收口到可信状态，而不是在本轮承诺默认替代 Server 栈
 - 下一阶段将进入 `0600` 的共享传输抽象与复用验证，但本次版本关键词仍然是 **可用、可信、可上手**
 
 我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
@@ -181,7 +181,7 @@ cjpm build
 cjpm test
 ```
 
-再对照 `_helper/docs/README.md` 与样例 README 定位问题属于依赖、运行时还是文档路径。
+再对照本 README、样例 README 与文档站入口，定位问题属于依赖、运行时还是示例路径。
 
 ## 核心特性
 
@@ -784,8 +784,8 @@ client.useX509Verify(X509VerifyOption(
 client.close()
 ```
 
-更多组合示例（加密请求 / Retry+Hook+Cookie / 观测字段 / 流式下载）见：
-`_helper/docs/client-0.5.10-usage.md`
+更多组合示例（加密请求 / Retry+Hook+Cookie / 观测字段 / 流式下载）可参考：
+`samples/client/README.md`
 
 **客户端能力一览**（对标标准 HTTP 客户端）：
 
@@ -909,12 +909,14 @@ ignite/
 
 <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> - 纯仓颉+HTML实现的聊天室后端
 
-## 详细接口文档
+## 文档与入口
 
-- 当前可优先参考：
+当前可优先参考：
+
+- `docs/README.md`：公开文档首页，适合快速找到 Quickstart、样例入口与后续阅读顺序
+- `docs/CHANGELOG.md`：用户向版本时间线，只保留使用者能直接感受到的能力变化
 - `README` 中的 API / Middleware / Advanced Usage 章节
-- `_helper/docs/client-0.5.10-usage.md` 的 Client 组合示例
-- `_helper/staticWeb/` 下的静态资料页（适合演示、宣讲与快速查阅）
+- `samples/client/README.md` 的 Client 组合示例
 - `samples/` 目录中的最小样例与联调脚本
 
 ## 参与后续演进

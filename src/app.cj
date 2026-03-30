@@ -323,8 +323,11 @@ public class App {
             println("[Ignite][TLS] tls_stage=${tlsStage} tls_error_code=${tlsCode} ignite_error_code=${igniteCode} source=${e.sourceCode}")
             println("[Ignite][TLS] hint=${hint}")
         } catch (e: Exception) {
-            println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
-            println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
+            let message = e.message
+            println("[Ignite] Failed to start server on ${addr}:${port} - ${message}")
+            if (shouldPrintPortInUseHint(message)) {
+                println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
+            }
         }
     }
 
@@ -873,11 +876,25 @@ func printBanner(
         }
     }
 
-    let displayAddr = if (addr == "0.0.0.0") {
-        let info = api2.getNetworkInfo()
-        if (info.ips.size > 0) { info.ips[0] } else { "0.0.0.0" }
-    } else {
-        addr
+    var displayAddr = addr
+    var bannerWarn: ?String = None
+    if (addr == "0.0.0.0") {
+        displayAddr = "127.0.0.1"
+        try {
+            let info = api2.getNetworkInfo()
+            if (info.ips.size > 0) {
+                displayAddr = info.ips[0]
+            } else {
+                bannerWarn = Some("preferred local IP unavailable; banner uses 127.0.0.1 while server stays bound on ${addr}:${port}.")
+            }
+        } catch (e: Exception) {
+            let detail = e.message.trimAscii()
+            bannerWarn = if (detail.size > 0) {
+                Some("local network inspection failed for banner display; using 127.0.0.1. detail=${detail}")
+            } else {
+                Some("local network inspection failed for banner display; using 127.0.0.1.")
+            }
+        }
     }
     let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
@@ -916,5 +933,20 @@ func printBanner(
     if (enableSwagger) {
         println(" ${G}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
     }
+    if (let Some(message) <- bannerWarn) {
+        println(" [Ignite][Net] ${message}")
+    }
     println("")
+}
+
+func shouldPrintPortInUseHint(message: String): Bool {
+    let lower = message.trimAscii().toAsciiLower()
+    if (lower.contains("address already in use")) { return true }
+    if (lower.contains("already in use")) { return true }
+    if (lower.contains("eaddrinuse")) { return true }
+    if (lower.contains("port already in use")) { return true }
+    if (lower.contains("port in use")) { return true }
+    if (message.contains("端口已被占用")) { return true }
+    if (message.contains("地址已在使用")) { return true }
+    false
 }
