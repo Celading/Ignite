@@ -1,0 +1,150 @@
+# Ignite Changelog
+
+## Ignite `0500`
+> 可用、可信、快上手
+
+### v0.5.21 `Ignite Now` `Git`
+作为`0500`版本组，目前基线版本`0.5.21`已完成:
+- `+特性` Server / Client 双线能力面进一步拉齐，减少“服务端一套、客户端再重造一套”的割裂感
+- `+特性` 压缩中间件补齐：`compressMiddleware`、`CompressConfig`、`Accept-Encoding` 协商、`gzip/deflate`、最小压缩阈值、`skipIfNoGain`
+- `+特性` JWT 中间件进入主线：`JwtConfig`、`jwtMiddleware`、claims 注入、标准 `WWW-Authenticate` 返回
+- `+特性` 新增 `bindJsonOr400`，统一 `invalid_json` / `invalid_payload` / `validation_failed` 的请求绑定错误语义
+- `+特性` 新增 `handleForTest` 与 `AppTestResponse`，支持无需手动 `listen` 的服务链路断言
+- `+特性` 新增 `nameRoute` / `urlFor`，并支持 `RouteOption.operationId` 直接作为路由名
+- `+特性` 新增 `IgniteKit`，用于轻量 HTML / CSS / 动态页面资源映射
+- `+特性` 新增自检API模块最小闭环：`RequestBodySpec`、`TestOption`、`InterfaceSpec`、`App.interfaceSpecs()`
+- `+特性` Swagger 语义增强：支持 requestBody、response example、`x-ignite-test` 扩展信息
+- `+特性` kmode 下支持最小 mock / probe 自检响应，可通过 `x-ignite-test` / `__ignite_test` 触发，并附带 `IGTEST-0500` 标记
+- `+特性` 样例矩阵继续补齐：`hello`、`api`、`ignitekit`、`dualport`、`swagger`、`files`、`middleware`
+- `=修复` TLS 路径继续收口：`enableTlsPrecheck`、jinkuiSSL precheck 与 stdx TLS 构造 / 回退路径并存
+- `=修复` 文件下载与 Range 场景补齐流式发送、`HEAD` 语义与大文件回归
+- `=文档` README、样例、Freeze、Benchmark、Release Report 与当前实现对齐
+- `=杂项` release guard、sample compile guard、`cjlint` baseline、server/client API freeze 全链打通
+
+### v0.5.01
+> `0500` 版本组早期占位版本，不展开，只保留编号痕迹。
+
+- `=杂项` 进行一个安卓 APP 占位的行为
+- `=杂项` 作为 `0500` 阶段的早期编号预留版本存在
+
+---
+
+## Ignite `0400`
+> 安全治理集成、面向生产级步进
+
+### v0.4.67 `Git` `CangjiePkg`
+> 理论 `0400` 阶段最后一版
+
+- `=修复` `api2` / 本机 IP 检测问题
+- `=杂项` 继续为 `0500` 的可信发布与主线收口做过渡
+
+
+### v0.4.57 `Git` `CangjiePkg`
+> 网络事件监听
+
+- `+特性` IP 变动监听，支持网卡地址变化事件
+
+### v0.4.47 `Git` `CangjiePkg`
+> 编译时版本宏、网络 IP 排序与 Windows 编码修复
+
+- `+特性` 编译时从 `cjpm.toml` 读取框架版本
+- `+特性` `getNetworkInfo().ips` 排序，用于启动横幅显示
+- `+特性` 静态 SPA 支持：`staticSpa(prefix, root, indexFile)`
+- `+特性` `api2.getPreferredLocalIP()` 辅助函数
+- `=修复` Windows 下 `ipconfig` 输出 UTF-8 解码问题，避免崩溃
+- `=文档` 新增俄文 README；同步英文 README（标语、环境、依赖、架构图）
+- `=杂项` Windows / Linux 编译与链接选项继续优化
+
+### v0.4.41 `Git` `CangjiePkg`
+> kmode 与日志接口抽象
+
+- `+特性` `Config.kmode` 与 `kmodeMiddleware`
+- `+特性` `Logger` 接口及 `DefaultLogger` 实现，支持 `enableEntityLog`
+- `+特性` 从 `cjpm.toml` 通过脚本读取框架版本
+- `=修复` Windows 环境下 `getPreferredLocalIP` 跳过，避免端口占用误报
+- `=文档` README 同步更新
+
+### v0.4.27 `Git` `CangjiePkg`
+> 配置与横幅系统优化
+
+- `+特性` `Config.appVersion`，支持自定义应用版本并用于横幅标题
+- `+特性` `Config.enablePrintRoutes` 开关细化
+- `=修复` 启动横幅健壮性增强
+- `=文档` README / CHANGELOG 同步
+- `=杂项` 版本号升至 `0.4.27`
+
+### v0.4.07 `Git` `CangjiePkg`
+> 文档同步与基础特性补充
+
+- `+特性` Swagger UI 缓存控制
+- `+特性` JSON Helper 与编码辅助能力
+- `+特性` 文件下载与 Range 请求支持
+- `=文档` 添加项目链接与基础文档同步
+- `=杂项` 版本号更新至 `0.4.07`
+
+---
+
+## Ignite `0300`
+> 服务成套、能力成形、体验拉齐
+
+### 核心特性
+
+- `+特性` **中间件全家桶**  
+  `AccessLog`, `Favicon`, `HealthCheck`, `StaticFile`, `Proxy`,  
+  `RequestID`, `RateLimit`, `Idempotency`, `Redirect`, `Rewrite`,  
+  `ETag`, `Cache`, `BodyLimit`, `Timeout`,  
+  `EncryptCookie`, `Session`,  
+  `Security Headers + CSRF`,  
+  `Basic Auth`, `Key Auth`  
+  以及共享工具库（base64, HMAC, 随机字符串）
+
+- `+特性` **路由引擎升级**  
+  严格路由冲突检测、`removeRoute`、参数校验、路径归一化  
+  修复连续斜杠（consecutive paths）问题（完整版）
+
+- `+特性` **上下文增强**  
+  `bodyBytes` 缓存、响应体缓存  
+  multipart 表单完整 API（含文件上传 `FormFile`, `MultipartForm`）  
+  `Ctx.query()` 支持回退到 form 参数，新增 `queryFromUrl()` / `queryFromForm()`
+
+- `+特性` **TLS 与 Swagger**  
+  支持 TLS、可配置的 Swagger UI 静态资源  
+  HTTP 客户端增强：multipart / 表单编码
+
+- `+特性` **API2 基础能力**  
+  跨平台 `getNetworkInfo()`，用于 `0.0.0.0` 启动时横幅显示
+
+- `+特性` **流式传输与 WebSocket**  
+  core 层继续加固 Streaming / WebSocket 能力
+
+- `+特性` **开发者体验**  
+  彩色终端输出完善、完整 MIME 类型支持
+
+- `=文档` 更新 README（中间件列表与用法）
+- `=杂项` 添加 `cjlintignore.cfg`，修正包版本元数据
+
+## Ignite `0200`
+> 蓝图内定，开始拓影
+
+- `=修复` 请求上下文（`ctx`）处理逻辑调整
+- `=修复` 路由连续斜杠（consecutive paths）问题的基础处理
+- `=杂项` 后续代码清理（follow-up cleanup）
+- `=杂项` 准备初始发布资源（`prepare initial publish assets`）
+- `=杂项` MIME 类型完善与彩色输出细节优化
+
+## Ignite `0100`
+> 仓颉胃，Express味
+
+- 实验性项目，本地构建孵化
+- `+特性` 基础 core 层：流式传输（Streaming）、WebSocket 基础支持、HTTP 客户端基础能力
+- `+特性` 彩色终端输出
+- `+特性` MIME 类型基础兼容
+- `+特性` 最简单的请求响应处理（基于 `httpServerKit` 引导）
+- `=杂项` 初始提交（`Initial commit`）
+- `=杂项` 项目结构初始化、`.gitignore` 优化
+
+# 说明
+- `+特性` / `=修复` / `=文档` / `=杂项` 用于后续可视化标识
+- `Git` `CangjiePkg` 表示该版本已同步 Git 与仓颉中心仓
+- 未标记 `Git` `CangjiePkg` 的版本，表示未以“双同步完成”作为该版本状态结论
+- `0100`~`0300`仅保留阶段摘要，不再继续细拆子版本

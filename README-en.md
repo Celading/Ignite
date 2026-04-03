@@ -20,7 +20,7 @@
 
 <p align="center">
   <strong>A web framework for the Cangjie language, built for real service delivery</strong><br>
-  <sub>Fiber-style ergonomics · Production governance · Server/Client evolution</sub>
+  <sub>Express-style ergonomics · Production governance · Server/Client evolution</sub>
 </p>
 
 <p align="center">
@@ -118,6 +118,13 @@ main() {
 ```
 
 Just **6 lines of code** to spin up an HTTP server.
+
+For a runnable first path from the repository root (`Ignite/`), start with:
+
+```bash
+cjpm build
+./manual/samples/hello/run.sh
+```
 
 ## Core Features
 
@@ -693,7 +700,7 @@ client.close()
 ```
 
 More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe fields / streaming download):
-`samples/client/README.md`
+`manual/samples/client/README.md`
 
 **Client API:**
 
@@ -794,21 +801,21 @@ ignite/
 
 ### Ignite Samples
 
-- `samples/hello` — Minimal server sample (`GET /` + `GET /health`)
-- `samples/api` — In-memory Todo CRUD sample (path params + query params + `ctx.jsonEncode`)
-- `samples/client` — Built-in client round-trip demo (`demo_server.cj` + `demo_client.cj`, including encrypted JSON and multipart)
-- `samples/ignitekit` — IgniteKit dynamic HTML/CSS composition sample (`kit.html` / `kit.css` / `kit.dynamicHtml`)
+- `manual/samples/hello` — Minimal server sample (`GET /` + `GET /health`)
+- `manual/samples/api` — In-memory Todo CRUD sample (path params + query params + `ctx.jsonEncode`)
+- `manual/samples/client` — Built-in client round-trip demo (`demo_server.cj` + `demo_client.cj`, including encrypted JSON and multipart)
+- `manual/samples/ignitekit` — IgniteKit dynamic HTML/CSS composition sample (`kit.html` / `kit.css` / `kit.dynamicHtml`)
 
 ### What to try first in this release
 
-- Start with `samples/hello` if you want a 5-minute first run.
-- Move to `samples/api` if you want to see routing, JSON, middleware-friendly CRUD flow, and `bindJsonOr400`.
-- Try `samples/client` when you want a full Server/Client round trip with encrypted JSON, multipart, and request-building flow.
+- Start with `manual/samples/hello` if you want a 5-minute first run.
+- Move to `manual/samples/api` if you want to see routing, JSON, middleware-friendly CRUD flow, and `bindJsonOr400`.
+- Try `manual/samples/client` when you want a full Server/Client round trip with encrypted JSON, multipart, and request-building flow.
 
 ## Contribute Next
 
 - Ignite is currently optimized for trial and adoption first; contribution paths are now being prepared behind that.
-- If you want to follow the maintainer workflow and the `0800` lab-mode direction, start with [`docs/ignite-0800-engineering-flow-summary.md`](docs/ignite-0800-engineering-flow-summary.md).
+- For public-facing collaboration, start with `manual/samples/`, README fixes, and low-risk regressions.
 
 ### More ecosystem projects
 
@@ -818,10 +825,12 @@ ignite/
 
 ## Docs and entrypoints
 
-- `docs/README.md` for the public docs homepage, quickstart, and sample entry order.
-- `docs/CHANGELOG.md` for the user-facing milestone timeline.
-- `samples/client/README.md` for end-to-end client usage.
-- `samples/` for runnable first-run examples and round-trip demos.
+- `manual/README.md` for the current public manual and reading order.
+- `manual/samples/README.md` for sample entry order and runnable examples.
+- `manual/samples/client/README.md` for end-to-end client usage.
+- `manual/skills/README.md` for AI-assistant collaboration boundaries and service-building guidance.
+- `CHANGELOG.MD` and `CHANGELOG-en.MD` for the milestone timeline.
+- `manual/docs-md/` and `manual/docs-web/` are reserved for the next public docs merge.
 
 ## Maintainer note
 

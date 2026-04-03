@@ -6,7 +6,7 @@
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│               <span style="color:#88C0D0;">Ignite HttpServer v0.5.21</span>              │
+│                <span style="color:#88C0D0;">Ignite WebServer v0.5.21</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -20,7 +20,7 @@
 
 <p align="center">
   <strong>以仓颉语言打造、面向真实服务落地的 Web 框架</strong><br>
-  <sub>比直接使用 stdx.httpServer 更省开发成本 · Fiber 风格体验 · Server/Client 一体化演进</sub>
+  <sub>多中间件 · 快速搭建服务 · Express 风格体验 · Server/Client 一体化演进</sub>
 </p>
 
 <p align="center">
@@ -72,11 +72,7 @@
 
 ### 当前状态（0.5.21）
 
-- `0.5.21` 是 `0.5.x` 迭代列车中的正式里程碑，用来标记这一轮可发布的能力收口，不是“突然跨代”的营销编号
-- 相较上一阶段，`0.5.21` 补齐了压缩中间件、JWT 中间件、`bindJsonOr400`、`handleForTest`、`urlFor`、IgniteKit 等高频能力
-- Server / Client 双线已经形成更完整的默认能力面，减少“服务端一套、客户端再重造一套”的割裂感
-- 当前仍处于 `0500` 生产级收尾阶段，重点是把 README、样例、发布前校验与 TLS 边界说明收口到可信状态，而不是在本轮承诺默认替代 Server 栈
-- 下一阶段将进入 `0600` 的共享传输抽象与复用验证，但本次版本关键词仍然是 **可用、可信、可上手**
+- 详情可看 `manual/README.md`、`CHANGELOG.MD`、`CHANGELOG-en.MD`
 
 我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
 因此我们取 **“叶”** 之灵动，取 **“燧”** 之开创，命名它为 **叶燧 (Ignite)**。
@@ -161,6 +157,15 @@ main() {
 
 仅需 **6 行代码**，一个 HTTP 服务便拔地而起。
 
+如果你只是想最快确认环境是否可用，推荐先在 **`Ignite/` 包根目录** 执行这条最小路径。  
+如果你当前还在工作区根目录，请先 `cd Ignite`：
+
+```bash
+cjpm build
+./manual/samples/hello/run.sh
+curl -i http://127.0.0.1:18808/health
+```
+
 ### 常见失败 -> 一行修复
 
 如果 Quickstart 或样例没有一次跑通，优先看这几条：
@@ -170,9 +175,15 @@ main() {
 - **运行时库路径缺失**  
   修复：设置 `IGNITE_CJ_RUNTIME_LIB_DIR=/path/to/cangjie/runtime/lib/<platform>`
 - **样例脚本在错误目录执行**  
-  修复：从包含 `cjpm.toml` 的仓库根执行（当前布局为 `Ignite/`）
+  修复：先 `cd Ignite`，再执行 `./manual/samples/.../run.sh`
 - **TLS 启动排障困难**  
   修复：先保留 `enableTlsPrecheck: true` 查看结构化错误；仅在应急排障时临时回退到 `false`
+
+更完整的推广期排障说明见：
+
+- `manual/README.md`
+- `manual/samples/README.md`
+- `manual/skills/README.md`
 
 若仍有问题，建议先运行：
 
@@ -335,7 +346,7 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `bodyLimitMiddleware` | 请求体大小限制 |
 | | `timeoutMiddleware` | 请求超时记录 |
 | **缓存优化** | `cacheMiddleware` | 内存缓存 GET 响应 |
-| | `compressMiddleware` | 响应压缩（gzip/deflate，按 `Accept-Encoding` 协商，可配置最小体积阈值） |
+| | `compressMiddleware` | 响应压缩（当前 `gzip/deflate`，不含 `br/Brotli`；按 `Accept-Encoding` 协商，可配置最小体积阈值） |
 | | `etagMiddleware` | ETag + If-None-Match 304 |
 | **会话** | `sessionMiddleware` | 会话 ID Cookie + SessionStore |
 | **其他** | `redirectMiddleware` | URL 重定向规则 |
@@ -382,6 +393,18 @@ app.use(securityMiddleware(config: SecurityConfig(hstsMaxAge: 31536000)))
 // 请求 ID
 app.use(requestIdMiddleware())
 ```
+
+### 压缩协商速记
+
+当前主线压缩口径请直接记成：
+
+- 已支持：`gzip`、`deflate`
+- 当前未支持：`br`（Brotli）
+- 两者都可接受且权重相同时，默认优先 `gzip`
+
+如果你需要完整协商说明、示例与回退行为，优先看：
+
+- 当前以本 README、`CHANGELOG.MD` 与后续并入 `manual/docs-md/` 的公开文档为准
 
 ### 自定义中间件
 
@@ -693,7 +716,8 @@ let assetUrl = app.urlFor("asset.file", params: [("*", "img/logo.png")]) ?? "/as
 ```cangjie
 let app = App(config: Config(
     enableSwagger: true,
-    swaggerPath: "/docs"
+    swaggerPath: "/swagger",
+    kmode: true
 ))
 
 app.swagger(SwaggerInfo(
@@ -702,25 +726,54 @@ app.swagger(SwaggerInfo(
     description: "Powered by Ignite"
 ))
 
-app.get("/users/:id", getUser, option: RouteOption()
-    .withSummary("获取用户")
-    .withDescription("根据 ID 获取用户详细信息")
-    .withTags(["Users"])
-    .withParams([ParamSpec(
-        name: "id",
-        location: ParamLocation.Path,
-        required: true,
-        description: "用户 ID"
-    )])
-    .withResponses([
-        ResponseSpec(status: 200, description: "成功"),
-        ResponseSpec(status: 404, description: "用户不存在")
-    ])
-)
+let echoOption = RouteOption()
+echoOption.withSummary("Echo request payload")
+echoOption.withDescription("First-run verification sample with Swagger metadata.")
+echoOption.withTag("debug")
+echoOption.withOperationId("sample.echo")
+echoOption.withRequestBody(RequestBodySpec(
+    contentType: "application/json",
+    schema: #"{"type":"object","properties":{"name":{"type":"string"}}}"#,
+    example: #"{"name":"ignite"}"#,
+    required: true
+))
+echoOption.withResponse(ResponseSpec(
+    200,
+    description: "Echo payload",
+    contentType: "application/json",
+    schema: #"{"type":"object","properties":{"ok":{"type":"boolean"},"name":{"type":"string"}}}"#,
+    example: #"{"ok":true,"name":"ignite"}"#
+))
+echoOption.withTestOption(TestOption(
+    storage: "memory",
+    report: "inline",
+    versionTag: "0500"
+))
 
-// 访问 /docs 即可查看 Swagger UI
-// 访问 /docs/json 获取 OpenAPI JSON
+app.post("/echo", echoHandler, option: echoOption)
+
+let specs = app.interfaceSpecs()
+println(specs.size)
+
+// 访问 /swagger 即可查看 Swagger UI
+// 访问 /swagger/json 获取 OpenAPI JSON
 ```
+
+`InterfaceSpec` 会把路由的摘要、参数、请求体、响应与测试元数据整理成结构化快照，适合维护者核对语义，也适合工具或 AI 装载接口信息。
+
+当路由挂了 `TestOption` 后，OpenAPI JSON 会追加 `x-ignite-test` 扩展字段。它表达的是“这条接口有没有首次运行验证元数据”，不是把 Swagger 变成自动化测试平台。
+
+运行态自检只在 `Config.kmode = true` 时生效，可通过这些入口触发：
+
+- Header：`x-ignite-test: mock`
+- Query：`?__ignite_test=probe`
+- Query 简写：`?__igtest=mock`
+
+命中自检时，响应会带出 `x-ignite-self-check`、`x-ignite-self-check-mode`、`x-ignite-self-check-route` 三个头，便于确认是否走到了 Ignite 的自检路径。
+
+推荐直接看公开示例：
+
+- `manual/samples/swagger/README.md`
 
 ### TLS / HTTPS
 
@@ -741,6 +794,15 @@ app.listen("0.0.0.0", 443)
 
 当前公开主线路径仍以 **Ignite + stdx TLS 构造** 为准；`jinguissl` 目前承担的是预检与并行演进角色，不等同于默认 HTTPS 唯一路径。  
 如果后续出现 `jinguissl`、仓颉版本或平台兼容问题，推荐优先通过 `lisi` 兼容层收敛，而不是把兼容分支直接散进 Ignite 主线。
+
+当前部署上还要特别记住两点：
+
+- 一次 `app.listen(addr, port)` 只对应一条监听器
+- 如果你同时需要 HTTP 与 HTTPS，当前更推荐用反向代理或两个实例/进程处理，而不是假定框架会自动双端口编排
+
+部署建议与 FAQ 见：
+
+- 当前请以本 README、`manual/samples/README.md` 与后续并入 `manual/docs-md/` 的公开文档为准
 
 TLS 启动失败排障矩阵（启动日志字段：`tls_stage` / `tls_error_code` / `hint`）：
 
@@ -785,7 +847,7 @@ client.close()
 ```
 
 更多组合示例（加密请求 / Retry+Hook+Cookie / 观测字段 / 流式下载）可参考：
-`samples/client/README.md`
+`manual/samples/client/README.md`
 
 **客户端能力一览**（对标标准 HTTP 客户端）：
 
@@ -890,18 +952,20 @@ ignite/
 
 ### Ignite-Samples
 
-- `samples/hello` - 最简 Server 样例（`GET /` + `GET /health`）
-- `samples/api` - Todo CRUD 样例（路径参数 + 查询参数 + `ctx.jsonEncode`）
-- `samples/client` - 内置 Client 联调样例（`demo_server.cj` + `demo_client.cj`，含加密 JSON 与 multipart）
-- `samples/ignitekit` - `IgniteKit` 动态 HTML/CSS 编排样例（`kit.html` / `kit.css` / `kit.dynamicHtml`）
+- `manual/samples/hello` - 最简 Server 样例（`GET /` + `GET /health`）
+- `manual/samples/api` - Todo CRUD 样例（路径参数 + 查询参数 + `ctx.jsonEncode`）
+- `manual/samples/swagger` - Swagger / OpenAPI + 自检 API 样例（`InterfaceSpec`、`TestOption`、`x-ignite-test`、`kmode`）
+- `manual/samples/client` - 内置 Client 联调样例（`demo_server.cj` + `demo_client.cj`，含加密 JSON 与 multipart）
+- `manual/samples/ignitekit` - `IgniteKit` 动态 HTML/CSS 编排样例（`kit.html` / `kit.css` / `kit.dynamicHtml`）
 
 ### 这次版本最值得先试什么
 
-- **5 分钟跑通 hello**：先用 `samples/hello` 验证最小服务是否可起
-- **试一个真实 API**：再切到 `samples/api` 看路由、参数、JSON 与中间件组合
-- **验证联调体验**：最后用 `samples/client` 看 Server / Client 一体化能力
+- **5 分钟跑通 hello**：先用 `manual/samples/hello` 验证最小服务是否可起
+- **试一个真实 API**：再切到 `manual/samples/api` 看路由、参数、JSON 与中间件组合
+- **理解接口语义与首跑验证**：再跑 `manual/samples/swagger` 看 Swagger、自检元数据和 `kmode` 门禁如何协同
+- **验证联调体验**：最后用 `manual/samples/client` 看 Server / Client 一体化能力
 
-如果你是第一次接触 Ignite，推荐按 `hello -> api -> client` 的顺序试，不必一上来就读完整路线图。
+如果你是第一次接触 Ignite，推荐按 `hello -> api -> swagger -> client` 的顺序试，不必一上来就读完整路线图。
 
 <a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> - 标准最佳实践
 
@@ -913,17 +977,20 @@ ignite/
 
 当前可优先参考：
 
-- `docs/README.md`：公开文档首页，适合快速找到 Quickstart、样例入口与后续阅读顺序
-- `docs/CHANGELOG.md`：用户向版本时间线，只保留使用者能直接感受到的能力变化
+- `manual/README.md`：当前仓库的公开 manual 入口与阅读顺序
+- `manual/samples/README.md`：样例矩阵、首跑顺序与运行方式
+- `manual/samples/swagger/README.md`：Swagger / 自检 API 公开样例入口
+- `manual/samples/client/README.md`：Client 联调与组合示例
+- `manual/skills/README.md`：skills 作用与和 AI 协作时的正确使用边界
+- `CHANGELOG.MD`：中文版本时间线
+- `CHANGELOG-en.MD`：英文版本时间线
 - `README` 中的 API / Middleware / Advanced Usage 章节
-- `samples/client/README.md` 的 Client 组合示例
-- `samples/` 目录中的最小样例与联调脚本
+- `manual/docs-md/` / `manual/docs-web/`：预留给后续合并的公开文档内容
 
 ## 参与后续演进
 
 - 本次主叙事仍然是“先用起来”，贡献入口放在次级位置
-- 若你想关注后续实验协作与 Server 接线验证，可看 `docs/ignite-0800-engineering-flow-summary.md`
-- 若你想直接参与代码或样例完善，建议从 `samples/`、文档修正与低风险回归开始
+- 对外贡献说明会继续公开化整理，当前更推荐从 `manual/samples/`、README 修正与低风险回归开始
 
 ## 许可证
 

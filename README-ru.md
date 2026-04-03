@@ -119,6 +119,13 @@ main() {
 
 Всего **6 строк кода** — и HTTP-сервер запущен.
 
+Для первого запуска из корня репозитория (`Ignite/`) используйте:
+
+```bash
+cjpm build
+./manual/samples/hello/run.sh
+```
+
 ## Основные возможности
 
 | Возможность | Описание |
@@ -692,21 +699,21 @@ ignite/
 
 ### Примеры Ignite
 
-- `samples/hello` — минимальный серверный пример (`GET /` + `GET /health`)
-- `samples/api` — in-memory Todo CRUD (path/query параметры + `ctx.jsonEncode`)
-- `samples/client` — встроенный client round-trip demo (`demo_server.cj` + `demo_client.cj`)
-- `samples/ignitekit` — пример IgniteKit для динамических HTML/CSS (`kit.html` / `kit.css` / `kit.dynamicHtml`)
+- `manual/samples/hello` — минимальный серверный пример (`GET /` + `GET /health`)
+- `manual/samples/api` — in-memory Todo CRUD (path/query параметры + `ctx.jsonEncode`)
+- `manual/samples/client` — встроенный client round-trip demo (`demo_server.cj` + `demo_client.cj`)
+- `manual/samples/ignitekit` — пример IgniteKit для динамических HTML/CSS (`kit.html` / `kit.css` / `kit.dynamicHtml`)
 
 ### Что попробовать сначала в этом выпуске
 
-- Начните с `samples/hello`, если хотите пройти первый запуск за 5 минут.
-- Затем откройте `samples/api`, чтобы посмотреть маршрутизацию, JSON, CRUD-поток и `bindJsonOr400`.
-- После этого попробуйте `samples/client`, если нужен полный Server/Client round trip с encrypted JSON, multipart и builder-style запросами.
+- Начните с `manual/samples/hello`, если хотите пройти первый запуск за 5 минут.
+- Затем откройте `manual/samples/api`, чтобы посмотреть маршрутизацию, JSON, CRUD-поток и `bindJsonOr400`.
+- После этого попробуйте `manual/samples/client`, если нужен полный Server/Client round trip с encrypted JSON, multipart и builder-style запросами.
 
 ## Как подключиться дальше
 
 - Сейчас Ignite в первую очередь ориентирован на пробное использование и принятие в проектах; сценарии внешнего участия мы подготавливаем параллельно.
-- Если хотите посмотреть на инженерный поток сопровождения и направление `0800`, начните с [`docs/ignite-0800-engineering-flow-summary.md`](docs/ignite-0800-engineering-flow-summary.md).
+- Для публичного участия лучше начинать с `manual/samples/`, правок README и низкорисковых регрессий.
 
 ### Другие проекты экосистемы
 
@@ -716,10 +723,12 @@ ignite/
 
 ## Документация и входные точки
 
-- `docs/README.md` — публичная домашняя страница документации, quickstart и порядок первого знакомства.
-- `docs/CHANGELOG.md` — пользовательская временная шкала версий.
-- `samples/client/README.md` — примеры end-to-end client usage.
-- `samples/` — runnable-примеры для первого запуска и локального round trip.
+- `manual/README.md` — текущий публичный manual и порядок чтения.
+- `manual/samples/README.md` — матрица примеров и порядок первого запуска.
+- `manual/samples/client/README.md` — примеры end-to-end client usage.
+- `manual/skills/README.md` — роль skills и правила работы с AI-ассистентами.
+- `CHANGELOG.MD` и `CHANGELOG-en.MD` — временная шкала версий.
+- `manual/docs-md/` и `manual/docs-web/` зарезервированы под следующий публичный docs merge.
 
 ## Заметка для сопровождающих
 
