@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.25-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite WebServer v0.5.25</span>               │
+│                <span style="color:#88C0D0;">Ignite WebServer v0.5.27</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -70,7 +70,7 @@
 | **安全能力** | Cookie AEAD v1 双读新写、TLS precheck、X509 校验入口、安全指标与错误码 |
 | **一体化能力** | 框架内同时提供 `RestClient`，支持 Hook、重试、Cookie v2、加密、X509、观测 |
 
-### 当前状态（0.5.25）
+### 当前状态（0.5.27）
 
 - 详情可看 `manual/README.md`、`CHANGELOG.MD`、`CHANGELOG-en.MD`
 

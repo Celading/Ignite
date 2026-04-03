@@ -3,6 +3,14 @@
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 
+### v0.5.27 `Ignite Now`
+> Local release-prep refresh
+
+- `=Docs` Raise the current public baseline from `0.5.25` to `0.5.27`
+- `=Docs` Sync the current-version display in `README.md`, `README-en.md`, and `README-ru.md` to `0.5.27`
+- `=Chore` Sync package version, Swagger sample metadata, and related tests to `0.5.27`
+- `=Chore` Prepare a local `v0.5.27` tag without pushing any remote refs in this step
+
 ### v0.5.25 `Ignite Now`
 > Public-closeout and multilingual sync refresh for `0500`
 
