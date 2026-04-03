@@ -16,6 +16,8 @@ public class RouteOption {
     public var security: ArrayList<String> = ArrayList<String>()
     public var hidden: Bool = false
     public var paramValidations: HashMap<String, String> = HashMap<String, String>()
+    public var requestBody: ?RequestBodySpec = None
+    public var testOption: ?TestOption = None
 
     public init() {}
 
@@ -66,6 +68,16 @@ public class RouteOption {
         this
     }
 
+    public func withRequestBody(spec: RequestBodySpec): RouteOption {
+        this.requestBody = spec
+        this
+    }
+
+    public func withTestOption(opt: TestOption): RouteOption {
+        this.testOption = opt
+        this
+    }
+
     public func withSecurity(s: String): RouteOption {
         this.security.add(s)
         this
@@ -74,6 +86,95 @@ public class RouteOption {
     public func asHidden(): RouteOption {
         this.hidden = true
         this
+    }
+}
+
+public class RequestBodySpec {
+    public var contentType: String = "application/json"
+    public var schema: String = ""
+    public var example: String = ""
+    public var required: Bool = false
+
+    public init() {}
+
+    public init(
+        contentType!: String = "application/json",
+        schema!: String = "",
+        example!: String = "",
+        required!: Bool = false
+    ) {
+        this.contentType = contentType
+        this.schema = schema
+        this.example = example
+        this.required = required
+    }
+}
+
+public class TestOption {
+    public var enabled: Bool = true
+    public var mock: Bool = true
+    public var probe: Bool = true
+    public var storage: String = "memory"
+    public var report: String = "inline"
+    public var versionTag: String = "0500"
+    public var mockBody: String = ""
+
+    public init() {}
+
+    public init(
+        enabled!: Bool = true,
+        mock!: Bool = true,
+        probe!: Bool = true,
+        storage!: String = "memory",
+        report!: String = "inline",
+        versionTag!: String = "0500",
+        mockBody!: String = ""
+    ) {
+        this.enabled = enabled
+        this.mock = mock
+        this.probe = probe
+        this.storage = storage
+        this.report = report
+        this.versionTag = versionTag
+        this.mockBody = mockBody
+    }
+
+    public func withMockBody(body: String): TestOption {
+        this.mockBody = body
+        this
+    }
+
+    public func withVersionTag(tag: String): TestOption {
+        this.versionTag = tag
+        this
+    }
+
+    public func withStorage(kind: String): TestOption {
+        this.storage = kind
+        this
+    }
+
+    public func withReport(mode: String): TestOption {
+        this.report = mode
+        this
+    }
+}
+
+public class InterfaceSpec {
+    public var method: String
+    public var path: String
+    public var name: String = ""
+    public var summary: String = ""
+    public var description: String = ""
+    public var tags: ArrayList<String> = ArrayList<String>()
+    public var parameters: ArrayList<ParamSpec> = ArrayList<ParamSpec>()
+    public var requestBody: ?RequestBodySpec = None
+    public var responses: ArrayList<ResponseSpec> = ArrayList<ResponseSpec>()
+    public var testOption: ?TestOption = None
+
+    public init(method: String, path: String) {
+        this.method = method
+        this.path = path
     }
 }
 
@@ -119,16 +220,24 @@ public class ResponseSpec {
     public var description: String = ""
     public var contentType: String = ""
     public var schema: String = ""
+    public var example: String = ""
 
     public init(statusCode: UInt16) {
         this.statusCode = statusCode
     }
 
-    public init(statusCode: UInt16, description!: String = "", contentType!: String = "", schema!: String = "") {
+    public init(
+        statusCode: UInt16,
+        description!: String = "",
+        contentType!: String = "",
+        schema!: String = "",
+        example!: String = ""
+    ) {
         this.statusCode = statusCode
         this.description = description
         this.contentType = contentType
         this.schema = schema
+        this.example = example
     }
 }
 
@@ -192,69 +301,9 @@ public class SwaggerGenerator {
             let routeCount = pathRoutes.size
             for (route in pathRoutes) {
                 let methodLower = route.method.toLower()
+                let opJson = buildOperationJson(route)
                 sb.append("      \"${methodLower}\": {\n")
-
-                if (let Some(opt) <- route.option) {
-                    if (opt.summary.size > 0) {
-                        sb.append("        \"summary\": \"${opt.summary}\",\n")
-                    }
-                    if (opt.description.size > 0) {
-                        sb.append("        \"description\": \"${opt.description}\",\n")
-                    }
-                    if (opt.tags.size > 0) {
-                        sb.append("        \"tags\": [")
-                        for (i in 0..opt.tags.size) {
-                            sb.append("\"${opt.tags[i]}\"")
-                            if (i < opt.tags.size - 1) {
-                                sb.append(", ")
-                            }
-                        }
-                        sb.append("],\n")
-                    }
-                    if (opt.operationId.size > 0) {
-                        sb.append("        \"operationId\": \"${opt.operationId}\",\n")
-                    }
-                    if (opt.deprecated) {
-                        sb.append("        \"deprecated\": true,\n")
-                    }
-                    if (opt.parameters.size > 0) {
-                        sb.append("        \"parameters\": [\n")
-                        for (j in 0..opt.parameters.size) {
-                            let p = opt.parameters[j]
-                            sb.append("          {\n")
-                            sb.append("            \"name\": \"${p.name}\",\n")
-                            sb.append("            \"in\": \"${paramLocationStr(p.location)}\",\n")
-                            sb.append("            \"description\": \"${p.description}\",\n")
-                            sb.append("            \"required\": ${p.required},\n")
-                            sb.append("            \"schema\": { \"type\": \"${p.dataType}\" }\n")
-                            sb.append("          }")
-                            if (j < opt.parameters.size - 1) {
-                                sb.append(",")
-                            }
-                            sb.append("\n")
-                        }
-                        sb.append("        ],\n")
-                    }
-                    if (opt.responses.size > 0) {
-                        sb.append("        \"responses\": {\n")
-                        for (k in 0..opt.responses.size) {
-                            let r = opt.responses[k]
-                            sb.append("          \"${r.statusCode}\": {\n")
-                            sb.append("            \"description\": \"${r.description}\"\n")
-                            sb.append("          }")
-                            if (k < opt.responses.size - 1) {
-                                sb.append(",")
-                            }
-                            sb.append("\n")
-                        }
-                        sb.append("        }\n")
-                    } else {
-                        sb.append("        \"responses\": { \"200\": { \"description\": \"OK\" } }\n")
-                    }
-                } else {
-                    sb.append("        \"responses\": { \"200\": { \"description\": \"OK\" } }\n")
-                }
-
+                sb.append(opJson)
                 sb.append("      }")
                 routeIdx += 1
                 if (routeIdx < routeCount) {
@@ -304,6 +353,335 @@ public class SwaggerGenerator {
             case Cookie => "cookie"
         }
     }
+}
+
+func buildInterfaceSpec(route: Route): InterfaceSpec {
+    let spec = InterfaceSpec(route.method, route.path)
+    let routeName = route.name.trimAscii()
+    if (routeName.size > 0) {
+        spec.name = routeName
+    }
+
+    match (route.option) {
+        case Some(opt) =>
+            spec.summary = opt.summary
+            spec.description = opt.description
+            spec.tags = cloneStringList(opt.tags)
+            spec.parameters = cloneParamSpecs(opt.parameters)
+            spec.responses = cloneResponseSpecs(opt.responses)
+            match (opt.requestBody) {
+                case Some(body) => spec.requestBody = Some(cloneRequestBodySpec(body))
+                case None => ()
+            }
+            match (opt.testOption) {
+                case Some(testOpt) => spec.testOption = Some(cloneTestOption(testOpt))
+                case None => ()
+            }
+            if (spec.name.size == 0) {
+                let opId = opt.operationId.trimAscii()
+                if (opId.size > 0) {
+                    spec.name = opId
+                }
+            }
+        case None => ()
+    }
+    spec
+}
+
+func buildOperationJson(route: Route): String {
+    let spec = buildInterfaceSpec(route)
+    let fields = ArrayList<String>()
+
+    if (spec.summary.size > 0) {
+        fields.add("        \"summary\": " + jsonStringLiteral(spec.summary))
+    }
+    if (spec.description.size > 0) {
+        fields.add("        \"description\": " + jsonStringLiteral(spec.description))
+    }
+    if (spec.tags.size > 0) {
+        fields.add(buildTagsJson(spec.tags))
+    }
+    if (spec.name.size > 0) {
+        fields.add("        \"operationId\": " + jsonStringLiteral(spec.name))
+    }
+    match (route.option) {
+        case Some(opt) =>
+            if (opt.deprecated) {
+                fields.add("        \"deprecated\": true")
+            }
+        case None => ()
+    }
+
+    let parametersJson = buildParametersJson(spec.parameters)
+    if (parametersJson.size > 0) {
+        fields.add(parametersJson)
+    }
+
+    let requestBodyJson = buildRequestBodyJson(spec.requestBody)
+    if (requestBodyJson.size > 0) {
+        fields.add(requestBodyJson)
+    }
+
+    let testJson = buildTestOptionJson(spec.testOption)
+    if (testJson.size > 0) {
+        fields.add(testJson)
+    }
+
+    if (spec.responses.size > 0) {
+        fields.add(buildResponsesJson(spec.responses))
+    } else {
+        fields.add("        \"responses\": { \"200\": { \"description\": \"OK\" } }")
+    }
+
+    joinJsonFields(fields)
+}
+
+func buildTagsJson(tags: ArrayList<String>): String {
+    var sb = StringBuilder()
+    sb.append("        \"tags\": [")
+    for (i in 0..tags.size) {
+        sb.append(jsonStringLiteral(tags[i]))
+        if (i < tags.size - 1) {
+            sb.append(", ")
+        }
+    }
+    sb.append("]")
+    sb.toString()
+}
+
+func buildParametersJson(parameters: ArrayList<ParamSpec>): String {
+    if (parameters.size == 0) {
+        return ""
+    }
+    var sb = StringBuilder()
+    sb.append("        \"parameters\": [\n")
+    for (i in 0..parameters.size) {
+        let p = parameters[i]
+        let fields = ArrayList<String>()
+        fields.add("            \"name\": " + jsonStringLiteral(p.name))
+        fields.add("            \"in\": " + jsonStringLiteral(paramLocationToString(p.location)))
+        fields.add("            \"description\": " + jsonStringLiteral(p.description))
+        fields.add("            \"required\": ${p.required}")
+        fields.add("            \"schema\": { \"type\": " + jsonStringLiteral(p.dataType) + " }")
+        if (p.example.size > 0) {
+            fields.add("            \"example\": " + jsonStringLiteral(p.example))
+        }
+
+        sb.append("          {\n")
+        sb.append(joinJsonFields(fields))
+        sb.append("          }")
+        if (i < parameters.size - 1) {
+            sb.append(",")
+        }
+        sb.append("\n")
+    }
+    sb.append("        ]")
+    sb.toString()
+}
+
+func buildRequestBodyJson(spec: ?RequestBodySpec): String {
+    match (spec) {
+        case Some(bodySpec) =>
+            let mediaType = if (bodySpec.contentType.trimAscii().size > 0) {
+                bodySpec.contentType
+            } else {
+                "application/json"
+            }
+            let mediaFields = ArrayList<String>()
+            if (bodySpec.schema.trimAscii().size > 0) {
+                mediaFields.add("              \"schema\": " + bodySpec.schema)
+            }
+            if (bodySpec.example.trimAscii().size > 0) {
+                mediaFields.add("              \"example\": " + bodySpec.example)
+            }
+            if (mediaFields.size == 0) {
+                mediaFields.add("              \"schema\": {}")
+            }
+
+            let bodyFields = ArrayList<String>()
+            bodyFields.add("          \"required\": ${bodySpec.required}")
+            bodyFields.add(
+                "          \"content\": {\n" +
+                "            " + jsonStringLiteral(mediaType) + ": {\n" +
+                joinJsonFields(mediaFields) +
+                "            }\n" +
+                "          }"
+            )
+
+            return "        \"requestBody\": {\n" +
+                joinJsonFields(bodyFields) +
+                "        }"
+        case None => ""
+    }
+}
+
+func buildResponsesJson(responses: ArrayList<ResponseSpec>): String {
+    var sb = StringBuilder()
+    sb.append("        \"responses\": {\n")
+    for (i in 0..responses.size) {
+        let r = responses[i]
+        let responseFields = ArrayList<String>()
+        responseFields.add("            \"description\": " + jsonStringLiteral(r.description))
+
+        let hasContent =
+            r.contentType.trimAscii().size > 0 ||
+            r.schema.trimAscii().size > 0 ||
+            r.example.trimAscii().size > 0
+        if (hasContent) {
+            let mediaType = if (r.contentType.trimAscii().size > 0) {
+                r.contentType
+            } else {
+                "application/json"
+            }
+            let mediaFields = ArrayList<String>()
+            if (r.schema.trimAscii().size > 0) {
+                mediaFields.add("                \"schema\": " + r.schema)
+            }
+            if (r.example.trimAscii().size > 0) {
+                mediaFields.add("                \"example\": " + r.example)
+            }
+            if (mediaFields.size == 0) {
+                mediaFields.add("                \"schema\": {}")
+            }
+            responseFields.add(
+                "            \"content\": {\n" +
+                "              " + jsonStringLiteral(mediaType) + ": {\n" +
+                joinJsonFields(mediaFields) +
+                "              }\n" +
+                "            }"
+            )
+        }
+
+        sb.append("          " + jsonStringLiteral("${r.statusCode}") + ": {\n")
+        sb.append(joinJsonFields(responseFields))
+        sb.append("          }")
+        if (i < responses.size - 1) {
+            sb.append(",")
+        }
+        sb.append("\n")
+    }
+    sb.append("        }")
+    sb.toString()
+}
+
+func buildTestOptionJson(spec: ?TestOption): String {
+    match (spec) {
+        case Some(opt) =>
+            let fields = ArrayList<String>()
+            fields.add("          \"enabled\": ${opt.enabled}")
+            fields.add("          \"mock\": ${opt.mock}")
+            fields.add("          \"probe\": ${opt.probe}")
+            fields.add("          \"storage\": " + jsonStringLiteral(opt.storage))
+            fields.add("          \"report\": " + jsonStringLiteral(opt.report))
+            fields.add("          \"versionTag\": " + jsonStringLiteral(opt.versionTag))
+            return "        \"x-ignite-test\": {\n" +
+                joinJsonFields(fields) +
+                "        }"
+        case None => ""
+    }
+}
+
+func paramLocationToString(loc: ParamLocation): String {
+    match (loc) {
+        case Query => "query"
+        case Header => "header"
+        case Path => "path"
+        case Cookie => "cookie"
+    }
+}
+
+func joinJsonFields(fields: ArrayList<String>): String {
+    var sb = StringBuilder()
+    for (i in 0..fields.size) {
+        sb.append(fields[i])
+        if (i < fields.size - 1) {
+            sb.append(",")
+        }
+        sb.append("\n")
+    }
+    sb.toString()
+}
+
+func cloneStringList(source: ArrayList<String>): ArrayList<String> {
+    let out = ArrayList<String>()
+    for (item in source) {
+        out.add(item)
+    }
+    out
+}
+
+func cloneParamSpecs(source: ArrayList<ParamSpec>): ArrayList<ParamSpec> {
+    let out = ArrayList<ParamSpec>()
+    for (item in source) {
+        out.add(ParamSpec(
+            item.name,
+            item.location,
+            description: item.description,
+            required: item.required,
+            dataType: item.dataType,
+            example: item.example
+        ))
+    }
+    out
+}
+
+func cloneResponseSpecs(source: ArrayList<ResponseSpec>): ArrayList<ResponseSpec> {
+    let out = ArrayList<ResponseSpec>()
+    for (item in source) {
+        out.add(ResponseSpec(
+            item.statusCode,
+            description: item.description,
+            contentType: item.contentType,
+            schema: item.schema,
+            example: item.example
+        ))
+    }
+    out
+}
+
+func cloneRequestBodySpec(source: RequestBodySpec): RequestBodySpec {
+    RequestBodySpec(
+        contentType: source.contentType,
+        schema: source.schema,
+        example: source.example,
+        required: source.required
+    )
+}
+
+func cloneTestOption(source: TestOption): TestOption {
+    TestOption(
+        enabled: source.enabled,
+        mock: source.mock,
+        probe: source.probe,
+        storage: source.storage,
+        report: source.report,
+        versionTag: source.versionTag,
+        mockBody: source.mockBody
+    )
+}
+
+func jsonStringLiteral(value: String): String {
+    "\"" + escapeJsonString(value) + "\""
+}
+
+func escapeJsonString(value: String): String {
+    var out = ""
+    for (r in value.toRuneArray()) {
+        if (r == r'\\') {
+            out += "\\\\"
+        } else if (r == r'"') {
+            out += "\\\""
+        } else if (r == r'\n') {
+            out += "\\n"
+        } else if (r == r'\r') {
+            out += "\\r"
+        } else if (r == r'\t') {
+            out += "\\t"
+        } else {
+            out += r.toString()
+        }
+    }
+    out
 }
 
 class StringBuilder {

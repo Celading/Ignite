@@ -237,6 +237,21 @@ public class App {
         _swaggerHtmlCache = None
     }
 
+    public func interfaceSpecs(): ArrayList<InterfaceSpec> {
+        let specs = ArrayList<InterfaceSpec>()
+        for (route in router.getRoutes()) {
+            match (route.option) {
+                case Some(opt) =>
+                    if (opt.hidden) {
+                        continue
+                    }
+                case None => ()
+            }
+            specs.add(buildInterfaceSpec(route))
+        }
+        specs
+    }
+
     // ── Error handling ──
 
     public func onError(handler: ErrorHandler): App {
@@ -413,6 +428,7 @@ public class App {
         let swaggerPath = config.swaggerPath + "/json"
         let appRef = this
         let infoRef = _swaggerInfo
+        let hiddenSwaggerOption = RouteOption().asHidden()
         router.addRoute("GET", swaggerPath, wrapSingle({ ctx =>
             let forceRefresh = ctx.query("refresh") ?? ""
             if (appRef.config.enableSwaggerCache && forceRefresh != "1") {
@@ -427,7 +443,7 @@ public class App {
                 appRef._swaggerJsonCache = jsonStr
             }
             ctx.json(jsonStr)
-        }))
+        }), option: hiddenSwaggerOption)
 
         let uiPath = config.swaggerPath
         router.addRoute("GET", uiPath, wrapSingle({ ctx =>
@@ -453,7 +469,7 @@ public class App {
                 appRef._swaggerHtmlCache = htmlContent
             }
             ctx.html(htmlContent)
-        }))
+        }), option: hiddenSwaggerOption)
         _swaggerRouteInstalled = true
     }
 
@@ -473,6 +489,9 @@ public class App {
             ctx.setHandlers(result.handlers)
             if (let Some(route) <- result.route) {
                 ctx.setRoute(route)
+            }
+            if (maybeHandleTestOption(ctx)) {
+                return
             }
         } else {
             let fallback = methodSemanticsHandler(
@@ -502,6 +521,59 @@ public class App {
                     .body("Internal Server Error")
             }
         }
+    }
+
+    func maybeHandleTestOption(ctx: Ctx): Bool {
+        if (!config.kmode) {
+            return false
+        }
+
+        let requestedMode = requestedTestMode(ctx)
+        if (requestedMode.size == 0) {
+            return false
+        }
+
+        match (ctx.route()) {
+            case Some(route) =>
+                match (route.option) {
+                    case Some(opt) =>
+                        match (opt.testOption) {
+                            case Some(testOpt) =>
+                                if (!testOpt.enabled) {
+                                    return false
+                                }
+                                let mode = normalizeRequestedTestMode(requestedMode, testOpt)
+                                if (mode == "mock") {
+                                    if (!testOpt.mock) {
+                                        return false
+                                    }
+                                    ctx.setHeader("x-ignite-self-check", "IGTEST-" + testOpt.versionTag)
+                                    ctx.setHeader("x-ignite-self-check-mode", mode)
+                                    ctx.setHeader("x-ignite-self-check-route", interfaceSpecName(buildInterfaceSpec(route)))
+                                    if (testOpt.mockBody.trimAscii().size > 0) {
+                                        _ = ctx.status(200).json(testOpt.mockBody)
+                                    } else {
+                                        _ = ctx.status(200).json(buildSelfCheckPayload(route, mode, testOpt, ctx))
+                                    }
+                                    return true
+                                }
+                                if (mode == "probe") {
+                                    if (!testOpt.probe) {
+                                        return false
+                                    }
+                                    ctx.setHeader("x-ignite-self-check", "IGTEST-" + testOpt.versionTag)
+                                    ctx.setHeader("x-ignite-self-check-mode", mode)
+                                    ctx.setHeader("x-ignite-self-check-route", interfaceSpecName(buildInterfaceSpec(route)))
+                                    _ = ctx.status(200).json(buildSelfCheckPayload(route, mode, testOpt, ctx))
+                                    return true
+                                }
+                            case None => ()
+                        }
+                    case None => ()
+                }
+            case None => ()
+        }
+        false
     }
 
     func methodSemanticsHandler(
@@ -536,6 +608,88 @@ public class App {
         }
         out
     }
+}
+
+func requestedTestMode(ctx: Ctx): String {
+    let headerMode = ctx.header("x-ignite-test") ?? ""
+    if (headerMode.trimAscii().size > 0) {
+        return headerMode.trimAscii()
+    }
+    let queryMode = ctx.query("__ignite_test") ?? ""
+    if (queryMode.trimAscii().size > 0) {
+        return queryMode.trimAscii()
+    }
+    let shortMode = ctx.query("__igtest") ?? ""
+    if (shortMode.trimAscii().size > 0) {
+        return shortMode.trimAscii()
+    }
+    ""
+}
+
+func normalizeRequestedTestMode(rawMode: String, option: TestOption): String {
+    let mode = rawMode.trimAscii().toAsciiLower()
+    if (mode == "mock" || mode == "probe") {
+        return mode
+    }
+    if (mode == "1" || mode == "true" || mode == "on" || mode == "yes") {
+        if (option.mock) {
+            return "mock"
+        }
+        if (option.probe) {
+            return "probe"
+        }
+    }
+    ""
+}
+
+func buildSelfCheckPayload(route: Route, mode: String, option: TestOption, ctx: Ctx): String {
+    let spec = buildInterfaceSpec(route)
+    let fields = ArrayList<String>()
+    fields.add("  \"ok\": true")
+    fields.add("  \"mark\": " + jsonStringLiteral("IGTEST-" + option.versionTag))
+    fields.add("  \"mode\": " + jsonStringLiteral(mode))
+    fields.add("  \"method\": " + jsonStringLiteral(spec.method))
+    fields.add("  \"path\": " + jsonStringLiteral(spec.path))
+    fields.add("  \"interface\": " + jsonStringLiteral(interfaceSpecName(spec)))
+    if (spec.summary.trimAscii().size > 0) {
+        fields.add("  \"summary\": " + jsonStringLiteral(spec.summary))
+    }
+    fields.add("  \"storage\": " + jsonStringLiteral(option.storage))
+    fields.add("  \"report\": " + jsonStringLiteral(option.report))
+    fields.add("  \"probeEnabled\": ${option.probe}")
+    fields.add("  \"mockEnabled\": ${option.mock}")
+    fields.add("  \"receivedBodyBytes\": ${ctx.bodyBytes().size}")
+
+    match (spec.requestBody) {
+        case Some(bodySpec) =>
+            fields.add("  \"requestRequired\": ${bodySpec.required}")
+            if (bodySpec.contentType.trimAscii().size > 0) {
+                fields.add("  \"expectedContentType\": " + jsonStringLiteral(bodySpec.contentType))
+            }
+        case None => ()
+    }
+
+    let expectedStatus = firstResponseStatus(spec.responses)
+    if (expectedStatus > 0) {
+        fields.add("  \"expectedStatus\": ${expectedStatus}")
+    }
+
+    "{\n" + joinJsonFields(fields) + "}"
+}
+
+func interfaceSpecName(spec: InterfaceSpec): String {
+    let name = spec.name.trimAscii()
+    if (name.size > 0) {
+        return name
+    }
+    spec.method + " " + spec.path
+}
+
+func firstResponseStatus(responses: ArrayList<ResponseSpec>): Int64 {
+    if (responses.size == 0) {
+        return 0
+    }
+    Int64(responses[0].statusCode)
 }
 
 func normalizeHttpMethod(method: String): String {
