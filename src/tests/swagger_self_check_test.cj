@@ -42,7 +42,7 @@ public class SwaggerSelfCheckTestSuite {
         app.swagger(SwaggerInfo(
             title: "Swagger Self Check",
             description: "verifies 0500 self-check metadata",
-            version: "0.5.21"
+            version: "0.5.25"
         ))
         app.post(
             "/echo",

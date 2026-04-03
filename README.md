@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.21-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.25-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite WebServer v0.5.21</span>               │
+│                <span style="color:#88C0D0;">Ignite WebServer v0.5.25</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -70,7 +70,7 @@
 | **安全能力** | Cookie AEAD v1 双读新写、TLS precheck、X509 校验入口、安全指标与错误码 |
 | **一体化能力** | 框架内同时提供 `RestClient`，支持 Hook、重试、Cookie v2、加密、X509、观测 |
 
-### 当前状态（0.5.21）
+### 当前状态（0.5.25）
 
 - 详情可看 `manual/README.md`、`CHANGELOG.MD`、`CHANGELOG-en.MD`
 
@@ -121,7 +121,7 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 ### 环境要求
 
 - 仓颉sdk环境 [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
-- 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.0.5.1)
+- 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)、Windows(x86_64)、HarmonyOS
 
@@ -132,7 +132,7 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 [package]
 ..... # 在[package] 最后一行的依赖组添加
 [dependencies]
-    Ignite = "https://gitcode.com/Cinyu/Ignite-cangjie"
+    Ignite = {git="https://gitcode.com/Cinyu/Ignite-cangjie"}
 ```
 
 #### 当然你也可以考虑使用 `中心仓`
@@ -166,6 +166,8 @@ cjpm build
 curl -i http://127.0.0.1:18808/health
 ```
 
+如果你是在自己的业务应用仓库里使用 Ignite，而不是在 `Ignite/` 这个框架仓库里验证样例，那么等你的项目本身提供可执行入口后，再使用 `cjpm run` 会更合适。
+
 ### 常见失败 -> 一行修复
 
 如果 Quickstart 或样例没有一次跑通，优先看这几条：
@@ -188,7 +190,6 @@ curl -i http://127.0.0.1:18808/health
 若仍有问题，建议先运行：
 
 ```bash
-cjpm build
 cjpm test
 ```
 
@@ -793,7 +794,7 @@ app.listen("0.0.0.0", 443)
 `enableTlsPrecheck` 可关闭（`false`）以回退到“仅当前默认 TLS 构造”路径；建议仅在应急排障或兼容窗口期使用。
 
 当前公开主线路径仍以 **Ignite + stdx TLS 构造** 为准；`jinguissl` 目前承担的是预检与并行演进角色，不等同于默认 HTTPS 唯一路径。  
-如果后续出现 `jinguissl`、仓颉版本或平台兼容问题，推荐优先通过 `lisi` 兼容层收敛，而不是把兼容分支直接散进 Ignite 主线。
+如果后续出现 `jinguissl`、仓颉版本或平台兼容问题，会优先通过 `lisi` 兼容层收敛，而不会强制直接并入 Ignite 主线。
 
 当前部署上还要特别记住两点：
 
@@ -944,13 +945,9 @@ ignite/
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
 | Windows | x86_64 | ✅ |
+| HarmonyOS | arm64 | ✅ |
 
-## 叶燧星火
-> Trusted by teams that move at the speed of light.
-
-<a href="https://gitcode.com/copur/lanlu">兰鹿</a> - 基于仓颉语言的漫画归档管理系统
-
-### Ignite-Samples
+## Ignite-Samples
 
 - `manual/samples/hello` - 最简 Server 样例（`GET /` + `GET /health`）
 - `manual/samples/api` - Todo CRUD 样例（路径参数 + 查询参数 + `ctx.jsonEncode`）
@@ -958,16 +955,21 @@ ignite/
 - `manual/samples/client` - 内置 Client 联调样例（`demo_server.cj` + `demo_client.cj`，含加密 JSON 与 multipart）
 - `manual/samples/ignitekit` - `IgniteKit` 动态 HTML/CSS 编排样例（`kit.html` / `kit.css` / `kit.dynamicHtml`）
 
-### 这次版本最值得先试什么
+### 当前版本*快速上手*
 
-- **5 分钟跑通 hello**：先用 `manual/samples/hello` 验证最小服务是否可起
+- **10秒 跑通 hello**：先用 `manual/samples/hello` 验证最小服务是否可起
 - **试一个真实 API**：再切到 `manual/samples/api` 看路由、参数、JSON 与中间件组合
 - **理解接口语义与首跑验证**：再跑 `manual/samples/swagger` 看 Swagger、自检元数据和 `kmode` 门禁如何协同
 - **验证联调体验**：最后用 `manual/samples/client` 看 Server / Client 一体化能力
 
-如果你是第一次接触 Ignite，推荐按 `hello -> api -> swagger -> client` 的顺序试，不必一上来就读完整路线图。
+还在评估 ***Ignite***？推荐直接按 `hello -> api -> swagger -> client` 的 sample 顺序试，先感受标准 ***Ignite App*** 的组织方式，再决定是否进入正式开发。
 
-<a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> - 标准最佳实践
+## 叶燧星火
+> Trusted by teams that move at the speed of light.
+
+<a href="https://gitcode.com/copur/lanlu">兰鹿</a> - 基于仓颉语言的漫画归档管理系统
+
+<a href="https://atomgit.com/cinyu/ignite-benchmark">Ignite-Benchmark</a> - 圆`0400`标准最佳实践
 
 <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> - 纯仓颉+HTML实现的TODO后端
 

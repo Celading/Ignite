@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.21-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.25-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│               <span style="color:#88C0D0;">Ignite HttpServer v0.5.21</span>              │
+│                <span style="color:#88C0D0;">Ignite WebServer v0.5.25</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -48,12 +48,9 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.5.21)
+## Текущее состояние (0.5.25)
 
-- `0.5.21` — это официальный рубеж внутри непрерывной линии `0.5.x`. Он отмечает текущую публикуемую базовую точку этапа `0500`, а не «внезапный маркетинговый скачок версии».
-- В этом выпуске упор сделан на то, что команда реально чувствует в работе: `bindJsonOr400`, `handleForTest`, `urlFor`, обновлённые samples, compression, JWT и более понятные границы TLS / готовности к выпуску.
-- Этап `0500` ещё не закрыт полностью. Сейчас важнее довести документацию, проверки перед выпуском и доверие к материалам, чем просто наращивать число функций.
-- Следующим идёт `0600` как этап общего транспортного абстрагирования, но этот выпуск **не** обещает немедленной замены server stack по умолчанию.
+- Для актуальной публичной базовой точки и временной шкалы версий используйте `manual/README.md`, `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -80,7 +77,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 ### Требования
 
 - Cangjie SDK [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
-- Стандартная библиотека расширений [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.0.5.1)
+- Стандартная библиотека расширений [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   - При необходимости: [Cangjie nightly (со stdx)](https://gitcode.com/Cangjie/nightly_build)
 - Платформы: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64), HarmonyOS
 
@@ -92,7 +89,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 [package]
 ..... # В группе зависимостей в [package] добавьте:
 [dependencies]
-    Ignite = "https://gitcode.com/Cinyu/Ignite-cangjie"
+    Ignite = { git = "https://gitcode.com/Cinyu/Ignite-cangjie" }
 ```
 
 #### Использование реестра пакетов
@@ -125,6 +122,8 @@ main() {
 cjpm build
 ./manual/samples/hello/run.sh
 ```
+
+Если же вы используете Ignite в своём прикладном репозитории, а не проверяете sample внутри самого репозитория фреймворка, `cjpm run` подходит только после того, как у вашего приложения появится собственная исполняемая точка входа.
 
 ## Основные возможности
 
@@ -690,6 +689,7 @@ ignite/
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
 | Windows | x86_64 | ✅ |
+| HarmonyOS | arm64 | ✅ |
 
 ## Проекты (叶燧星火)
 
@@ -701,14 +701,18 @@ ignite/
 
 - `manual/samples/hello` — минимальный серверный пример (`GET /` + `GET /health`)
 - `manual/samples/api` — in-memory Todo CRUD (path/query параметры + `ctx.jsonEncode`)
+- `manual/samples/swagger` — Swagger / OpenAPI + sample самопроверки (`InterfaceSpec`, `TestOption`, `x-ignite-test`, `kmode`)
 - `manual/samples/client` — встроенный client round-trip demo (`demo_server.cj` + `demo_client.cj`)
 - `manual/samples/ignitekit` — пример IgniteKit для динамических HTML/CSS (`kit.html` / `kit.css` / `kit.dynamicHtml`)
 
-### Что попробовать сначала в этом выпуске
+### С чего начать в текущем выпуске
 
-- Начните с `manual/samples/hello`, если хотите пройти первый запуск за 5 минут.
+- Начните с `manual/samples/hello`, если хотите пройти первый запуск примерно за 10 секунд.
 - Затем откройте `manual/samples/api`, чтобы посмотреть маршрутизацию, JSON, CRUD-поток и `bindJsonOr400`.
+- После этого откройте `manual/samples/swagger`, чтобы увидеть Swagger-метаданные, семантику первой проверки и `kmode` в одной связке.
 - После этого попробуйте `manual/samples/client`, если нужен полный Server/Client round trip с encrypted JSON, multipart и builder-style запросами.
+
+Если вы только оцениваете Ignite, самый быстрый путь сейчас: `hello -> api -> swagger -> client`.
 
 ## Как подключиться дальше
 

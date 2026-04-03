@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.21-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.25-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│               <span style="color:#88C0D0;">Ignite HttpServer v0.5.21</span>              │
+│                <span style="color:#88C0D0;">Ignite WebServer v0.5.25</span>               │
 │                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
 │          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
 │                                                       │
@@ -48,12 +48,9 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.5.21)
+## Current Status (0.5.25)
 
-- `0.5.21` is a formal milestone in the rolling `0.5.x` train. It marks the current releasable baseline of the `0500` closeout phase, not a sudden marketing jump.
-- This release centers on things teams can feel quickly: `bindJsonOr400`, `handleForTest`, `urlFor`, refreshed samples, compression, JWT, and clearer TLS / release-readiness boundaries.
-- `0500` is still about production closeout. The remaining focus is documentation trustworthiness, release-readiness checks, and adoption readiness rather than adding feature count for its own sake.
-- `0600` comes next as shared transport abstraction work, but this version does **not** claim a default server-stack replacement.
+- See `manual/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD` for the current public baseline and milestone timeline.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -80,7 +77,7 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 ### Requirements
 
 - Cangjie SDK [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
-- Cangjie standard extension library [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.0.5.1)
+- Cangjie standard extension library [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   - For [Cangjie nightly (with stdx)](https://gitcode.com/Cangjie/nightly_build) if needed
 - Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64), HarmonyOS
 
@@ -92,7 +89,7 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 [package]
 ..... # In the dependency group under [package], add:
 [dependencies]
-    Ignite = "https://gitcode.com/Cinyu/Ignite-cangjie"
+    Ignite = { git = "https://gitcode.com/Cinyu/Ignite-cangjie" }
 ```
 
 #### Using the package registry
@@ -125,6 +122,8 @@ For a runnable first path from the repository root (`Ignite/`), start with:
 cjpm build
 ./manual/samples/hello/run.sh
 ```
+
+If you are using Ignite inside your own application repository rather than validating samples inside the framework repository itself, `cjpm run` is the right command only after your app provides an executable entrypoint.
 
 ## Core Features
 
@@ -792,6 +791,7 @@ ignite/
 | Linux | x86_64 | ✅ |
 | Linux | aarch64 | ✅ |
 | Windows | x86_64 | ✅ |
+| HarmonyOS | arm64 | ✅ |
 
 ## Showcase (叶燧星火)
 
@@ -803,14 +803,18 @@ ignite/
 
 - `manual/samples/hello` — Minimal server sample (`GET /` + `GET /health`)
 - `manual/samples/api` — In-memory Todo CRUD sample (path params + query params + `ctx.jsonEncode`)
+- `manual/samples/swagger` — Swagger / OpenAPI + self-check sample (`InterfaceSpec`, `TestOption`, `x-ignite-test`, `kmode`)
 - `manual/samples/client` — Built-in client round-trip demo (`demo_server.cj` + `demo_client.cj`, including encrypted JSON and multipart)
 - `manual/samples/ignitekit` — IgniteKit dynamic HTML/CSS composition sample (`kit.html` / `kit.css` / `kit.dynamicHtml`)
 
-### What to try first in this release
+### Quick start for this release
 
-- Start with `manual/samples/hello` if you want a 5-minute first run.
+- Start with `manual/samples/hello` if you want a 10-second first run.
 - Move to `manual/samples/api` if you want to see routing, JSON, middleware-friendly CRUD flow, and `bindJsonOr400`.
+- Move to `manual/samples/swagger` if you want to understand Swagger metadata, first-run verification semantics, and `kmode` gating together.
 - Try `manual/samples/client` when you want a full Server/Client round trip with encrypted JSON, multipart, and request-building flow.
+
+Still evaluating Ignite? The fastest path is to try the samples in this order: `hello -> api -> swagger -> client`.
 
 ## Contribute Next
 

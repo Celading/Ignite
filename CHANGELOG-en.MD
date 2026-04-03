@@ -3,6 +3,15 @@
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 
+### v0.5.25 `Ignite Now`
+> Public-closeout and multilingual sync refresh for `0500`
+
+- `=Docs` Sync the current public baseline version to `0.5.25`
+- `=Docs` Align `README.md`, `README-en.md`, and `README-ru.md` with the current repository layout, dependency syntax, and public entrypoints
+- `=Docs` Keep `manual/` as the public documentation surface and continue excluding legacy `docs/` paths and internal archive material from the public view
+- `=Docs` Keep first-run guidance on a verifiable path instead of presenting this repository itself as a directly runnable `cjpm run` application
+- `=Chore` Sync package version, Swagger sample metadata, and related tests to `0.5.25`
+
 ### v0.5.21 `Ignite Now` `Git`
 As the current baseline of the `0500` group, `0.5.21` now includes:
 
