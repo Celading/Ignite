@@ -71,6 +71,8 @@ COMMON_IMPORTS=(
 )
 COMMON_LINKS=(
   -L "${ROOT}/target/release/ignite"
+  -lignite.middleware
+  -lignite.governance
   -lignite.client
   -lignite
   -lignite.api2
@@ -109,10 +111,15 @@ COMMON_LINKS=(
   -lstdx.crypto.digest
   -lstdx.crypto.common
   -lstdx.encoding.base64
+  -lstdx.compress.zlib
 )
 
-echo "[sample-runner] building ignite package..."
-(cd "${ROOT}" && cjpm build)
+if [[ "${IGNITE_SAMPLE_SKIP_BUILD:-0}" == "1" ]]; then
+  echo "[sample-runner] skipping ignite package build (IGNITE_SAMPLE_SKIP_BUILD=1)"
+else
+  echo "[sample-runner] building ignite package..."
+  (cd "${ROOT}" && cjpm build)
+fi
 
 echo "[sample-runner] compiling ${SAMPLE_SOURCE}..."
 cjc "${ROOT}/${SAMPLE_SOURCE}" \
@@ -120,6 +127,11 @@ cjc "${ROOT}/${SAMPLE_SOURCE}" \
   "${COMMON_LINKS[@]}" \
   -Woff unused \
   -o "${OUTPUT_BIN}"
+
+if [[ "${IGNITE_SAMPLE_COMPILE_ONLY:-0}" == "1" ]]; then
+  echo "[sample-runner] compile-only mode; skipping run"
+  exit 0
+fi
 
 case "$(uname -s)" in
   Darwin)

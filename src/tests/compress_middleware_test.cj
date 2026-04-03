@@ -81,6 +81,135 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testCompressMiddlewareWildcardUsesPreferredEncoding(): Unit {
+        let payload = "wildcard-fallback-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 8, skipIfNoGain: false)))
+        app.get("/wildcard", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(389)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendSnapshotWithRetry(
+                "http://127.0.0.1:${port}/wildcard",
+                "br;q=0, *;q=1"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "gzip")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareCanPreferDeflate(): Unit {
+        let payload = "prefer-deflate-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            preferGzip: false,
+            skipIfNoGain: false
+        )))
+        app.get("/prefer-deflate", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(413)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendSnapshotWithRetry(
+                "http://127.0.0.1:${port}/prefer-deflate",
+                "gzip;q=1, deflate;q=1"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "deflate")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRespectsZeroQValues(): Unit {
+        let payload = "no-compress-q-zero-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 8, skipIfNoGain: false)))
+        app.get("/q-zero", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(439)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendSnapshotWithRetry(
+                "http://127.0.0.1:${port}/q-zero",
+                "gzip;q=0, deflate;q=0, *;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "")
+            @Assert(String.fromUtf8(resp.body), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareWildcardUsesOnlyEnabledEncoding(): Unit {
+        let payload = "wildcard-single-enabled-abcdefghijklmnopqrstuvwxyz-0123456789"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            gzipEnabled: false,
+            deflateEnabled: true,
+            skipIfNoGain: false
+        )))
+        app.get("/wildcard-deflate", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(467)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendSnapshotWithRetry(
+                "http://127.0.0.1:${port}/wildcard-deflate",
+                "br;q=0, *;q=1"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "deflate")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareWithCacheAndEtagNoRegression(): Unit {
         let payload = "cache-etag-compress-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
