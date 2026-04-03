@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.4.51"
+  version = "0.4.67"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
