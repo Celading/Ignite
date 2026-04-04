@@ -6,12 +6,13 @@
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite WebServer v0.5.27</span>               │
-│                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
-│          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
+│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+│         <span style="color:#6EB186;">http://127.0.0.1:8080</span>                       │
+│            <span style="color:#AAAAAA;">bound on 0.0.0.0:8080</span>                    │
 │                                                       │
-│    Handlers <span style="color:#555;">...........</span> 16  Processes <span style="color:#555;">...........</span> 1   │
-│    Prefork <span style="color:#555;">......</span> Disabled  PID <span style="color:#555;">.............</span> 67271   │
+│  Touchpoints <span style="color:#555;">........</span> 16  Processes <span style="color:#555;">..........</span> 1     │
+│  Prefork <span style="color:#555;">...........</span> Disabled  PID <span style="color:#555;">..........</span> 67271 │
+│                                 <span style="color:#777;">_Ignite 0.5.27</span>          │
 └───────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -241,9 +242,12 @@ let app = App(config: Config(
     readTimeout:         std.time.Duration.second * 30,
     writeTimeout:        std.time.Duration.second * 30,
     enableSwagger:       true,
+    swaggerPath:         "/swagger",
     enableSwaggerCache:  true,   // кэш Swagger JSON/UI; ?refresh=1 для обновления
+    enablePrintSwaggerUrl: true, // управляет только строкой запуска Swagger UI
     enablePrintRoutes:   false,  // при true — печать таблицы маршрутов при старте; баннер всегда показывается
-    kmode:               false,  // при true — режим отладки: баннер с версией Ignite; используется с kmodeMiddleware
+    enableBannerSignature: true, // подпись баннера в правом нижнем углу
+    kmode:               false,  // режим отладки: печатает дополнительную строку версии Ignite
     kmodePanicHandler:   None,   // опциональный App-level panic hook; true = ошибка уже обработана
     enableTlsPrecheck:   true,   // переключатель TLS precheck: по умолчанию сначала precheck через jinguissl, затем текущий путь сборки stdx TLS
     jsonEncoder:         None   // опционально: свой энкодер JsonEncodable
@@ -287,14 +291,14 @@ let app = App(config: Config(
 | | `healthCheckMiddleware` | Эндпоинт проверки здоровья |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
 | | `proxyMiddleware` | Обратный прокси (с опциональным X509 verify entry) |
-| **Отладка** | `kmodeMiddleware` | Режим kmode: устанавливает ctx local `kmode`; с `Config.kmode`; баннер всегда выводит версию Ignite при kmode |
+| **Отладка** | `kmodeMiddleware` | Режим kmode: устанавливает ctx local `kmode`; вместе с `Config.kmode` используется для первичной диагностики и self-check gate |
 
 Пример:
 
 ```cangjie
 import ignite.middleware.*
 
-// Режим отладки (при Config.kmode = true при старте выводится версия Ignite и URL Swagger)
+// Режим отладки (Config.kmode добавляет строку версии Ignite; строка запуска Swagger управляется enablePrintSwaggerUrl)
 app.use(kmodeMiddleware(app.config.kmode))
 
 // Логирование
@@ -531,7 +535,8 @@ app.static("/*", "frontend/out")
 ```cangjie
 let app = App(config: Config(
     enableSwagger: true,
-    swaggerPath: "/docs"
+    swaggerPath: "/docs",
+    enablePrintSwaggerUrl: true
 ))
 
 app.swagger(SwaggerInfo(
@@ -559,6 +564,10 @@ app.get("/users/:id", getUser, option: RouteOption()
 // /docs — Swagger UI, /docs/json — OpenAPI JSON
 ```
 
+- `enableSwagger` — главный переключатель Swagger / OpenAPI: без него UI и JSON-маршруты не регистрируются.
+- `enablePrintSwaggerUrl` управляет только строкой запуска `Swagger UI: ...` и не отключает сами маршруты.
+- `swaggerPath` задаёт и путь UI, и путь `${swaggerPath}/json` для OpenAPI JSON.
+
 ### TLS / HTTPS
 
 ```cangjie
@@ -576,8 +585,8 @@ app.listen("0.0.0.0", 443)
 
 `enableTlsPrecheck` можно отключить (`false`) для отката на текущий путь "только default TLS build". Рекомендуется только для аварийной диагностики.
 
-Текущая публичная основная линия по-прежнему считает **Ignite + сборку stdx TLS config** маршрутом HTTPS по умолчанию; `jinguissl` сейчас выступает как слой precheck и параллельной эволюции, а не как единственный путь HTTPS по умолчанию.  
-Если далее возникнут проблемы совместимости с `jinguissl`, версиями Cangjie или платформами, предпочтительно сначала поглощать их через `lisi`, а не разносить ветки совместимости прямо по основной ветке Ignite.
+Текущая публичная основная линия по-прежнему считает **Ignite + сборку stdx TLS config** маршрутом HTTPS по умолчанию; `jinguissl` сейчас выступает как слой precheck и параллельной эволюции, а не как прямую замену стандартной HTTPS listener chain.  
+Для production-развёртывания сейчас безопаснее сохранять текущий путь по умолчанию или завершать TLS на reverse proxy.
 
 Матрица диагностики старта TLS (поля в логах: `tls_stage` / `tls_error_code` / `hint`):
 

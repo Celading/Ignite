@@ -8,10 +8,14 @@
 
 - `=文档` 将当前公开版本基线从 `0.5.25` 提升到 `0.5.27`
 - `=文档` README / README-en / README-ru 的当前版本展示同步到 `0.5.27`
+- `+特性` `0500` 默认 Banner 收口到新经典样式：顶部三段式、`Touchpoints` 显示词、右下角小签名 `_Ignite <framework-version>`
+- `+特性` 新增 `Config.enablePrintSwaggerUrl`，允许 Swagger 路由存在但不打印启动 `Swagger UI: ...` 行
+- `=文档` README / README-en / README-ru / manual / Swagger sample 同步补齐 Banner、Swagger 显示开关与路径说明
+- `=文档` 澄清当前 HTTPS 默认路径仍以 `stdx` TLS 或反向代理 TLS 终结为准，`jinguissl` 不作为默认监听链替代承诺
 - `=杂项` 包版本、Swagger 示例元数据与相关测试版本同步到 `0.5.27`
 - `=杂项` 为本地 `v0.5.27` tag 做准备，本次不推送远端
 
-### v0.5.25 `Ignite Now`
+### v0.5.25
 > `0500` 公开收口与多语言同步版
 
 - `=文档` 将当前公开版本基线同步到 `0.5.25`
@@ -20,7 +24,7 @@
 - `=文档` 首跑说明继续以可验证路径为准，不把当前仓库包装成可直接 `cjpm run` 的可执行项目
 - `=杂项` 包版本、Swagger 示例元数据与相关测试版本同步到 `0.5.25`
 
-### v0.5.21 `Ignite Now` `Git`
+### v0.5.21 `Git`
 作为`0500`版本组，目前基线版本`0.5.21`已完成:
 - `+特性` Server / Client 双线能力面进一步拉齐，减少“服务端一套、客户端再重造一套”的割裂感
 - `+特性` 压缩中间件补齐：`compressMiddleware`、`CompressConfig`、`Accept-Encoding` 协商、`gzip/deflate`、最小压缩阈值、`skipIfNoGain`

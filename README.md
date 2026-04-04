@@ -6,12 +6,13 @@
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite WebServer v0.5.27</span>               │
-│                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
-│          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
+│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+│         <span style="color:#6EB186;">http://127.0.0.1:8080</span>                       │
+│            <span style="color:#AAAAAA;">bound on 0.0.0.0:8080</span>                    │
 │                                                       │
-│    Handlers <span style="color:#555;">...........</span> 16  Processes <span style="color:#555;">...........</span> 1   │
-│    Prefork <span style="color:#555;">......</span> Disabled  PID <span style="color:#555;">.............</span> 67271   │
+│  Touchpoints <span style="color:#555;">........</span> 16  Processes <span style="color:#555;">..........</span> 1     │
+│  Prefork <span style="color:#555;">...........</span> Disabled  PID <span style="color:#555;">..........</span> 67271 │
+│                                 <span style="color:#777;">_Ignite 0.5.27</span>          │
 └───────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -311,9 +312,12 @@ let app = App(config: Config(
     readTimeout:         std.time.Duration.second * 30,
     writeTimeout:        std.time.Duration.second * 30,
     enableSwagger:       true,
+    swaggerPath:         "/swagger",
     enableSwaggerCache:  true,   // Swagger JSON/UI 缓存，?refresh=1 强制刷新
+    enablePrintSwaggerUrl: true, // 只控制启动时是否打印 Swagger UI 地址
     enablePrintRoutes:   false,  // 为 true 时启动时额外打印路由表；Banner 始终输出且不可关闭
-    kmode:               false,  // 为 true 时调试模式：Banner 必打 Ignite 版本，可配合 kmodeMiddleware
+    enableBannerSignature: true, // Banner 右下角签名：_Ignite <framework-version>
+    kmode:               false,  // 调试模式：额外打印 Ignite 版本行，可配合 kmodeMiddleware
     kmodePanicHandler:   None,   // 可选：App 顶层 panic 兜底钩子，返回 true 表示已处理
     enableTlsPrecheck:   true,   // TLS precheck 开关：默认先做 jinguissl 预检，再走当前 stdx TLS 构造路径
     jsonEncoder:         None   // 可选：自定义 JsonEncodable 序列化函数
@@ -357,14 +361,14 @@ Ignite 提供以下开箱即用中间件（`import ignite.middleware.*`）：
 | | `healthCheckMiddleware` | 健康检查端点 |
 | | `idempotencyMiddleware` | 幂等键（X-Idempotency-Key） |
 | | `proxyMiddleware` | 反向代理（支持可选 X509 校验入口） |
-| **调试** | `kmodeMiddleware` | 兼容旧模式（Bool）+ 新策略模式（`KModePolicy`：Header Key + IP 白名单 + capability） |
+| **调试** | `kmodeMiddleware` | 兼容旧模式（Bool）+ 新策略模式（`KModePolicy`：Header Key + IP 白名单 + capability）；与 `Config.kmode` 配合做首跑调试与自检门禁 |
 
 示例：
 
 ```cangjie
 import ignite.middleware.*
 
-// 调试模式（Config.kmode = true 时启动会打印 Ignite 版本与 Swagger URL）
+// 调试模式（Config.kmode = true 时会额外打印 Ignite 版本行；Swagger 启动输出由 enablePrintSwaggerUrl 控制）
 app.use(kmodeMiddleware(app.config.kmode))
 
 // 启用日志系统
@@ -718,6 +722,7 @@ let assetUrl = app.urlFor("asset.file", params: [("*", "img/logo.png")]) ?? "/as
 let app = App(config: Config(
     enableSwagger: true,
     swaggerPath: "/swagger",
+    enablePrintSwaggerUrl: true,
     kmode: true
 ))
 
@@ -760,6 +765,10 @@ println(specs.size)
 // 访问 /swagger/json 获取 OpenAPI JSON
 ```
 
+- `enableSwagger` 是 Swagger / OpenAPI 功能总开关；关闭后不会注册 UI 与 JSON 路由。
+- `enablePrintSwaggerUrl` 只控制启动输出里的 `Swagger UI: ...` 行，不影响实际路由是否可访问。
+- `swaggerPath` 同时决定 UI 路径与 `${swaggerPath}/json` 的 OpenAPI JSON 路径。
+
 `InterfaceSpec` 会把路由的摘要、参数、请求体、响应与测试元数据整理成结构化快照，适合维护者核对语义，也适合工具或 AI 装载接口信息。
 
 当路由挂了 `TestOption` 后，OpenAPI JSON 会追加 `x-ignite-test` 扩展字段。它表达的是“这条接口有没有首次运行验证元数据”，不是把 Swagger 变成自动化测试平台。
@@ -793,8 +802,8 @@ app.listen("0.0.0.0", 443)
 
 `enableTlsPrecheck` 可关闭（`false`）以回退到“仅当前默认 TLS 构造”路径；建议仅在应急排障或兼容窗口期使用。
 
-当前公开主线路径仍以 **Ignite + stdx TLS 构造** 为准；`jinguissl` 目前承担的是预检与并行演进角色，不等同于默认 HTTPS 唯一路径。  
-如果后续出现 `jinguissl`、仓颉版本或平台兼容问题，会优先通过 `lisi` 兼容层收敛，而不会强制直接并入 Ignite 主线。
+当前公开主线路径仍以 **Ignite + stdx TLS 构造** 为准；`jinguissl` 目前承担的是预检与并行演进角色，不等同于默认 HTTPS 监听链替代方案。  
+如果你需要更稳妥的生产接入，当前仍推荐优先使用现有默认路径，或在反向代理层完成 TLS 终结。
 
 当前部署上还要特别记住两点：
 

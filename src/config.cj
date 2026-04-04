@@ -22,8 +22,12 @@ public struct Config {
     public var swaggerPath: String = "/swagger"
     public var swaggerUICssUrl: String = ""
     public var swaggerUIJsUrl: String = ""
+    /// 为 true 时启动后打印 Swagger UI 地址；仅影响启动输出，不影响 Swagger 路由是否注册。
+    public var enablePrintSwaggerUrl: Bool = true
     /// 为 true 时启动时额外打印路由表；Banner 始终输出，不受此控制。
     public var enablePrintRoutes: Bool = false
+    /// 为 true 时在 Banner 右下角打印框架签名；仅影响展示，不影响版本读取逻辑。
+    public var enableBannerSignature: Bool = true
     /// kmode（调试模式）：为 true 时启动后启用类似 debug 行为，Banner 中必打当前 Ignite 版本，并可配合 kmodeMiddleware 使用。
     public var kmode: Bool = false
     /// kmode panic hook：用于 App 顶层异常兜底。返回 true 表示异常已处理（例如触发重启/终止流程），将跳过默认 500 处理。
@@ -51,9 +55,12 @@ public struct Config {
         writeTimeout!: Duration = Duration.second * 30,
         concurrency!: Int64 = 256 * 1024,
         enableSwagger!: Bool = false,
+        swaggerPath!: String = "/swagger",
         swaggerUICssUrl!: String = "",
         swaggerUIJsUrl!: String = "",
+        enablePrintSwaggerUrl!: Bool = true,
         enablePrintRoutes!: Bool = false,
+        enableBannerSignature!: Bool = true,
         kmode!: Bool = false,
         kmodePanicHandler!: ?KModePanicHandler = None,
         tlsCertFile!: String = "",
@@ -73,9 +80,12 @@ public struct Config {
         this.writeTimeout = writeTimeout
         this.concurrency = concurrency
         this.enableSwagger = enableSwagger
+        this.swaggerPath = swaggerPath
         this.swaggerUICssUrl = swaggerUICssUrl
         this.swaggerUIJsUrl = swaggerUIJsUrl
+        this.enablePrintSwaggerUrl = enablePrintSwaggerUrl
         this.enablePrintRoutes = enablePrintRoutes
+        this.enableBannerSignature = enableBannerSignature
         this.kmode = kmode
         this.kmodePanicHandler = kmodePanicHandler
         this.tlsCertFile = tlsCertFile

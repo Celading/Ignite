@@ -6,12 +6,13 @@
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                <span style="color:#88C0D0;">Ignite WebServer v0.5.27</span>               │
-│                  <span style="color:#6EB186;">http://127.0.0.1:8080</span>                │
-│          <span style="color:#AAAAAA;">(bound on host 0.0.0.0 and port 8080)</span>        │
+│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+│         <span style="color:#6EB186;">http://127.0.0.1:8080</span>                       │
+│            <span style="color:#AAAAAA;">bound on 0.0.0.0:8080</span>                    │
 │                                                       │
-│    Handlers <span style="color:#555;">...........</span> 16  Processes <span style="color:#555;">...........</span> 1   │
-│    Prefork <span style="color:#555;">......</span> Disabled  PID <span style="color:#555;">.............</span> 67271   │
+│  Touchpoints <span style="color:#555;">........</span> 16  Processes <span style="color:#555;">..........</span> 1     │
+│  Prefork <span style="color:#555;">...........</span> Disabled  PID <span style="color:#555;">..........</span> 67271 │
+│                                 <span style="color:#777;">_Ignite 0.5.27</span>          │
 └───────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -241,9 +242,12 @@ let app = App(config: Config(
     readTimeout:         std.time.Duration.second * 30,
     writeTimeout:        std.time.Duration.second * 30,
     enableSwagger:       true,
+    swaggerPath:         "/swagger",
     enableSwaggerCache:  true,   // Cache Swagger JSON/UI; ?refresh=1 to refresh
+    enablePrintSwaggerUrl: true, // Controls only the startup "Swagger UI" line
     enablePrintRoutes:   false,  // when true, print route table at startup; banner always shown
-    kmode:               false,  // when true, debug mode: banner prints Ignite version; use with kmodeMiddleware
+    enableBannerSignature: true, // Banner signature in the lower-right corner
+    kmode:               false,  // debug mode: prints the extra Ignite version line
     kmodePanicHandler:   None,   // optional App-level panic fallback hook; return true when handled
     enableTlsPrecheck:   true,   // TLS precheck toggle: default = jinguissl precheck before the current stdx TLS build path
     jsonEncoder:         None   // Optional custom JsonEncodable encoder
@@ -287,14 +291,14 @@ Import with `import ignite.middleware.*`:
 | | `healthCheckMiddleware` | Health check endpoint |
 | | `idempotencyMiddleware` | X-Idempotency-Key |
 | | `proxyMiddleware` | Reverse proxy (with optional X509 verify entry) |
-| **Debug** | `kmodeMiddleware` | kmode debug: sets ctx local `kmode`; use with `Config.kmode`; banner always prints Ignite version when kmode |
+| **Debug** | `kmodeMiddleware` | kmode debug: sets ctx local `kmode`; use with `Config.kmode` for first-run diagnostics and self-check gating |
 
 Example:
 
 ```cangjie
 import ignite.middleware.*
 
-// Debug mode (when Config.kmode = true, startup prints Ignite version and Swagger URL)
+// Debug mode (Config.kmode adds the extra Ignite version line; the Swagger startup line is controlled by enablePrintSwaggerUrl)
 app.use(kmodeMiddleware(app.config.kmode))
 
 // Logging
@@ -608,7 +612,8 @@ If route name is missing or path params are incomplete, `urlFor` returns `None`.
 ```cangjie
 let app = App(config: Config(
     enableSwagger: true,
-    swaggerPath: "/docs"
+    swaggerPath: "/docs",
+    enablePrintSwaggerUrl: true
 ))
 
 app.swagger(SwaggerInfo(
@@ -636,6 +641,10 @@ app.get("/users/:id", getUser, option: RouteOption()
 // Visit /docs for Swagger UI, /docs/json for OpenAPI JSON
 ```
 
+- `enableSwagger` is the master switch for Swagger / OpenAPI routes and UI.
+- `enablePrintSwaggerUrl` only controls the startup `Swagger UI: ...` line and does not remove the routes.
+- `swaggerPath` defines both the UI path and the `${swaggerPath}/json` OpenAPI JSON path.
+
 ### TLS / HTTPS
 
 ```cangjie
@@ -653,8 +662,8 @@ app.listen("0.0.0.0", 443)
 
 `enableTlsPrecheck` can be set to `false` to fallback to the current "default TLS build only" path. Use this mainly for emergency troubleshooting windows.
 
-The current public mainline still treats **Ignite + stdx TLS config build** as the default HTTPS path; `jinguissl` is currently a precheck and parallel-evolution layer, not the sole default HTTPS path.  
-If future `jinguissl`, Cangjie-version, or platform compatibility issues appear, prefer absorbing them through `lisi` before pushing compatibility branches directly into Ignite mainline.
+The current public mainline still treats **Ignite + stdx TLS config build** as the default HTTPS path; `jinguissl` is currently a precheck and parallel-evolution layer, not a drop-in replacement for the default HTTPS listener chain.  
+For production deployment, the safer recommendation today is to keep the current default path or terminate TLS at a reverse proxy.
 
 TLS startup troubleshooting matrix (startup log fields: `tls_stage` / `tls_error_code` / `hint`):
 

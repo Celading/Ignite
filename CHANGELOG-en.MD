@@ -8,6 +8,10 @@
 
 - `=Docs` Raise the current public baseline from `0.5.25` to `0.5.27`
 - `=Docs` Sync the current-version display in `README.md`, `README-en.md`, and `README-ru.md` to `0.5.27`
+- `+Feature` Close out the default `0500` banner into the new classic style: three-part top section, `Touchpoints` wording, and the small `_Ignite <framework-version>` signature
+- `+Feature` Add `Config.enablePrintSwaggerUrl`, so Swagger routes can stay enabled while the startup `Swagger UI: ...` line is hidden
+- `=Docs` Sync README / README-en / README-ru / manual / Swagger sample wording for the banner, Swagger print switch, and path semantics
+- `=Docs` Clarify that the current HTTPS default remains the stdx TLS path or reverse-proxy TLS termination; `jinguissl` is not documented as the default listener replacement
 - `=Chore` Sync package version, Swagger sample metadata, and related tests to `0.5.27`
 - `=Chore` Prepare a local `v0.5.27` tag without pushing any remote refs in this step
 

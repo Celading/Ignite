@@ -36,6 +36,12 @@ Recommended first-run order:
 - `CHANGELOG.MD`: Chinese milestone timeline
 - `CHANGELOG-en.MD`: English milestone timeline
 
+## 0.5.27 closeout notes
+
+- The default `0500` startup banner now reflects the new classic closeout style, including the `Touchpoints` label and the small `_Ignite <framework-version>` signature.
+- Swagger startup output is now documented as a separate switch: `enableSwagger` controls the routes, while `enablePrintSwaggerUrl` controls only the startup line.
+- The current HTTPS default remains the existing stdx TLS path or reverse-proxy TLS termination; `jinguissl` is not documented as a drop-in listener replacement in this public manual.
+
 ## Reserved integration points
 
 - `manual/docs-md/`: reserved for the upcoming markdown documentation set

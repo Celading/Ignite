@@ -325,7 +325,9 @@ public class App {
                         tlsEnabled,
                         config.enableSwagger,
                         config.swaggerPath,
-                        config.kmode
+                        config.enablePrintSwaggerUrl,
+                        config.kmode,
+                        config.enableBannerSignature
                     )
                 }
             )
@@ -983,6 +985,13 @@ func bannerPadRight(s: String, w: Int64): String {
     result
 }
 
+func bannerPadLeft(s: String, w: Int64): String {
+    if (s.size >= w) { return s }
+    var result = ""
+    while (result.size < w - s.size) { result += " " }
+    result + s
+}
+
 func bannerDotFill(label: String, value: String, w: Int64): String {
     let dotsNeeded = w - label.size - value.size - 2
     var dots = ""
@@ -998,12 +1007,14 @@ func printBanner(
     scheme: String,
     addr: String,
     port: UInt16,
-    handlerCount: Int64,
+    touchpointCount: Int64,
     pid: String,
     tlsEnabled: Bool,
     enableSwagger: Bool,
     swaggerPath: String,
-    kmode: Bool
+    enablePrintSwaggerUrl: Bool,
+    kmode: Bool,
+    enableBannerSignature: Bool
 ): Unit {
     let frameworkVersion = GetData.GetDataClass.ModuleVer()
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
@@ -1052,10 +1063,10 @@ func printBanner(
     }
     let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
-    let bound = "(bound on host ${addr} and port ${port})"
+    let bound = "bound on ${addr}:${port}"
 
     let colW: Int64 = 23
-    let col1Line1 = bannerDotFillColor("Handlers", "${handlerCount}", colW)
+    let col1Line1 = bannerDotFillColor("Touchpoints", "${touchpointCount}", colW)
     let col2Line1 = bannerDotFillColor("Processes", "1", colW)
     let statsLine1 = bannerPadRight(" " + col1Line1 + "  " + col2Line1, innerWidth)
 
@@ -1075,16 +1086,20 @@ func printBanner(
     println("")
     println(" ${D}┌${border}┐${R}")
     println(" ${D}│${R}${CB}${bannerCenter(title, innerWidth)}${R}${D}│${R}")
-    println(" ${D}│${R}${G}${bannerCenter(url, innerWidth)}${R}${D}│${R}")
-    println(" ${D}│${R}${D}${bannerCenter(bound, innerWidth)}${R}${D}│${R}")
+    println(" ${D}│${R}${G}${bannerPadRight(" ${url}", innerWidth)}${R}${D}│${R}")
+    println(" ${D}│${R}${D}${bannerPadRight(" ${bound}", innerWidth)}${R}${D}│${R}")
     println(" ${D}│${R}${emptyInner}${D}│${R}")
     println(" ${D}│${R}${statsLine1}${D}│${R}")
     println(" ${D}│${R}${statsLine2}${D}│${R}")
+    if (enableBannerSignature) {
+        let signatureLine = bannerPadLeft("_Ignite ${frameworkVersion}", innerWidth)
+        println(" ${D}│${R}${D}${signatureLine}${R}${D}│${R}")
+    }
     println(" ${D}└${border}┘${R}")
     if (kmode) {
         println(" ${CB}Ignite v${frameworkVersion} (kmode)${R}")
     }
-    if (enableSwagger) {
+    if (enableSwagger && enablePrintSwaggerUrl) {
         println(" ${G}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
     }
     if (let Some(message) <- bannerWarn) {
