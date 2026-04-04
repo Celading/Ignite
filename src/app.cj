@@ -104,8 +104,11 @@ public class App {
         }
         router.addRoute("GET", catchAllPath, wrapSingle({ ctx: Ctx =>
             let filePath = ctx.params("*")
-            let fullPath = rootDir + "/" + filePath
-            ctx.sendFile(fullPath)
+            if (let Some(fullPath) <- resolveStaticAssetPath(rootDir, filePath)) {
+                ctx.sendFile(fullPath)
+            } else {
+                ctx.sendStatus(404)
+            }
         }))
         this
     }
@@ -136,11 +139,11 @@ public class App {
         }
         let handler: Handler = { ctx: Ctx =>
             let filePath = ctx.params("*")
-            if (filePath.contains("..")) {
+            if (let None <- normalizeStaticAssetRequestPath(filePath)) {
                 ctx.sendFile(fallbackPath)
                 return
             }
-            let fullPath = rootDir + "/" + filePath
+            let fullPath = resolveStaticAssetPath(rootDir, filePath) ?? fallbackPath
             let shouldServeStatic = if (exists(fullPath)) {
                 let fileInfo = FileInfo(fullPath)
                 !fileInfo.isDirectory()
