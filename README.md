@@ -1,18 +1,18 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.31-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
-┌───────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+┌─────────────────────────────────────────────────────┐
+│                   <span style="color:#88C0D0;">Ignite v0.5.31</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
-│                                                       │
-│  Touchpoints ............ 16  Processes ............ 1 │
-│  Prefork ............... Disabled  PID .......... 67271 │
-│                                 <span style="color:#8A8A8A;"><i>_Ignite 0.5.27</i></span>          │
-└───────────────────────────────────────────────────────┘
+│                                                     │
+│ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
+│ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.5.31</i></span>│
+└─────────────────────────────────────────────────────┘
 </pre>
 </div>
 
@@ -30,6 +30,7 @@
   <a href="#中间件">中间件</a> ·
   <a href="#高级用法">高级用法</a> ·
   <a href="#叶燧星火">叶燧星火</a> ·
+  <a href="#叶燧薪柴">叶燧薪柴</a> ·
   <a href="#许可证">许可证</a>
 </p>
 
@@ -70,7 +71,7 @@
 | **安全能力** | Cookie AEAD v1 双读新写、TLS precheck、X509 校验入口、安全指标与错误码 |
 | **一体化能力** | 框架内同时提供 `RestClient`，支持 Hook、重试、Cookie v2、加密、X509、观测 |
 
-### 当前状态（0.5.27）
+### 当前状态（0.5.31）
 
 - 详情可看 `manual/README.md`、`CHANGELOG.MD`、`CHANGELOG-en.MD`
 
@@ -123,7 +124,7 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉sdk环境 [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
-- 支持平台：macOS (arm64/x86_64)、Linux (arm64/x86_64)、Windows(x86_64)、HarmonyOS
+- 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
 
 ### 插入依赖
 
@@ -946,14 +947,21 @@ ignite/
 
 ## 支持平台
 
-| 平台 | 架构 | 状态 |
-|:---|:---|:---:|
-| macOS | aarch64 (Apple Silicon) | ✅ |
-| macOS | x86_64 (Intel) | ✅ |
-| Linux | x86_64 | ✅ |
-| Linux | aarch64 | ✅ |
-| Windows | x86_64 | ✅ |
-| HarmonyOS | arm64 | ✅ |
+| 系统 / 平台 | 架构 / 机型线 | 状态 | 说明 |
+|:---|:---|:---:|:---|
+| macOS | aarch64 (Apple Silicon) | ✅ | 默认开发主线之一 |
+| macOS | x86_64 (Intel) | ✅ | 已覆盖 |
+| Linux | x86_64 | ✅ | 通用 GNU/Linux |
+| Linux | aarch64 | ✅ | 通用 GNU/Linux |
+| EulerOS | Taishan | ✅ | 与通用 Linux ARM 线分开记录 |
+| EulerOS | x86_64 | ✅ | 发行版环境单列 |
+| Windows | x86_64 | ✅ | 默认 Windows 兼容线 |
+| OpenHarmony | aarch64 | ✅ | OHOS 公开适配线 |
+| OpenHarmony | x86_64 | ✅ | 已通过认证 |
+| HarmonyOS | arm64 | ✅ | 终端 / 设备侧部署线 |
+| LoongArch | LoongArch64 | 规划中 | 后续平台扩展预留 |
+
+> 注：`cjpm.toml` 记录的是仓内默认公开构建 target；这里的支持矩阵还会保留项目验证线与认证线。
 
 ## Ignite-Samples
 
@@ -982,6 +990,11 @@ ignite/
 <a href="https://gitcode.com/cinyu/easyTODO-core">easyTODO-core</a> - 纯仓颉+HTML实现的TODO后端
 
 <a href="https://atomgit.com/cinyu/igMessanging">igMessanging</a> - 纯仓颉+HTML实现的聊天室后端
+
+### 叶燧薪柴
+> Fueling the engines of innovation.
+
+<a href="https://gitcode.com/copur/brotli_middleware">brotli</a> - brotli中间件
 
 ## 文档与入口
 
