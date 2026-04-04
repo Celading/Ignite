@@ -24,6 +24,7 @@ public class Ctx {
     var _bodyBytesCache: ?Array<UInt8> = None
     var _multipartForm: ?MultipartForm = None
     var _responseBody: ?String = None
+    var _pathOverride: ?String = None
 
     public init(httpCtx: HttpContext, app: App) {
         this._httpCtx = httpCtx
@@ -37,7 +38,12 @@ public class Ctx {
     }
 
     public prop path: String {
-        get() { _httpCtx.request.url.path }
+        get() {
+            match (_pathOverride) {
+                case Some(path) => path
+                case None => _httpCtx.request.url.path
+            }
+        }
     }
 
     public prop originalUrl: String {
@@ -487,8 +493,20 @@ public class Ctx {
         this._handlerIndex = -1
     }
 
+    public func handlerIndex(): Int64 {
+        _handlerIndex
+    }
+
+    public func setHandlerIndex(index: Int64): Unit {
+        this._handlerIndex = index
+    }
+
     public func setRoute(route: Route): Unit {
         this._route = route
+    }
+
+    public func overridePath(path: String): Unit {
+        this._pathOverride = Some(path)
     }
 
     func statusMessage(code: UInt16): String {
