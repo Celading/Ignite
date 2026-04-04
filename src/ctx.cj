@@ -628,23 +628,7 @@ public class Ctx {
     }
 
     func escapeJson(input: String): String {
-        var out = ""
-        for (r in input.toRuneArray()) {
-            if (r == r'\\') {
-                out += "\\\\"
-            } else if (r == r'"') {
-                out += "\\\""
-            } else if (r == r'\n') {
-                out += "\\n"
-            } else if (r == r'\r') {
-                out += "\\r"
-            } else if (r == r'\t') {
-                out += "\\t"
-            } else {
-                out += r.toString()
-            }
-        }
-        out
+        escapeJsonText(input)
     }
 }
 

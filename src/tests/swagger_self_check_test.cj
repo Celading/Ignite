@@ -61,6 +61,22 @@ public class SwaggerSelfCheckTestSuite {
     }
 
     @TestCase
+    public func testSwaggerJsonEscapesControlCharacters(): Unit {
+        let app = App(config: Config(enableSwagger: true))
+        app.swagger(SwaggerInfo(
+            title: "Bad\u0001Title",
+            description: "Line\u0000Break\b\f",
+            version: "0.5.31"
+        ))
+        app.get("/ok", { ctx => _ = ctx.sendString("ok") })
+
+        let resp = app.handleForTest("GET", "/swagger/json")
+        @Assert(resp.status, UInt16(200))
+        @Assert(contains(resp.body, "Bad\\u0001Title"), true)
+        @Assert(contains(resp.body, "Line\\u0000Break\\b\\f"), true)
+    }
+
+    @TestCase
     public func testSelfCheckMockInterceptsRouteInKmode(): Unit {
         let app = App(config: Config(kmode: true))
         app.post(
