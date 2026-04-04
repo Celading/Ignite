@@ -7,12 +7,11 @@
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
 │                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
-│         <span style="color:#6EB186;">http://127.0.0.1:8080</span>                       │
-│            <span style="color:#AAAAAA;">bound on 0.0.0.0:8080</span>                    │
+│  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                       │
-│  Touchpoints <span style="color:#555;">........</span> 16  Processes <span style="color:#555;">..........</span> 1     │
-│  Prefork <span style="color:#555;">...........</span> Disabled  PID <span style="color:#555;">..........</span> 67271 │
-│                                 <span style="color:#777;">_Ignite 0.5.27</span>          │
+│  Touchpoints ............ 16  Processes ............ 1 │
+│  Prefork ............... Disabled  PID .......... 67271 │
+│                                 <span style="color:#8A8A8A;"><i>_Ignite 0.5.27</i></span>          │
 └───────────────────────────────────────────────────────┘
 </pre>
 </div>

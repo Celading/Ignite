@@ -11,7 +11,6 @@ import stdx.net.http.{
     HttpHeaders, ClientBuilder
 }
 import ignite.api2
-import ignite.api2.GetData
 
 public class AppTestResponse {
     public let status: UInt16
@@ -973,9 +972,17 @@ func bannerCenter(s: String, w: Int64): String {
     let left = pad / 2
     let right = pad - left
     var result = ""
-    for (_ in 0..left) { result += " " }
+    var i: Int64 = 0
+    while (i < left) {
+        result += " "
+        i += 1
+    }
     result += s
-    for (_ in 0..right) { result += " " }
+    i = 0
+    while (i < right) {
+        result += " "
+        i += 1
+    }
     result
 }
 
@@ -992,13 +999,54 @@ func bannerPadLeft(s: String, w: Int64): String {
     result + s
 }
 
+func bannerSpaces(count: Int64): String {
+    if (count <= 0) { return "" }
+    var result = ""
+    var i: Int64 = 0
+    while (i < count) {
+        result += " "
+        i += 1
+    }
+    result
+}
+
 func bannerDotFill(label: String, value: String, w: Int64): String {
     let dotsNeeded = w - label.size - value.size - 2
     var dots = ""
     if (dotsNeeded > 0) {
-        for (_ in 0..dotsNeeded) { dots += "." }
+        var i: Int64 = 0
+        while (i < dotsNeeded) {
+            dots += "."
+            i += 1
+        }
     }
     "${label} ${dots} ${value}"
+}
+
+func bannerTintDots(s: String, dotColor: String, textColor: String): String {
+    var result = textColor
+    var dotMode = false
+    for (r in s.toRuneArray()) {
+        let ch = r.toString()
+        if (ch == ".") {
+            if (!dotMode) {
+                result += dotColor
+                dotMode = true
+            }
+            result += ch
+        } else {
+            if (dotMode) {
+                result += textColor
+                dotMode = false
+            }
+            result += ch
+        }
+    }
+    result
+}
+
+func bannerComposeEndpointLine(url: String, addr: String, port: UInt16): String {
+    "${url} || (bound on ${addr}:${port})"
 }
 
 func printBanner(
@@ -1016,30 +1064,19 @@ func printBanner(
     kmode: Bool,
     enableBannerSignature: Bool
 ): Unit {
-    let frameworkVersion = GetData.GetDataClass.ModuleVer()
+    let frameworkVersion = IGNITE_FRAMEWORK_VERSION
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
     let innerWidth: Int64 = 53
 
     let esc = "\u{1B}"
     let R = esc + "[0m"
-    let CB = esc + "[1;36m"
-    let G = esc + "[92m"
-    let D = esc + "[2m"
-    let B = esc + "[1m"
-    let DOT = esc + "[38;5;240m"   // #555 灰色 (approx)
-
-    func bannerDotFillColor(label: String, value: String, w: Int64): String {
-        let dotsNeeded = w - label.size - value.size - 2
-        var dots = ""
-        if (dotsNeeded > 0) {
-            for (_ in 0..dotsNeeded) { dots += "." }
-        }
-        if (dots.size > 0) {
-            "${label} ${DOT}${dots}${R} ${value}"
-        } else {
-            "${label} ${value}"
-        }
-    }
+    let BORDER = esc + "[38;5;240m"
+    let TITLE = esc + "[1;36m"
+    let URL = esc + "[92m"
+    let MUTED = esc + "[38;5;246m"
+    let BODY = esc + "[38;5;252m"
+    let DOT = esc + "[38;5;240m"
+    let ITALIC = esc + "[3m"
 
     var displayAddr = addr
     var bannerWarn: ?String = None
@@ -1063,44 +1100,64 @@ func printBanner(
     }
     let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
-    let bound = "bound on ${addr}:${port}"
+    let endpointLine = bannerComposeEndpointLine(url, addr, port)
 
-    let colW: Int64 = 23
-    let col1Line1 = bannerDotFillColor("Touchpoints", "${touchpointCount}", colW)
-    let col2Line1 = bannerDotFillColor("Processes", "1", colW)
+    let colW: Int64 = 24
+    let col1Line1 = bannerDotFill("Touchpoints", "${touchpointCount}", colW)
+    let col2Line1 = bannerDotFill("Processes", "1", colW)
     let statsLine1 = bannerPadRight(" " + col1Line1 + "  " + col2Line1, innerWidth)
 
     let left2 = if (tlsEnabled) {
-        bannerDotFillColor("TLS", "Enabled", colW)
+        bannerDotFill("TLS", "Enabled", colW)
     } else {
-        bannerDotFillColor("Prefork", "Disabled", colW)
+        bannerDotFill("Prefork", "Disabled", colW)
     }
-    let col2Line2 = bannerDotFillColor("PID", pid, colW)
+    let col2Line2 = bannerDotFill("PID", pid, colW)
     let statsLine2 = bannerPadRight(" " + left2 + "  " + col2Line2, innerWidth)
 
     var border = ""
-    for (_ in 0..innerWidth) { border += "─" }
+    var i: Int64 = 0
+    while (i < innerWidth) {
+        border += "─"
+        i += 1
+    }
 
     let emptyInner = bannerCenter("", innerWidth)
+    let endpointBound = "(bound on ${addr}:${port})"
+    let endpointSep = " || "
+    let splitUrlLine = bannerCenter(url, innerWidth)
+    let splitBoundLine = bannerCenter(endpointBound, innerWidth)
+    let statsLine1Styled = bannerTintDots(statsLine1, DOT, BODY)
+    let statsLine2Styled = bannerTintDots(statsLine2, DOT, BODY)
 
     println("")
-    println(" ${D}┌${border}┐${R}")
-    println(" ${D}│${R}${CB}${bannerCenter(title, innerWidth)}${R}${D}│${R}")
-    println(" ${D}│${R}${G}${bannerPadRight(" ${url}", innerWidth)}${R}${D}│${R}")
-    println(" ${D}│${R}${D}${bannerPadRight(" ${bound}", innerWidth)}${R}${D}│${R}")
-    println(" ${D}│${R}${emptyInner}${D}│${R}")
-    println(" ${D}│${R}${statsLine1}${D}│${R}")
-    println(" ${D}│${R}${statsLine2}${D}│${R}")
+    println(" ${BORDER}┌${border}┐${R}")
+    println(" ${BORDER}│${R}${TITLE}${bannerCenter(title, innerWidth)}${R}${BORDER}│${R}")
+    if (endpointLine.size <= innerWidth) {
+        let endpointPad = innerWidth - endpointLine.size
+        let endpointPadLeft = endpointPad / 2
+        let endpointPadRight = endpointPad - endpointPadLeft
+        let endpointInner = bannerSpaces(endpointPadLeft) +
+            "${URL}${url}${R}${MUTED}${endpointSep}${endpointBound}${R}" +
+            bannerSpaces(endpointPadRight)
+        println(" ${BORDER}│${R}${endpointInner}${BORDER}│${R}")
+    } else {
+        println(" ${BORDER}│${R}${URL}${splitUrlLine}${R}${BORDER}│${R}")
+        println(" ${BORDER}│${R}${MUTED}${splitBoundLine}${R}${BORDER}│${R}")
+    }
+    println(" ${BORDER}│${R}${emptyInner}${BORDER}│${R}")
+    println(" ${BORDER}│${R}${statsLine1Styled}${R}${BORDER}│${R}")
+    println(" ${BORDER}│${R}${statsLine2Styled}${R}${BORDER}│${R}")
     if (enableBannerSignature) {
         let signatureLine = bannerPadLeft("_Ignite ${frameworkVersion}", innerWidth)
-        println(" ${D}│${R}${D}${signatureLine}${R}${D}│${R}")
+        println(" ${BORDER}│${R}${ITALIC}${MUTED}${signatureLine}${R}${BORDER}│${R}")
     }
-    println(" ${D}└${border}┘${R}")
+    println(" ${BORDER}└${border}┘${R}")
     if (kmode) {
-        println(" ${CB}Ignite v${frameworkVersion} (kmode)${R}")
+        println(" ${TITLE}Ignite v${frameworkVersion} (kmode)${R}")
     }
     if (enableSwagger && enablePrintSwaggerUrl) {
-        println(" ${G}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
+        println(" ${URL}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
     }
     if (let Some(message) <- bannerWarn) {
         println(" [Ignite][Net] ${message}")
