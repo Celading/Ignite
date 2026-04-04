@@ -3,6 +3,15 @@
 ## Ignite `0500`
 > 可用、可信、快上手
 
+### v0.5.31 `Ignite Now`
+> 平台矩阵细化与 README 首屏收口版
+
+- `=文档` 将当前公开版本基线从 `0.5.27` 提升到 `0.5.31`
+- `=文档` README / README-en / README-ru 的版本展示、Banner 预览宽度与当前运行时输出重新对齐
+- `=文档` 支持平台矩阵细化，单列 `OpenHarmony x86_64`、`EulerOS Taishan/x86_64`、`HarmonyOS arm64`，并为 `LoongArch64` 预留位置
+- `=文档` manual / Swagger sample / 自检测试中的当前版本显示同步到 `0.5.31`
+- `=杂项` 包版本与框架版本常量同步到 `0.5.31`
+
 ### v0.5.27 `Ignite Now`
 > 本地 release 预备版
 
@@ -52,6 +61,13 @@
 
 ## Ignite `0400`
 > 安全治理集成、面向生产级步进
+
+### v0.4.71
+> `0400` 工作区收口刷新版
+
+- `=文档` `cjpm.toml`、README / README-en / README-ru 当前版本展示同步到 `0.4.71`
+- `=文档` 支持平台矩阵细化，补回 `OpenHarmony x86_64` 与 `EulerOS Taishan/x86_64`
+- `=文档` 英文 / 俄文 README 补齐 Swagger `enablePrintSwaggerUrl` 与路径语义说明
 
 ### v0.4.67 `Git` `CangjiePkg`
 > 理论 `0400` 阶段最后一版

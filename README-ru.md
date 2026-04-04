@@ -1,18 +1,18 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.31-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
-┌───────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+┌─────────────────────────────────────────────────────┐
+│                   <span style="color:#88C0D0;">Ignite v0.5.31</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
-│                                                       │
-│  Touchpoints ............ 16  Processes ............ 1 │
-│  Prefork ............... Disabled  PID .......... 67271 │
-│                                 <span style="color:#8A8A8A;"><i>_Ignite 0.5.27</i></span>          │
-└───────────────────────────────────────────────────────┘
+│                                                     │
+│ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
+│ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.5.31</i></span>│
+└─────────────────────────────────────────────────────┘
 </pre>
 </div>
 
@@ -48,7 +48,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.5.27)
+## Текущее состояние (0.5.31)
 
 - Для актуальной публичной базовой точки и временной шкалы версий используйте `manual/README.md`, `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
@@ -79,7 +79,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 - Cangjie SDK [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
 - Стандартная библиотека расширений [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   - При необходимости: [Cangjie nightly (со stdx)](https://gitcode.com/Cangjie/nightly_build)
-- Платформы: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64), HarmonyOS
+- Платформы: точная матрица ОС и платформ приведена ниже в разделе поддержки.
 
 ### Подключение зависимостей
 
@@ -690,14 +690,21 @@ ignite/
 
 ## Поддерживаемые платформы
 
-| Платформа | Архитектура | Статус |
-|:---|:---|:---:|
-| macOS | aarch64 (Apple Silicon) | ✅ |
-| macOS | x86_64 (Intel) | ✅ |
-| Linux | x86_64 | ✅ |
-| Linux | aarch64 | ✅ |
-| Windows | x86_64 | ✅ |
-| HarmonyOS | arm64 | ✅ |
+| ОС / Платформа | Архитектура / линия | Статус | Примечание |
+|:---|:---|:---:|:---|
+| macOS | aarch64 (Apple Silicon) | ✅ | Одна из основных линий разработки |
+| macOS | x86_64 (Intel) | ✅ | Поддерживается |
+| Linux | x86_64 | ✅ | Общая линия GNU/Linux |
+| Linux | aarch64 | ✅ | Общая линия GNU/Linux |
+| EulerOS | Taishan | ✅ | Ведётся отдельно от общей Linux ARM линии |
+| EulerOS | x86_64 | ✅ | Отдельная линия дистрибутива |
+| Windows | x86_64 | ✅ | Базовая линия совместимости Windows |
+| OpenHarmony | aarch64 | ✅ | Публичная линия совместимости OHOS |
+| OpenHarmony | x86_64 | ✅ | Прошёл сертификацию |
+| HarmonyOS | arm64 | ✅ | Линия развёртывания на устройствах |
+| LoongArch | LoongArch64 | Планируется | Резерв для следующего этапа расширения |
+
+> Примечание: `cjpm.toml` отражает базовые target'ы, объявленные в репозитории; матрица также фиксирует линии проектной валидации и сертификации.
 
 ## Проекты (叶燧星火)
 

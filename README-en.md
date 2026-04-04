@@ -1,18 +1,18 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.27-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.31-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
-┌───────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.5.27</span>                   │
+┌─────────────────────────────────────────────────────┐
+│                   <span style="color:#88C0D0;">Ignite v0.5.31</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
-│                                                       │
-│  Touchpoints ............ 16  Processes ............ 1 │
-│  Prefork ............... Disabled  PID .......... 67271 │
-│                                 <span style="color:#8A8A8A;"><i>_Ignite 0.5.27</i></span>          │
-└───────────────────────────────────────────────────────┘
+│                                                     │
+│ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
+│ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.5.31</i></span>│
+└─────────────────────────────────────────────────────┘
 </pre>
 </div>
 
@@ -48,7 +48,7 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.5.27)
+## Current Status (0.5.31)
 
 - See `manual/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD` for the current public baseline and milestone timeline.
 
@@ -79,7 +79,7 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 - Cangjie SDK [`cangjie-sdk`](https://cangjie-lang.cn/download) v1.1.0+
 - Cangjie standard extension library [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   - For [Cangjie nightly (with stdx)](https://gitcode.com/Cangjie/nightly_build) if needed
-- Platforms: macOS (arm64/x86_64), Linux (arm64/x86_64), Windows (x86_64), HarmonyOS
+- Platforms: see the support matrix below for the exact OS / platform lines.
 
 ### Adding dependencies
 
@@ -792,14 +792,21 @@ ignite/
 
 ## Supported platforms
 
-| Platform | Arch | Status |
-|:---|:---|:---:|
-| macOS | aarch64 (Apple Silicon) | ✅ |
-| macOS | x86_64 (Intel) | ✅ |
-| Linux | x86_64 | ✅ |
-| Linux | aarch64 | ✅ |
-| Windows | x86_64 | ✅ |
-| HarmonyOS | arm64 | ✅ |
+| OS / Platform | Arch / Line | Status | Notes |
+|:---|:---|:---:|:---|
+| macOS | aarch64 (Apple Silicon) | ✅ | Primary development line |
+| macOS | x86_64 (Intel) | ✅ | Supported |
+| Linux | x86_64 | ✅ | Generic GNU/Linux line |
+| Linux | aarch64 | ✅ | Generic GNU/Linux line |
+| EulerOS | Taishan | ✅ | Tracked separately from the generic Linux ARM line |
+| EulerOS | x86_64 | ✅ | Distro-specific line |
+| Windows | x86_64 | ✅ | Default Windows compatibility line |
+| OpenHarmony | aarch64 | ✅ | Public OHOS compatibility line |
+| OpenHarmony | x86_64 | ✅ | Certified |
+| HarmonyOS | arm64 | ✅ | Device-side deployment line |
+| LoongArch | LoongArch64 | Planned | Reserved for future platform expansion |
+
+> Note: `cjpm.toml` records the default in-repo build targets; this matrix also keeps project validation and certification lines.
 
 ## Showcase (叶燧星火)
 

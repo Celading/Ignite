@@ -3,6 +3,15 @@
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 
+### v0.5.31 `Ignite Now`
+> Platform-matrix refinement and README front-page closeout refresh
+
+- `=Docs` Raise the current public baseline from `0.5.27` to `0.5.31`
+- `=Docs` Realign the README banner preview width and current-version surface with the actual runtime output
+- `=Docs` Refine the support matrix so `OpenHarmony x86_64`, `EulerOS Taishan/x86_64`, and `HarmonyOS arm64` are tracked separately, while reserving room for `LoongArch64`
+- `=Docs` Sync manual wording, Swagger sample metadata, and self-check test version strings to `0.5.31`
+- `=Chore` Sync the package version and framework version constant to `0.5.31`
+
 ### v0.5.27 `Ignite Now`
 > Local release-prep refresh
 
@@ -53,6 +62,13 @@ As the current baseline of the `0500` group, `0.5.21` now includes:
 
 ## Ignite `0400`
 > Security governance integration, stepping toward production
+
+### v0.4.71
+> `0400` workspace closeout refresh
+
+- `=Docs` Sync `cjpm.toml` and README / README-en / README-ru current-version surfaces to `0.4.71`
+- `=Docs` Refine the support matrix to restore `OpenHarmony x86_64` and `EulerOS Taishan/x86_64`
+- `=Docs` Backfill the Swagger `enablePrintSwaggerUrl` and path semantics in the English and Russian README copies
 
 ### v0.4.67 `Git` `CangjiePkg`
 > Theoretical last release of the `0400` stage
