@@ -4,6 +4,41 @@ import std.fs.{File, OpenMode}
 import std.collection.ArrayList
 import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor}
 import ignite.api2
+import lisi.transport as lisiTransport
+
+public class ServerTransportTouchpoint {
+    public let candidateOrder: String
+    public let blockedCandidates: String
+    public let selectedBackend: String
+    public let selectedReason: String
+    public let providerId: String
+    public let publicPath: String
+    public let riskLevel: String
+    public let tlsEnabled: Bool
+    public let fallbackReason: String
+
+    public init(
+        candidateOrder: String,
+        blockedCandidates: String,
+        selectedBackend: String,
+        selectedReason: String,
+        providerId: String,
+        publicPath: String,
+        riskLevel: String,
+        tlsEnabled: Bool,
+        fallbackReason: String
+    ) {
+        this.candidateOrder = candidateOrder
+        this.blockedCandidates = blockedCandidates
+        this.selectedBackend = selectedBackend
+        this.selectedReason = selectedReason
+        this.providerId = providerId
+        this.publicPath = publicPath
+        this.riskLevel = riskLevel
+        this.tlsEnabled = tlsEnabled
+        this.fallbackReason = fallbackReason
+    }
+}
 
 public class ServerEngineListenOption {
     public let addr: String
@@ -15,6 +50,7 @@ public class ServerEngineListenOption {
     public let tlsCertFile: String
     public let tlsKeyFile: String
     public let enableTlsPrecheck: Bool
+    public let transportTouchpoint: ?ServerTransportTouchpoint
 
     public init(
         addr: String,
@@ -25,7 +61,8 @@ public class ServerEngineListenOption {
         maxRequestBodySize: Int64,
         tlsCertFile: String,
         tlsKeyFile: String,
-        enableTlsPrecheck: Bool
+        enableTlsPrecheck: Bool,
+        transportTouchpoint!: ?ServerTransportTouchpoint = None
     ) {
         this.addr = addr
         this.port = port
@@ -36,6 +73,7 @@ public class ServerEngineListenOption {
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.enableTlsPrecheck = enableTlsPrecheck
+        this.transportTouchpoint = transportTouchpoint
     }
 }
 
@@ -113,4 +151,83 @@ func readFileStringForEngine(path: String): String {
     }
     file.close()
     String.fromUtf8(buf.toArray())
+}
+
+func buildServerTransportTouchpoint(addr: String, port: UInt16, tlsEnabled: Bool): ServerTransportTouchpoint {
+    let scheme = if (tlsEnabled) { "https" } else { "http" }
+    let request = lisiTransport.BackendSelectionRequest(
+        "server",
+        scheme,
+        false,
+        false,
+        false,
+        "",
+        false,
+        0,
+        "sni=" + normalizeServerTouchpointHost(addr, port)
+    )
+    let decision = lisiTransport.selectBackend(request)
+    let tlsPlan = lisiTransport.buildTlsAttachPlan(
+        request,
+        decision,
+        normalizeServerTouchpointHost(addr, port)
+    )
+    ServerTransportTouchpoint(
+        joinServerTouchpointFields(decision.candidateOrder),
+        joinServerTouchpointFields(decision.blockedCandidates),
+        normalizeServerBackendId(decision.selectedBackend),
+        decision.selectedReason,
+        normalizeServerProviderId(tlsPlan.providerId, tlsEnabled),
+        decision.publicPath,
+        decision.riskLevel,
+        tlsPlan.tlsEnabled,
+        tlsPlan.fallbackReason
+    )
+}
+
+func normalizeServerTouchpointHost(addr: String, port: UInt16): String {
+    let trimmed = addr.trimAscii()
+    if (trimmed == "0.0.0.0" || trimmed == "::" || trimmed == "[::]") {
+        return "127.0.0.1:${port}"
+    }
+    "${trimmed}:${port}"
+}
+
+func joinServerTouchpointFields(values: Array<String>): String {
+    if (values.size == 0) {
+        return "-"
+    }
+    var out = ""
+    var first = true
+    for (value in values) {
+        if (!first) {
+            out += ","
+        }
+        first = false
+        out += value
+    }
+    out
+}
+
+func normalizeServerBackendId(raw: String): String {
+    if (raw == "stdx-default") {
+        return "stdx-http-server"
+    }
+    if (raw.size == 0) {
+        return "-"
+    }
+    raw
+}
+
+func normalizeServerProviderId(raw: String, tlsEnabled: Bool): String {
+    if (!tlsEnabled || raw.size == 0) {
+        return "-"
+    }
+    if (raw == "stdx") {
+        return "tls:stdx-default"
+    }
+    if (raw == "jinguissl") {
+        return "tls:jinguissl"
+    }
+    "tls:" + raw
 }

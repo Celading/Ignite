@@ -298,6 +298,7 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
+        let transportTouchpoint = buildServerTransportTouchpoint(addr, port, hasTls)
 
         let option = ServerEngineListenOption(
             addr,
@@ -308,7 +309,8 @@ public class App {
             config.bodyLimit,
             config.tlsCertFile,
             config.tlsKeyFile,
-            config.enableTlsPrecheck
+            config.enableTlsPrecheck,
+            transportTouchpoint: transportTouchpoint
         )
         try {
             _engine.listen(

@@ -60,6 +60,21 @@ public class DeploymentDualListenerPatternTestSuite {
         @Assert(httpsEngine.lastTlsKeyFile, DUAL_TLS_KEY_A)
         @Assert(httpEngine.readyCalled, true)
         @Assert(httpsEngine.readyCalled, true)
+        match (httpEngine.lastTransportTouchpoint) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.providerId, "-")
+                @Assert(touchpoint.tlsEnabled, false)
+            case None => @Fail("expected http transport touchpoint")
+        }
+        match (httpsEngine.lastTransportTouchpoint) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.providerId, "tls:stdx-default")
+                @Assert(touchpoint.selectedReason, "stable_default_path")
+                @Assert(containsText(touchpoint.candidateOrder, "jinguissl-provider-candidate"), true)
+            case None => @Fail("expected https transport touchpoint")
+        }
     }
 }
 
@@ -98,6 +113,7 @@ class DeploymentSpyServerEngine <: ServerEngine {
     var lastPort: UInt16 = 0
     var lastTlsCertFile: String = ""
     var lastTlsKeyFile: String = ""
+    var lastTransportTouchpoint: ?ServerTransportTouchpoint = None
 
     public override func listen(
         option: ServerEngineListenOption,
@@ -109,6 +125,7 @@ class DeploymentSpyServerEngine <: ServerEngine {
         lastPort = option.port
         lastTlsCertFile = option.tlsCertFile
         lastTlsKeyFile = option.tlsKeyFile
+        lastTransportTouchpoint = option.transportTouchpoint
         if (let Some(cb) <- onReady) {
             cb()
             readyCalled = true
@@ -116,4 +133,28 @@ class DeploymentSpyServerEngine <: ServerEngine {
     }
 
     public override func shutdown(): Unit {}
+}
+
+func containsText(text: String, target: String): Bool {
+    let t = text.toRuneArray()
+    let p = target.toRuneArray()
+    if (p.size == 0) {
+        return true
+    }
+    if (t.size < p.size) {
+        return false
+    }
+    for (i in 0..=(t.size - p.size)) {
+        var matched = true
+        for (j in 0..p.size) {
+            if (t[i + j] != p[j]) {
+                matched = false
+                break
+            }
+        }
+        if (matched) {
+            return true
+        }
+    }
+    false
 }
