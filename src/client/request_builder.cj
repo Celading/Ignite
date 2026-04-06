@@ -17,6 +17,8 @@ public class RequestBuilder {
     let _cryptoConfig: ?api2.ClientCryptoConfig
     let _x509Verify: ?security.X509VerifyOption
     let _retryConfig: ClientRetryConfig
+    let _preferredTransportBackendHint: String
+    let _allowExperimentalTransport: Bool
     let _requestHooks: ArrayList<ClientRequestHook>
     let _responseHooks: ArrayList<ClientResponseHook>
     let _errorHooks: ArrayList<ClientErrorHook>
@@ -31,6 +33,8 @@ public class RequestBuilder {
     var _x509VerifyOverride: ?security.X509VerifyOption = None
     var _retryOverride: ?ClientRetryConfig = None
     var _requestCryptoConfig: ?api2.ClientCryptoConfig = None
+    var _transportBackendHintOverride: ?String = None
+    var _allowExperimentalTransportOverride: ?Bool = None
 
     public init(
         client: Client,
@@ -40,6 +44,8 @@ public class RequestBuilder {
         cryptoConfig: ?api2.ClientCryptoConfig,
         x509Verify: ?security.X509VerifyOption,
         retryConfig: ClientRetryConfig,
+        preferredTransportBackendHint: String,
+        allowExperimentalTransport: Bool,
         requestHooks: ArrayList<ClientRequestHook>,
         responseHooks: ArrayList<ClientResponseHook>,
         errorHooks: ArrayList<ClientErrorHook>
@@ -51,6 +57,8 @@ public class RequestBuilder {
         _cryptoConfig = cryptoConfig
         _x509Verify = x509Verify
         _retryConfig = retryConfig.copy()
+        _preferredTransportBackendHint = preferredTransportBackendHint
+        _allowExperimentalTransport = allowExperimentalTransport
         _requestHooks = ArrayList<ClientRequestHook>()
         _responseHooks = ArrayList<ClientResponseHook>()
         _errorHooks = ArrayList<ClientErrorHook>()
@@ -87,6 +95,20 @@ public class RequestBuilder {
             return overrideCfg
         }
         _retryConfig
+    }
+
+    func resolvePreferredTransportBackendHint(): String {
+        if (let Some(overrideHint) <- _transportBackendHintOverride) {
+            return overrideHint
+        }
+        _preferredTransportBackendHint
+    }
+
+    func resolveAllowExperimentalTransport(): Bool {
+        if (let Some(overrideFlag) <- _allowExperimentalTransportOverride) {
+            return overrideFlag
+        }
+        _allowExperimentalTransport
     }
 
     func resolveX509VerifyOption(): ?security.X509VerifyOption {
@@ -126,6 +148,20 @@ public class RequestBuilder {
 
     public func disableRetry(): RequestBuilder {
         _retryOverride = ClientRetryConfig(enabled: false)
+        this
+    }
+
+    public func preferTransportBackend(backendId: String): RequestBuilder {
+        _transportBackendHintOverride = Some(backendId.trimAscii())
+        this
+    }
+
+    public func withTransportBackendHint(backendId: String): RequestBuilder {
+        preferTransportBackend(backendId)
+    }
+
+    public func allowExperimentalTransport(enable!: Bool = true): RequestBuilder {
+        _allowExperimentalTransportOverride = Some(enable)
         this
     }
 
@@ -354,7 +390,9 @@ public class RequestBuilder {
             urlForHost,
             resolvedX509Verify,
             requestCryptoConfig: _requestCryptoConfig,
-            requiresMultipart: hasMultipartPayload()
+            requiresMultipart: hasMultipartPayload(),
+            preferredBackendHint: resolvePreferredTransportBackendHint(),
+            allowExperimental: resolveAllowExperimentalTransport()
         )
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()

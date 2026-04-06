@@ -16,6 +16,8 @@ public class RestClient {
     var _cryptoConfig: ?api2.ClientCryptoConfig = None
     var _x509Verify: ?security.X509VerifyOption = None
     var _retryConfig: ClientRetryConfig = ClientRetryConfig()
+    var _preferredTransportBackendHint: String = ""
+    var _allowExperimentalTransport: Bool = false
     var _requestHooks: ArrayList<ClientRequestHook> = ArrayList<ClientRequestHook>()
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
@@ -102,6 +104,20 @@ public class RestClient {
 
     public func disableRetry(): RestClient {
         _retryConfig = ClientRetryConfig(enabled: false)
+        this
+    }
+
+    public func preferTransportBackend(backendId: String): RestClient {
+        _preferredTransportBackendHint = backendId.trimAscii()
+        this
+    }
+
+    public func withTransportBackendHint(backendId: String): RestClient {
+        preferTransportBackend(backendId)
+    }
+
+    public func allowExperimentalTransport(enable!: Bool = true): RestClient {
+        _allowExperimentalTransport = enable
         this
     }
 
@@ -276,6 +292,8 @@ public class RestClient {
             _cryptoConfig,
             _x509Verify,
             _retryConfig,
+            _preferredTransportBackendHint,
+            _allowExperimentalTransport,
             _requestHooks,
             _responseHooks,
             _errorHooks

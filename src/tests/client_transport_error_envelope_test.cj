@@ -172,6 +172,45 @@ public class ClientTransportErrorEnvelopeTestSuite {
         @Assert(contains(observedMessages[0], "fields=case=transport-provider-unavailable"), true)
     }
 
+    @TestCase
+    public func testRequestLevelExperimentalOverrideUsesLisiExperimentalSelection(): Unit {
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("https://127.0.0.1:18443/transport-experimental-override")
+                .allowExperimentalTransport()
+                .preferTransportBackend("jinguissl-provider-candidate")
+                .header("x-ignite-log-case", "transport-experimental-override")
+                .onRequest({ _ =>
+                    throw Exception("selection probe stop before experimental send")
+                })
+                .send()
+            @Fail("request-level experimental override should stop before send")
+        } catch (e: Exception) {
+            @Assert(e.message.size > 0, true)
+        } finally {
+            client.close()
+        }
+
+        @Assert(observedMessages.size, 1)
+        @Assert(contains(observedMessages[0], "[ignite.client.observe]"), true)
+        @Assert(contains(observedMessages[0], "backendId=jinguissl-provider-candidate"), true)
+        @Assert(contains(observedMessages[0], "providerId=tls:jinguissl"), true)
+        @Assert(contains(observedMessages[0], "publicPath=experimental-only"), true)
+        @Assert(contains(observedMessages[0], "riskLevel=medium"), true)
+        @Assert(contains(observedMessages[0], "fields=case=transport-experimental-override"), true)
+    }
+
     func contains(text: String, target: String): Bool {
         let t = text.toRuneArray()
         let p = target.toRuneArray()

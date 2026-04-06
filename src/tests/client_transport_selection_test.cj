@@ -141,6 +141,70 @@ public class ClientTransportSelectionTestSuite {
         }
     }
 
+    @TestCase
+    public func testExperimentalBackendHintCanDriveHttpSelection(): Unit {
+        let app = App(config: Config())
+        app.get("/transport-selection-experimental", { ctx =>
+            ctx.sendString("experimental-selection-ok")
+        })
+
+        let port = choosePort(1547)
+        let url = "http://127.0.0.1:${port}/transport-selection-experimental"
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        let probeClient = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+        let backendIds = ArrayList<String>()
+        let providerIds = ArrayList<String>()
+        let publicPaths = ArrayList<String>()
+        let riskLevels = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .allowExperimentalTransport()
+            .preferTransportBackend("jinguissl-provider-candidate")
+            .onResponse({ resp =>
+                backendIds.add(readHeader(resp, "x-ignite-observe-backend-id"))
+                providerIds.add(readHeader(resp, "x-ignite-observe-provider-id"))
+                publicPaths.add(readHeader(resp, "x-ignite-observe-public-path"))
+                riskLevels.add(readHeader(resp, "x-ignite-observe-risk-level"))
+            })
+
+        try {
+            waitForReady(probeClient, url)
+            let resp = client.request()
+                .method("GET")
+                .url(url)
+                .send()
+            @Assert(resp.status, 200)
+            @Assert(resp.body(), "experimental-selection-ok")
+            @Assert(backendIds.size, 1)
+            @Assert(backendIds[0], "jinguissl-provider-candidate")
+            @Assert(providerIds.size, 1)
+            @Assert(providerIds[0], "-")
+            @Assert(publicPaths.size, 1)
+            @Assert(publicPaths[0], "experimental-only")
+            @Assert(riskLevels.size, 1)
+            @Assert(riskLevels[0], "medium")
+        } finally {
+            probeClient.close()
+            client.close()
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
     func readHeader(resp: ClientResponse, name: String): String {
         if (let Some(value) <- resp.header(name)) {
             return value

@@ -79,7 +79,9 @@ func buildClientTransportSelectionDecision(
     targetUrl: String,
     x509Verify: ?security.X509VerifyOption,
     requestCryptoConfig!: ?api2.ClientCryptoConfig = None,
-    requiresMultipart!: Bool = false
+    requiresMultipart!: Bool = false,
+    preferredBackendHint!: String = "",
+    allowExperimental!: Bool = false
 ): TransportSelectionDecision {
     let scheme = detectTransportScheme(targetUrl)
     let cryptoProviderId = describeCryptoProvider(requestCryptoConfig)
@@ -89,8 +91,8 @@ func buildClientTransportSelectionDecision(
         false,
         requiresMultipart,
         isX509Enabled(x509Verify),
-        "",
-        false,
+        preferredBackendHint,
+        allowExperimental,
         0,
         "sni=" + extractTransportHost(targetUrl)
     )
