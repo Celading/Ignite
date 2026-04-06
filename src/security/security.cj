@@ -285,6 +285,8 @@ public func verifyX509Target(
         )
         let accepted = try {
             verifyHook(ctx)
+        } catch (e: SecurityException) {
+            throw e
         } catch (_: Exception) {
             false
         }

@@ -334,13 +334,10 @@ public class App {
                 }
             )
         } catch (e: api2.TlsConfigLoadException) {
-            let tlsStage = tlsStageFromSourceCode(e.sourceCode)
-            let tlsCode = e.code.toString()
-            let igniteCode = api2.tlsToIgniteErrorCode(e.code)
-            let hint = tlsHintForCode(e.code)
+            let snapshot = api2.tlsStartupFailureSnapshot(e)
             println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
-            println("[Ignite][TLS] tls_stage=${tlsStage} tls_error_code=${tlsCode} ignite_error_code=${igniteCode} source=${e.sourceCode}")
-            println("[Ignite][TLS] hint=${hint}")
+            println("[Ignite][TLS] tls_stage=${snapshot.stage} tls_error_code=${snapshot.tlsErrorCode} ignite_error_code=${snapshot.igniteErrorCode} source=${snapshot.sourceCode}")
+            println("[Ignite][TLS] hint=${snapshot.hint}")
         } catch (e: Exception) {
             let message = e.message
             println("[Ignite] Failed to start server on ${addr}:${port} - ${message}")
@@ -855,33 +852,6 @@ func chooseInprocTestPort(method: String, path: String): UInt16 {
     let seed = nowMs + method.size + path.size
     let raw = 42000 + (seed % 10000)
     UInt16(raw)
-}
-
-func tlsStageFromSourceCode(sourceCode: String): String {
-    let normalized = sourceCode.trimAscii().toAsciiUpper()
-    if (normalized.startsWith("STDX_")) {
-        return "stdx_tls_build"
-    }
-    "jinguiSSL_precheck"
-}
-
-func tlsHintForCode(code: api2.TlsConfigLoadErrorCode): String {
-    match (code) {
-        case api2.TlsConfigLoadErrorCode.BadInput =>
-            "check cert/key pem format and ALPN list (h2,http/1.1)"
-        case api2.TlsConfigLoadErrorCode.VerifyFailed =>
-            "check certificate chain and private key match"
-        case api2.TlsConfigLoadErrorCode.KeyNotFound =>
-            "check key source and key id mapping"
-        case api2.TlsConfigLoadErrorCode.CryptoUnavailable =>
-            "check crypto runtime and dependency availability"
-        case api2.TlsConfigLoadErrorCode.ComplianceRejected =>
-            "check compliance policy and allowed algorithms"
-        case api2.TlsConfigLoadErrorCode.Unsupported =>
-            "check unsupported tls option or algorithm setting"
-        case api2.TlsConfigLoadErrorCode.InternalError =>
-            "check stdx tls build path and runtime exception details"
-    }
 }
 
 class LambdaHttpHandler <: HttpRequestHandler {

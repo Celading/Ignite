@@ -1,5 +1,8 @@
 package ignite.client
 
+import ignite.api2 as api2
+import ignite.security as security
+
 class TransportErrorEnvelope {
     let family: String
     let phase: String
@@ -35,6 +38,72 @@ class TransportErrorEnvelope {
 }
 
 func buildTransportErrorEnvelope(
+    origin: api2.ClientCryptoException,
+    phaseHint: String,
+    canRetryMethod: Bool,
+    selectionDecision!: ?TransportSelectionDecision = None
+): TransportErrorEnvelope {
+    let phase = if (phaseHint.size > 0) { phaseHint } else { "request_prepare" }
+    let causeCode = mapClientCryptoErrorCauseCode(origin.code)
+    let fallbackSuggested = (causeCode == "crypto_unavailable")
+    let retryable = classifyTransportRetryable("CRYPTO", phase, canRetryMethod, false)
+    let backendId = if (let Some(selection) <- selectionDecision) {
+        selection.selectedBackend
+    } else {
+        "stdx-http-client"
+    }
+    let providerId = if (let Some(selection) <- selectionDecision) {
+        selection.providerId
+    } else {
+        "-"
+    }
+    TransportErrorEnvelope(
+        "CRYPTO",
+        phase,
+        backendId,
+        providerId,
+        retryable,
+        false,
+        fallbackSuggested,
+        causeCode,
+        origin.message
+    )
+}
+
+func buildTransportErrorEnvelope(
+    origin: security.SecurityException,
+    phaseHint: String,
+    canRetryMethod: Bool,
+    selectionDecision!: ?TransportSelectionDecision = None
+): TransportErrorEnvelope {
+    let family = mapSecurityErrorFamily(origin.code)
+    let phase = mapSecurityErrorPhase(origin.code, phaseHint)
+    let causeCode = mapSecurityErrorCauseCode(origin.code)
+    let retryable = classifyTransportRetryable(family, phase, canRetryMethod, false)
+    let backendId = if (let Some(selection) <- selectionDecision) {
+        selection.selectedBackend
+    } else {
+        "stdx-http-client"
+    }
+    let providerId = if (let Some(selection) <- selectionDecision) {
+        selection.providerId
+    } else {
+        "-"
+    }
+    TransportErrorEnvelope(
+        family,
+        phase,
+        backendId,
+        providerId,
+        retryable,
+        false,
+        false,
+        causeCode,
+        origin.message
+    )
+}
+
+func buildTransportErrorEnvelope(
     origin: Exception,
     phaseHint: String,
     canRetryMethod: Bool,
@@ -67,6 +136,43 @@ func buildTransportErrorEnvelope(
         causeCode,
         origin.message
     )
+}
+
+func mapClientCryptoErrorCauseCode(code: api2.ClientCryptoErrorCode): String {
+    match (code) {
+        case api2.ClientCryptoErrorCode.CryptoUnavailable => "crypto_unavailable"
+        case api2.ClientCryptoErrorCode.DecryptFailed => "decrypt_failed"
+        case api2.ClientCryptoErrorCode.KeyNotFound => "key_not_found"
+        case api2.ClientCryptoErrorCode.BadEnvelope => "bad_envelope"
+    }
+}
+
+func mapSecurityErrorFamily(code: security.SecurityErrorCode): String {
+    match (code) {
+        case security.SecurityErrorCode.VerifyFailed => "TLS"
+        case security.SecurityErrorCode.CryptoUnavailable => "CRYPTO"
+        case _ => "SECURITY"
+    }
+}
+
+func mapSecurityErrorPhase(code: security.SecurityErrorCode, phaseHint: String): String {
+    if (phaseHint.size > 0) {
+        return phaseHint
+    }
+    match (code) {
+        case security.SecurityErrorCode.VerifyFailed => "verify"
+        case _ => "security"
+    }
+}
+
+func mapSecurityErrorCauseCode(code: security.SecurityErrorCode): String {
+    match (code) {
+        case security.SecurityErrorCode.VerifyFailed => "tls_verify_error"
+        case security.SecurityErrorCode.CryptoUnavailable => "crypto_unavailable"
+        case security.SecurityErrorCode.DecryptFailed => "decrypt_failed"
+        case security.SecurityErrorCode.KeyNotFound => "key_not_found"
+        case security.SecurityErrorCode.BadEnvelope => "bad_envelope"
+    }
 }
 
 func formatTransportObservedError(

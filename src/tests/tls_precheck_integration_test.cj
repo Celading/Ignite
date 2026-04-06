@@ -25,6 +25,10 @@ public class TlsPrecheckIntegrationTestSuite {
             thrown = true
             @Assert(e.code, api2.TlsConfigLoadErrorCode.VerifyFailed)
             @Assert(api2.tlsToIgniteErrorCode(e.code), "TLS_VERIFY_FAILED")
+            let snapshot = api2.tlsStartupFailureSnapshot(e)
+            @Assert(snapshot.stage, "jinguiSSL_precheck")
+            @Assert(snapshot.tlsErrorCode, "VERIFY_FAILED")
+            @Assert(snapshot.igniteErrorCode, "TLS_VERIFY_FAILED")
         }
         @Assert(thrown, true)
     }
@@ -67,6 +71,10 @@ public class TlsPrecheckIntegrationTestSuite {
             @Assert(e.code, api2.TlsConfigLoadErrorCode.InternalError)
             @Assert(e.sourceCode, "STDX_TLS_CONFIG_BUILD")
             @Assert(api2.tlsToIgniteErrorCode(e.code), "TLS_INTERNAL_ERROR")
+            let snapshot = api2.tlsStartupFailureSnapshot(e)
+            @Assert(snapshot.stage, "stdx_tls_build")
+            @Assert(snapshot.tlsErrorCode, "INTERNAL_ERROR")
+            @Assert(snapshot.hint, "check stdx tls build path and runtime exception details")
         }
         @Assert(thrown, true)
     }

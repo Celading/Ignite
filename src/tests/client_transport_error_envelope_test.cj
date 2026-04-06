@@ -41,7 +41,7 @@ public class ClientTransportErrorEnvelopeTestSuite {
                 .onRequest({ _ =>
                     throw api2.ClientCryptoException(
                         api2.ClientCryptoErrorCode.CryptoUnavailable,
-                        "crypto provider unavailable during request prepare"
+                        "provider path broken"
                     )
                 })
                 .send()
@@ -123,6 +123,55 @@ public class ClientTransportErrorEnvelopeTestSuite {
         @Assert(contains(observedMessages[0], "connectionConsumed=false"), true)
         @Assert(contains(observedMessages[0], "retryCount=0"), true)
         @Assert(contains(observedMessages[0], "fields=case=transport-x509-verify"), true)
+    }
+
+    @TestCase
+    public func testOpaqueSecurityVerifyFailureStillObservesTlsVerifyCause(): Unit {
+        security.resetSecurityMetrics()
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .useX509Verify(
+                security.X509VerifyOption(
+                    enabled: true,
+                    requireHttps: false,
+                    hook: { _ =>
+                        throw security.SecurityException(
+                            security.SecurityErrorCode.VerifyFailed,
+                            "policy blocked by verifier"
+                        )
+                    }
+                )
+            )
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("https://127.0.0.1:18443/transport-x509-opaque-verify")
+                .header("x-ignite-log-case", "transport-x509-opaque-verify")
+                .send()
+            @Fail("opaque verify failure should fail before network send")
+        } catch (e: security.SecurityException) {
+            @Assert(e.code, security.SecurityErrorCode.VerifyFailed)
+            @Assert(e.message, "policy blocked by verifier")
+        } finally {
+            client.close()
+        }
+
+        let metrics = security.securityMetricsSnapshot()
+        @Assert(metrics.certRejects, 0)
+        @Assert(observedMessages.size, 1)
+        @Assert(contains(observedMessages[0], "errorClass=TLS"), true)
+        @Assert(contains(observedMessages[0], "phase=verify"), true)
+        @Assert(contains(observedMessages[0], "causeCode=tls_verify_error"), true)
+        @Assert(contains(observedMessages[0], "providerId=tls:stdx-default"), true)
+        @Assert(contains(observedMessages[0], "fields=case=transport-x509-opaque-verify"), true)
     }
 
     @TestCase

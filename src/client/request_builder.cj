@@ -402,6 +402,18 @@ public class RequestBuilder {
         if (let Some(verifyOption) <- resolvedX509Verify) {
             try {
                 security.verifyX509Target(verifyOption, urlForHost, source: "ignite/client")
+            } catch (e: security.SecurityException) {
+                let observed = buildObservedError(
+                    e,
+                    elapsedMs(observeStart),
+                    0,
+                    collectObserveFields(),
+                    "verify",
+                    false,
+                    selectionDecision
+                )
+                notifyErrorHooks(observed)
+                throw e
             } catch (e: Exception) {
                 let observed = buildObservedError(
                     e,
@@ -421,6 +433,18 @@ public class RequestBuilder {
             for (hook in _requestHooks) {
                 hook(_builder)
             }
+        } catch (e: api2.ClientCryptoException) {
+            let observed = buildObservedError(
+                e,
+                elapsedMs(observeStart),
+                0,
+                collectObserveFields(),
+                "request_prepare",
+                false,
+                selectionDecision
+            )
+            notifyErrorHooks(observed)
+            throw e
         } catch (e: Exception) {
             let observed = buildObservedError(
                 e,
@@ -556,6 +580,62 @@ public class RequestBuilder {
             resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
             resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
         } catch (_: Exception) {}
+    }
+
+    func buildObservedError(
+        origin: api2.ClientCryptoException,
+        durationMs: Int64,
+        retryCount: Int64,
+        fields: String,
+        phaseHint: String,
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
+    ): Exception {
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
+        Exception(
+            formatTransportObservedError(
+                envelope,
+                durationMs,
+                retryCount,
+                fields,
+                selectionDecision: selectionDecision,
+                fallbackRecord: fallbackRecord
+            )
+        )
+    }
+
+    func buildObservedError(
+        origin: security.SecurityException,
+        durationMs: Int64,
+        retryCount: Int64,
+        fields: String,
+        phaseHint: String,
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
+    ): Exception {
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
+        Exception(
+            formatTransportObservedError(
+                envelope,
+                durationMs,
+                retryCount,
+                fields,
+                selectionDecision: selectionDecision,
+                fallbackRecord: fallbackRecord
+            )
+        )
     }
 
     func buildObservedError(
