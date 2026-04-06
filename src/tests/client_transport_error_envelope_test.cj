@@ -2,6 +2,7 @@ package ignite.tests
 
 import ignite.client.*
 import ignite.api2
+import ignite.security
 import std.collection.{ArrayList, HashMap}
 
 @Test
@@ -69,6 +70,59 @@ public class ClientTransportErrorEnvelopeTestSuite {
         @Assert(contains(observedMessages[0], "fallbackOutcome=suggested-only"), true)
         @Assert(contains(observedMessages[0], "retryCount=0"), true)
         @Assert(contains(observedMessages[0], "fields=case=transport-crypto-unavailable"), true)
+    }
+
+    @TestCase
+    public func testX509VerifyMismatchIsObservedAsTlsVerifyFailure(): Unit {
+        security.resetSecurityMetrics()
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .useX509Verify(
+                security.X509VerifyOption(
+                    enabled: true,
+                    requireHttps: true,
+                    expectedServerName: "api.ignite.dev"
+                )
+            )
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("https://127.0.0.1:18443/transport-x509-verify")
+                .header("x-ignite-log-case", "transport-x509-verify")
+                .send()
+            @Fail("x509 verify mismatch should fail before network send")
+        } catch (e: security.SecurityException) {
+            @Assert(e.code, security.SecurityErrorCode.VerifyFailed)
+        } finally {
+            client.close()
+        }
+
+        let metrics = security.securityMetricsSnapshot()
+        @Assert(metrics.certRejects, 1)
+        @Assert(observedMessages.size, 1)
+        @Assert(contains(observedMessages[0], "[ignite.client.observe]"), true)
+        @Assert(contains(observedMessages[0], "errorClass=TLS"), true)
+        @Assert(contains(observedMessages[0], "phase=verify"), true)
+        @Assert(contains(observedMessages[0], "causeCode=tls_verify_error"), true)
+        @Assert(contains(observedMessages[0], "backendId=stdx-http-client"), true)
+        @Assert(contains(observedMessages[0], "providerId=tls:stdx-default"), true)
+        @Assert(contains(observedMessages[0], "cryptoProviderId=-"), true)
+        @Assert(contains(observedMessages[0], "publicPath=stable-default"), true)
+        @Assert(contains(observedMessages[0], "riskLevel=medium"), true)
+        @Assert(contains(observedMessages[0], "transportTags=scene=client,scheme=https,x509=enabled"), true)
+        @Assert(contains(observedMessages[0], "retryable=false"), true)
+        @Assert(contains(observedMessages[0], "fallbackSuggested=false"), true)
+        @Assert(contains(observedMessages[0], "connectionConsumed=false"), true)
+        @Assert(contains(observedMessages[0], "retryCount=0"), true)
+        @Assert(contains(observedMessages[0], "fields=case=transport-x509-verify"), true)
     }
 
     func contains(text: String, target: String): Bool {

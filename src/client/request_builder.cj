@@ -360,10 +360,25 @@ public class RequestBuilder {
         let canRetryMethod = methodCanRetry(_methodName, retryCfg)
         var attempt: Int64 = 1
 
-        try {
-            if (let Some(verifyOption) <- resolvedX509Verify) {
+        if (let Some(verifyOption) <- resolvedX509Verify) {
+            try {
                 security.verifyX509Target(verifyOption, urlForHost, source: "ignite/client")
+            } catch (e: Exception) {
+                let observed = buildObservedError(
+                    e,
+                    elapsedMs(observeStart),
+                    0,
+                    collectObserveFields(),
+                    "verify",
+                    false,
+                    selectionDecision
+                )
+                notifyErrorHooks(observed)
+                throw e
             }
+        }
+
+        try {
             for (hook in _requestHooks) {
                 hook(_builder)
             }
@@ -377,11 +392,7 @@ public class RequestBuilder {
                 false,
                 selectionDecision
             )
-            for (hook in _errorHooks) {
-                try {
-                    hook(observed)
-                } catch (_: Exception) {}
-            }
+            notifyErrorHooks(observed)
             throw e
         }
 
@@ -431,15 +442,19 @@ public class RequestBuilder {
                     canRetryMethod,
                     selectionDecision
                 )
-                for (hook in _errorHooks) {
-                    try {
-                        hook(observed)
-                    } catch (_: Exception) {}
-                }
+                notifyErrorHooks(observed)
                 throw e
             }
         }
         throw Exception("unreachable")
+    }
+
+    func notifyErrorHooks(observed: Exception): Unit {
+        for (hook in _errorHooks) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
     }
 
     func setHeader(name: String, value: String): Unit {

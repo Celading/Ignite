@@ -173,8 +173,15 @@ func normalizeAlpnProtocolsFallback(alpnProtocols: Array<String>): Array<String>
     out.toArray()
 }
 
-// jinguiSSL contract may expose TLS-session related symbols through its public ABI.
-// Keep one explicit type anchor so test linking consistently includes jinguissl.crypto.tls.
+// jinguiSSL contract and TLS-session helpers may expose symbols through public ABI edges.
+// Keep explicit type anchors so test linking consistently includes the needed subpackages.
+func _useContractExceptionType(value!: ?ContractException = None): Bool {
+    if (let Some(_error) <- value) {
+        return true
+    }
+    false
+}
+
 func _useTlsSessionCacheType(value!: ?TlsSessionCache = None): Bool {
     if (let Some(_cache) <- value) {
         return true
