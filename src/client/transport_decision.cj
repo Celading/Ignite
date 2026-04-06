@@ -2,6 +2,7 @@ package ignite.client
 
 import ignite.api2 as api2
 import ignite.security as security
+import lisi.transport as lisiTransport
 
 class TransportSelectionDecision {
     let candidateOrder: String
@@ -13,6 +14,8 @@ class TransportSelectionDecision {
     let providerId: String
     let cryptoProviderId: String
     let observabilityTags: String
+    let contractSelectedBackend: String
+    let contractFallbackBackend: String
 
     init(
         candidateOrder: String,
@@ -23,7 +26,9 @@ class TransportSelectionDecision {
         publicPath: String,
         providerId: String,
         cryptoProviderId: String,
-        observabilityTags: String
+        observabilityTags: String,
+        contractSelectedBackend: String,
+        contractFallbackBackend: String
     ) {
         this.candidateOrder = candidateOrder
         this.selectedBackend = selectedBackend
@@ -34,6 +39,8 @@ class TransportSelectionDecision {
         this.providerId = providerId
         this.cryptoProviderId = cryptoProviderId
         this.observabilityTags = observabilityTags
+        this.contractSelectedBackend = contractSelectedBackend
+        this.contractFallbackBackend = contractFallbackBackend
     }
 }
 
@@ -71,30 +78,37 @@ class TransportFallbackDecisionRecord {
 func buildClientTransportSelectionDecision(
     targetUrl: String,
     x509Verify: ?security.X509VerifyOption,
-    requestCryptoConfig!: ?api2.ClientCryptoConfig = None
+    requestCryptoConfig!: ?api2.ClientCryptoConfig = None,
+    requiresMultipart!: Bool = false
 ): TransportSelectionDecision {
     let scheme = detectTransportScheme(targetUrl)
-    let providerId = if (scheme == "https") { "tls:stdx-default" } else { "-" }
     let cryptoProviderId = describeCryptoProvider(requestCryptoConfig)
-    var tags = "scene=client,scheme=${scheme}"
-    if (cryptoProviderId != "-") {
-        tags += ",cryptoProvider=${cryptoProviderId}"
-    }
-    if (let Some(option) <- x509Verify) {
-        if (option.enabled) {
-            tags += ",x509=enabled"
-        }
-    }
+    let contractRequest = lisiTransport.BackendSelectionRequest(
+        "client",
+        scheme,
+        false,
+        requiresMultipart,
+        isX509Enabled(x509Verify),
+        "",
+        false,
+        0,
+        "sni=" + extractTransportHost(targetUrl)
+    )
+    let contractDecision = lisiTransport.selectBackend(contractRequest)
+    let tlsPlan = lisiTransport.buildTlsAttachPlan(contractRequest, contractDecision)
+
     TransportSelectionDecision(
-        "stdx-http-client",
-        "stdx-http-client",
-        if (scheme == "https") { "stable-default-https" } else { "stable-default-http" },
-        defaultFallbackChainForScheme(scheme),
-        if (scheme == "https" || isX509Enabled(x509Verify) || cryptoProviderId != "-") { "medium" } else { "low" },
-        "stable-default",
-        providerId,
+        joinStringArray(contractDecision.candidateOrder),
+        normalizeBackendId(contractDecision.selectedBackend),
+        contractDecision.selectedReason,
+        firstNormalizedFallback(contractDecision.fallbackChain),
+        adaptRiskLevel(contractDecision.riskLevel, scheme, x509Verify, cryptoProviderId),
+        contractDecision.publicPath,
+        normalizeProviderId(tlsPlan.providerId, scheme),
         cryptoProviderId,
-        tags
+        buildObserveTags(scheme, x509Verify, cryptoProviderId),
+        contractDecision.selectedBackend,
+        firstStringOrDash(contractDecision.fallbackChain)
     )
 }
 
@@ -125,47 +139,23 @@ func buildSuggestedFallbackDecisionRecord(
             )
         )
     }
-    if (envelope.causeCode == "provider_unavailable") {
-        let fromBackend = if (selection.providerId == "-") {
-            selection.selectedBackend
-        } else {
-            selection.selectedBackend + "@" + selection.providerId
-        }
-        if (selection.fallbackChain.size == 0 || selection.fallbackChain == "-") {
-            return Some(
-                TransportFallbackDecisionRecord(
-                    fromBackend,
-                    "-",
-                    envelope.family,
-                    envelope.phase,
-                    envelope.retryable,
-                    envelope.connectionConsumed,
-                    "internal-only",
-                    "no-fallback"
-                )
-            )
-        }
-    }
-    if (selection.fallbackChain.size == 0 || selection.fallbackChain == "-") {
+
+    let triggerFamily = mapEnvelopeToLisiFallbackFamily(envelope)
+    if (triggerFamily.size == 0) {
         return None
     }
-    let fromBackend = if (selection.providerId == "-") {
-        selection.selectedBackend
-    } else {
-        selection.selectedBackend + "@" + selection.providerId
-    }
-    Some(
-        TransportFallbackDecisionRecord(
-            fromBackend,
-            selection.fallbackChain,
-            envelope.family,
-            envelope.phase,
-            envelope.retryable,
-            envelope.connectionConsumed,
-            "internal-only",
-            "suggested-only"
-        )
+
+    let contractRecord = lisiTransport.decideFallback(
+        if (selection.contractSelectedBackend.size > 0) {
+            selection.contractSelectedBackend
+        } else {
+            "stdx-default"
+        },
+        triggerFamily,
+        envelope.phase.toAsciiUpper(),
+        envelope.connectionConsumed
     )
+    return adaptContractFallbackRecord(selection, contractRecord)
 }
 
 func detectTransportScheme(targetUrl: String): String {
@@ -177,13 +167,6 @@ func detectTransportScheme(targetUrl: String): String {
         return "http"
     }
     "unknown"
-}
-
-func defaultFallbackChainForScheme(scheme: String): String {
-    if (scheme == "https") {
-        return "-"
-    }
-    "-"
 }
 
 func isX509Enabled(option: ?security.X509VerifyOption): Bool {
@@ -219,4 +202,205 @@ func startsWithTransportDecision(text: String, prefix: String): Bool {
         }
     }
     true
+}
+
+func joinStringArray(values: Array<String>): String {
+    if (values.size == 0) {
+        return "-"
+    }
+    var out = ""
+    var first = true
+    for (value in values) {
+        if (!first) {
+            out += ","
+        }
+        first = false
+        out += value
+    }
+    out
+}
+
+func normalizeBackendId(raw: String): String {
+    if (raw == "stdx-default") {
+        return "stdx-http-client"
+    }
+    raw
+}
+
+func normalizeProviderId(raw: String, scheme: String): String {
+    if (scheme != "https" || raw.size == 0) {
+        return "-"
+    }
+    if (raw == "stdx") {
+        return "tls:stdx-default"
+    }
+    if (raw == "jinguissl") {
+        return "tls:jinguissl"
+    }
+    "tls:" + raw
+}
+
+func firstNormalizedFallback(values: Array<String>): String {
+    let first = firstStringOrDash(values)
+    if (first == "-") {
+        return "-"
+    }
+    normalizeBackendId(first)
+}
+
+func firstStringOrDash(values: Array<String>): String {
+    if (values.size == 0) {
+        return "-"
+    }
+    values[0]
+}
+
+func adaptRiskLevel(
+    contractRisk: String,
+    scheme: String,
+    x509Verify: ?security.X509VerifyOption,
+    cryptoProviderId: String
+): String {
+    if (scheme == "https" || isX509Enabled(x509Verify) || cryptoProviderId != "-") {
+        if (contractRisk == "high") {
+            return "high"
+        }
+        return "medium"
+    }
+    contractRisk
+}
+
+func buildObserveTags(
+    scheme: String,
+    x509Verify: ?security.X509VerifyOption,
+    cryptoProviderId: String
+): String {
+    var tags = "scene=client,scheme=${scheme}"
+    if (cryptoProviderId != "-") {
+        tags += ",cryptoProvider=${cryptoProviderId}"
+    }
+    if (isX509Enabled(x509Verify)) {
+        tags += ",x509=enabled"
+    }
+    tags
+}
+
+func extractTransportHost(targetUrl: String): String {
+    let scheme = detectTransportScheme(targetUrl)
+    if (scheme == "unknown") {
+        return ""
+    }
+    let start = if (scheme == "https") { 8 } else { 7 }
+    let runes = targetUrl.toRuneArray()
+    if (runes.size <= start) {
+        return ""
+    }
+    var authority = ""
+    var index = start
+    while (index < runes.size) {
+        let ch = runes[index]
+        if (ch == r'/' || ch == r'?' || ch == r'#') {
+            break
+        }
+        authority += ch.toString()
+        index += 1
+    }
+    if (authority.size == 0) {
+        return ""
+    }
+    let authorityRunes = authority.toRuneArray()
+    if (authorityRunes[0] == r'[') {
+        return authority
+    }
+    let parts = authority.split(":")
+    if (parts.size == 0) {
+        return authority
+    }
+    parts[0].trimAscii()
+}
+
+func mapEnvelopeToLisiFallbackFamily(envelope: TransportErrorEnvelope): String {
+    if (envelope.causeCode == "provider_unavailable") {
+        return "PROVIDER_UNAVAILABLE"
+    }
+    if (envelope.causeCode == "tls_handshake_error") {
+        return "TLS_HANDSHAKE_ERROR"
+    }
+    if (envelope.causeCode == "tls_verify_error") {
+        return "TLS_VERIFY_ERROR"
+    }
+    if (envelope.causeCode == "tls_not_configured") {
+        return "UNSUPPORTED"
+    }
+    ""
+}
+
+func adaptContractFallbackRecord(
+    selection: TransportSelectionDecision,
+    contractRecord: lisiTransport.FallbackDecisionRecord
+): ?TransportFallbackDecisionRecord {
+    let fromBackend = normalizeFallbackBackendValue(contractRecord.fromBackend)
+    let toBackend = normalizeFallbackBackendValue(contractRecord.toBackend)
+
+    if (contractRecord.finalOutcome == "NO_AUTO_FALLBACK") {
+        return Some(
+            TransportFallbackDecisionRecord(
+                fromBackend,
+                toBackend,
+                contractRecord.triggerFamily,
+                contractRecord.triggerPhase,
+                contractRecord.safeToRetry,
+                contractRecord.requestReplayRequired,
+                "public-error",
+                "no-auto-fallback"
+            )
+        )
+    }
+
+    if (toBackend == "-" && contractRecord.triggerFamily == "PROVIDER_UNAVAILABLE") {
+        return Some(
+            TransportFallbackDecisionRecord(
+                if (selection.providerId == "-") {
+                    fromBackend
+                } else {
+                    fromBackend + "@" + selection.providerId
+                },
+                "-",
+                contractRecord.triggerFamily,
+                contractRecord.triggerPhase,
+                contractRecord.safeToRetry,
+                contractRecord.requestReplayRequired,
+                "internal-only",
+                "no-fallback"
+            )
+        )
+    }
+
+    if (toBackend == "-") {
+        return None
+    }
+
+    return Some(
+        TransportFallbackDecisionRecord(
+            if (selection.providerId == "-") {
+                fromBackend
+            } else {
+                fromBackend + "@" + selection.providerId
+            },
+            toBackend,
+            contractRecord.triggerFamily,
+            contractRecord.triggerPhase,
+            contractRecord.safeToRetry,
+            contractRecord.requestReplayRequired,
+            "internal-only",
+            "suggested-only"
+        )
+    )
+}
+
+func normalizeFallbackBackendValue(raw: String): String {
+    if (raw.size == 0) {
+        return "-"
+    }
+    return normalizeBackendId(raw)
 }

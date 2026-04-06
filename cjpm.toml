@@ -22,6 +22,7 @@
 
 [dependencies]
   jinguissl = { git = "https://atomgit.com/cinyu/jinguiSSL" }
+  lisi = { path = "../../lisi/lisi" }
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"

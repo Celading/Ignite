@@ -353,7 +353,8 @@ public class RequestBuilder {
         let selectionDecision = buildClientTransportSelectionDecision(
             urlForHost,
             resolvedX509Verify,
-            requestCryptoConfig: _requestCryptoConfig
+            requestCryptoConfig: _requestCryptoConfig,
+            requiresMultipart: hasMultipartPayload()
         )
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
@@ -549,6 +550,13 @@ public class RequestBuilder {
 
     func normalizeMethod(method: String): String {
         method.trimAscii().toAsciiUpper()
+    }
+
+    func hasMultipartPayload(): Bool {
+        if (let Some(_fields) <- _multipartFields) {
+            return true
+        }
+        false
     }
 
     func methodCanRetry(method: String, config: ClientRetryConfig): Bool {
