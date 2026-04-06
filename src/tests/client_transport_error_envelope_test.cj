@@ -125,6 +125,53 @@ public class ClientTransportErrorEnvelopeTestSuite {
         @Assert(contains(observedMessages[0], "fields=case=transport-x509-verify"), true)
     }
 
+    @TestCase
+    public func testProviderUnavailableLeavesNoFallbackRecordWhenNoChainExists(): Unit {
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("https://127.0.0.1:18443/transport-provider-unavailable")
+                .header("x-ignite-log-case", "transport-provider-unavailable")
+                .onRequest({ _ =>
+                    throw Exception("tls provider unavailable during request prepare")
+                })
+                .send()
+            @Fail("provider unavailable should fail before network send")
+        } catch (e: Exception) {
+            @Assert(e.message.size > 0, true)
+        } finally {
+            client.close()
+        }
+
+        @Assert(observedMessages.size, 1)
+        @Assert(contains(observedMessages[0], "[ignite.client.observe]"), true)
+        @Assert(contains(observedMessages[0], "errorClass=TLS"), true)
+        @Assert(contains(observedMessages[0], "phase=request_prepare"), true)
+        @Assert(contains(observedMessages[0], "causeCode=provider_unavailable"), true)
+        @Assert(contains(observedMessages[0], "backendId=stdx-http-client"), true)
+        @Assert(contains(observedMessages[0], "providerId=tls:stdx-default"), true)
+        @Assert(contains(observedMessages[0], "publicPath=stable-default"), true)
+        @Assert(contains(observedMessages[0], "transportTags=scene=client,scheme=https"), true)
+        @Assert(contains(observedMessages[0], "retryable=false"), true)
+        @Assert(contains(observedMessages[0], "fallbackSuggested=true"), true)
+        @Assert(contains(observedMessages[0], "connectionConsumed=false"), true)
+        @Assert(contains(observedMessages[0], "fallbackFrom=stdx-http-client@tls:stdx-default"), true)
+        @Assert(contains(observedMessages[0], "fallbackTo=-"), true)
+        @Assert(contains(observedMessages[0], "fallbackOutcome=no-fallback"), true)
+        @Assert(contains(observedMessages[0], "retryCount=0"), true)
+        @Assert(contains(observedMessages[0], "fields=case=transport-provider-unavailable"), true)
+    }
+
     func contains(text: String, target: String): Bool {
         let t = text.toRuneArray()
         let p = target.toRuneArray()

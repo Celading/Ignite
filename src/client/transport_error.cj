@@ -176,6 +176,9 @@ func classifyTransportErrorCauseCode(origin: Exception, family: String, phase: S
         return "crypto_error"
     }
     if (family == "TLS") {
+        if (containsTransportStr(msg, "provider") && containsTransportStr(msg, "unavailable")) {
+            return "provider_unavailable"
+        }
         if (containsTransportStr(msg, "tls must be configured") || containsTransportStr(msg, "https requests are sent")) {
             return "tls_not_configured"
         }

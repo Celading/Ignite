@@ -125,6 +125,27 @@ func buildSuggestedFallbackDecisionRecord(
             )
         )
     }
+    if (envelope.causeCode == "provider_unavailable") {
+        let fromBackend = if (selection.providerId == "-") {
+            selection.selectedBackend
+        } else {
+            selection.selectedBackend + "@" + selection.providerId
+        }
+        if (selection.fallbackChain.size == 0 || selection.fallbackChain == "-") {
+            return Some(
+                TransportFallbackDecisionRecord(
+                    fromBackend,
+                    "-",
+                    envelope.family,
+                    envelope.phase,
+                    envelope.retryable,
+                    envelope.connectionConsumed,
+                    "internal-only",
+                    "no-fallback"
+                )
+            )
+        }
+    }
     if (selection.fallbackChain.size == 0 || selection.fallbackChain == "-") {
         return None
     }
