@@ -88,7 +88,7 @@ public class ClientObserveTestSuite {
     }
 
     @TestCase
-    public func testObservedErrorClassifiesTimeoutKeyword(): Unit {
+    public func testObservedErrorClassifiesTimedOutTransportPhrase(): Unit {
         let observedMessages = ArrayList<String>()
         let client = RestClient(
             readTimeout: Duration.second * 1,
@@ -105,12 +105,12 @@ public class ClientObserveTestSuite {
                 .url("http://127.0.0.1:1/observe-timeout")
                 .header("x-ignite-log-op", "timeout-test")
                 .onRequest({ _ =>
-                    throw Exception("timeout budget exhausted before send")
+                    throw Exception("dial tcp 10.0.0.8:443: operation timed out before send")
                 })
                 .send()
             @Fail("request hook should fail with timeout-like message")
         } catch (e: Exception) {
-            @Assert(observeContainsStr(e.message, "timeout budget exhausted"), true)
+            @Assert(observeContainsStr(e.message, "operation timed out"), true)
         }
 
         @Assert(observedMessages.size, 1)

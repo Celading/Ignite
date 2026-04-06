@@ -114,7 +114,7 @@ func classifyTransportErrorFamily(origin: Exception): String {
     if (hasCrypto || hasDecrypt || hasEnvelope) {
         return "CRYPTO"
     }
-    if (containsTransportStr(msg, "timeout")) {
+    if (containsTransportTimeoutHint(msg)) {
         return "TIMEOUT"
     }
     let hasTls = containsTransportStr(msg, "tls")
@@ -149,16 +149,21 @@ func classifyTransportErrorPhase(origin: Exception, phaseHint: String): String {
     if (containsTransportStr(msg, "certificate") || containsTransportStr(msg, "x509")) {
         return "verify"
     }
-    if (containsTransportStr(msg, "read") && containsTransportStr(msg, "timeout")) {
+    if (containsTransportStr(msg, "read") && containsTransportTimeoutHint(msg)) {
         return "read"
     }
-    if (containsTransportStr(msg, "write") && containsTransportStr(msg, "timeout")) {
+    if (containsTransportStr(msg, "write") && containsTransportTimeoutHint(msg)) {
         return "write"
     }
-    if (containsTransportStr(msg, "connect") || containsTransportStr(msg, "refused") || containsTransportStr(msg, "socket")) {
+    if (
+        containsTransportStr(msg, "connect") ||
+        containsTransportStr(msg, "refused") ||
+        containsTransportStr(msg, "socket") ||
+        containsTransportStr(msg, "dial")
+    ) {
         return "connect"
     }
-    if (containsTransportStr(msg, "timeout")) {
+    if (containsTransportTimeoutHint(msg)) {
         return "transport"
     }
     "unknown"
@@ -271,4 +276,8 @@ func containsTransportStr(hay: String, needle: String): Bool {
         if (ok) { return true }
     }
     false
+}
+
+func containsTransportTimeoutHint(msg: String): Bool {
+    containsTransportStr(msg, "timeout") || containsTransportStr(msg, "timed out")
 }
