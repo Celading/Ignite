@@ -93,7 +93,12 @@ func formatTransportObservedError(
     } else {
         "-"
     }
-    var text = "[ignite.client.observe] errorClass=${envelope.family} phase=${envelope.phase} causeCode=${envelope.causeCode} backendId=${envelope.backendId} providerId=${envelope.providerId} publicPath=${publicPath} riskLevel=${riskLevel} transportTags=${tags} retryable=${envelope.retryable} fallbackSuggested=${envelope.fallbackSuggested} connectionConsumed=${envelope.connectionConsumed} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}"
+    let cryptoProviderId = if (let Some(selection) <- selectionDecision) {
+        selection.cryptoProviderId
+    } else {
+        "-"
+    }
+    var text = "[ignite.client.observe] errorClass=${envelope.family} phase=${envelope.phase} causeCode=${envelope.causeCode} backendId=${envelope.backendId} providerId=${envelope.providerId} cryptoProviderId=${cryptoProviderId} publicPath=${publicPath} riskLevel=${riskLevel} transportTags=${tags} retryable=${envelope.retryable} fallbackSuggested=${envelope.fallbackSuggested} connectionConsumed=${envelope.connectionConsumed} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}"
     if (let Some(record) <- fallbackRecord) {
         text += " fallbackFrom=${record.fromBackend} fallbackTo=${record.toBackend} fallbackOutcome=${record.finalOutcome} replayRequired=${record.requestReplayRequired}"
     }

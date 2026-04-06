@@ -30,6 +30,7 @@ public class RequestBuilder {
     var _multipartFiles: ?ArrayList<MultipartFile> = None
     var _x509VerifyOverride: ?security.X509VerifyOption = None
     var _retryOverride: ?ClientRetryConfig = None
+    var _requestCryptoConfig: ?api2.ClientCryptoConfig = None
 
     public init(
         client: Client,
@@ -242,6 +243,7 @@ public class RequestBuilder {
 
     public func body(b: String): RequestBuilder {
         _builder.body(b)
+        _requestCryptoConfig = None
         this
     }
 
@@ -251,11 +253,13 @@ public class RequestBuilder {
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = None
         this
     }
 
     public func bodyBytes(b: Array<UInt8>): RequestBuilder {
         _builder.body(b)
+        _requestCryptoConfig = None
         this
     }
 
@@ -271,6 +275,7 @@ public class RequestBuilder {
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = Some(cfg)
         this
     }
 
@@ -286,6 +291,7 @@ public class RequestBuilder {
         _formParams = params
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = None
         this
     }
 
@@ -300,6 +306,7 @@ public class RequestBuilder {
         _multipartFields = fields
         _multipartFiles = files
         _formParams = None
+        _requestCryptoConfig = None
         this
     }
 
@@ -343,7 +350,11 @@ public class RequestBuilder {
         }
 
         let resolvedX509Verify = resolveX509VerifyOption()
-        let selectionDecision = buildClientTransportSelectionDecision(urlForHost, resolvedX509Verify)
+        let selectionDecision = buildClientTransportSelectionDecision(
+            urlForHost,
+            resolvedX509Verify,
+            requestCryptoConfig: _requestCryptoConfig
+        )
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
         let canRetryMethod = methodCanRetry(_methodName, retryCfg)
@@ -487,6 +498,7 @@ public class RequestBuilder {
             resp.headers.add("x-ignite-observe-fields", if (fields.size == 0) { "-" } else { fields })
             resp.headers.add("x-ignite-observe-backend-id", selectionDecision.selectedBackend)
             resp.headers.add("x-ignite-observe-provider-id", selectionDecision.providerId)
+            resp.headers.add("x-ignite-observe-crypto-provider-id", selectionDecision.cryptoProviderId)
             resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
             resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
         } catch (_: Exception) {}

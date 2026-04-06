@@ -1,5 +1,6 @@
 package ignite.client
 
+import ignite.api2 as api2
 import ignite.security as security
 
 class TransportSelectionDecision {
@@ -10,6 +11,7 @@ class TransportSelectionDecision {
     let riskLevel: String
     let publicPath: String
     let providerId: String
+    let cryptoProviderId: String
     let observabilityTags: String
 
     init(
@@ -20,6 +22,7 @@ class TransportSelectionDecision {
         riskLevel: String,
         publicPath: String,
         providerId: String,
+        cryptoProviderId: String,
         observabilityTags: String
     ) {
         this.candidateOrder = candidateOrder
@@ -29,6 +32,7 @@ class TransportSelectionDecision {
         this.riskLevel = riskLevel
         this.publicPath = publicPath
         this.providerId = providerId
+        this.cryptoProviderId = cryptoProviderId
         this.observabilityTags = observabilityTags
     }
 }
@@ -66,11 +70,16 @@ class TransportFallbackDecisionRecord {
 
 func buildClientTransportSelectionDecision(
     targetUrl: String,
-    x509Verify: ?security.X509VerifyOption
+    x509Verify: ?security.X509VerifyOption,
+    requestCryptoConfig!: ?api2.ClientCryptoConfig = None
 ): TransportSelectionDecision {
     let scheme = detectTransportScheme(targetUrl)
     let providerId = if (scheme == "https") { "tls:stdx-default" } else { "-" }
+    let cryptoProviderId = describeCryptoProvider(requestCryptoConfig)
     var tags = "scene=client,scheme=${scheme}"
+    if (cryptoProviderId != "-") {
+        tags += ",cryptoProvider=${cryptoProviderId}"
+    }
     if (let Some(option) <- x509Verify) {
         if (option.enabled) {
             tags += ",x509=enabled"
@@ -81,9 +90,10 @@ func buildClientTransportSelectionDecision(
         "stdx-http-client",
         if (scheme == "https") { "stable-default-https" } else { "stable-default-http" },
         defaultFallbackChainForScheme(scheme),
-        if (scheme == "https" || isX509Enabled(x509Verify)) { "medium" } else { "low" },
+        if (scheme == "https" || isX509Enabled(x509Verify) || cryptoProviderId != "-") { "medium" } else { "low" },
         "stable-default",
         providerId,
+        cryptoProviderId,
         tags
     )
 }
@@ -96,16 +106,22 @@ func buildSuggestedFallbackDecisionRecord(
         return None
     }
     if (envelope.family == "CRYPTO" && envelope.causeCode == "crypto_unavailable") {
+        let fromBackend = selection.selectedBackend + "@" + cryptoProviderOrUnknown(selection)
+        let fallbackToStdx = selection.cryptoProviderId != "crypto:stdx-fallback"
         return Some(
             TransportFallbackDecisionRecord(
-                selection.selectedBackend + "@crypto:unknown",
-                selection.selectedBackend + "@crypto:stdx-fallback",
+                fromBackend,
+                if (fallbackToStdx) {
+                    selection.selectedBackend + "@crypto:stdx-fallback"
+                } else {
+                    selection.selectedBackend + "@crypto:manual-review"
+                },
                 envelope.family,
                 envelope.phase,
                 envelope.retryable,
                 envelope.connectionConsumed,
                 "internal-only",
-                "suggested-only"
+                if (fallbackToStdx) { "suggested-only" } else { "manual-review" }
             )
         )
     }
@@ -154,6 +170,20 @@ func isX509Enabled(option: ?security.X509VerifyOption): Bool {
         return value.enabled
     }
     false
+}
+
+func describeCryptoProvider(config: ?api2.ClientCryptoConfig): String {
+    if (let Some(value) <- config) {
+        return "crypto:" + value.providerKind.toString()
+    }
+    "-"
+}
+
+func cryptoProviderOrUnknown(selection: TransportSelectionDecision): String {
+    if (selection.cryptoProviderId == "-") {
+        return "crypto:unknown"
+    }
+    selection.cryptoProviderId
 }
 
 func startsWithTransportDecision(text: String, prefix: String): Bool {
