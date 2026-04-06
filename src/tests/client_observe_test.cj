@@ -86,6 +86,38 @@ public class ClientObserveTestSuite {
         )
         @Assert(observeContainsStr(observedMessages[0], "fields=op=retry-test"), true)
     }
+
+    @TestCase
+    public func testObservedErrorClassifiesTimeoutKeyword(): Unit {
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 2
+        )
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("http://127.0.0.1:1/observe-timeout")
+                .header("x-ignite-log-op", "timeout-test")
+                .onRequest({ _ =>
+                    throw Exception("timeout budget exhausted before send")
+                })
+                .send()
+            @Fail("request hook should fail with timeout-like message")
+        } catch (e: Exception) {
+            @Assert(observeContainsStr(e.message, "timeout budget exhausted"), true)
+        }
+
+        @Assert(observedMessages.size, 1)
+        @Assert(observeContainsStr(observedMessages[0], "errorClass=TIMEOUT"), true)
+        @Assert(observeContainsStr(observedMessages[0], "retryCount=0"), true)
+        @Assert(observeContainsStr(observedMessages[0], "fields=op=timeout-test"), true)
+    }
 }
 
 func observeContainsStr(hay: String, needle: String): Bool {

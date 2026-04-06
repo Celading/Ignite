@@ -342,13 +342,15 @@ public class RequestBuilder {
             }
         }
 
+        let resolvedX509Verify = resolveX509VerifyOption()
+        let selectionDecision = buildClientTransportSelectionDecision(urlForHost, resolvedX509Verify)
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
         let canRetryMethod = methodCanRetry(_methodName, retryCfg)
         var attempt: Int64 = 1
 
         try {
-            if (let Some(verifyOption) <- resolveX509VerifyOption()) {
+            if (let Some(verifyOption) <- resolvedX509Verify) {
                 security.verifyX509Target(verifyOption, urlForHost, source: "ignite/client")
             }
             for (hook in _requestHooks) {
@@ -359,7 +361,10 @@ public class RequestBuilder {
                 e,
                 elapsedMs(observeStart),
                 0,
-                collectObserveFields()
+                collectObserveFields(),
+                "request_prepare",
+                false,
+                selectionDecision
             )
             for (hook in _errorHooks) {
                 try {
@@ -388,7 +393,8 @@ public class RequestBuilder {
                     durationMs,
                     retryCount,
                     classifyStatus(resp.status),
-                    collectObserveFields()
+                    collectObserveFields(),
+                    selectionDecision
                 )
                 if (let Some(store) <- _cookieStore) {
                     store.addFromResponse(urlForHost, resp)
@@ -398,7 +404,7 @@ public class RequestBuilder {
                 }
                 return resp
             } catch (e: Exception) {
-                if (shouldRetryError(retryCfg, canRetryMethod, attempt)) {
+                if (shouldRetryError(e, retryCfg, canRetryMethod, attempt)) {
                     applyBackoffDelay(retryCfg, attempt)
                     attempt += 1
                     continue
@@ -409,7 +415,10 @@ public class RequestBuilder {
                     e,
                     durationMs,
                     retryCount,
-                    collectObserveFields()
+                    collectObserveFields(),
+                    "",
+                    canRetryMethod,
+                    selectionDecision
                 )
                 for (hook in _errorHooks) {
                     try {
@@ -437,34 +446,6 @@ public class RequestBuilder {
             return "NONE"
         }
         "HTTP_${code}"
-    }
-
-    func classifyError(e: Exception): String {
-        let msg = e.message.toAsciiLower()
-        let hasCrypto = containsStr(msg, "crypto")
-        let hasDecrypt = containsStr(msg, "decrypt")
-        let hasEnvelope = containsStr(msg, "envelope")
-        if (hasCrypto || hasDecrypt || hasEnvelope) {
-            return "CRYPTO"
-        }
-        let hasTimeout = containsStr(msg, "timeout")
-        if (hasTimeout) {
-            return "TIMEOUT"
-        }
-        let hasTls = containsStr(msg, "tls")
-        let hasX509 = containsStr(msg, "x509")
-        let hasCertificate = containsStr(msg, "certificate")
-        if (hasTls || hasX509 || hasCertificate) {
-            return "TLS"
-        }
-        let hasConnection = containsStr(msg, "connection")
-        let hasNetwork = containsStr(msg, "network")
-        let hasRefused = containsStr(msg, "refused")
-        let hasSocket = containsStr(msg, "socket")
-        if (hasConnection || hasNetwork || hasRefused || hasSocket) {
-            return "NETWORK"
-        }
-        "UNKNOWN"
     }
 
     func collectObserveFields(): String {
@@ -496,13 +477,18 @@ public class RequestBuilder {
         durationMs: Int64,
         retryCount: Int64,
         errorClass: String,
-        fields: String
+        fields: String,
+        selectionDecision: TransportSelectionDecision
     ): Unit {
         try {
             resp.headers.add("x-ignite-observe-duration-ms", "${durationMs}")
             resp.headers.add("x-ignite-observe-retry-count", "${retryCount}")
             resp.headers.add("x-ignite-observe-error-class", if (errorClass.size == 0) { "NONE" } else { errorClass })
             resp.headers.add("x-ignite-observe-fields", if (fields.size == 0) { "-" } else { fields })
+            resp.headers.add("x-ignite-observe-backend-id", selectionDecision.selectedBackend)
+            resp.headers.add("x-ignite-observe-provider-id", selectionDecision.providerId)
+            resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
+            resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
         } catch (_: Exception) {}
     }
 
@@ -510,12 +496,27 @@ public class RequestBuilder {
         origin: Exception,
         durationMs: Int64,
         retryCount: Int64,
-        fields: String
+        fields: String,
+        phaseHint: String,
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
     ): Exception {
-        let errClass = classifyError(origin)
-        let fieldText = if (fields.size == 0) { "-" } else { fields }
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
         Exception(
-            "[ignite.client.observe] errorClass=${errClass} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}; cause=${origin.message}"
+            formatTransportObservedError(
+                envelope,
+                durationMs,
+                retryCount,
+                fields,
+                selectionDecision: selectionDecision,
+                fallbackRecord: fallbackRecord
+            )
         )
     }
 
@@ -551,11 +552,16 @@ public class RequestBuilder {
     }
 
     func shouldRetryError(
+        origin: Exception,
         config: ClientRetryConfig,
         canRetryMethod: Bool,
         attempt: Int64
     ): Bool {
-        canRetryMethod && attempt < config.maxAttempts
+        if (attempt >= config.maxAttempts) {
+            return false
+        }
+        let envelope = buildTransportErrorEnvelope(origin, "", canRetryMethod)
+        envelope.retryable
     }
 
     func applyBackoffDelay(config: ClientRetryConfig, attempt: Int64): Unit {
@@ -592,13 +598,7 @@ public class RequestBuilder {
     }
 
     func spinWait(delayMs: Int64): Unit {
-        let start = MonoTime.now()
-        while (true) {
-            let elapsed = (MonoTime.now() - start).toMilliseconds()
-            if (elapsed >= delayMs) {
-                break
-            }
-        }
+        sleep(Duration.millisecond * delayMs)
     }
 
     func containsInt64(list: ArrayList<Int64>, value: Int64): Bool {

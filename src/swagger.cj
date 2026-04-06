@@ -271,9 +271,9 @@ public class SwaggerGenerator {
         sb.append("{\n")
         sb.append("  \"openapi\": \"3.0.0\",\n")
         sb.append("  \"info\": {\n")
-        sb.append("    \"title\": \"${info.title}\",\n")
-        sb.append("    \"description\": \"${info.description}\",\n")
-        sb.append("    \"version\": \"${info.version}\"\n")
+        sb.append("    \"title\": " + jsonStringLiteral(info.title) + ",\n")
+        sb.append("    \"description\": " + jsonStringLiteral(info.description) + ",\n")
+        sb.append("    \"version\": " + jsonStringLiteral(info.version) + "\n")
         sb.append("  },\n")
         sb.append("  \"paths\": {\n")
 
