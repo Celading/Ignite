@@ -1,8 +1,6 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
-import std.collection.ArrayList
-import std.collection.concurrent.ConcurrentHashMap
 import std.time.DateTime
 
 public class CsrfSweepState {
@@ -40,21 +38,24 @@ public class CsrfConfig {
     }
 }
 
-public func csrfMiddleware(config!: CsrfConfig = CsrfConfig()): Handler {
-    let tokens = ConcurrentHashMap<String, Int64>()
+public func csrfMiddleware(
+    config!: CsrfConfig = CsrfConfig(),
+    store!: ?CsrfTokenStore = None
+): Handler {
+    let tokenStore = resolveCsrfTokenStore(store)
     let sweepState = CsrfSweepState()
     { ctx: Ctx =>
         let nowMs = csrfNowMs()
         sweepState.cleanupTicks += 1
         if (sweepState.cleanupTicks >= config.cleanupEvery) {
-            cleanupExpiredCsrfTokens(tokens, nowMs, csrfTokenTtlMs(config))
+            tokenStore.cleanupExpired(nowMs, csrfTokenTtlMs(config))
             sweepState.cleanupTicks = 0
         }
 
         let method = ctx.method
         if (method == "GET" || method == "HEAD" || method == "OPTIONS" || method == "TRACE") {
             let token = generateRandomHex(config.tokenLength)
-            tokens.add(token, nowMs)
+            tokenStore.issue(token, nowMs)
             ctx.setCookie(config.cookieName, token, maxAge: config.cookieMaxAge,
                          path: config.cookiePath, httpOnly: config.cookieHttpOnly,
                          secure: config.cookieSecure)
@@ -72,15 +73,9 @@ public func csrfMiddleware(config!: CsrfConfig = CsrfConfig()): Handler {
             return
         }
 
-        if (let Some(issuedAtMs) <- tokens.get(token)) {
-            if (csrfTokenExpired(issuedAtMs, nowMs, csrfTokenTtlMs(config))) {
-                tokens.remove(token)
-                ctx.status(403).sendString("Forbidden - CSRF token invalid")
-                return
-            }
-            tokens.remove(token)
+        if (tokenStore.consume(token, nowMs, csrfTokenTtlMs(config))) {
             let newToken = generateRandomHex(config.tokenLength)
-            tokens.add(newToken, nowMs)
+            tokenStore.issue(newToken, nowMs)
             ctx.setCookie(config.cookieName, newToken, maxAge: config.cookieMaxAge,
                          path: config.cookiePath, httpOnly: config.cookieHttpOnly,
                          secure: config.cookieSecure)
@@ -108,23 +103,4 @@ func csrfTokenExpired(issuedAtMs: Int64, nowMs: Int64, ttlMs: Int64): Bool {
         return false
     }
     (nowMs - issuedAtMs) >= ttlMs
-}
-
-func cleanupExpiredCsrfTokens(
-    tokens: ConcurrentHashMap<String, Int64>,
-    nowMs: Int64,
-    ttlMs: Int64
-): Unit {
-    if (ttlMs <= 0) {
-        return
-    }
-    let staleTokens = ArrayList<String>()
-    for ((token, issuedAtMs) in tokens) {
-        if (csrfTokenExpired(issuedAtMs, nowMs, ttlMs)) {
-            staleTokens.add(token)
-        }
-    }
-    for (token in staleTokens) {
-        tokens.remove(token)
-    }
 }

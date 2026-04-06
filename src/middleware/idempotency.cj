@@ -1,10 +1,7 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
-import std.collection.ArrayList
-import std.collection.concurrent.ConcurrentHashMap
 import std.time.MonoTime
-import std.sync.Mutex
 
 public class IdempotencyConfig {
     public var headerName: String = "X-Idempotency-Key"
@@ -25,23 +22,15 @@ public class IdempotencyConfig {
     }
 }
 
-class IdempotencyEntry {
-    var body: String
-    var createdAt: MonoTime
-
-    init(body: String) {
-        this.body = body
-        this.createdAt = MonoTime.now()
-    }
-}
-
 class IdempotencySweepState {
     var cleanupTicks: Int64 = 0
 }
 
-public func idempotencyMiddleware(config!: IdempotencyConfig = IdempotencyConfig()): Handler {
-    let store = ConcurrentHashMap<String, IdempotencyEntry>()
-    let mtx = Mutex()
+public func idempotencyMiddleware(
+    config!: IdempotencyConfig = IdempotencyConfig(),
+    store!: ?IdempotencyStore = None
+): Handler {
+    let idempotencyStore = resolveIdempotencyStore(store)
     let sweepState = IdempotencySweepState()
 
     { ctx: Ctx =>
@@ -64,46 +53,22 @@ public func idempotencyMiddleware(config!: IdempotencyConfig = IdempotencyConfig
             return
         }
 
-        synchronized(mtx) {
-            let now = MonoTime.now()
-            sweepState.cleanupTicks += 1
-            if (sweepState.cleanupTicks >= config.cleanupEvery) {
-                cleanupExpiredIdempotencyEntries(store, now, config.lifetime)
-                sweepState.cleanupTicks = 0
-            }
-            if (let Some(entry) <- store.get(key)) {
-                let elapsed = now - entry.createdAt
-                if (elapsed < config.lifetime) {
-                    ctx.setHeader("X-Idempotency-Cached", "true")
-                    ctx.json(entry.body)
-                    return
-                }
-                store.remove(key)
-            }
+        let now = MonoTime.now()
+        sweepState.cleanupTicks += 1
+        if (sweepState.cleanupTicks >= config.cleanupEvery) {
+            idempotencyStore.cleanupExpired(now, config.lifetime)
+            sweepState.cleanupTicks = 0
+        }
+        if (let Some(entry) <- idempotencyStore.getFresh(key, now, config.lifetime)) {
+            ctx.setHeader("X-Idempotency-Cached", "true")
+            ctx.json(entry.body)
+            return
         }
 
         ctx.next()
 
         if (let Some(body) <- ctx.responseBody) {
-            synchronized(mtx) {
-                store.add(key, IdempotencyEntry(body))
-            }
+            idempotencyStore.put(key, body, MonoTime.now())
         }
-    }
-}
-
-func cleanupExpiredIdempotencyEntries(
-    store: ConcurrentHashMap<String, IdempotencyEntry>,
-    now: MonoTime,
-    lifetime: Duration
-): Unit {
-    let staleKeys = ArrayList<String>()
-    for ((entryKey, entry) in store) {
-        if ((now - entry.createdAt) >= lifetime) {
-            staleKeys.add(entryKey)
-        }
-    }
-    for (entryKey in staleKeys) {
-        store.remove(entryKey)
     }
 }

@@ -1,10 +1,7 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
-import std.collection.ArrayList
-import std.collection.concurrent.ConcurrentHashMap
 import std.time.MonoTime
-import std.sync.Mutex
 
 public class RateLimitConfig {
     public var max: Int64 = 100
@@ -28,22 +25,15 @@ public class RateLimitConfig {
     }
 }
 
-class RateLimitEntry {
-    var count: Int64 = 0
-    var resetAt: MonoTime
-
-    init() {
-        this.resetAt = MonoTime.now()
-    }
-}
-
 class RateLimitSweepState {
     var cleanupTicks: Int64 = 0
 }
 
-public func rateLimitMiddleware(config!: RateLimitConfig = RateLimitConfig()): Handler {
-    let store = ConcurrentHashMap<String, RateLimitEntry>()
-    let mtx = Mutex()
+public func rateLimitMiddleware(
+    config!: RateLimitConfig = RateLimitConfig(),
+    store!: ?RateLimitStore = None
+): Handler {
+    let rateLimitStore = resolveRateLimitStore(store)
     let sweepState = RateLimitSweepState()
 
     { ctx: Ctx =>
@@ -57,36 +47,17 @@ public func rateLimitMiddleware(config!: RateLimitConfig = RateLimitConfig()): H
         var remaining: Int64 = config.max
         var resetInMs = config.windowMs
 
-        synchronized(mtx) {
-            let now = MonoTime.now()
-            sweepState.cleanupTicks += 1
-            if (sweepState.cleanupTicks >= config.cleanupEvery) {
-                cleanupExpiredRateLimitEntries(store, now, config.windowMs)
-                sweepState.cleanupTicks = 0
-            }
-            let entry = if (let Some(e) <- store.get(key)) {
-                let elapsed = (now - e.resetAt).toMilliseconds()
-                if (elapsed >= config.windowMs) {
-                    e.count = 0
-                    e.resetAt = now
-                }
-                e
-            } else {
-                let e = RateLimitEntry()
-                e.resetAt = now
-                store.add(key, e)
-                e
-            }
-            entry.count += 1
-            remaining = config.max - entry.count
-            if (remaining < 0) { remaining = 0 }
-            allowed = entry.count <= config.max
-            let elapsedSinceReset = (now - entry.resetAt).toMilliseconds()
-            resetInMs = config.windowMs - elapsedSinceReset
-            if (resetInMs < 0) {
-                resetInMs = 0
-            }
+        let now = MonoTime.now()
+        sweepState.cleanupTicks += 1
+        if (sweepState.cleanupTicks >= config.cleanupEvery) {
+            rateLimitStore.cleanupExpired(now, config.windowMs)
+            sweepState.cleanupTicks = 0
         }
+        let result = rateLimitStore.checkAndConsume(key, now, config.max, config.windowMs)
+        remaining = config.max - result.count
+        if (remaining < 0) { remaining = 0 }
+        allowed = result.allowed
+        resetInMs = result.resetInMs
 
         ctx.setHeader("X-RateLimit-Limit", "${config.max}")
         ctx.setHeader("X-RateLimit-Remaining", "${remaining}")
@@ -98,23 +69,6 @@ public func rateLimitMiddleware(config!: RateLimitConfig = RateLimitConfig()): H
             return
         }
         ctx.next()
-    }
-}
-
-func cleanupExpiredRateLimitEntries(
-    store: ConcurrentHashMap<String, RateLimitEntry>,
-    now: MonoTime,
-    windowMs: Int64
-): Unit {
-    let staleKeys = ArrayList<String>()
-    for ((entryKey, entry) in store) {
-        let elapsed = (now - entry.resetAt).toMilliseconds()
-        if (elapsed >= windowMs) {
-            staleKeys.add(entryKey)
-        }
-    }
-    for (entryKey in staleKeys) {
-        store.remove(entryKey)
     }
 }
 
