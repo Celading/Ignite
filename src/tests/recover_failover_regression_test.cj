@@ -92,6 +92,8 @@ public class RecoverFailoverRegressionTestSuite {
         @Assert(restartHooks.size, 1)
         @Assert(restartHooks[0], "matched:restart")
         @Assert(auditLines.size > 0, true)
+        @Assert(contains(auditLines[auditLines.size - 1], "\"guardEvent\":\"kmode_failover\""), true)
+        @Assert(contains(auditLines[auditLines.size - 1], "\"guardExitCause\":\"matched\""), true)
         @Assert(
             contains(
                 auditLines[auditLines.size - 1],
@@ -255,6 +257,55 @@ public class RecoverFailoverRegressionTestSuite {
         waitUntil({ => gate.isEntered() }, 40, 5)
         @Assert(gate.isEntered(), true)
         @Assert(asyncEvents.size, 0)
+
+        gate.release()
+        waitUntil({ => asyncEvents.size > 0 }, 40, 5)
+        @Assert(asyncEvents.size, 1)
+        @Assert(asyncEvents[0], "matched:restart")
+    }
+
+    @TestCase
+    public func testRecoverRespondBeforeProbeRespectsSingleFlightGuard(): Unit {
+        let gate = RecoverProbeGate()
+        let asyncEvents = ArrayList<String>()
+        let app = App(config: Config(kmode: true))
+        app.use(
+            recoverMiddleware(
+                config: RecoverConfig(
+                    kmodeFailover: KModeFailoverOption(
+                        enabled: true,
+                        maxAttempts: 1,
+                        intervalMs: 0,
+                        respondBeforeProbe: true,
+                        terminateOnMiss: false,
+                        probeHook: { _, _ =>
+                            gate.markEntered()
+                            while (!gate.isReleased()) {
+                                sleep(Duration.millisecond * 5)
+                            }
+                            Some("RESTART")
+                        }
+                    ),
+                    onKModeRestartAsync: { _, result =>
+                        asyncEvents.add("${result.exitCause}:${result.decision.toString()}")
+                    }
+                )
+            )
+        )
+        app.get("/panic", { _ => throw Exception("async-single-flight") })
+
+        let first = app.handleForTest("GET", "/panic")
+        @Assert(first.status, UInt16(503))
+        @Assert(first.body, "Service Failover Probe Scheduled")
+        @Assert(first.header("x-ignite-failover-exit-cause") ?? "", "probe_deferred")
+
+        waitUntil({ => gate.isEntered() }, 40, 5)
+        @Assert(gate.isEntered(), true)
+
+        let second = app.handleForTest("GET", "/panic")
+        @Assert(second.status, UInt16(503))
+        @Assert(second.body, "Service Guard Active")
+        @Assert(second.header("x-ignite-failover-exit-cause") ?? "", "single_flight_skip")
 
         gate.release()
         waitUntil({ => asyncEvents.size > 0 }, 40, 5)

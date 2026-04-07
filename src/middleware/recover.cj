@@ -131,6 +131,7 @@ func annotateFailoverContext(ctx: Ctx, result: KModeFailoverResult): Unit {
     ctx.setHeader("x-ignite-failover-attempts", result.attempts.toString())
     ctx.setHeader("x-ignite-failover-elapsed-ms", result.elapsedMs.toString())
     ctx.setLocal("__ignite_guard_event", "kmode_failover")
+    ctx.setLocal("__ignite_guard_exit_cause", result.exitCause)
     ctx.setLocal("__ignite_guard_detail", formatFailoverDetail(result))
 }
 

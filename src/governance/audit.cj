@@ -19,6 +19,8 @@ public class AuditEvent {
     public var statusCode: UInt16 = 200
     public var latencyMs: Int64 = 0
     public var detail: String = ""
+    public var guardEvent: String = ""
+    public var guardExitCause: String = ""
     public var securityEvent: String = ""
     public var securityCode: String = ""
     public var securitySource: String = ""
@@ -40,6 +42,8 @@ public class AuditEvent {
         #","statusCode":"# + "${statusCode}" +
         #","latencyMs":"# + "${latencyMs}" +
         #","detail":"# + "\"" + escapeJson(detail) + "\"" +
+        #","guardEvent":"# + "\"" + escapeJson(guardEvent) + "\"" +
+        #","guardExitCause":"# + "\"" + escapeJson(guardExitCause) + "\"" +
         #","securityEvent":"# + "\"" + escapeJson(securityEvent) + "\"" +
         #","securityCode":"# + "\"" + escapeJson(securityCode) + "\"" +
         #","securitySource":"# + "\"" + escapeJson(securitySource) + "\"" +
@@ -82,12 +86,13 @@ public func emitAudit(event: AuditEvent, config!: AuditConfig = AuditConfig()): 
         event.toJson()
     }
     if (config.linuxStyle) {
+        let guardExtra = guardLineSuffix(event)
         let secExtra = securityLineSuffix(event)
         let line = linuxLogLine(
             event.timestamp,
             config.level,
             event.requestId,
-            "audit action=${event.action} result=${event.result} risk=${event.riskLevel} status=${event.statusCode} latency=${event.latencyMs}ms route=${event.route} actor=${event.actor}${secExtra}",
+            "audit action=${event.action} result=${event.result} risk=${event.riskLevel} status=${event.statusCode} latency=${event.latencyMs}ms route=${event.route} actor=${event.actor}${guardExtra}${secExtra}",
             event.kmode
         )
         config.output(line)
@@ -111,10 +116,24 @@ func redactEvent(event: AuditEvent): AuditEvent {
     out.statusCode = event.statusCode
     out.latencyMs = event.latencyMs
     out.detail = redactSensitive(event.detail)
+    out.guardEvent = event.guardEvent
+    out.guardExitCause = event.guardExitCause
     out.securityEvent = event.securityEvent
     out.securityCode = event.securityCode
     out.securitySource = event.securitySource
     out
+}
+
+func guardLineSuffix(event: AuditEvent): String {
+    if (event.guardEvent.size == 0) {
+        return ""
+    }
+    let exitCausePart = if (event.guardExitCause.size > 0) {
+        " guardExitCause=${event.guardExitCause}"
+    } else {
+        ""
+    }
+    " guardEvent=${event.guardEvent}${exitCausePart}"
 }
 
 func securityLineSuffix(event: AuditEvent): String {
