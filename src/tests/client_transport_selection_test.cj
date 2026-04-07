@@ -42,11 +42,15 @@ public class ClientTransportSelectionTestSuite {
         let cryptoProviderIds = ArrayList<String>()
         let publicPaths = ArrayList<String>()
         let riskLevels = ArrayList<String>()
+        let touchpointMarks = ArrayList<String>()
         let client = RestClient(
             readTimeout: Duration.second * 1,
             writeTimeout: Duration.second * 1,
             poolSize: 1
         )
+            .onTransportTouchpoint({ touchpoint =>
+                touchpointMarks.add("global:" + touchpoint.selectedBackend + ":" + touchpoint.publicPath)
+            })
             .onResponse({ resp =>
                 backendIds.add(readHeader(resp, "x-ignite-observe-backend-id"))
                 providerIds.add(readHeader(resp, "x-ignite-observe-provider-id"))
@@ -60,6 +64,9 @@ public class ClientTransportSelectionTestSuite {
             let resp = client.request()
                 .method("GET")
                 .url(url)
+                .onTransportTouchpoint({ touchpoint =>
+                    touchpointMarks.add("local:" + touchpoint.selectedBackend + ":" + touchpoint.riskLevel)
+                })
                 .send()
             @Assert(resp.status, 200)
             @Assert(resp.body(), "selection-ok")
@@ -73,6 +80,9 @@ public class ClientTransportSelectionTestSuite {
             @Assert(publicPaths[0], "stable-default")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "low")
+            @Assert(touchpointMarks.size, 2)
+            @Assert(touchpointMarks[0], "global:stdx-http-client:stable-default")
+            @Assert(touchpointMarks[1], "local:stdx-http-client:low")
             match (client.lastClientTransportTouchpoint()) {
                 case Some(touchpoint) =>
                     @Assert(touchpoint.selectedBackend, "stdx-http-client")
@@ -115,12 +125,16 @@ public class ClientTransportSelectionTestSuite {
         )
         let cryptoProviderIds = ArrayList<String>()
         let riskLevels = ArrayList<String>()
+        let touchpointMarks = ArrayList<String>()
         let client = RestClient(
             readTimeout: Duration.second * 1,
             writeTimeout: Duration.second * 1,
             poolSize: 1
         )
             .useCrypto(buildCryptoConfig(api2.ClientCryptoProviderKind.StdxFallback))
+            .onTransportTouchpoint({ touchpoint =>
+                touchpointMarks.add("global:" + touchpoint.cryptoProviderId)
+            })
             .onResponse({ resp =>
                 cryptoProviderIds.add(readHeader(resp, "x-ignite-observe-crypto-provider-id"))
                 riskLevels.add(readHeader(resp, "x-ignite-observe-risk-level"))
@@ -139,6 +153,8 @@ public class ClientTransportSelectionTestSuite {
             @Assert(cryptoProviderIds[0], "crypto:stdx-fallback")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "medium")
+            @Assert(touchpointMarks.size, 1)
+            @Assert(touchpointMarks[0], "global:crypto:stdx-fallback")
             match (client.lastClientTransportTouchpoint()) {
                 case Some(touchpoint) =>
                     @Assert(touchpoint.cryptoProviderId, "crypto:stdx-fallback")
@@ -179,6 +195,7 @@ public class ClientTransportSelectionTestSuite {
         let providerIds = ArrayList<String>()
         let publicPaths = ArrayList<String>()
         let riskLevels = ArrayList<String>()
+        let touchpointLines = ArrayList<String>()
         let client = RestClient(
             readTimeout: Duration.second * 1,
             writeTimeout: Duration.second * 1,
@@ -186,6 +203,9 @@ public class ClientTransportSelectionTestSuite {
         )
             .allowExperimentalTransport()
             .preferTransportBackend("jinguissl-provider-candidate")
+            .onTransportTouchpoint({ touchpoint =>
+                touchpointLines.add(touchpoint.toLogLine())
+            })
             .onResponse({ resp =>
                 backendIds.add(readHeader(resp, "x-ignite-observe-backend-id"))
                 providerIds.add(readHeader(resp, "x-ignite-observe-provider-id"))
@@ -209,6 +229,9 @@ public class ClientTransportSelectionTestSuite {
             @Assert(publicPaths[0], "experimental-only")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "medium")
+            @Assert(touchpointLines.size, 1)
+            @Assert(containsSelectionText(touchpointLines[0], "selectedBackend=jinguissl-provider-candidate"), true)
+            @Assert(containsSelectionText(touchpointLines[0], "publicPath=experimental-only"), true)
             match (client.lastClientTransportTouchpoint()) {
                 case Some(touchpoint) =>
                     @Assert(touchpoint.selectedBackend, "jinguissl-provider-candidate")

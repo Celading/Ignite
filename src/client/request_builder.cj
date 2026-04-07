@@ -23,6 +23,7 @@ public class RequestBuilder {
     let _responseHooks: ArrayList<ClientResponseHook>
     let _errorHooks: ArrayList<ClientErrorHook>
     let _observeHooks: ArrayList<ClientObserveHook>
+    let _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
@@ -53,6 +54,7 @@ public class RequestBuilder {
         responseHooks: ArrayList<ClientResponseHook>,
         errorHooks: ArrayList<ClientErrorHook>,
         observeHooks: ArrayList<ClientObserveHook>,
+        transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>,
         captureObserveHook!: ?ClientObserveHook = None,
         captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None
     ) {
@@ -69,6 +71,7 @@ public class RequestBuilder {
         _responseHooks = ArrayList<ClientResponseHook>()
         _errorHooks = ArrayList<ClientErrorHook>()
         _observeHooks = ArrayList<ClientObserveHook>()
+        _transportTouchpointHooks = ArrayList<ClientTransportTouchpointHook>()
         _captureObserveHook = captureObserveHook
         _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
@@ -85,6 +88,9 @@ public class RequestBuilder {
         }
         for (hook in observeHooks) {
             _observeHooks.add(hook)
+        }
+        for (hook in transportTouchpointHooks) {
+            _transportTouchpointHooks.add(hook)
         }
     }
 
@@ -211,6 +217,15 @@ public class RequestBuilder {
 
     public func onObserveHook(hook: ClientObserveHook): RequestBuilder {
         onObserve(hook)
+    }
+
+    public func onTransportTouchpoint(hook: ClientTransportTouchpointHook): RequestBuilder {
+        _transportTouchpointHooks.add(hook)
+        this
+    }
+
+    public func onTransportTouchpointHook(hook: ClientTransportTouchpointHook): RequestBuilder {
+        onTransportTouchpoint(hook)
     }
 
     public func url(u: String): RequestBuilder {
@@ -562,6 +577,11 @@ public class RequestBuilder {
 
     func notifyTransportTouchpoint(touchpoint: ClientTransportTouchpoint): Unit {
         if (let Some(hook) <- _captureTransportTouchpointHook) {
+            try {
+                hook(touchpoint)
+            } catch (_: Exception) {}
+        }
+        for (hook in _transportTouchpointHooks) {
             try {
                 hook(touchpoint)
             } catch (_: Exception) {}

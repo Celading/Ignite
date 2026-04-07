@@ -22,6 +22,7 @@ public class RestClient {
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
     var _observeHooks: ArrayList<ClientObserveHook> = ArrayList<ClientObserveHook>()
+    var _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook> = ArrayList<ClientTransportTouchpointHook>()
     var _lastClientTransportTouchpoint: ?ClientTransportTouchpoint = None
     var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
 
@@ -158,6 +159,15 @@ public class RestClient {
 
     public func onObserveHook(hook: ClientObserveHook): RestClient {
         onObserve(hook)
+    }
+
+    public func onTransportTouchpoint(hook: ClientTransportTouchpointHook): RestClient {
+        _transportTouchpointHooks.add(hook)
+        this
+    }
+
+    public func onTransportTouchpointHook(hook: ClientTransportTouchpointHook): RestClient {
+        onTransportTouchpoint(hook)
     }
 
     public func lastClientTransportTouchpoint(): ?ClientTransportTouchpoint {
@@ -318,6 +328,7 @@ public class RestClient {
             _responseHooks,
             _errorHooks,
             _observeHooks,
+            _transportTouchpointHooks,
             captureObserveHook: { snapshot =>
                 _lastClientObserveSnapshot = Some(snapshot)
             },
