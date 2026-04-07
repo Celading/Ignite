@@ -85,4 +85,32 @@ public class KModeFailoverTestSuite {
         @Assert(option.maxAttempts, 1)
         @Assert(option.intervalMs, 0)
     }
+
+    @TestCase
+    public func testFailoverWaitHookRunsBetweenAttempts(): Unit {
+        let waits = ArrayList<Int64>()
+        let attempts = ArrayList<Int64>()
+        let option = KModeFailoverOption(
+            enabled: true,
+            expectedResponse: "RESTART",
+            maxAttempts: 3,
+            intervalMs: 25,
+            terminateOnMiss: false,
+            probeHook: { attempt, _ =>
+                attempts.add(attempt)
+                Some("MISS")
+            },
+            waitHook: { ms =>
+                waits.add(ms)
+            }
+        )
+
+        let result = runKModeFailover(option, "panic:/wait-hook")
+        @Assert(result.decision, KModeFailoverDecision.Continue)
+        @Assert(result.attempts, 3)
+        @Assert(attempts.size, 3)
+        @Assert(waits.size, 2)
+        @Assert(waits[0], 25)
+        @Assert(waits[1], 25)
+    }
 }

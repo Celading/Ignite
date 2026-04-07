@@ -1,9 +1,9 @@
 package ignite.governance
 
 import ignite.client.RestClient
-import std.time.MonoTime
 
 public type KModeFailoverProbeHook = (Int64, String) -> ?String
+public type KModeFailoverWaitHook = (Int64) -> Unit
 
 public enum KModeFailoverDecision <: Equatable<KModeFailoverDecision> & ToString {
     | Continue
@@ -49,6 +49,7 @@ public class KModeFailoverOption {
     public var restartOnMatch: Bool = true
     public var terminateOnMiss: Bool = true
     public var probeHook: ?KModeFailoverProbeHook = None
+    public var waitHook: ?KModeFailoverWaitHook = None
 
     public init(
         enabled!: Bool = false,
@@ -63,7 +64,8 @@ public class KModeFailoverOption {
         intervalMs!: Int64 = 1000,
         restartOnMatch!: Bool = true,
         terminateOnMiss!: Bool = true,
-        probeHook!: ?KModeFailoverProbeHook = None
+        probeHook!: ?KModeFailoverProbeHook = None,
+        waitHook!: ?KModeFailoverWaitHook = None
     ) {
         this.enabled = enabled
         this.probeUrl = probeUrl
@@ -78,6 +80,7 @@ public class KModeFailoverOption {
         this.restartOnMatch = restartOnMatch
         this.terminateOnMiss = terminateOnMiss
         this.probeHook = probeHook
+        this.waitHook = waitHook
     }
 }
 
@@ -143,7 +146,7 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
         }
 
         if (attempt < option.maxAttempts && option.intervalMs > 0) {
-            waitByMonoTime(option.intervalMs)
+            waitForFailoverInterval(option, option.intervalMs)
         }
         attempt += 1
     }
@@ -210,10 +213,13 @@ func normalizeMethod(raw: String): String {
     m
 }
 
-func waitByMonoTime(ms: Int64): Unit {
+func waitForFailoverInterval(option: KModeFailoverOption, ms: Int64): Unit {
     if (ms <= 0) {
         return
     }
-    let start = MonoTime.now()
-    while ((MonoTime.now() - start).toMilliseconds() < ms) {}
+    if (let Some(waitHook) <- option.waitHook) {
+        waitHook(ms)
+        return
+    }
+    sleep(Duration.millisecond * ms)
 }
