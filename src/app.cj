@@ -342,8 +342,11 @@ public class App {
             println("[Ignite][TLS] hint=${snapshot.hint}")
         } catch (e: Exception) {
             let message = e.message
+            let snapshot = api2.serverStartupFailureSnapshot(message)
             println("[Ignite] Failed to start server on ${addr}:${port} - ${message}")
-            if (shouldPrintPortInUseHint(message)) {
+            println("[Ignite][Listen] stage=${snapshot.stage} listen_error_code=${snapshot.listenErrorCode} ignite_error_code=${snapshot.igniteErrorCode}")
+            println("[Ignite][Listen] hint=${snapshot.hint}")
+            if (snapshot.listenErrorCode == "ADDRESS_IN_USE") {
                 println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
             }
         }
@@ -1138,16 +1141,4 @@ func printBanner(
         println(" [Ignite][Net] ${message}")
     }
     println("")
-}
-
-func shouldPrintPortInUseHint(message: String): Bool {
-    let lower = message.trimAscii().toAsciiLower()
-    if (lower.contains("address already in use")) { return true }
-    if (lower.contains("already in use")) { return true }
-    if (lower.contains("eaddrinuse")) { return true }
-    if (lower.contains("port already in use")) { return true }
-    if (lower.contains("port in use")) { return true }
-    if (message.contains("端口已被占用")) { return true }
-    if (message.contains("地址已在使用")) { return true }
-    false
 }
