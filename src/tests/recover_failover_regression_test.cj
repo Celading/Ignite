@@ -5,12 +5,49 @@ import ignite.governance.KModeFailoverOption
 import ignite.governance.AuditConfig
 import ignite.middleware.*
 import std.collection.ArrayList
+import std.sync.Mutex
 
 class RecoverFailoverTestClock {
     public var nowMs: Int64 = 0
 
     public init(nowMs!: Int64 = 0) {
         this.nowMs = nowMs
+    }
+}
+
+class RecoverProbeGate {
+    let mtx = Mutex()
+    var entered: Bool = false
+    var released: Bool = false
+
+    public init() {}
+
+    public func markEntered(): Unit {
+        synchronized(mtx) {
+            entered = true
+        }
+    }
+
+    public func isEntered(): Bool {
+        var output = false
+        synchronized(mtx) {
+            output = entered
+        }
+        output
+    }
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        var output = false
+        synchronized(mtx) {
+            output = released
+        }
+        output
     }
 }
 
@@ -177,6 +214,63 @@ public class RecoverFailoverRegressionTestSuite {
         @Assert(second.header("x-ignite-failover-exit-cause") ?? "", "repeat_panic_skip")
         @Assert(second.header("x-ignite-failover-decision") ?? "", "restart")
         @Assert(attempts.size, 1)
+    }
+
+    @TestCase
+    public func testRecoverRespondBeforeProbeSchedulesBackgroundFailover(): Unit {
+        let gate = RecoverProbeGate()
+        let asyncEvents = ArrayList<String>()
+        let app = App(config: Config(kmode: true))
+        app.use(
+            recoverMiddleware(
+                config: RecoverConfig(
+                    kmodeFailover: KModeFailoverOption(
+                        enabled: true,
+                        maxAttempts: 1,
+                        intervalMs: 0,
+                        respondBeforeProbe: true,
+                        terminateOnMiss: false,
+                        probeHook: { _, _ =>
+                            gate.markEntered()
+                            while (!gate.isReleased()) {
+                                sleep(Duration.millisecond * 5)
+                            }
+                            Some("RESTART")
+                        }
+                    ),
+                    onKModeRestartAsync: { _, result =>
+                        asyncEvents.add("${result.exitCause}:${result.decision.toString()}")
+                    }
+                )
+            )
+        )
+        app.get("/panic", { _ => throw Exception("async-me") })
+
+        let resp = app.handleForTest("GET", "/panic")
+        @Assert(resp.status, UInt16(503))
+        @Assert(resp.body, "Service Failover Probe Scheduled")
+        @Assert(resp.header("x-ignite-failover-exit-cause") ?? "", "probe_deferred")
+        @Assert(resp.header("x-ignite-failover-decision") ?? "", "continue")
+
+        waitUntil({ => gate.isEntered() }, 40, 5)
+        @Assert(gate.isEntered(), true)
+        @Assert(asyncEvents.size, 0)
+
+        gate.release()
+        waitUntil({ => asyncEvents.size > 0 }, 40, 5)
+        @Assert(asyncEvents.size, 1)
+        @Assert(asyncEvents[0], "matched:restart")
+    }
+
+    func waitUntil(check: () -> Bool, maxAttempts: Int64, sleepMs: Int64): Unit {
+        var attempt: Int64 = 0
+        while (attempt < maxAttempts) {
+            if (check()) {
+                return
+            }
+            sleep(Duration.millisecond * sleepMs)
+            attempt += 1
+        }
     }
 
     func contains(text: String, target: String): Bool {

@@ -7,6 +7,7 @@ import std.time.{DateTime, MonoTime}
 public type KModeFailoverProbeHook = (Int64, String) -> ?String
 public type KModeFailoverWaitHook = (Int64) -> Unit
 public type KModeFailoverClockHook = () -> Int64
+public type KModeFailoverDeferredHook = (KModeFailoverResult) -> Unit
 
 public enum KModeFailoverDecision <: Equatable<KModeFailoverDecision> & ToString {
     | Continue
@@ -52,6 +53,7 @@ public class KModeFailoverOption {
     public var totalBudgetMs: Int64 = 0
     public var cooldownMs: Int64 = 0
     public var repeatWindowMs: Int64 = 0
+    public var respondBeforeProbe: Bool = false
     public var restartOnMatch: Bool = true
     public var terminateOnMiss: Bool = true
     public var probeHook: ?KModeFailoverProbeHook = None
@@ -73,6 +75,7 @@ public class KModeFailoverOption {
         totalBudgetMs!: Int64 = 0,
         cooldownMs!: Int64 = 0,
         repeatWindowMs!: Int64 = 0,
+        respondBeforeProbe!: Bool = false,
         restartOnMatch!: Bool = true,
         terminateOnMiss!: Bool = true,
         probeHook!: ?KModeFailoverProbeHook = None,
@@ -92,6 +95,7 @@ public class KModeFailoverOption {
         this.totalBudgetMs = if (totalBudgetMs >= 0) { totalBudgetMs } else { 0 }
         this.cooldownMs = if (cooldownMs >= 0) { cooldownMs } else { 0 }
         this.repeatWindowMs = if (repeatWindowMs >= 0) { repeatWindowMs } else { 0 }
+        this.respondBeforeProbe = respondBeforeProbe
         this.restartOnMatch = restartOnMatch
         this.terminateOnMiss = terminateOnMiss
         this.probeHook = probeHook
@@ -138,11 +142,40 @@ public class KModeFailoverResult {
 }
 
 public func runKModeFailover(option: KModeFailoverOption, reason: String): KModeFailoverResult {
-    let startMono = MonoTime.now()
     let startedAtMs = currentFailoverWallClockMs(option)
     if (let Some(bypassResult) <- option.coordinator.tryBegin(option, reason, startedAtMs)) {
         return bypassResult
     }
+    let startMono = MonoTime.now()
+    runKModeFailoverAfterBegin(option, reason, startMono, startedAtMs)
+}
+
+public func deferKModeFailover(
+    option: KModeFailoverOption,
+    reason: String,
+    onResult!: ?KModeFailoverDeferredHook = None
+): KModeFailoverResult {
+    let startedAtMs = currentFailoverWallClockMs(option)
+    if (let Some(bypassResult) <- option.coordinator.tryBegin(option, reason, startedAtMs)) {
+        return bypassResult
+    }
+    let deferredResult = buildFailoverBypassResult(option, reason, startedAtMs, "probe_deferred", None)
+    let startMono = MonoTime.now()
+    spawn {
+        let result = runKModeFailoverAfterBegin(option, reason, startMono, startedAtMs)
+        if (let Some(hook) <- onResult) {
+            hook(result)
+        }
+    }
+    deferredResult
+}
+
+func runKModeFailoverAfterBegin(
+    option: KModeFailoverOption,
+    reason: String,
+    startMono: MonoTime,
+    startedAtMs: Int64
+): KModeFailoverResult {
     if (!option.enabled) {
         return option.coordinator.finish(
             option,

@@ -1,14 +1,16 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
+import ignite.{App, Handler, Ctx}
 import ignite.governance.{
     KModeFailoverOption,
     KModeFailoverDecision,
     KModeFailoverResult,
+    deferKModeFailover,
     runKModeFailover
 }
 
 public type RecoverKModeFailoverHook = (Ctx, Exception, KModeFailoverResult) -> Unit
+public type RecoverKModeFailoverAsyncHook = (App, KModeFailoverResult) -> Unit
 
 public class RecoverConfig {
     public var enableStackTrace: Bool = false
@@ -16,19 +18,25 @@ public class RecoverConfig {
     public var kmodeFailover: ?KModeFailoverOption = None
     public var onKModeRestart: ?RecoverKModeFailoverHook = None
     public var onKModeTerminate: ?RecoverKModeFailoverHook = None
+    public var onKModeRestartAsync: ?RecoverKModeFailoverAsyncHook = None
+    public var onKModeTerminateAsync: ?RecoverKModeFailoverAsyncHook = None
 
     public init(
         enableStackTrace!: Bool = false,
         customHandler!: ?((Ctx, Exception) -> Unit) = None,
         kmodeFailover!: ?KModeFailoverOption = None,
         onKModeRestart!: ?RecoverKModeFailoverHook = None,
-        onKModeTerminate!: ?RecoverKModeFailoverHook = None
+        onKModeTerminate!: ?RecoverKModeFailoverHook = None,
+        onKModeRestartAsync!: ?RecoverKModeFailoverAsyncHook = None,
+        onKModeTerminateAsync!: ?RecoverKModeFailoverAsyncHook = None
     ) {
         this.enableStackTrace = enableStackTrace
         this.customHandler = customHandler
         this.kmodeFailover = kmodeFailover
         this.onKModeRestart = onKModeRestart
         this.onKModeTerminate = onKModeTerminate
+        this.onKModeRestartAsync = onKModeRestartAsync
+        this.onKModeTerminateAsync = onKModeTerminateAsync
     }
 }
 
@@ -68,6 +76,18 @@ func runFailoverIfNeeded(ctx: Ctx, e: Exception, config: RecoverConfig): ?KModeF
     }
     if (let Some(option) <- config.kmodeFailover) {
         let reason = "panic:${ctx.method}:${ctx.path}:${e.message}"
+        if (option.respondBeforeProbe) {
+            let appRef = ctx.app()
+            return Some(
+                deferKModeFailover(
+                    option,
+                    reason,
+                    onResult: Some({ result =>
+                        handleDeferredFailoverOutcome(appRef, result, config)
+                    })
+                )
+            )
+        }
         return Some(runKModeFailover(option, reason))
     }
     None
@@ -115,6 +135,7 @@ func annotateFailoverContext(ctx: Ctx, result: KModeFailoverResult): Unit {
 }
 
 func shouldHandleGuardActive(result: KModeFailoverResult): Bool {
+    result.exitCause == "probe_deferred" ||
     result.exitCause == "single_flight_skip" ||
     result.exitCause == "cooldown_skip" ||
     result.exitCause == "repeat_panic_skip"
@@ -128,6 +149,9 @@ func handleGuardActiveDecision(ctx: Ctx, result: KModeFailoverResult): Unit {
 }
 
 func guardActiveBody(exitCause: String): String {
+    if (exitCause == "probe_deferred") {
+        return "Service Failover Probe Scheduled"
+    }
     if (exitCause == "cooldown_skip") {
         return "Service Guard Cooling Down"
     }
@@ -135,6 +159,26 @@ func guardActiveBody(exitCause: String): String {
         return "Repeated Panic Suppressed"
     }
     "Service Guard Active"
+}
+
+func handleDeferredFailoverOutcome(app: App, result: KModeFailoverResult, config: RecoverConfig): Unit {
+    if (result.decision == KModeFailoverDecision.Restart) {
+        println("[Ignite Recovery] Deferred KMode failover decision=restart attempts=${result.attempts} lastStatus=${result.lastStatus}")
+        if (let Some(hook) <- config.onKModeRestartAsync) {
+            hook(app, result)
+        } else {
+            app.shutdown()
+        }
+        return
+    }
+    if (result.decision == KModeFailoverDecision.Terminate) {
+        println("[Ignite Recovery] Deferred KMode failover decision=terminate attempts=${result.attempts} lastStatus=${result.lastStatus}")
+        if (let Some(hook) <- config.onKModeTerminateAsync) {
+            hook(app, result)
+        } else {
+            app.shutdown()
+        }
+    }
 }
 
 func formatFailoverDetail(result: KModeFailoverResult): String {
