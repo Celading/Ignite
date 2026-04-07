@@ -65,6 +65,8 @@ public class ClientHookTestSuite {
     public func testEncryptedBodyFlowsThroughRequestHook(): Unit {
         let cfg = buildCryptoConfig()
         let marks = ArrayList<String>()
+        let observeLines = ArrayList<String>()
+        let observeJson = ArrayList<String>()
 
         let client = RestClient(
             readTimeout: Duration.second * 15,
@@ -72,6 +74,10 @@ public class ClientHookTestSuite {
             poolSize: 10
         )
             .useCrypto(cfg)
+            .onObserve({ snapshot =>
+                observeLines.add(snapshot.toLogLine())
+                observeJson.add(snapshot.toJson())
+            })
             .onRequest({ _ =>
                 marks.add("request")
                 throw api2.ClientCryptoException(
@@ -97,6 +103,12 @@ public class ClientHookTestSuite {
         @Assert(marks.size, 2)
         @Assert(marks[0], "request")
         @Assert(marks[1], "error")
+        @Assert(observeLines.size, 1)
+        @Assert(containsClientHookText(observeLines[0], "[ignite.client.observe] errorClass=CRYPTO"), true)
+        @Assert(containsClientHookText(observeLines[0], "causeCode=crypto_unavailable"), true)
+        @Assert(observeJson.size, 1)
+        @Assert(containsClientHookText(observeJson[0], "\"outcome\":\"error\""), true)
+        @Assert(containsClientHookText(observeJson[0], "\"causeCode\":\"crypto_unavailable\""), true)
     }
 
     @TestCase
@@ -121,11 +133,17 @@ public class ClientHookTestSuite {
         let retryCounts = ArrayList<String>()
         let fieldValues = ArrayList<String>()
         let durationValues = ArrayList<String>()
+        let observeMarks = ArrayList<String>()
+        let observeJson = ArrayList<String>()
         let client = RestClient(
             readTimeout: Duration.second * 1,
             writeTimeout: Duration.second * 1,
             poolSize: 2
         )
+            .onObserve({ snapshot =>
+                observeMarks.add("global:" + snapshot.outcome)
+                observeJson.add(snapshot.toJson())
+            })
             .onResponse({ resp =>
                 marks.add("global")
                 if (let Some(retryCount) <- resp.header("x-ignite-observe-retry-count")) {
@@ -142,6 +160,9 @@ public class ClientHookTestSuite {
                 .method("GET")
                 .url(url)
                 .header("x-ignite-log-case", "response-hook")
+                .onObserve({ snapshot =>
+                    observeMarks.add("local:" + snapshot.errorClass + ":" + snapshot.phase)
+                })
                 .onResponse({ localResp =>
                     marks.add("local")
                     if (let Some(fields) <- localResp.header("x-ignite-observe-fields")) {
@@ -164,6 +185,12 @@ public class ClientHookTestSuite {
             @Assert(marks[1], "local")
             @Assert(retryCounts.size, 1)
             @Assert(retryCounts[0], "0")
+            @Assert(observeMarks.size, 2)
+            @Assert(observeMarks[0], "global:success")
+            @Assert(observeMarks[1], "local:NONE:response")
+            @Assert(observeJson.size, 1)
+            @Assert(containsClientHookText(observeJson[0], "\"outcome\":\"success\""), true)
+            @Assert(containsClientHookText(observeJson[0], "\"responseStatus\":200"), true)
             @Assert(fieldValues.size, 1)
             @Assert(fieldValues[0], "case=response-hook")
             @Assert(durationValues.size, 1)
@@ -179,6 +206,34 @@ public class ClientHookTestSuite {
             }
         }
     }
+}
+
+func containsClientHookText(text: String, target: String): Bool {
+    let t = text.toRuneArray()
+    let p = target.toRuneArray()
+    if (p.size == 0) {
+        return true
+    }
+    if (t.size < p.size) {
+        return false
+    }
+    var i: Int64 = 0
+    while (i <= t.size - p.size) {
+        var matched = true
+        var j: Int64 = 0
+        while (j < p.size) {
+            if (t[i + j] != p[j]) {
+                matched = false
+                break
+            }
+            j += 1
+        }
+        if (matched) {
+            return true
+        }
+        i += 1
+    }
+    false
 }
 
 func waitForSuccessfulGet(client: RestClient, url: String): Unit {

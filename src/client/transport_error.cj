@@ -183,6 +183,57 @@ func formatTransportObservedError(
     selectionDecision!: ?TransportSelectionDecision = None,
     fallbackRecord!: ?TransportFallbackDecisionRecord = None
 ): String {
+    buildClientObserveSnapshot(
+        envelope,
+        durationMs,
+        retryCount,
+        fields,
+        selectionDecision: selectionDecision,
+        fallbackRecord: fallbackRecord
+    ).toLogLine()
+}
+
+func buildSuccessfulObserveSnapshot(
+    status: UInt16,
+    durationMs: Int64,
+    retryCount: Int64,
+    fields: String,
+    selectionDecision: TransportSelectionDecision
+): ClientObserveSnapshot {
+    ClientObserveSnapshot(
+        "success",
+        "NONE",
+        "response",
+        "-",
+        selectionDecision.selectedBackend,
+        selectionDecision.providerId,
+        selectionDecision.cryptoProviderId,
+        selectionDecision.publicPath,
+        selectionDecision.riskLevel,
+        selectionDecision.observabilityTags,
+        false,
+        false,
+        false,
+        retryCount,
+        durationMs,
+        if (fields.size == 0) { "-" } else { fields },
+        status,
+        "-",
+        "-",
+        "-",
+        false,
+        ""
+    )
+}
+
+func buildClientObserveSnapshot(
+    envelope: TransportErrorEnvelope,
+    durationMs: Int64,
+    retryCount: Int64,
+    fields: String,
+    selectionDecision!: ?TransportSelectionDecision = None,
+    fallbackRecord!: ?TransportFallbackDecisionRecord = None
+): ClientObserveSnapshot {
     let fieldText = if (fields.size == 0) { "-" } else { fields }
     let publicPath = if (let Some(selection) <- selectionDecision) {
         selection.publicPath
@@ -204,13 +255,52 @@ func formatTransportObservedError(
     } else {
         "-"
     }
-    var text = "[ignite.client.observe] errorClass=${envelope.family} phase=${envelope.phase} causeCode=${envelope.causeCode} backendId=${envelope.backendId} providerId=${envelope.providerId} cryptoProviderId=${cryptoProviderId} publicPath=${publicPath} riskLevel=${riskLevel} transportTags=${tags} retryable=${envelope.retryable} fallbackSuggested=${envelope.fallbackSuggested} connectionConsumed=${envelope.connectionConsumed} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}"
-    if (let Some(record) <- fallbackRecord) {
-        text += " fallbackFrom=${record.fromBackend} fallbackTo=${record.toBackend} fallbackOutcome=${record.finalOutcome} replayRequired=${record.requestReplayRequired}"
+    let fallbackFrom = if (let Some(record) <- fallbackRecord) {
+        record.fromBackend
+    } else {
+        "-"
     }
-    text += "; cause=${envelope.message}"
-    text
+    let fallbackTo = if (let Some(record) <- fallbackRecord) {
+        record.toBackend
+    } else {
+        "-"
+    }
+    let fallbackOutcome = if (let Some(record) <- fallbackRecord) {
+        record.finalOutcome
+    } else {
+        "-"
+    }
+    let replayRequired = if (let Some(record) <- fallbackRecord) {
+        record.requestReplayRequired
+    } else {
+        false
+    }
+    ClientObserveSnapshot(
+        "error",
+        envelope.family,
+        envelope.phase,
+        envelope.causeCode,
+        envelope.backendId,
+        envelope.providerId,
+        cryptoProviderId,
+        publicPath,
+        riskLevel,
+        tags,
+        envelope.retryable,
+        envelope.fallbackSuggested,
+        envelope.connectionConsumed,
+        retryCount,
+        durationMs,
+        fieldText,
+        UInt16(0),
+        fallbackFrom,
+        fallbackTo,
+        fallbackOutcome,
+        replayRequired,
+        envelope.message
+    )
 }
+
 
 func classifyTransportErrorFamily(origin: Exception): String {
     let msg = origin.message.toAsciiLower()

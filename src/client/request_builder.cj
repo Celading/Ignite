@@ -22,6 +22,7 @@ public class RequestBuilder {
     let _requestHooks: ArrayList<ClientRequestHook>
     let _responseHooks: ArrayList<ClientResponseHook>
     let _errorHooks: ArrayList<ClientErrorHook>
+    let _observeHooks: ArrayList<ClientObserveHook>
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
     let _headerSnapshot: HashMap<String, String> = HashMap<String, String>()
     var _currentUrl: String = ""
@@ -48,7 +49,8 @@ public class RequestBuilder {
         allowExperimentalTransport: Bool,
         requestHooks: ArrayList<ClientRequestHook>,
         responseHooks: ArrayList<ClientResponseHook>,
-        errorHooks: ArrayList<ClientErrorHook>
+        errorHooks: ArrayList<ClientErrorHook>,
+        observeHooks: ArrayList<ClientObserveHook>
     ) {
         _client = client
         _baseUrl = baseUrl
@@ -62,6 +64,7 @@ public class RequestBuilder {
         _requestHooks = ArrayList<ClientRequestHook>()
         _responseHooks = ArrayList<ClientResponseHook>()
         _errorHooks = ArrayList<ClientErrorHook>()
+        _observeHooks = ArrayList<ClientObserveHook>()
         for ((k, v) in defaultHeaders) {
             setHeader(k, v)
         }
@@ -73,6 +76,9 @@ public class RequestBuilder {
         }
         for (hook in errorHooks) {
             _errorHooks.add(hook)
+        }
+        for (hook in observeHooks) {
+            _observeHooks.add(hook)
         }
     }
 
@@ -190,6 +196,15 @@ public class RequestBuilder {
 
     public func onErrorHook(hook: ClientErrorHook): RequestBuilder {
         onError(hook)
+    }
+
+    public func onObserve(hook: ClientObserveHook): RequestBuilder {
+        _observeHooks.add(hook)
+        this
+    }
+
+    public func onObserveHook(hook: ClientObserveHook): RequestBuilder {
+        onObserve(hook)
     }
 
     public func url(u: String): RequestBuilder {
@@ -403,7 +418,7 @@ public class RequestBuilder {
             try {
                 security.verifyX509Target(verifyOption, urlForHost, source: "ignite/client")
             } catch (e: security.SecurityException) {
-                let observed = buildObservedError(
+                let observed = buildObservedSnapshot(
                     e,
                     elapsedMs(observeStart),
                     0,
@@ -412,10 +427,11 @@ public class RequestBuilder {
                     false,
                     selectionDecision
                 )
-                notifyErrorHooks(observed)
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
                 throw e
             } catch (e: Exception) {
-                let observed = buildObservedError(
+                let observed = buildObservedSnapshot(
                     e,
                     elapsedMs(observeStart),
                     0,
@@ -424,7 +440,8 @@ public class RequestBuilder {
                     false,
                     selectionDecision
                 )
-                notifyErrorHooks(observed)
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
                 throw e
             }
         }
@@ -434,7 +451,7 @@ public class RequestBuilder {
                 hook(_builder)
             }
         } catch (e: api2.ClientCryptoException) {
-            let observed = buildObservedError(
+            let observed = buildObservedSnapshot(
                 e,
                 elapsedMs(observeStart),
                 0,
@@ -443,10 +460,11 @@ public class RequestBuilder {
                 false,
                 selectionDecision
             )
-            notifyErrorHooks(observed)
+            notifyObserveHooks(observed)
+            notifyErrorHooks(Exception(observed.toLogLine()))
             throw e
         } catch (e: Exception) {
-            let observed = buildObservedError(
+            let observed = buildObservedSnapshot(
                 e,
                 elapsedMs(observeStart),
                 0,
@@ -455,7 +473,8 @@ public class RequestBuilder {
                 false,
                 selectionDecision
             )
-            notifyErrorHooks(observed)
+            notifyObserveHooks(observed)
+            notifyErrorHooks(Exception(observed.toLogLine()))
             throw e
         }
 
@@ -473,6 +492,13 @@ public class RequestBuilder {
 
                 let retryCount = attempt - 1
                 let durationMs = elapsedMs(observeStart)
+                let observed = buildSuccessfulObserveSnapshot(
+                    resp.status,
+                    durationMs,
+                    retryCount,
+                    collectObserveFields(),
+                    selectionDecision
+                )
                 injectObserveHeaders(
                     resp,
                     durationMs,
@@ -481,6 +507,7 @@ public class RequestBuilder {
                     collectObserveFields(),
                     selectionDecision
                 )
+                notifyObserveHooks(observed)
                 if (let Some(store) <- _cookieStore) {
                     store.addFromResponse(urlForHost, resp)
                 }
@@ -496,7 +523,7 @@ public class RequestBuilder {
                 }
                 let retryCount = attempt - 1
                 let durationMs = elapsedMs(observeStart)
-                let observed = buildObservedError(
+                let observed = buildObservedSnapshot(
                     e,
                     durationMs,
                     retryCount,
@@ -505,11 +532,20 @@ public class RequestBuilder {
                     canRetryMethod,
                     selectionDecision
                 )
-                notifyErrorHooks(observed)
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
                 throw e
             }
         }
         throw Exception("unreachable")
+    }
+
+    func notifyObserveHooks(observed: ClientObserveSnapshot): Unit {
+        for (hook in _observeHooks) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
     }
 
     func notifyErrorHooks(observed: Exception): Unit {
@@ -582,7 +618,7 @@ public class RequestBuilder {
         } catch (_: Exception) {}
     }
 
-    func buildObservedError(
+    func buildObservedSnapshot(
         origin: api2.ClientCryptoException,
         durationMs: Int64,
         retryCount: Int64,
@@ -590,7 +626,7 @@ public class RequestBuilder {
         phaseHint: String,
         canRetryMethod: Bool,
         selectionDecision: TransportSelectionDecision
-    ): Exception {
+    ): ClientObserveSnapshot {
         let envelope = buildTransportErrorEnvelope(
             origin,
             phaseHint,
@@ -598,19 +634,17 @@ public class RequestBuilder {
             selectionDecision: selectionDecision
         )
         let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
-        Exception(
-            formatTransportObservedError(
-                envelope,
-                durationMs,
-                retryCount,
-                fields,
-                selectionDecision: selectionDecision,
-                fallbackRecord: fallbackRecord
-            )
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
         )
     }
 
-    func buildObservedError(
+    func buildObservedSnapshot(
         origin: security.SecurityException,
         durationMs: Int64,
         retryCount: Int64,
@@ -618,7 +652,7 @@ public class RequestBuilder {
         phaseHint: String,
         canRetryMethod: Bool,
         selectionDecision: TransportSelectionDecision
-    ): Exception {
+    ): ClientObserveSnapshot {
         let envelope = buildTransportErrorEnvelope(
             origin,
             phaseHint,
@@ -626,19 +660,17 @@ public class RequestBuilder {
             selectionDecision: selectionDecision
         )
         let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
-        Exception(
-            formatTransportObservedError(
-                envelope,
-                durationMs,
-                retryCount,
-                fields,
-                selectionDecision: selectionDecision,
-                fallbackRecord: fallbackRecord
-            )
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
         )
     }
 
-    func buildObservedError(
+    func buildObservedSnapshot(
         origin: Exception,
         durationMs: Int64,
         retryCount: Int64,
@@ -646,7 +678,7 @@ public class RequestBuilder {
         phaseHint: String,
         canRetryMethod: Bool,
         selectionDecision: TransportSelectionDecision
-    ): Exception {
+    ): ClientObserveSnapshot {
         let envelope = buildTransportErrorEnvelope(
             origin,
             phaseHint,
@@ -654,15 +686,13 @@ public class RequestBuilder {
             selectionDecision: selectionDecision
         )
         let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
-        Exception(
-            formatTransportObservedError(
-                envelope,
-                durationMs,
-                retryCount,
-                fields,
-                selectionDecision: selectionDecision,
-                fallbackRecord: fallbackRecord
-            )
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
         )
     }
 

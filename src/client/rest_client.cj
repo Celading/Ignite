@@ -21,6 +21,7 @@ public class RestClient {
     var _requestHooks: ArrayList<ClientRequestHook> = ArrayList<ClientRequestHook>()
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
+    var _observeHooks: ArrayList<ClientObserveHook> = ArrayList<ClientObserveHook>()
 
     public init() {
         _client = ClientBuilder().build()
@@ -146,6 +147,15 @@ public class RestClient {
 
     public func onErrorHook(hook: ClientErrorHook): RestClient {
         onError(hook)
+    }
+
+    public func onObserve(hook: ClientObserveHook): RestClient {
+        _observeHooks.add(hook)
+        this
+    }
+
+    public func onObserveHook(hook: ClientObserveHook): RestClient {
+        onObserve(hook)
     }
 
     func requireCryptoConfig(): api2.ClientCryptoConfig {
@@ -296,7 +306,8 @@ public class RestClient {
             _allowExperimentalTransport,
             _requestHooks,
             _responseHooks,
-            _errorHooks
+            _errorHooks,
+            _observeHooks
         )
     }
 
