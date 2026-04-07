@@ -7,6 +7,14 @@ import ignite.governance.{
 }
 import std.collection.ArrayList
 
+class FailoverTestClock {
+    public var nowMs: Int64 = 0
+
+    public init(nowMs!: Int64 = 0) {
+        this.nowMs = nowMs
+    }
+}
+
 @Test
 public class KModeFailoverTestSuite {
     @TestCase
@@ -119,5 +127,41 @@ public class KModeFailoverTestSuite {
         @Assert(result.exitCause, "miss")
         @Assert(result.elapsedMs >= 0, true)
         @Assert(result.finishedAtMs >= result.startedAtMs, true)
+    }
+
+    @TestCase
+    public func testFailoverBudgetStopsFurtherAttempts(): Unit {
+        let waits = ArrayList<Int64>()
+        let attempts = ArrayList<Int64>()
+        let clock = FailoverTestClock()
+        let option = KModeFailoverOption(
+            enabled: true,
+            expectedResponse: "RESTART",
+            maxAttempts: 4,
+            intervalMs: 10,
+            totalBudgetMs: 15,
+            terminateOnMiss: false,
+            probeHook: { attempt, _ =>
+                attempts.add(attempt)
+                Some("MISS")
+            },
+            waitHook: { ms =>
+                waits.add(ms)
+                clock.nowMs += ms
+            },
+            clockHook: { => clock.nowMs }
+        )
+
+        let result = runKModeFailover(option, "panic:/budget")
+        @Assert(result.decision, KModeFailoverDecision.Continue)
+        @Assert(result.attempts, 2)
+        @Assert(result.matched, false)
+        @Assert(result.exitCause, "budget_exceeded")
+        @Assert(attempts.size, 2)
+        @Assert(waits.size, 2)
+        @Assert(waits[0], 10)
+        @Assert(waits[1], 5)
+        @Assert(result.elapsedMs, 15)
+        @Assert(result.finishedAtMs, 15)
     }
 }
