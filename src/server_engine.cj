@@ -40,6 +40,51 @@ public class ServerTransportTouchpoint {
     }
 }
 
+public class ServerStartupObserveEvent {
+    public let phase: String
+    public let addr: String
+    public let port: UInt16
+    public let scheme: String
+    public let tlsEnabled: Bool
+    public let transportTouchpoint: ?ServerTransportTouchpoint
+    public let failureStage: String
+    public let failureCode: String
+    public let igniteErrorCode: String
+    public let failureSource: String
+    public let hint: String
+    public let message: String
+
+    public init(
+        phase: String,
+        addr: String,
+        port: UInt16,
+        scheme: String,
+        tlsEnabled: Bool,
+        transportTouchpoint!: ?ServerTransportTouchpoint = None,
+        failureStage!: String = "-",
+        failureCode!: String = "-",
+        igniteErrorCode!: String = "-",
+        failureSource!: String = "-",
+        hint!: String = "-",
+        message!: String = ""
+    ) {
+        this.phase = phase
+        this.addr = addr
+        this.port = port
+        this.scheme = scheme
+        this.tlsEnabled = tlsEnabled
+        this.transportTouchpoint = transportTouchpoint
+        this.failureStage = failureStage
+        this.failureCode = failureCode
+        this.igniteErrorCode = igniteErrorCode
+        this.failureSource = failureSource
+        this.hint = hint
+        this.message = message
+    }
+}
+
+public type ServerStartupObserveHook = (ServerStartupObserveEvent) -> Unit
+
 public class ServerEngineListenOption {
     public let addr: String
     public let port: UInt16

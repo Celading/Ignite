@@ -35,10 +35,12 @@ public class App {
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
+    var _startupObserveHooks: ArrayList<ServerStartupObserveHook> = ArrayList<ServerStartupObserveHook>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
     var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
+    var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -269,6 +271,11 @@ public class App {
         this
     }
 
+    public func onStartupObserve(hook: ServerStartupObserveHook): App {
+        _startupObserveHooks.add(hook)
+        this
+    }
+
     public func serverEngine(engine: ServerEngine): App {
         _engine = engine
         this
@@ -280,6 +287,10 @@ public class App {
 
     public func lastServerTransportTouchpoint(): ?ServerTransportTouchpoint {
         _lastServerTransportTouchpoint
+    }
+
+    public func lastServerStartupObserveEvent(): ?ServerStartupObserveEvent {
+        _lastServerStartupObserveEvent
     }
 
     // ── Server lifecycle ──
@@ -339,6 +350,16 @@ public class App {
                         config.kmode,
                         config.enableBannerSignature
                     )
+                    notifyStartupObserve(
+                        ServerStartupObserveEvent(
+                            "ready",
+                            addr,
+                            port,
+                            scheme,
+                            tlsEnabled,
+                            transportTouchpoint: Some(transportTouchpoint)
+                        )
+                    )
                 }
             )
         } catch (e: api2.TlsConfigLoadException) {
@@ -346,6 +367,22 @@ public class App {
             println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
             println("[Ignite][TLS] tls_stage=${snapshot.stage} tls_error_code=${snapshot.tlsErrorCode} ignite_error_code=${snapshot.igniteErrorCode} source=${snapshot.sourceCode}")
             println("[Ignite][TLS] hint=${snapshot.hint}")
+            notifyStartupObserve(
+                ServerStartupObserveEvent(
+                    "failed",
+                    addr,
+                    port,
+                    scheme,
+                    tlsEnabled,
+                    transportTouchpoint: Some(transportTouchpoint),
+                    failureStage: snapshot.stage,
+                    failureCode: snapshot.tlsErrorCode,
+                    igniteErrorCode: snapshot.igniteErrorCode,
+                    failureSource: snapshot.sourceCode,
+                    hint: snapshot.hint,
+                    message: e.message
+                )
+            )
         } catch (e: Exception) {
             let message = e.message
             let snapshot = api2.serverStartupFailureSnapshot(message)
@@ -355,6 +392,21 @@ public class App {
             if (snapshot.listenErrorCode == "ADDRESS_IN_USE") {
                 println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
             }
+            notifyStartupObserve(
+                ServerStartupObserveEvent(
+                    "failed",
+                    addr,
+                    port,
+                    scheme,
+                    tlsEnabled,
+                    transportTouchpoint: Some(transportTouchpoint),
+                    failureStage: snapshot.stage,
+                    failureCode: snapshot.listenErrorCode,
+                    igniteErrorCode: snapshot.igniteErrorCode,
+                    hint: snapshot.hint,
+                    message: message
+                )
+            )
         }
     }
 
@@ -431,6 +483,13 @@ public class App {
         let list = ArrayList<Handler>()
         list.add(handler)
         list
+    }
+
+    func notifyStartupObserve(event: ServerStartupObserveEvent): Unit {
+        _lastServerStartupObserveEvent = Some(event)
+        for (hook in _startupObserveHooks) {
+            hook(event)
+        }
     }
 
     func setupSwaggerRoute(): Unit {
