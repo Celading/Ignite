@@ -35,6 +35,9 @@ public class ServerStartupObserveTestSuite {
                 @Assert(event.phase, "ready")
                 @Assert(event.failureCode, "-")
                 @Assert(event.scheme, "http")
+                let json = event.toJson()
+                @Assert(contains(json, "\"phase\":\"ready\""), true)
+                @Assert(contains(json, "\"selectedBackend\":\"stdx-http-server\""), true)
             case None => @Fail("expected startup observe event")
         }
     }
@@ -64,6 +67,9 @@ public class ServerStartupObserveTestSuite {
                 @Assert(event.failureStage, "listen_startup")
                 @Assert(event.igniteErrorCode, "LISTEN_ADDRESS_IN_USE")
                 @Assert(event.failureSource, "-")
+                let json = event.toJson()
+                @Assert(contains(json, "\"failureCode\":\"ADDRESS_IN_USE\""), true)
+                @Assert(contains(json, "\"transportTouchpoint\":"), true)
             case None => @Fail("expected listen failure observe event")
         }
     }
@@ -98,6 +104,9 @@ public class ServerStartupObserveTestSuite {
                 @Assert(event.tlsEnabled, true)
                 @Assert(event.failureStage, "jinguiSSL_precheck")
                 @Assert(event.igniteErrorCode, "TLS_VERIFY_FAILED")
+                let json = event.toJson()
+                @Assert(contains(json, "\"failureSource\":\"VERIFY_FAILED\""), true)
+                @Assert(contains(json, "\"tlsEnabled\":true"), true)
             case None => @Fail("expected tls failure observe event")
         }
     }

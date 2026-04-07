@@ -38,6 +38,19 @@ public class ServerTransportTouchpoint {
         this.tlsEnabled = tlsEnabled
         this.fallbackReason = fallbackReason
     }
+
+    public func toJson(): String {
+        #"{"candidateOrder":"# + "\"" + serverEscapeJson(candidateOrder) + "\"" +
+        #","blockedCandidates":"# + "\"" + serverEscapeJson(blockedCandidates) + "\"" +
+        #","selectedBackend":"# + "\"" + serverEscapeJson(selectedBackend) + "\"" +
+        #","selectedReason":"# + "\"" + serverEscapeJson(selectedReason) + "\"" +
+        #","providerId":"# + "\"" + serverEscapeJson(providerId) + "\"" +
+        #","publicPath":"# + "\"" + serverEscapeJson(publicPath) + "\"" +
+        #","riskLevel":"# + "\"" + serverEscapeJson(riskLevel) + "\"" +
+        #","tlsEnabled":"# + serverBoolToJson(tlsEnabled) +
+        #","fallbackReason":"# + "\"" + serverEscapeJson(fallbackReason) + "\"" +
+        #"}"#
+    }
 }
 
 public class ServerStartupObserveEvent {
@@ -80,6 +93,27 @@ public class ServerStartupObserveEvent {
         this.failureSource = failureSource
         this.hint = hint
         this.message = message
+    }
+
+    public func toJson(): String {
+        let touchpointJson = if (let Some(touchpoint) <- transportTouchpoint) {
+            touchpoint.toJson()
+        } else {
+            "null"
+        }
+        #"{"phase":"# + "\"" + serverEscapeJson(phase) + "\"" +
+        #","addr":"# + "\"" + serverEscapeJson(addr) + "\"" +
+        #","port":"# + "${port}" +
+        #","scheme":"# + "\"" + serverEscapeJson(scheme) + "\"" +
+        #","tlsEnabled":"# + serverBoolToJson(tlsEnabled) +
+        #","failureStage":"# + "\"" + serverEscapeJson(failureStage) + "\"" +
+        #","failureCode":"# + "\"" + serverEscapeJson(failureCode) + "\"" +
+        #","igniteErrorCode":"# + "\"" + serverEscapeJson(igniteErrorCode) + "\"" +
+        #","failureSource":"# + "\"" + serverEscapeJson(failureSource) + "\"" +
+        #","hint":"# + "\"" + serverEscapeJson(hint) + "\"" +
+        #","message":"# + "\"" + serverEscapeJson(message) + "\"" +
+        #","transportTouchpoint":"# + touchpointJson +
+        #"}"#
     }
 }
 
@@ -275,4 +309,12 @@ func normalizeServerProviderId(raw: String, tlsEnabled: Bool): String {
         return "tls:jinguissl"
     }
     "tls:" + raw
+}
+
+func serverBoolToJson(value: Bool): String {
+    if (value) { "true" } else { "false" }
+}
+
+func serverEscapeJson(value: String): String {
+    escapeJsonText(value)
 }
