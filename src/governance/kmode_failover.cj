@@ -1,6 +1,7 @@
 package ignite.governance
 
 import ignite.client.RestClient
+import std.sync.Mutex
 import std.time.{DateTime, MonoTime}
 
 public type KModeFailoverProbeHook = (Int64, String) -> ?String
@@ -49,11 +50,13 @@ public class KModeFailoverOption {
     public var maxAttempts: Int64 = 3
     public var intervalMs: Int64 = 1000
     public var totalBudgetMs: Int64 = 0
+    public var cooldownMs: Int64 = 0
     public var restartOnMatch: Bool = true
     public var terminateOnMiss: Bool = true
     public var probeHook: ?KModeFailoverProbeHook = None
     public var waitHook: ?KModeFailoverWaitHook = None
     public var clockHook: ?KModeFailoverClockHook = None
+    let coordinator = KModeFailoverCoordinator()
 
     public init(
         enabled!: Bool = false,
@@ -67,6 +70,7 @@ public class KModeFailoverOption {
         maxAttempts!: Int64 = 3,
         intervalMs!: Int64 = 1000,
         totalBudgetMs!: Int64 = 0,
+        cooldownMs!: Int64 = 0,
         restartOnMatch!: Bool = true,
         terminateOnMiss!: Bool = true,
         probeHook!: ?KModeFailoverProbeHook = None,
@@ -84,6 +88,7 @@ public class KModeFailoverOption {
         this.maxAttempts = if (maxAttempts > 0) { maxAttempts } else { 1 }
         this.intervalMs = if (intervalMs >= 0) { intervalMs } else { 0 }
         this.totalBudgetMs = if (totalBudgetMs >= 0) { totalBudgetMs } else { 0 }
+        this.cooldownMs = if (cooldownMs >= 0) { cooldownMs } else { 0 }
         this.restartOnMatch = restartOnMatch
         this.terminateOnMiss = terminateOnMiss
         this.probeHook = probeHook
@@ -132,18 +137,24 @@ public class KModeFailoverResult {
 public func runKModeFailover(option: KModeFailoverOption, reason: String): KModeFailoverResult {
     let startMono = MonoTime.now()
     let startedAtMs = currentFailoverWallClockMs(option)
+    if (let Some(bypassResult) <- option.coordinator.tryBegin(option, reason, startedAtMs)) {
+        return bypassResult
+    }
     if (!option.enabled) {
-        return buildFailoverResult(
+        return option.coordinator.finish(
             option,
-            Continue,
-            0,
-            false,
-            -1,
-            "",
-            reason,
-            "disabled",
-            startMono,
-            startedAtMs
+            buildFailoverResult(
+                option,
+                Continue,
+                0,
+                false,
+                -1,
+                "",
+                reason,
+                "disabled",
+                startMono,
+                startedAtMs
+            )
         )
     }
 
@@ -153,17 +164,20 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
 
     while (attempt <= option.maxAttempts) {
         if (remainingFailoverBudgetMs(option, startMono, startedAtMs) == 0) {
-            return buildFailoverResult(
+            return option.coordinator.finish(
                 option,
-                finalMissDecision(option),
-                attempt - 1,
-                false,
-                lastStatus,
-                lastResponse,
-                reason,
-                "budget_exceeded",
-                startMono,
-                startedAtMs
+                buildFailoverResult(
+                    option,
+                    finalMissDecision(option),
+                    attempt - 1,
+                    false,
+                    lastStatus,
+                    lastResponse,
+                    reason,
+                    "budget_exceeded",
+                    startMono,
+                    startedAtMs
+                )
             )
         }
         let probe = executeProbe(option, attempt, reason)
@@ -172,17 +186,20 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
             lastResponse = response
             if (status >= 200 && status < 300 && response.trimAscii() == option.expectedResponse) {
                 let decision = if (option.restartOnMatch) { Restart } else { Continue }
-                return buildFailoverResult(
+                return option.coordinator.finish(
                     option,
-                    decision,
-                    attempt,
-                    true,
-                    lastStatus,
-                    lastResponse,
-                    reason,
-                    "matched",
-                    startMono,
-                    startedAtMs
+                    buildFailoverResult(
+                        option,
+                        decision,
+                        attempt,
+                        true,
+                        lastStatus,
+                        lastResponse,
+                        reason,
+                        "matched",
+                        startMono,
+                        startedAtMs
+                    )
                 )
             }
         } else {
@@ -192,17 +209,20 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
         if (attempt < option.maxAttempts && option.intervalMs > 0) {
             let waitMs = resolveFailoverWaitMs(option, startMono, startedAtMs)
             if (waitMs == 0) {
-                return buildFailoverResult(
+                return option.coordinator.finish(
                     option,
-                    finalMissDecision(option),
-                    attempt,
-                    false,
-                    lastStatus,
-                    lastResponse,
-                    reason,
-                    "budget_exceeded",
-                    startMono,
-                    startedAtMs
+                    buildFailoverResult(
+                        option,
+                        finalMissDecision(option),
+                        attempt,
+                        false,
+                        lastStatus,
+                        lastResponse,
+                        reason,
+                        "budget_exceeded",
+                        startMono,
+                        startedAtMs
+                    )
                 )
             }
             waitForFailoverInterval(option, waitMs)
@@ -211,17 +231,20 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
     }
 
     let finalDecision = finalMissDecision(option)
-    buildFailoverResult(
+    option.coordinator.finish(
         option,
-        finalDecision,
-        option.maxAttempts,
-        false,
-        lastStatus,
-        lastResponse,
-        reason,
-        "miss",
-        startMono,
-        startedAtMs
+        buildFailoverResult(
+            option,
+            finalDecision,
+            option.maxAttempts,
+            false,
+            lastStatus,
+            lastResponse,
+            reason,
+            "miss",
+            startMono,
+            startedAtMs
+        )
     )
 }
 
@@ -375,4 +398,73 @@ func finalMissDecision(option: KModeFailoverOption): KModeFailoverDecision {
         return Terminate
     }
     Continue
+}
+
+class KModeFailoverCoordinator {
+    let mtx = Mutex()
+    var running: Bool = false
+    var cooldownUntilMs: Int64 = 0
+    var lastResult: ?KModeFailoverResult = None
+
+    init() {}
+
+    func tryBegin(
+        option: KModeFailoverOption,
+        reason: String,
+        nowMs: Int64
+    ): ?KModeFailoverResult {
+        var output: ?KModeFailoverResult = None
+        synchronized(mtx) {
+            if (running) {
+                output = Some(buildFailoverBypassResult(option, reason, nowMs, "single_flight_skip", lastResult))
+            } else if (option.cooldownMs > 0 && nowMs < cooldownUntilMs) {
+                output = Some(buildFailoverBypassResult(option, reason, nowMs, "cooldown_skip", lastResult))
+            } else {
+                running = true
+            }
+        }
+        output
+    }
+
+    func finish(option: KModeFailoverOption, result: KModeFailoverResult): KModeFailoverResult {
+        synchronized(mtx) {
+            running = false
+            lastResult = Some(result)
+            if (option.cooldownMs > 0) {
+                cooldownUntilMs = result.finishedAtMs + option.cooldownMs
+            } else {
+                cooldownUntilMs = result.finishedAtMs
+            }
+        }
+        result
+    }
+}
+
+func buildFailoverBypassResult(
+    option: KModeFailoverOption,
+    reason: String,
+    nowMs: Int64,
+    exitCause: String,
+    previous: ?KModeFailoverResult
+): KModeFailoverResult {
+    var decision = finalMissDecision(option)
+    var lastStatus: Int64 = -1
+    var lastResponse = ""
+    if (let Some(result) <- previous) {
+        decision = result.decision
+        lastStatus = result.lastStatus
+        lastResponse = result.lastResponse
+    }
+    KModeFailoverResult(
+        decision,
+        0,
+        false,
+        lastStatus,
+        lastResponse,
+        reason,
+        exitCause,
+        nowMs,
+        nowMs,
+        0
+    )
 }

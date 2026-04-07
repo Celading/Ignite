@@ -6,12 +6,49 @@ import ignite.governance.{
     runKModeFailover
 }
 import std.collection.ArrayList
+import std.sync.Mutex
 
 class FailoverTestClock {
     public var nowMs: Int64 = 0
 
     public init(nowMs!: Int64 = 0) {
         this.nowMs = nowMs
+    }
+}
+
+class FailoverProbeGate {
+    let mtx = Mutex()
+    var entered: Bool = false
+    var released: Bool = false
+
+    public init() {}
+
+    public func markEntered(): Unit {
+        synchronized(mtx) {
+            entered = true
+        }
+    }
+
+    public func isEntered(): Bool {
+        var output = false
+        synchronized(mtx) {
+            output = entered
+        }
+        output
+    }
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        var output = false
+        synchronized(mtx) {
+            output = released
+        }
+        output
     }
 }
 
@@ -163,5 +200,82 @@ public class KModeFailoverTestSuite {
         @Assert(waits[1], 5)
         @Assert(result.elapsedMs, 15)
         @Assert(result.finishedAtMs, 15)
+    }
+
+    @TestCase
+    public func testFailoverCooldownSkipsRepeatedRunWithinWindow(): Unit {
+        let attempts = ArrayList<Int64>()
+        let clock = FailoverTestClock()
+        let option = KModeFailoverOption(
+            enabled: true,
+            expectedResponse: "RESTART",
+            maxAttempts: 1,
+            intervalMs: 0,
+            cooldownMs: 20,
+            terminateOnMiss: false,
+            probeHook: { attempt, _ =>
+                attempts.add(attempt)
+                Some("RESTART")
+            },
+            clockHook: { => clock.nowMs }
+        )
+
+        let first = runKModeFailover(option, "panic:/cooldown:first")
+        @Assert(first.decision, KModeFailoverDecision.Restart)
+        @Assert(first.exitCause, "matched")
+        @Assert(attempts.size, 1)
+
+        clock.nowMs = 5
+        let second = runKModeFailover(option, "panic:/cooldown:second")
+        @Assert(second.decision, KModeFailoverDecision.Restart)
+        @Assert(second.exitCause, "cooldown_skip")
+        @Assert(second.attempts, 0)
+        @Assert(attempts.size, 1)
+
+        clock.nowMs = 25
+        let third = runKModeFailover(option, "panic:/cooldown:third")
+        @Assert(third.decision, KModeFailoverDecision.Restart)
+        @Assert(third.exitCause, "matched")
+        @Assert(attempts.size, 2)
+    }
+
+    @TestCase
+    public func testFailoverSingleFlightSkipsConcurrentProbe(): Unit {
+        let gate = FailoverProbeGate()
+        let option = KModeFailoverOption(
+            enabled: true,
+            expectedResponse: "RESTART",
+            maxAttempts: 1,
+            intervalMs: 0,
+            terminateOnMiss: false,
+            probeHook: { _, _ =>
+                gate.markEntered()
+                while (!gate.isReleased()) {
+                    sleep(Duration.millisecond * 5)
+                }
+                Some("RESTART")
+            }
+        )
+
+        let future = spawn {
+            runKModeFailover(option, "panic:/single-flight:first")
+        }
+
+        var spin: Int64 = 0
+        while (!gate.isEntered() && spin < 40) {
+            sleep(Duration.millisecond * 5)
+            spin += 1
+        }
+        @Assert(gate.isEntered(), true)
+
+        let skipped = runKModeFailover(option, "panic:/single-flight:second")
+        @Assert(skipped.decision, KModeFailoverDecision.Continue)
+        @Assert(skipped.exitCause, "single_flight_skip")
+        @Assert(skipped.attempts, 0)
+
+        gate.release()
+        let first = future.get(Duration.second * 1)
+        @Assert(first.decision, KModeFailoverDecision.Restart)
+        @Assert(first.exitCause, "matched")
     }
 }

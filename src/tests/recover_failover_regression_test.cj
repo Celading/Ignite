@@ -6,6 +6,14 @@ import ignite.governance.AuditConfig
 import ignite.middleware.*
 import std.collection.ArrayList
 
+class RecoverFailoverTestClock {
+    public var nowMs: Int64 = 0
+
+    public init(nowMs!: Int64 = 0) {
+        this.nowMs = nowMs
+    }
+}
+
 @Test
 public class RecoverFailoverRegressionTestSuite {
     @TestCase
@@ -87,6 +95,47 @@ public class RecoverFailoverRegressionTestSuite {
         @Assert(resp.header("x-ignite-failover-attempts") ?? "", "2")
         @Assert(terminateHooks.size, 1)
         @Assert(terminateHooks[0], "miss:terminate:2")
+    }
+
+    @TestCase
+    public func testRecoverCooldownSkipReturnsGuardCoolingDown(): Unit {
+        let attempts = ArrayList<Int64>()
+        let clock = RecoverFailoverTestClock()
+        let app = App(config: Config(kmode: true))
+        app.use(
+            recoverMiddleware(
+                config: RecoverConfig(
+                    kmodeFailover: KModeFailoverOption(
+                        enabled: true,
+                        maxAttempts: 1,
+                        intervalMs: 0,
+                        cooldownMs: 20,
+                        terminateOnMiss: false,
+                        probeHook: { attempt, _ =>
+                            attempts.add(attempt)
+                            Some("RESTART")
+                        },
+                        clockHook: { => clock.nowMs }
+                    ),
+                    onKModeRestart: { _, _, _ => () }
+                )
+            )
+        )
+        app.get("/panic", { _ => throw Exception("cooldown-me") })
+
+        let first = app.handleForTest("GET", "/panic")
+        @Assert(first.status, UInt16(503))
+        @Assert(first.body, "Service Restart Requested")
+        @Assert(first.header("x-ignite-failover-exit-cause") ?? "", "matched")
+        @Assert(attempts.size, 1)
+
+        clock.nowMs = 5
+        let second = app.handleForTest("GET", "/panic")
+        @Assert(second.status, UInt16(503))
+        @Assert(second.body, "Service Guard Cooling Down")
+        @Assert(second.header("x-ignite-failover-exit-cause") ?? "", "cooldown_skip")
+        @Assert(second.header("x-ignite-failover-decision") ?? "", "restart")
+        @Assert(attempts.size, 1)
     }
 
     func contains(text: String, target: String): Bool {

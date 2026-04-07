@@ -38,6 +38,10 @@ public func recoverMiddleware(config!: RecoverConfig = RecoverConfig()): Handler
             ctx.next()
         } catch (e: Exception) {
             if (let Some(result) <- runFailoverIfNeeded(ctx, e, config)) {
+                if (shouldHandleGuardActive(result)) {
+                    handleGuardActiveDecision(ctx, result)
+                    return
+                }
                 if (result.decision == KModeFailoverDecision.Restart) {
                     handleRestartDecision(ctx, e, result, config)
                     return
@@ -108,6 +112,21 @@ func annotateFailoverContext(ctx: Ctx, result: KModeFailoverResult): Unit {
     ctx.setHeader("x-ignite-failover-elapsed-ms", result.elapsedMs.toString())
     ctx.setLocal("__ignite_guard_event", "kmode_failover")
     ctx.setLocal("__ignite_guard_detail", formatFailoverDetail(result))
+}
+
+func shouldHandleGuardActive(result: KModeFailoverResult): Bool {
+    result.exitCause == "single_flight_skip" || result.exitCause == "cooldown_skip"
+}
+
+func handleGuardActiveDecision(ctx: Ctx, result: KModeFailoverResult): Unit {
+    annotateFailoverContext(ctx, result)
+    println("[Ignite Recovery] KMode failover guard active exitCause=${result.exitCause}")
+    let body = if (result.exitCause == "cooldown_skip") {
+        "Service Guard Cooling Down"
+    } else {
+        "Service Guard Active"
+    }
+    let _ = ctx.status(503).sendString(body)
 }
 
 func formatFailoverDetail(result: KModeFailoverResult): String {
