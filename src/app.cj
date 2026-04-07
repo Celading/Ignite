@@ -38,6 +38,7 @@ public class App {
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
+    var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -277,6 +278,10 @@ public class App {
         serverEngine(engine)
     }
 
+    public func lastServerTransportTouchpoint(): ?ServerTransportTouchpoint {
+        _lastServerTransportTouchpoint
+    }
+
     // ── Server lifecycle ──
 
     public func listen(addr: String, port: UInt16): Unit {
@@ -299,6 +304,7 @@ public class App {
         } catch (_: Exception) { }
         let currentPid = pidStr
         let transportTouchpoint = buildServerTransportTouchpoint(addr, port, hasTls)
+        _lastServerTransportTouchpoint = Some(transportTouchpoint)
 
         let option = ServerEngineListenOption(
             addr,

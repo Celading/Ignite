@@ -28,6 +28,13 @@ public class ServerEngineAbstractionTestSuite {
                 @Assert(touchpoint.providerId, "-")
             case None => @Fail("expected server transport touchpoint")
         }
+        match (app.lastServerTransportTouchpoint()) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.publicPath, "stable-default")
+                @Assert(touchpoint.providerId, "-")
+            case None => @Fail("expected app transport touchpoint snapshot")
+        }
     }
 }
 

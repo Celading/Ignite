@@ -75,6 +75,20 @@ public class DeploymentDualListenerPatternTestSuite {
                 @Assert(containsText(touchpoint.candidateOrder, "jinguissl-provider-candidate"), true)
             case None => @Fail("expected https transport touchpoint")
         }
+        match (httpApp.lastServerTransportTouchpoint()) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.providerId, "-")
+                @Assert(touchpoint.tlsEnabled, false)
+            case None => @Fail("expected http app transport touchpoint snapshot")
+        }
+        match (httpsApp.lastServerTransportTouchpoint()) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.providerId, "tls:stdx-default")
+                @Assert(touchpoint.tlsEnabled, true)
+            case None => @Fail("expected https app transport touchpoint snapshot")
+        }
     }
 }
 
