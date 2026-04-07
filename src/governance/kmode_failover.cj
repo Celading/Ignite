@@ -51,6 +51,7 @@ public class KModeFailoverOption {
     public var intervalMs: Int64 = 1000
     public var totalBudgetMs: Int64 = 0
     public var cooldownMs: Int64 = 0
+    public var repeatWindowMs: Int64 = 0
     public var restartOnMatch: Bool = true
     public var terminateOnMiss: Bool = true
     public var probeHook: ?KModeFailoverProbeHook = None
@@ -71,6 +72,7 @@ public class KModeFailoverOption {
         intervalMs!: Int64 = 1000,
         totalBudgetMs!: Int64 = 0,
         cooldownMs!: Int64 = 0,
+        repeatWindowMs!: Int64 = 0,
         restartOnMatch!: Bool = true,
         terminateOnMiss!: Bool = true,
         probeHook!: ?KModeFailoverProbeHook = None,
@@ -89,6 +91,7 @@ public class KModeFailoverOption {
         this.intervalMs = if (intervalMs >= 0) { intervalMs } else { 0 }
         this.totalBudgetMs = if (totalBudgetMs >= 0) { totalBudgetMs } else { 0 }
         this.cooldownMs = if (cooldownMs >= 0) { cooldownMs } else { 0 }
+        this.repeatWindowMs = if (repeatWindowMs >= 0) { repeatWindowMs } else { 0 }
         this.restartOnMatch = restartOnMatch
         this.terminateOnMiss = terminateOnMiss
         this.probeHook = probeHook
@@ -405,6 +408,8 @@ class KModeFailoverCoordinator {
     var running: Bool = false
     var cooldownUntilMs: Int64 = 0
     var lastResult: ?KModeFailoverResult = None
+    var lastReason: String = ""
+    var lastReasonAtMs: Int64 = -1
 
     init() {}
 
@@ -417,6 +422,8 @@ class KModeFailoverCoordinator {
         synchronized(mtx) {
             if (running) {
                 output = Some(buildFailoverBypassResult(option, reason, nowMs, "single_flight_skip", lastResult))
+            } else if (shouldSkipRepeatedReason(option, reason, nowMs)) {
+                output = Some(buildFailoverBypassResult(option, reason, nowMs, "repeat_panic_skip", lastResult))
             } else if (option.cooldownMs > 0 && nowMs < cooldownUntilMs) {
                 output = Some(buildFailoverBypassResult(option, reason, nowMs, "cooldown_skip", lastResult))
             } else {
@@ -430,6 +437,8 @@ class KModeFailoverCoordinator {
         synchronized(mtx) {
             running = false
             lastResult = Some(result)
+            lastReason = result.reason
+            lastReasonAtMs = result.finishedAtMs
             if (option.cooldownMs > 0) {
                 cooldownUntilMs = result.finishedAtMs + option.cooldownMs
             } else {
@@ -437,6 +446,20 @@ class KModeFailoverCoordinator {
             }
         }
         result
+    }
+
+    func shouldSkipRepeatedReason(option: KModeFailoverOption, reason: String, nowMs: Int64): Bool {
+        if (option.repeatWindowMs <= 0) {
+            return false
+        }
+        if (lastReasonAtMs < 0) {
+            return false
+        }
+        if (reason != lastReason) {
+            return false
+        }
+        let elapsed = nowMs - lastReasonAtMs
+        elapsed >= 0 && elapsed < option.repeatWindowMs
     }
 }
 

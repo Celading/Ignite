@@ -278,4 +278,40 @@ public class KModeFailoverTestSuite {
         @Assert(first.decision, KModeFailoverDecision.Restart)
         @Assert(first.exitCause, "matched")
     }
+
+    @TestCase
+    public func testFailoverRepeatWindowSkipsSameReasonBurst(): Unit {
+        let attempts = ArrayList<Int64>()
+        let clock = FailoverTestClock()
+        let option = KModeFailoverOption(
+            enabled: true,
+            expectedResponse: "RESTART",
+            maxAttempts: 1,
+            intervalMs: 0,
+            repeatWindowMs: 20,
+            terminateOnMiss: false,
+            probeHook: { attempt, _ =>
+                attempts.add(attempt)
+                Some("RESTART")
+            },
+            clockHook: { => clock.nowMs }
+        )
+
+        let first = runKModeFailover(option, "panic:/repeat:same")
+        @Assert(first.decision, KModeFailoverDecision.Restart)
+        @Assert(first.exitCause, "matched")
+        @Assert(attempts.size, 1)
+
+        clock.nowMs = 5
+        let second = runKModeFailover(option, "panic:/repeat:same")
+        @Assert(second.decision, KModeFailoverDecision.Restart)
+        @Assert(second.exitCause, "repeat_panic_skip")
+        @Assert(second.attempts, 0)
+        @Assert(attempts.size, 1)
+
+        clock.nowMs = 6
+        let third = runKModeFailover(option, "panic:/repeat:other")
+        @Assert(third.exitCause, "matched")
+        @Assert(attempts.size, 2)
+    }
 }

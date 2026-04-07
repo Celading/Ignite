@@ -115,18 +115,26 @@ func annotateFailoverContext(ctx: Ctx, result: KModeFailoverResult): Unit {
 }
 
 func shouldHandleGuardActive(result: KModeFailoverResult): Bool {
-    result.exitCause == "single_flight_skip" || result.exitCause == "cooldown_skip"
+    result.exitCause == "single_flight_skip" ||
+    result.exitCause == "cooldown_skip" ||
+    result.exitCause == "repeat_panic_skip"
 }
 
 func handleGuardActiveDecision(ctx: Ctx, result: KModeFailoverResult): Unit {
     annotateFailoverContext(ctx, result)
     println("[Ignite Recovery] KMode failover guard active exitCause=${result.exitCause}")
-    let body = if (result.exitCause == "cooldown_skip") {
-        "Service Guard Cooling Down"
-    } else {
-        "Service Guard Active"
-    }
+    let body = guardActiveBody(result.exitCause)
     let _ = ctx.status(503).sendString(body)
+}
+
+func guardActiveBody(exitCause: String): String {
+    if (exitCause == "cooldown_skip") {
+        return "Service Guard Cooling Down"
+    }
+    if (exitCause == "repeat_panic_skip") {
+        return "Repeated Panic Suppressed"
+    }
+    "Service Guard Active"
 }
 
 func formatFailoverDetail(result: KModeFailoverResult): String {
