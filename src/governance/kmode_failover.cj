@@ -1,6 +1,7 @@
 package ignite.governance
 
 import ignite.client.RestClient
+import std.time.{DateTime, MonoTime}
 
 public type KModeFailoverProbeHook = (Int64, String) -> ?String
 public type KModeFailoverWaitHook = (Int64) -> Unit
@@ -91,6 +92,10 @@ public class KModeFailoverResult {
     public let lastStatus: Int64
     public let lastResponse: String
     public let reason: String
+    public let exitCause: String
+    public let startedAtMs: Int64
+    public let finishedAtMs: Int64
+    public let elapsedMs: Int64
 
     public init(
         decision: KModeFailoverDecision,
@@ -98,7 +103,11 @@ public class KModeFailoverResult {
         matched: Bool,
         lastStatus: Int64,
         lastResponse: String,
-        reason: String
+        reason: String,
+        exitCause: String,
+        startedAtMs: Int64,
+        finishedAtMs: Int64,
+        elapsedMs: Int64
     ) {
         this.decision = decision
         this.attempts = attempts
@@ -106,18 +115,27 @@ public class KModeFailoverResult {
         this.lastStatus = lastStatus
         this.lastResponse = lastResponse
         this.reason = reason
+        this.exitCause = exitCause
+        this.startedAtMs = startedAtMs
+        this.finishedAtMs = finishedAtMs
+        this.elapsedMs = elapsedMs
     }
 }
 
 public func runKModeFailover(option: KModeFailoverOption, reason: String): KModeFailoverResult {
+    let startMono = MonoTime.now()
+    let startedAtMs = currentFailoverWallClockMs()
     if (!option.enabled) {
-        return KModeFailoverResult(
+        return buildFailoverResult(
             Continue,
             0,
             false,
             -1,
             "",
-            reason
+            reason,
+            "disabled",
+            startMono,
+            startedAtMs
         )
     }
 
@@ -132,13 +150,16 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
             lastResponse = response
             if (status >= 200 && status < 300 && response.trimAscii() == option.expectedResponse) {
                 let decision = if (option.restartOnMatch) { Restart } else { Continue }
-                return KModeFailoverResult(
+                return buildFailoverResult(
                     decision,
                     attempt,
                     true,
                     lastStatus,
                     lastResponse,
-                    reason
+                    reason,
+                    "matched",
+                    startMono,
+                    startedAtMs
                 )
             }
         } else {
@@ -152,13 +173,16 @@ public func runKModeFailover(option: KModeFailoverOption, reason: String): KMode
     }
 
     let finalDecision = if (option.terminateOnMiss) { Terminate } else { Continue }
-    KModeFailoverResult(
+    buildFailoverResult(
         finalDecision,
         option.maxAttempts,
         false,
         lastStatus,
         lastResponse,
-        reason
+        reason,
+        "miss",
+        startMono,
+        startedAtMs
     )
 }
 
@@ -222,4 +246,35 @@ func waitForFailoverInterval(option: KModeFailoverOption, ms: Int64): Unit {
         return
     }
     sleep(Duration.millisecond * ms)
+}
+
+func buildFailoverResult(
+    decision: KModeFailoverDecision,
+    attempts: Int64,
+    matched: Bool,
+    lastStatus: Int64,
+    lastResponse: String,
+    reason: String,
+    exitCause: String,
+    startMono: MonoTime,
+    startedAtMs: Int64
+): KModeFailoverResult {
+    let finishedAtMs = currentFailoverWallClockMs()
+    let elapsedMs = (MonoTime.now() - startMono).toMilliseconds()
+    KModeFailoverResult(
+        decision,
+        attempts,
+        matched,
+        lastStatus,
+        lastResponse,
+        reason,
+        exitCause,
+        startedAtMs,
+        finishedAtMs,
+        elapsedMs
+    )
+}
+
+func currentFailoverWallClockMs(): Int64 {
+    DateTime.now().toUnixTimeStamp().toMilliseconds()
 }

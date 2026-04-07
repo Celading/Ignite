@@ -75,6 +75,7 @@ func handleRestartDecision(
     result: KModeFailoverResult,
     config: RecoverConfig
 ): Unit {
+    annotateFailoverContext(ctx, result)
     println("[Ignite Recovery] KMode failover decision=restart attempts=${result.attempts} lastStatus=${result.lastStatus}")
     let _ = ctx.status(503).sendString("Service Restart Requested")
     if (let Some(hook) <- config.onKModeRestart) {
@@ -90,6 +91,7 @@ func handleTerminateDecision(
     result: KModeFailoverResult,
     config: RecoverConfig
 ): Unit {
+    annotateFailoverContext(ctx, result)
     println("[Ignite Recovery] KMode failover decision=terminate attempts=${result.attempts} lastStatus=${result.lastStatus}")
     let _ = ctx.status(503).sendString("Service Terminated by KMode Failover")
     if (let Some(hook) <- config.onKModeTerminate) {
@@ -97,4 +99,29 @@ func handleTerminateDecision(
     } else {
         ctx.app().shutdown()
     }
+}
+
+func annotateFailoverContext(ctx: Ctx, result: KModeFailoverResult): Unit {
+    ctx.setHeader("x-ignite-failover-decision", result.decision.toString())
+    ctx.setHeader("x-ignite-failover-exit-cause", result.exitCause)
+    ctx.setHeader("x-ignite-failover-attempts", result.attempts.toString())
+    ctx.setHeader("x-ignite-failover-elapsed-ms", result.elapsedMs.toString())
+    ctx.setLocal("__ignite_guard_event", "kmode_failover")
+    ctx.setLocal("__ignite_guard_detail", formatFailoverDetail(result))
+}
+
+func formatFailoverDetail(result: KModeFailoverResult): String {
+    "decision=${result.decision.toString()};" +
+    "exitCause=${result.exitCause};" +
+    "attempts=${result.attempts};" +
+    "matched=${boolWord(result.matched)};" +
+    "lastStatus=${result.lastStatus};" +
+    "elapsedMs=${result.elapsedMs}"
+}
+
+func boolWord(v: Bool): String {
+    if (v) {
+        return "true"
+    }
+    "false"
 }

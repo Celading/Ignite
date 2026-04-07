@@ -56,6 +56,9 @@ public func auditMiddleware(config!: AuditMiddlewareConfig = AuditMiddlewareConf
         event.securityCode = ctx.getLocal("__ignite_sec_code") ?? ""
         event.securitySource = ctx.getLocal("__ignite_sec_source") ?? ""
         if (event.detail.size == 0) {
+            event.detail = ctx.getLocal("__ignite_guard_detail") ?? ""
+        }
+        if (event.detail.size == 0) {
             event.detail = ctx.getLocal("__ignite_sec_detail") ?? ""
         }
         if (event.securityEvent.size > 0 && event.riskLevel > 2) {

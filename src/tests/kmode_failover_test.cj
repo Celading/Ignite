@@ -16,6 +16,7 @@ public class KModeFailoverTestSuite {
         @Assert(result.decision, KModeFailoverDecision.Continue)
         @Assert(result.attempts, 0)
         @Assert(result.matched, false)
+        @Assert(result.exitCause, "disabled")
     }
 
     @TestCase
@@ -32,6 +33,7 @@ public class KModeFailoverTestSuite {
         @Assert(result.attempts, 1)
         @Assert(result.matched, true)
         @Assert(result.lastStatus, 200)
+        @Assert(result.exitCause, "matched")
     }
 
     @TestCase
@@ -54,6 +56,7 @@ public class KModeFailoverTestSuite {
         @Assert(result.matched, false)
         @Assert(result.attempts, 4)
         @Assert(calls.size, 4)
+        @Assert(result.exitCause, "miss")
     }
 
     @TestCase
@@ -70,6 +73,7 @@ public class KModeFailoverTestSuite {
         @Assert(result.decision, KModeFailoverDecision.Continue)
         @Assert(result.attempts, 2)
         @Assert(result.matched, false)
+        @Assert(result.exitCause, "miss")
     }
 
     @TestCase
@@ -112,5 +116,8 @@ public class KModeFailoverTestSuite {
         @Assert(waits.size, 2)
         @Assert(waits[0], 25)
         @Assert(waits[1], 25)
+        @Assert(result.exitCause, "miss")
+        @Assert(result.elapsedMs >= 0, true)
+        @Assert(result.finishedAtMs >= result.startedAtMs, true)
     }
 }
