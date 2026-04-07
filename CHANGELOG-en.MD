@@ -1,5 +1,18 @@
 # Ignite Changelog
 
+## Ignite `0600`
+> Transport decoupling begins, observability keeps tightening
+
+### v0.6.1 `Ignite Now`
+> First working baseline of the `0600` line
+
+- `=Docs` Raise the current active baseline from `0.5.31` to `0.6.1` and mark the start of the `0600` iteration line
+- `+Feature` Client now exposes structured observe snapshots through `onObserve(...)`, with both `JSON` and `log line` forms
+- `+Feature` Client transport touchpoints are retained so the latest transport selection and observe snapshot can be read after a request
+- `+Feature` Server startup observability keeps tightening, making startup failure classification, transport touchpoints, and observe snapshots easier to read as one diagnosis surface
+- `=Fix` The transport error model now includes internal TLS handshake fallback-candidate semantics, while the public HTTPS default path and fallback promises remain unchanged
+- `=Docs` Sync `README.md`, `README-en.md`, `README-ru.md`, Swagger sample metadata, and version constants to `0.6.1`
+
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 

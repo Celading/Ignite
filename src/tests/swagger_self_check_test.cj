@@ -42,7 +42,7 @@ public class SwaggerSelfCheckTestSuite {
         app.swagger(SwaggerInfo(
             title: "Swagger Self Check",
             description: "verifies 0500 self-check metadata",
-            version: "0.5.31"
+            version: "0.6.1"
         ))
         app.post(
             "/echo",
@@ -66,7 +66,7 @@ public class SwaggerSelfCheckTestSuite {
         app.swagger(SwaggerInfo(
             title: buildControlText("Bad", UInt8(1), "Title"),
             description: buildControlText("Line", UInt8(0), "Break") + String.fromUtf8([UInt8(8), UInt8(12)]),
-            version: "0.5.31"
+            version: "0.6.1"
         ))
         app.get("/ok", { ctx => _ = ctx.sendString("ok") })
 

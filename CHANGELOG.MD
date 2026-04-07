@@ -1,5 +1,18 @@
 # Ignite Changelog
 
+## Ignite `0600`
+> 传输解耦起步、观测留痕加固
+
+### v0.6.1 `Ignite Now`
+> `0600` 首个工作基线版
+
+- `=文档` 将当前活跃版本基线从 `0.5.31` 提升到 `0.6.1`，标记 `0600` 迭代线开始
+- `+特性` Client 新增结构化 observe 快照，可通过 `onObserve(...)` 获取成功 / 失败观测结果，并支持 `JSON / log line` 双输出
+- `+特性` Client 补齐 transport touchpoint 留痕，请求结束后可读取最近一次 transport 选择与 observe 快照
+- `+特性` Server 启动观察链继续加固，启动失败分类、transport touchpoint 与 observe snapshot 现在更容易形成连续诊断面
+- `=修复` transport 错误模型补入 TLS handshake fallback candidate 的内部判定语义，但当前公开 HTTPS 默认路径与 fallback 承诺不变
+- `=文档` README / README-en / README-ru / Swagger sample / 版本常量同步到 `0.6.1`
+
 ## Ignite `0500`
 > 可用、可信、快上手
 
