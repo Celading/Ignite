@@ -23,6 +23,8 @@ public class RequestBuilder {
     let _responseHooks: ArrayList<ClientResponseHook>
     let _errorHooks: ArrayList<ClientErrorHook>
     let _observeHooks: ArrayList<ClientObserveHook>
+    let _captureObserveHook: ?ClientObserveHook
+    let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
     let _headerSnapshot: HashMap<String, String> = HashMap<String, String>()
     var _currentUrl: String = ""
@@ -50,7 +52,9 @@ public class RequestBuilder {
         requestHooks: ArrayList<ClientRequestHook>,
         responseHooks: ArrayList<ClientResponseHook>,
         errorHooks: ArrayList<ClientErrorHook>,
-        observeHooks: ArrayList<ClientObserveHook>
+        observeHooks: ArrayList<ClientObserveHook>,
+        captureObserveHook!: ?ClientObserveHook = None,
+        captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None
     ) {
         _client = client
         _baseUrl = baseUrl
@@ -65,6 +69,8 @@ public class RequestBuilder {
         _responseHooks = ArrayList<ClientResponseHook>()
         _errorHooks = ArrayList<ClientErrorHook>()
         _observeHooks = ArrayList<ClientObserveHook>()
+        _captureObserveHook = captureObserveHook
+        _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
             setHeader(k, v)
         }
@@ -409,6 +415,7 @@ public class RequestBuilder {
             preferredBackendHint: resolvePreferredTransportBackendHint(),
             allowExperimental: resolveAllowExperimentalTransport()
         )
+        notifyTransportTouchpoint(buildClientTransportTouchpoint(selectionDecision))
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
         let canRetryMethod = methodCanRetry(_methodName, retryCfg)
@@ -541,9 +548,22 @@ public class RequestBuilder {
     }
 
     func notifyObserveHooks(observed: ClientObserveSnapshot): Unit {
+        if (let Some(hook) <- _captureObserveHook) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
         for (hook in _observeHooks) {
             try {
                 hook(observed)
+            } catch (_: Exception) {}
+        }
+    }
+
+    func notifyTransportTouchpoint(touchpoint: ClientTransportTouchpoint): Unit {
+        if (let Some(hook) <- _captureTransportTouchpointHook) {
+            try {
+                hook(touchpoint)
             } catch (_: Exception) {}
         }
     }

@@ -22,6 +22,8 @@ public class RestClient {
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
     var _observeHooks: ArrayList<ClientObserveHook> = ArrayList<ClientObserveHook>()
+    var _lastClientTransportTouchpoint: ?ClientTransportTouchpoint = None
+    var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
 
     public init() {
         _client = ClientBuilder().build()
@@ -156,6 +158,14 @@ public class RestClient {
 
     public func onObserveHook(hook: ClientObserveHook): RestClient {
         onObserve(hook)
+    }
+
+    public func lastClientTransportTouchpoint(): ?ClientTransportTouchpoint {
+        _lastClientTransportTouchpoint
+    }
+
+    public func lastClientObserveSnapshot(): ?ClientObserveSnapshot {
+        _lastClientObserveSnapshot
     }
 
     func requireCryptoConfig(): api2.ClientCryptoConfig {
@@ -307,7 +317,13 @@ public class RestClient {
             _requestHooks,
             _responseHooks,
             _errorHooks,
-            _observeHooks
+            _observeHooks,
+            captureObserveHook: { snapshot =>
+                _lastClientObserveSnapshot = Some(snapshot)
+            },
+            captureTransportTouchpointHook: { touchpoint =>
+                _lastClientTransportTouchpoint = Some(touchpoint)
+            }
         )
     }
 

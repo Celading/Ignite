@@ -73,6 +73,16 @@ public class ClientTransportSelectionTestSuite {
             @Assert(publicPaths[0], "stable-default")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "low")
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "stdx-http-client")
+                    @Assert(touchpoint.providerId, "-")
+                    @Assert(touchpoint.publicPath, "stable-default")
+                    @Assert(touchpoint.riskLevel, "low")
+                    @Assert(containsSelectionText(touchpoint.toJson(), "\"selectedBackend\":\"stdx-http-client\""), true)
+                    @Assert(containsSelectionText(touchpoint.toLogLine(), "selectedBackend=stdx-http-client"), true)
+                case None => @Fail("expected client transport touchpoint")
+            }
         } finally {
             probeClient.close()
             client.close()
@@ -129,6 +139,12 @@ public class ClientTransportSelectionTestSuite {
             @Assert(cryptoProviderIds[0], "crypto:stdx-fallback")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "medium")
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.cryptoProviderId, "crypto:stdx-fallback")
+                    @Assert(touchpoint.riskLevel, "medium")
+                case None => @Fail("expected encrypted transport touchpoint")
+            }
         } finally {
             probeClient.close()
             client.close()
@@ -193,6 +209,13 @@ public class ClientTransportSelectionTestSuite {
             @Assert(publicPaths[0], "experimental-only")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "medium")
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "jinguissl-provider-candidate")
+                    @Assert(touchpoint.publicPath, "experimental-only")
+                    @Assert(touchpoint.riskLevel, "medium")
+                case None => @Fail("expected experimental transport touchpoint")
+            }
         } finally {
             probeClient.close()
             client.close()
@@ -245,5 +268,33 @@ public class ClientTransportSelectionTestSuite {
         let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
         let raw = 52000 + ((nowMs + offset) % 4000)
         UInt16(raw)
+    }
+
+    func containsSelectionText(text: String, target: String): Bool {
+        let t = text.toRuneArray()
+        let p = target.toRuneArray()
+        if (p.size == 0) {
+            return true
+        }
+        if (t.size < p.size) {
+            return false
+        }
+        var i: Int64 = 0
+        while (i <= t.size - p.size) {
+            var ok = true
+            var j: Int64 = 0
+            while (j < p.size) {
+                if (t[i + j] != p[j]) {
+                    ok = false
+                    break
+                }
+                j += 1
+            }
+            if (ok) {
+                return true
+            }
+            i += 1
+        }
+        false
     }
 }

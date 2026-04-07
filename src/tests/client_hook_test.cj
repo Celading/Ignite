@@ -109,6 +109,14 @@ public class ClientHookTestSuite {
         @Assert(observeJson.size, 1)
         @Assert(containsClientHookText(observeJson[0], "\"outcome\":\"error\""), true)
         @Assert(containsClientHookText(observeJson[0], "\"causeCode\":\"crypto_unavailable\""), true)
+        match (client.lastClientObserveSnapshot()) {
+            case Some(snapshot) =>
+                @Assert(snapshot.outcome, "error")
+                @Assert(snapshot.errorClass, "CRYPTO")
+                @Assert(snapshot.causeCode, "crypto_unavailable")
+                @Assert(containsClientHookText(snapshot.toJson(), "\"outcome\":\"error\""), true)
+            case None => @Fail("expected client observe snapshot")
+        }
     }
 
     @TestCase
@@ -191,6 +199,13 @@ public class ClientHookTestSuite {
             @Assert(observeJson.size, 1)
             @Assert(containsClientHookText(observeJson[0], "\"outcome\":\"success\""), true)
             @Assert(containsClientHookText(observeJson[0], "\"responseStatus\":200"), true)
+            match (client.lastClientObserveSnapshot()) {
+                case Some(snapshot) =>
+                    @Assert(snapshot.outcome, "success")
+                    @Assert(snapshot.responseStatus, 200)
+                    @Assert(snapshot.phase, "response")
+                case None => @Fail("expected client observe snapshot")
+            }
             @Assert(fieldValues.size, 1)
             @Assert(fieldValues[0], "case=response-hook")
             @Assert(durationValues.size, 1)
