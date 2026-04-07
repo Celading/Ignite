@@ -259,7 +259,6 @@ public class ClientTransportErrorEnvelopeTestSuite {
         @Assert(contains(observedMessages[0], "riskLevel=medium"), true)
         @Assert(contains(observedMessages[0], "fields=case=transport-experimental-override"), true)
     }
-
     func contains(text: String, target: String): Bool {
         let t = text.toRuneArray()
         let p = target.toRuneArray()

@@ -46,7 +46,7 @@ func buildTransportErrorEnvelope(
     let phase = if (phaseHint.size > 0) { phaseHint } else { "request_prepare" }
     let causeCode = mapClientCryptoErrorCauseCode(origin.code)
     let fallbackSuggested = (causeCode == "crypto_unavailable")
-    let retryable = classifyTransportRetryable("CRYPTO", phase, canRetryMethod, false)
+    let retryable = classifyTransportRetryable("CRYPTO", phase, causeCode, canRetryMethod, false)
     let backendId = if (let Some(selection) <- selectionDecision) {
         selection.selectedBackend
     } else {
@@ -79,7 +79,7 @@ func buildTransportErrorEnvelope(
     let family = mapSecurityErrorFamily(origin.code)
     let phase = mapSecurityErrorPhase(origin.code, phaseHint)
     let causeCode = mapSecurityErrorCauseCode(origin.code)
-    let retryable = classifyTransportRetryable(family, phase, canRetryMethod, false)
+    let retryable = classifyTransportRetryable(family, phase, causeCode, canRetryMethod, false)
     let backendId = if (let Some(selection) <- selectionDecision) {
         selection.selectedBackend
     } else {
@@ -114,7 +114,7 @@ func buildTransportErrorEnvelope(
     let causeCode = classifyTransportErrorCauseCode(origin, family, phase)
     let connectionConsumed = classifyTransportConnectionConsumed(family, phase)
     let fallbackSuggested = classifyTransportFallbackSuggested(origin, family, phase, causeCode)
-    let retryable = classifyTransportRetryable(family, phase, canRetryMethod, connectionConsumed)
+    let retryable = classifyTransportRetryable(family, phase, causeCode, canRetryMethod, connectionConsumed)
     let backendId = if (let Some(selection) <- selectionDecision) {
         selection.selectedBackend
     } else {
@@ -444,6 +444,7 @@ func classifyTransportFallbackSuggested(
 func classifyTransportRetryable(
     family: String,
     phase: String,
+    causeCode: String,
     canRetryMethod: Bool,
     connectionConsumed: Bool
 ): Bool {
@@ -451,6 +452,9 @@ func classifyTransportRetryable(
         return false
     }
     if (family == "NETWORK" && !connectionConsumed) {
+        return true
+    }
+    if (family == "TLS" && phase == "handshake" && causeCode == "tls_handshake_error" && !connectionConsumed) {
         return true
     }
     if (family == "TIMEOUT" && phase == "connect") {
