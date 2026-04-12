@@ -126,6 +126,53 @@ public class ProxyMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testProxyMiddlewareRelaysKnownLengthResponseWithoutChunkedOnHttp11Wire(): Unit {
+        let upstreamPort = choosePort(1814)
+        let proxyPort = choosePort(1815)
+        let fixturePath = "/tmp/ignite_proxy_response_wire_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+
+        let upstream = App(config: Config())
+        upstream.get("/up/file-wire", { ctx =>
+            _ = ctx.setHeader("x-upstream", "wire-ok")
+            _ = ctx.sendFile(fixturePath)
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithRetry(proxyPort, "GET", "/proxy/file-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-length") ?? "", payload.size.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.header("x-upstream") ?? "", "wire-ok")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "", "known-length-stream")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "", payload.size.toString())
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "", "known-length-stream")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? "", payload.size.toString())
+            @Assert(resp.bodyText, payload)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareObservesUnknownLengthUpstreamResponse(): Unit {
         let upstreamPort = choosePort(1820)
         let proxyPort = choosePort(1821)
@@ -213,6 +260,55 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "", "http11-chunked")
             @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? "", "")
             @Assert(resp.bodyText, payload)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareRelaysHeadWithoutBodyOnHttp11Wire(): Unit {
+        let upstreamPort = choosePort(1827)
+        let proxyPort = choosePort(1828)
+        let payload = buildLargeAsciiPayload()
+
+        let upstream = App(config: Config())
+        upstream.head("/up/head-wire", { ctx =>
+            let stream = ProxySendStreamBytesInput(toProxyByteArray(payload.toArray()))
+            _ = ctx.sendStream(
+                stream,
+                contentType: "application/octet-stream",
+                contentLength: Some(payload.size)
+            )
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithRetry(proxyPort, "HEAD", "/proxy/head-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-type") ?? "", "application/octet-stream")
+            @Assert(resp.header("content-length") ?? "", payload.size.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "", "bodyless")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "", "0")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "", "bodyless")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? "", "0")
+            @Assert(resp.bodyText, "")
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
