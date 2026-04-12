@@ -6,7 +6,9 @@ public class ResponseWriter {
     let _writer: HttpResponseWriter
 
     public init(httpCtx: HttpContext) {
-        httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+        if (shouldEmitChunkedTransferHeader(httpCtx.request.version.toString())) {
+            httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+        }
         _writer = HttpResponseWriter(httpCtx)
     }
 
@@ -28,8 +30,13 @@ public class SseWriter {
         httpCtx.responseBuilder
             .header("content-type", "text/event-stream")
             .header("cache-control", "no-cache")
-            .header("connection", "keep-alive")
-            .header("transfer-encoding", "chunked")
+        let protocol = httpCtx.request.version.toString()
+        if (shouldEmitConnectionKeepAliveHeader(protocol)) {
+            httpCtx.responseBuilder.header("connection", "keep-alive")
+        }
+        if (shouldEmitChunkedTransferHeader(protocol)) {
+            httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+        }
     }
 
     func ensureWriter(): HttpResponseWriter {
@@ -68,4 +75,51 @@ public class SseWriter {
         let w = ensureWriter()
         w.write("retry: ${millis}\n\n".toArray())
     }
+}
+
+func shouldEmitChunkedTransferHeader(protocol: String): Bool {
+    return !isHttp2Protocol(protocol)
+}
+
+func shouldEmitConnectionKeepAliveHeader(protocol: String): Bool {
+    return !isHttp2Protocol(protocol)
+}
+
+func isHttp2Protocol(protocol: String): Bool {
+    let text = protocol.trimAscii().toAsciiLower()
+    if (text.size == 0) {
+        return false
+    }
+    if (text == "h2" || text == "h2c") {
+        return true
+    }
+    containsText(text, "http/2") || containsText(text, "http2")
+}
+
+func containsText(text: String, pattern: String): Bool {
+    let a = text.toRuneArray()
+    let b = pattern.toRuneArray()
+    if (b.size == 0) {
+        return true
+    }
+    if (a.size < b.size) {
+        return false
+    }
+    var i: Int64 = 0
+    while (i <= a.size - b.size) {
+        var ok = true
+        var j: Int64 = 0
+        while (j < b.size) {
+            if (a[i + j] != b[j]) {
+                ok = false
+                break
+            }
+            j += 1
+        }
+        if (ok) {
+            return true
+        }
+        i += 1
+    }
+    false
 }
