@@ -49,6 +49,32 @@ public func accessLogMiddleware(config!: AccessLogConfig = AccessLogConfig()): H
             let ua = ctx.header("user-agent") ?? "-"
             log += " | ${ua}"
         }
+        log = appendAccessLogProxyFields(
+            log,
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
+        )
         config.output(log)
     }
+}
+
+func appendAccessLogProxyFields(
+    log: String,
+    proxyBodyMode: String,
+    proxyBodyBytes: String,
+    proxyBodyLimitBytes: String
+): String {
+    var out = log
+    out = appendAccessLogField(out, "proxyBodyMode", proxyBodyMode)
+    out = appendAccessLogField(out, "proxyBodyBytes", proxyBodyBytes)
+    out = appendAccessLogField(out, "proxyBodyLimitBytes", proxyBodyLimitBytes)
+    out
+}
+
+func appendAccessLogField(log: String, key: String, value: String): String {
+    if (value.trimAscii().size == 0) {
+        return log
+    }
+    log + " | ${key}=${value}"
 }
