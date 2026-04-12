@@ -3,7 +3,7 @@ package ignite.middleware
 import ignite.{Handler, Ctx}
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
 import std.collection.ArrayList
-import std.fs.{File, OpenMode, removeIfExists}
+import std.fs.{Directory, File, OpenMode, exists, removeIfExists}
 import std.io.InputStream
 import std.random.Random
 import std.time.DateTime
@@ -350,6 +350,7 @@ func shouldProxyBufferUnknownLengthBodyToFile(targetUrl: String, config: ProxyCo
 
 func buildProxyTempBodyPath(baseDir: String): String {
     let normalizedDir = normalizeProxyTempDir(baseDir)
+    ensureProxyTempDirExists(normalizedDir)
     let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
     let rng = Random()
     var suffix = ""
@@ -360,6 +361,25 @@ func buildProxyTempBodyPath(baseDir: String): String {
         i += 1
     }
     normalizedDir + "/ignite-proxy-body-${nowMs}-${suffix}.tmp"
+}
+
+func ensureProxyTempDirExists(path: String): Unit {
+    var attempt: Int64 = 0
+    while (attempt < 4) {
+        try {
+            Directory.create(path, recursive: true)
+            return
+        } catch (e: Exception) {
+            if (exists(path)) {
+                return
+            }
+            if (attempt == 3) {
+                throw e
+            }
+            sleep(Duration.millisecond * 5)
+            attempt += 1
+        }
+    }
 }
 
 func normalizeProxyTempDir(path: String): String {

@@ -4,7 +4,7 @@ import ignite.*
 import ignite.client.RestClient
 import ignite.middleware.*
 import std.collection.{ArrayList, HashMap}
-import std.fs.{exists, File, OpenMode}
+import std.fs.{Directory, exists, File, OpenMode, removeIfExists}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
@@ -424,6 +424,82 @@ public class ProxyMiddlewareTestSuite {
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareCreatesConfiguredTempDirAndCleansConcurrentBufferedUploads(): Unit {
+        let upstreamPort = choosePort(1830)
+        let proxyPort = choosePort(1836)
+        let tempRoot = "/tmp/ignite_proxy_buffered_upload_dir_${proxyPort}"
+        let tempDir = tempRoot + "/nested/body"
+        let payload = buildLargeAsciiPayload()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+        @Assert(exists(tempDir), false)
+
+        let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        upstream.post("/up/chunked-concurrent", { ctx =>
+            let saved = ctx.bodyBytes().size
+            let contentLength = ctx.header("content-length") ?? ""
+            let transferEncoding = ctx.header("transfer-encoding") ?? ""
+            _ = ctx.status(201).sendString(
+                "saved=${saved};content-length=${contentLength};transfer-encoding=${transferEncoding}"
+            )
+        })
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")],
+                bufferUnknownLengthBodyToFile: true,
+                unknownLengthBodyTempDir: tempDir
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let requestCount: Int64 = 4
+            let futures = ArrayList<Future<ProxyResponseSnapshot>>()
+            var i: Int64 = 0
+            while (i < requestCount) {
+                futures.add(spawn {
+                    sendChunkedRequestWithRetry(
+                        proxyPort,
+                        "/proxy/chunked-concurrent",
+                        payload,
+                        headers: [("content-type", "text/plain; charset=utf-8")]
+                    )
+                })
+                i += 1
+            }
+
+            for (future in futures) {
+                let resp = future.get(Duration.second * 5)
+                @Assert(resp.status, UInt16(201))
+                @Assert(contains(resp.bodyText, "saved=${payload.size}"), true)
+                @Assert(contains(resp.bodyText, "content-length=${payload.size}"), true)
+                @Assert(contains(resp.bodyText, "transfer-encoding=chunked"), false)
+                @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+                @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+                @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+                @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            }
+
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+            _ = removeIfExists(tempRoot, recursive: true)
         }
     }
 
