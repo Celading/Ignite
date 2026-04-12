@@ -8,7 +8,7 @@ import std.time.DateTime
 import stdx.net.http.{
     HttpContext, HttpRequestHandler,
     HttpRequestDistributor, HttpRequestBuilder,
-    HttpHeaders, ClientBuilder
+    HttpHeaders, ClientBuilder, Client
 }
 import ignite.api2
 
@@ -297,6 +297,7 @@ public class App {
 
     public func listen(addr: String, port: UInt16): Unit {
         setupSwaggerRoute()
+        resetStartupObserveState()
 
         if (config.enablePrintRoutes) {
             router.printRoutes()
@@ -419,11 +420,6 @@ public class App {
     ): AppTestResponse {
         setupSwaggerRoute()
         let host = "127.0.0.1"
-        let port = chooseInprocTestPort(method, path)
-        let serverFuture = spawn {
-            this.listen(host, port)
-        }
-
         let client = ClientBuilder()
             .readTimeout(Duration.second * 1)
             .writeTimeout(Duration.second * 1)
@@ -431,43 +427,33 @@ public class App {
             .build()
 
         try {
-            var attempt: Int64 = 0
-            while (attempt < 20) {
+            for (port in chooseInprocTestPorts(method, path)) {
+                resetStartupObserveState()
+                let serverFuture = spawn {
+                    this.listen(host, port)
+                }
                 try {
-                    let url = normalizeTestUrl(path, host, port)
-                    let requestBuilder = HttpRequestBuilder()
-                        .method(normalizeHttpMethod(method))
-                        .url(url)
-                    for ((k, v) in headers) {
-                        requestBuilder.header(k, v)
+                    if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
+                        if (event.phase == "failed") {
+                            if (event.failureCode == "ADDRESS_IN_USE") {
+                                continue
+                            }
+                            throw Exception(
+                                "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
+                            )
+                        }
                     }
-                    if (body.size > 0) {
-                        requestBuilder.body(body)
-                    }
-
-                    let response = client.send(requestBuilder.build())
-                    let responseBody = readInputStreamUtf8(response.body)
-                    return AppTestResponse(response.status, responseBody, response.headers)
-                } catch (_: Exception) {
-                    if (attempt == 19) {
-                        throw Exception("handleForTest failed to connect path=${path}")
-                    }
-                    sleep(Duration.millisecond * 50)
-                    attempt += 1
+                    return sendHandleForTestRequest(client, method, path, host, port, body, headers)
+                } finally {
+                    shutdownHandleForTestServer(_engine, serverFuture)
                 }
             }
         } finally {
             try {
                 client.close()
             } catch (_: Exception) { }
-            _engine.shutdown()
-            try {
-                let _ = serverFuture.get(Duration.second * 1)
-            } catch (_: Exception) {
-                serverFuture.cancel()
-            }
         }
-        throw Exception("handleForTest unreachable")
+        throw Exception("handleForTest failed to connect path=${path}")
     }
 
     public func shutdown(): Unit {
@@ -490,6 +476,10 @@ public class App {
         for (hook in _startupObserveHooks) {
             hook(event)
         }
+    }
+
+    func resetStartupObserveState(): Unit {
+        _lastServerStartupObserveEvent = None
     }
 
     func setupSwaggerRoute(): Unit {
@@ -917,11 +907,90 @@ func readInputStreamUtf8(stream: InputStream): String {
     String.fromUtf8(out.toArray())
 }
 
-func chooseInprocTestPort(method: String, path: String): UInt16 {
+func sendHandleForTestRequest(
+    client: Client,
+    method: String,
+    path: String,
+    host: String,
+    port: UInt16,
+    body: String,
+    headers: Array<(String, String)>
+): AppTestResponse {
+    var attempt: Int64 = 0
+    while (attempt < 20) {
+        try {
+            let url = normalizeTestUrl(path, host, port)
+            let requestBuilder = HttpRequestBuilder()
+                .method(normalizeHttpMethod(method))
+                .url(url)
+            for ((k, v) in headers) {
+                requestBuilder.header(k, v)
+            }
+            if (body.size > 0) {
+                requestBuilder.body(body)
+            }
+
+            let response = client.send(requestBuilder.build())
+            let responseBody = readInputStreamUtf8(response.body)
+            return AppTestResponse(response.status, responseBody, response.headers)
+        } catch (_: Exception) {
+            if (attempt == 19) {
+                throw Exception("handleForTest failed to connect path=${path} port=${port}")
+            }
+            sleep(Duration.millisecond * 50)
+            attempt += 1
+        }
+    }
+    throw Exception("handleForTest failed to connect path=${path} port=${port}")
+}
+
+func waitForInprocStartupObserve(app: App, port: UInt16): ?ServerStartupObserveEvent {
+    var attempt: Int64 = 0
+    while (attempt < 20) {
+        match (app.lastServerStartupObserveEvent()) {
+            case Some(event) =>
+                if (event.port == port) {
+                    return Some(event)
+                }
+            case None => ()
+        }
+        sleep(Duration.millisecond * 25)
+        attempt += 1
+    }
+    None
+}
+
+func shutdownHandleForTestServer(engine: ServerEngine, serverFuture: Future<Unit>): Unit {
+    engine.shutdown()
+    try {
+        let _ = serverFuture.get(Duration.second * 1)
+    } catch (_: Exception) {
+        serverFuture.cancel()
+    }
+}
+
+func chooseInprocTestPorts(method: String, path: String): Array<UInt16> {
     let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-    let seed = nowMs + method.size + path.size
-    let raw = 42000 + (seed % 10000)
-    UInt16(raw)
+    let seed = nowMs + stableInprocTestPortHash(method, path)
+    let offsetRange: Int64 = 10000
+    let stride: Int64 = 7919
+    let out = ArrayList<UInt16>()
+    var i: Int64 = 0
+    while (i < 8) {
+        let raw = 42000 + ((seed + (i * stride)) % offsetRange)
+        out.add(UInt16(raw))
+        i += 1
+    }
+    out.toArray()
+}
+
+func stableInprocTestPortHash(method: String, path: String): Int64 {
+    let text = normalizeHttpMethod(method) + ":" + path.trimAscii()
+    var hash: Int64 = 17
+    for (b in text.toArray()) {
+        hash = ((hash * 131) + Int64(b)) % 10000
+    }
+    hash
 }
 
 class LambdaHttpHandler <: HttpRequestHandler {

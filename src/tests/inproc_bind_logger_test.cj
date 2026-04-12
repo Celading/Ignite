@@ -4,6 +4,7 @@ import ignite.*
 import ignite.middleware.*
 import std.collection.ArrayList
 import stdx.encoding.json.{JsonValue, JsonObject}
+import stdx.net.http.HttpRequestDistributor
 
 @Test
 public class InprocBindLoggerTestSuite {
@@ -23,6 +24,23 @@ public class InprocBindLoggerTestSuite {
         @Assert(resp.status, UInt16(200))
         @Assert(resp.body, "pong-1")
         @Assert(resp.header("x-mw") ?? "", "hit")
+    }
+
+    @TestCase
+    public func testHandleForTestRetriesOnAddressInUse(): Unit {
+        let app = App(config: Config())
+        let engine = RetryAddressInUseEngine()
+        app.serverEngine(engine)
+        app.get("/retry-port", { ctx =>
+            ctx.sendString("retry-ok")
+        })
+
+        let resp = app.handleForTest("GET", "/retry-port")
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "retry-ok")
+        @Assert(engine.listenCalls, 2)
+        @Assert(engine.attemptedPorts.size, 2)
+        @Assert(engine.attemptedPorts[0] == engine.attemptedPorts[1], false)
     }
 
     @TestCase
@@ -164,5 +182,28 @@ struct CreateUserReq {
     init(name: String, age: Int64) {
         this.name = name
         this.age = age
+    }
+}
+
+class RetryAddressInUseEngine <: ServerEngine {
+    let delegate = StdxServerEngine()
+    public var listenCalls: Int64 = 0
+    public let attemptedPorts = ArrayList<UInt16>()
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        distributor: HttpRequestDistributor,
+        onReady: ?(() -> Unit)
+    ): Unit {
+        listenCalls += 1
+        attemptedPorts.add(option.port)
+        if (listenCalls == 1) {
+            throw Exception("bind failed: address already in use")
+        }
+        delegate.listen(option, distributor, onReady)
+    }
+
+    public override func shutdown(): Unit {
+        delegate.shutdown()
     }
 }
