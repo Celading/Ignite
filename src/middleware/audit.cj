@@ -88,7 +88,15 @@ func buildProxyAuditDetail(ctx: Ctx): String {
     let mode = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? ""
     let bytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? ""
     let limit = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
-    if (mode.trimAscii().size == 0 && bytes.trimAscii().size == 0 && limit.trimAscii().size == 0) {
+    let responseMode = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? ""
+    let responseBytes = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? ""
+    if (
+        mode.trimAscii().size == 0 &&
+        bytes.trimAscii().size == 0 &&
+        limit.trimAscii().size == 0 &&
+        responseMode.trimAscii().size == 0 &&
+        responseBytes.trimAscii().size == 0
+    ) {
         return ""
     }
 
@@ -101,6 +109,12 @@ func buildProxyAuditDetail(ctx: Ctx): String {
     }
     if (limit.trimAscii().size > 0) {
         detail = appendAuditDetailField(detail, "proxyBodyLimitBytes", limit)
+    }
+    if (responseMode.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyResponseBodyMode", responseMode)
+    }
+    if (responseBytes.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyResponseBodyBytes", responseBytes)
     }
     detail
 }

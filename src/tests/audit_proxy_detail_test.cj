@@ -24,6 +24,8 @@ public class AuditProxyDetailTestSuite {
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY, "temp-file-buffered")
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, "8192")
             ctx.next()
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "2")
         })
         app.post("/proxy-detail", { ctx =>
             let _ = ctx.status(201).sendString("ok")
@@ -34,7 +36,13 @@ public class AuditProxyDetailTestSuite {
         @Assert(auditLines.size > 0, true)
 
         let auditPayload = auditLines[auditLines.size - 1]
-        @Assert(contains(auditPayload, "\"detail\":\"proxyBodyMode=temp-file-buffered;proxyBodyBytes=8192\""), true)
+        @Assert(
+            contains(
+                auditPayload,
+                "\"detail\":\"proxyBodyMode=temp-file-buffered;proxyBodyBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=2\""
+            ),
+            true
+        )
     }
 
     @TestCase
@@ -56,6 +64,8 @@ public class AuditProxyDetailTestSuite {
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, "16384")
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, "8192")
             ctx.next()
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "17")
         })
         app.post("/proxy-detail-append", { ctx =>
             let _ = ctx.status(413).sendString("Payload Too Large")
@@ -69,7 +79,7 @@ public class AuditProxyDetailTestSuite {
         @Assert(
             contains(
                 auditPayload,
-                "\"detail\":\"target=https://example.internal/up;proxyBodyMode=temp-file-buffered-over-limit;proxyBodyBytes=16384;proxyBodyLimitBytes=8192\""
+                "\"detail\":\"target=https://example.internal/up;proxyBodyMode=temp-file-buffered-over-limit;proxyBodyBytes=16384;proxyBodyLimitBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=17\""
             ),
             true
         )

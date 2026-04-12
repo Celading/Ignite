@@ -23,6 +23,8 @@ public class AccessLogProxyTestSuite {
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, "16384")
             ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, "8192")
             ctx.next()
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "2")
         })
         app.post("/access-log-proxy", { ctx =>
             let _ = ctx.status(201).sendString("ok")
@@ -37,6 +39,8 @@ public class AccessLogProxyTestSuite {
         @Assert(contains(line, "proxyBodyMode=temp-file-buffered"), true)
         @Assert(contains(line, "proxyBodyBytes=16384"), true)
         @Assert(contains(line, "proxyBodyLimitBytes=8192"), true)
+        @Assert(contains(line, "proxyResponseBodyMode=known-length-stream"), true)
+        @Assert(contains(line, "proxyResponseBodyBytes=2"), true)
     }
 
     func contains(text: String, target: String): Bool {
