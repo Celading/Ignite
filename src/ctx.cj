@@ -237,6 +237,34 @@ public class Ctx {
         this
     }
 
+    public func sendStream(
+        stream: InputStream,
+        contentType!: String = "application/octet-stream",
+        contentLength!: ?Int64 = None
+    ): Ctx {
+        let normalizedType = contentType.trimAscii()
+        if (normalizedType.size > 0) {
+            _httpCtx.responseBuilder.header("content-type", normalizedType)
+        }
+        match (contentLength) {
+            case Some(size) =>
+                if (size >= 0) {
+                    _httpCtx.responseBuilder.header("content-length", size.toString())
+                }
+            case None =>
+                if (!isHeadRequest(method) && !isHttp2Protocol(protocol)) {
+                    _httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+                }
+        }
+        if (!isHeadRequest(method)) {
+            _httpCtx.responseBuilder.body(stream)
+        } else {
+            closeStreamIfResource(stream)
+        }
+        _responded = true
+        this
+    }
+
     public func sendStatus(code: UInt16): Ctx {
         let msg = statusMessage(code)
         _httpCtx.responseBuilder.status(code).body(msg)
@@ -774,6 +802,13 @@ func writeBytesToFile(destPath: String, bytes: Array<UInt8>): Unit {
         file.write(bytes)
     } finally {
         file.close()
+    }
+}
+
+func closeStreamIfResource(stream: InputStream): Unit {
+    match (stream) {
+        case closable: Resource => closable.close()
+        case _ => ()
     }
 }
 
