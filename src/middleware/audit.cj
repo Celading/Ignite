@@ -63,10 +63,51 @@ public func auditMiddleware(config!: AuditMiddlewareConfig = AuditMiddlewareConf
         if (event.detail.size == 0) {
             event.detail = ctx.getLocal("__ignite_sec_detail") ?? ""
         }
+        appendProxyAuditDetail(ctx, event)
         if (event.securityEvent.size > 0 && event.riskLevel > 2) {
             event.riskLevel = 2
         }
         emitAudit(event, config: config.auditConfig)
         ctx.setLocal("audit_event_id", event.eventId)
     }
+}
+
+func appendProxyAuditDetail(ctx: Ctx, event: AuditEvent): Unit {
+    let proxyDetail = buildProxyAuditDetail(ctx)
+    if (proxyDetail.size == 0) {
+        return
+    }
+    if (event.detail.size == 0) {
+        event.detail = proxyDetail
+        return
+    }
+    event.detail += ";" + proxyDetail
+}
+
+func buildProxyAuditDetail(ctx: Ctx): String {
+    let mode = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? ""
+    let bytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? ""
+    let limit = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
+    if (mode.trimAscii().size == 0 && bytes.trimAscii().size == 0 && limit.trimAscii().size == 0) {
+        return ""
+    }
+
+    var detail = ""
+    if (mode.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyBodyMode", mode)
+    }
+    if (bytes.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyBodyBytes", bytes)
+    }
+    if (limit.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyBodyLimitBytes", limit)
+    }
+    detail
+}
+
+func appendAuditDetailField(current: String, key: String, value: String): String {
+    if (current.size == 0) {
+        return "${key}=${value}"
+    }
+    current + ";${key}=${value}"
 }
