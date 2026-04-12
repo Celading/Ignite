@@ -175,6 +175,51 @@ public class ProxyMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testProxyMiddlewareRelaysUnknownLengthResponseAsChunkedOnHttp11Wire(): Unit {
+        let upstreamPort = choosePort(1825)
+        let proxyPort = choosePort(1826)
+        let payload = buildLargeAsciiPayload()
+
+        let upstream = App(config: Config())
+        upstream.get("/up/stream-unknown-wire", { ctx =>
+            let stream = ProxySendStreamBytesInput(toProxyByteArray(payload.toArray()))
+            _ = ctx.sendStream(stream, contentType: "text/plain; charset=utf-8")
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithRetry(proxyPort, "GET", "/proxy/stream-unknown-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-type") ?? "", "text/plain; charset=utf-8")
+            @Assert(resp.header("content-length") ?? "", "")
+            @Assert(resp.header("transfer-encoding") ?? "", "chunked")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "", "unknown-length-stream")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "", "")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "", "http11-chunked")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? "", "")
+            @Assert(resp.bodyText, payload)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareMarksHeadRelayAsBodylessResponse(): Unit {
         let upstreamPort = choosePort(1822)
         let proxyPort = choosePort(1824)
@@ -379,6 +424,39 @@ public class ProxyMiddlewareTestSuite {
         }
     }
 
+    @TestCase
+    public func testProxyMiddlewareUsesKnownLengthForLocalBadGatewayOnHttp11Wire(): Unit {
+        let upstreamPort = choosePort(1848)
+        let proxyPort = choosePort(1849)
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithRetry(proxyPort, "GET", "/proxy/missing-upstream-wire", [])
+            @Assert(resp.status, UInt16(502))
+            @Assert(contains(resp.bodyText, "Bad Gateway:"), true)
+            @Assert(resp.header("content-length") ?? "", resp.bodyText.size.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "", "known-length-stream")
+            @Assert(resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "", resp.bodyText.size.toString())
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "", "known-length-stream")
+            @Assert(resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? "", resp.bodyText.size.toString())
+        } finally {
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
     func sendRequestWithRetry(
         method: String,
         url: String,
@@ -490,6 +568,59 @@ public class ProxyMiddlewareTestSuite {
         }
     }
 
+    func sendRawProxyHttpWithRetry(
+        port: UInt16,
+        method: String,
+        target: String,
+        headers: Array<(String, String)>
+    ): ProxyRawHttpResponse {
+        var attempt: Int64 = 0
+        while (attempt < 20) {
+            try {
+                return sendRawProxyHttp(port, method, target, headers)
+            } catch (_: Exception) {
+                if (attempt == 19) {
+                    throw Exception("failed to connect raw proxy test server: ${port} ${target}")
+                }
+                sleep(Duration.millisecond * 50)
+                attempt += 1
+            }
+        }
+        throw Exception("failed to connect raw proxy test server: ${port} ${target}")
+    }
+
+    func sendRawProxyHttp(
+        port: UInt16,
+        method: String,
+        target: String,
+        headers: Array<(String, String)>
+    ): ProxyRawHttpResponse {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            var request = "${method} ${target} HTTP/1.1\r\n"
+            request += "host: 127.0.0.1:${port}\r\n"
+            for ((key, value) in headers) {
+                request += "${key}: ${value}\r\n"
+            }
+            request += "connection: close\r\n\r\n"
+            socket.write(request.toArray())
+
+            let buf = Array<UInt8>(4096, repeat: 0)
+            var raw = ""
+            while (true) {
+                let n = socket.read(buf)
+                if (n <= 0) {
+                    break
+                }
+                raw += String.fromUtf8(buf[..n])
+            }
+            parseRawProxyWireResponse(raw)
+        } finally {
+            socket.close()
+        }
+    }
+
     func shutdownApp(app: App, future: Future<Unit>): Unit {
         app.shutdown()
         try {
@@ -556,6 +687,25 @@ public class ProxyMiddlewareTestSuite {
     }
 
     func parseRawProxyResponse(raw: String): ProxyResponseSnapshot {
+        let wire = parseRawProxyWireResponse(raw)
+        ProxyResponseSnapshot(
+            wire.status,
+            wire.bodyText,
+            wire.header("content-type") ?? "",
+            wire.header("content-length") ?? "",
+            wire.header("accept-ranges") ?? "",
+            wire.header("x-upstream") ?? "",
+            wire.header(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "",
+            wire.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? ""
+        )
+    }
+
+    func parseRawProxyWireResponse(raw: String): ProxyRawHttpResponse {
         let splitIdx = indexOfProxyText(raw, "\r\n\r\n")
         let headerText = if (splitIdx >= 0) { raw[..splitIdx] } else { raw }
         let rawBody = if (splitIdx >= 0) { raw[splitIdx + 4..raw.size] } else { "" }
@@ -583,21 +733,7 @@ public class ProxyMiddlewareTestSuite {
         } else {
             rawBody
         }
-        ProxyResponseSnapshot(
-            status,
-            bodyText,
-            headers.get("content-type") ?? "",
-            headers.get("content-length") ?? "",
-            headers.get("accept-ranges") ?? "",
-            headers.get("x-upstream") ?? "",
-            headers.get(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? ""
-        )
+        ProxyRawHttpResponse(status, headers, bodyText)
     }
 
     func parseProxyStatusCode(statusLine: String): UInt16 {
@@ -732,6 +868,22 @@ public class ProxyMiddlewareTestSuite {
             i += 1
         }
         false
+    }
+}
+
+class ProxyRawHttpResponse {
+    let status: UInt16
+    let headers: HashMap<String, String>
+    let bodyText: String
+
+    init(status: UInt16, headers: HashMap<String, String>, bodyText: String) {
+        this.status = status
+        this.headers = headers
+        this.bodyText = bodyText
+    }
+
+    func header(name: String): ?String {
+        headers.get(name.trimAscii().toAsciiLower())
     }
 }
 
