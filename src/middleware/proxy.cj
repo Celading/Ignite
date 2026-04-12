@@ -12,9 +12,13 @@ import ignite.security as security
 public let IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_request_body_mode"
 public let IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_bytes"
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_limit_bytes"
+public let IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_response_body_mode"
+public let IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_response_body_bytes"
 public let IGNITE_PROXY_REQUEST_BODY_MODE_HEADER: String = "x-ignite-proxy-request-body-mode"
 public let IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER: String = "x-ignite-proxy-request-body-bytes"
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER: String = "x-ignite-proxy-request-body-limit-bytes"
+public let IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER: String = "x-ignite-proxy-response-body-mode"
+public let IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER: String = "x-ignite-proxy-response-body-bytes"
 
 public class ProxyConfig {
     public var target: String
@@ -116,6 +120,8 @@ public func proxyObserveHeaderMiddleware(): Handler {
             IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY,
             IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER
         )
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER)
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER)
     }
 }
 
@@ -296,6 +302,14 @@ func recordProxyRequestBodyLimitBytes(ctx: Ctx, limitBytes: Int64): Unit {
     ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, limitBytes.toString())
 }
 
+func recordProxyResponseBodyMode(ctx: Ctx, mode: String): Unit {
+    ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, mode)
+}
+
+func recordProxyResponseBodyBytes(ctx: Ctx, bytes: Int64): Unit {
+    ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, bytes.toString())
+}
+
 func emitProxyObserveHeader(ctx: Ctx, localKey: String, headerName: String): Unit {
     let value = ctx.getLocal(localKey) ?? ""
     if (value.trimAscii().size == 0) {
@@ -338,6 +352,7 @@ func normalizeProxyTempDir(path: String): String {
 }
 
 func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
+    observeProxyResponseBody(ctx, resp)
     _ = ctx.status(resp.status)
     let responseBuilder = ctx.httpContext().responseBuilder
     responseBuilder.addHeaders(buildProxyResponseHeaders(ctx, resp))
@@ -345,6 +360,22 @@ func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
         return
     }
     responseBuilder.body(resp.body)
+}
+
+func observeProxyResponseBody(ctx: Ctx, resp: HttpResponse): Unit {
+    if (proxyResponseMustBeBodyless(ctx.method, resp.status)) {
+        recordProxyResponseBodyMode(ctx, "bodyless")
+        recordProxyResponseBodyBytes(ctx, 0)
+        return
+    }
+
+    match (resp.bodySize) {
+        case Some(size) =>
+            recordProxyResponseBodyMode(ctx, "known-length-stream")
+            recordProxyResponseBodyBytes(ctx, size)
+        case None =>
+            recordProxyResponseBodyMode(ctx, "unknown-length-stream")
+    }
 }
 
 func buildProxyResponseHeaders(ctx: Ctx, resp: HttpResponse): HttpHeaders {

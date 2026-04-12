@@ -5,6 +5,7 @@ import ignite.client.RestClient
 import ignite.middleware.*
 import std.collection.{ArrayList, HashMap}
 import std.fs.{exists, File, OpenMode}
+import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
 
@@ -59,6 +60,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyMode, "known-length-stream")
             @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
             @Assert(resp.proxyRequestBodyLimitBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -110,6 +113,106 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyMode, "known-length-stream")
             @Assert(resp.proxyRequestBodyBytes, "0")
             @Assert(resp.proxyRequestBodyLimitBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, payload.size.toString())
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareObservesUnknownLengthUpstreamResponse(): Unit {
+        let upstreamPort = choosePort(1820)
+        let proxyPort = choosePort(1821)
+        let payload = buildLargeAsciiPayload()
+
+        let upstream = App(config: Config())
+        upstream.get("/up/stream-unknown", { ctx =>
+            let stream = ProxySendStreamBytesInput(toProxyByteArray(payload.toArray()))
+            _ = ctx.sendStream(stream, contentType: "text/plain; charset=utf-8")
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRequestWithRetry(
+                "GET",
+                "http://127.0.0.1:${proxyPort}/proxy/stream-unknown"
+            )
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.bodyText, payload)
+            @Assert(resp.contentType, "text/plain; charset=utf-8")
+            @Assert(resp.contentLength, payload.size.toString())
+            @Assert(resp.proxyRequestBodyMode, "known-length-stream")
+            @Assert(resp.proxyRequestBodyBytes, "0")
+            @Assert(resp.proxyResponseBodyMode, "unknown-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, "")
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareMarksHeadRelayAsBodylessResponse(): Unit {
+        let upstreamPort = choosePort(1822)
+        let proxyPort = choosePort(1824)
+        let payload = buildLargeAsciiPayload()
+
+        let upstream = App(config: Config())
+        upstream.head("/up/head-stream", { ctx =>
+            let stream = ProxySendStreamBytesInput(toProxyByteArray(payload.toArray()))
+            _ = ctx.sendStream(
+                stream,
+                contentType: "application/octet-stream",
+                contentLength: Some(payload.size)
+            )
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRequestWithRetry(
+                "HEAD",
+                "http://127.0.0.1:${proxyPort}/proxy/head-stream"
+            )
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.bodyText, "")
+            @Assert(resp.contentType, "application/octet-stream")
+            @Assert(resp.contentLength, payload.size.toString())
+            @Assert(resp.proxyRequestBodyMode, "known-length-stream")
+            @Assert(resp.proxyRequestBodyBytes, "0")
+            @Assert(resp.proxyResponseBodyMode, "bodyless")
+            @Assert(resp.proxyResponseBodyBytes, "0")
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
@@ -164,6 +267,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
             @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
             @Assert(resp.proxyRequestBodyLimitBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -216,6 +321,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyMode, "temp-file-buffered-over-limit")
             @Assert(resp.proxyRequestBodyLimitBytes, (payload.size / 2).toString())
             @Assert(parseProxyDecimalInt64(resp.proxyRequestBodyBytes) > (payload.size / 2), true)
+            @Assert(resp.proxyResponseBodyMode, "")
+            @Assert(resp.proxyResponseBodyBytes, "")
             @Assert(hits.size, 0)
             @Assert(exists(fixturePath), false)
         } finally {
@@ -259,7 +366,9 @@ public class ProxyMiddlewareTestSuite {
                         resp.header("x-upstream") ?? "",
                         resp.header(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
                         resp.header(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
-                        resp.header(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? ""
+                        resp.header(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? ""
                     )
                 } catch (_: Exception) {
                     if (attempt == 19) {
@@ -433,7 +542,9 @@ public class ProxyMiddlewareTestSuite {
             headers.get("x-upstream") ?? "",
             headers.get(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
             headers.get(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? ""
+            headers.get(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? ""
         )
     }
 
@@ -572,6 +683,40 @@ public class ProxyMiddlewareTestSuite {
     }
 }
 
+class ProxySendStreamBytesInput <: InputStream {
+    let bytes: Array<Byte>
+    var cursor: Int64 = 0
+
+    init(bytes: Array<Byte>) {
+        this.bytes = bytes
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (cursor >= bytes.size || outBuf.size == 0) {
+            return 0
+        }
+        let remaining = bytes.size - cursor
+        let readLen = if (remaining < outBuf.size) { remaining } else { outBuf.size }
+        for (i in 0..readLen) {
+            outBuf[i] = bytes[cursor + i]
+        }
+        cursor += readLen
+        readLen
+    }
+
+    public func close(): Unit {}
+}
+
+func toProxyByteArray(input: Array<UInt8>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
+}
+
 class ProxyResponseSnapshot {
     let status: UInt16
     let bodyText: String
@@ -582,6 +727,8 @@ class ProxyResponseSnapshot {
     let proxyRequestBodyMode: String
     let proxyRequestBodyBytes: String
     let proxyRequestBodyLimitBytes: String
+    let proxyResponseBodyMode: String
+    let proxyResponseBodyBytes: String
 
     init(
         status: UInt16,
@@ -592,7 +739,9 @@ class ProxyResponseSnapshot {
         xUpstream: String,
         proxyRequestBodyMode: String,
         proxyRequestBodyBytes: String,
-        proxyRequestBodyLimitBytes: String
+        proxyRequestBodyLimitBytes: String,
+        proxyResponseBodyMode: String,
+        proxyResponseBodyBytes: String
     ) {
         this.status = status
         this.bodyText = bodyText
@@ -603,5 +752,7 @@ class ProxyResponseSnapshot {
         this.proxyRequestBodyMode = proxyRequestBodyMode
         this.proxyRequestBodyBytes = proxyRequestBodyBytes
         this.proxyRequestBodyLimitBytes = proxyRequestBodyLimitBytes
+        this.proxyResponseBodyMode = proxyResponseBodyMode
+        this.proxyResponseBodyBytes = proxyResponseBodyBytes
     }
 }
