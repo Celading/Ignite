@@ -62,6 +62,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -115,6 +117,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, payload.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, payload.size.toString())
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
@@ -162,6 +166,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyBytes, "0")
             @Assert(resp.proxyResponseBodyMode, "unknown-length-stream")
             @Assert(resp.proxyResponseBodyBytes, "")
+            @Assert(resp.proxyDownstreamBodyMode, "http11-chunked")
+            @Assert(resp.proxyDownstreamBodyBytes, "")
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
@@ -213,6 +219,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyBytes, "0")
             @Assert(resp.proxyResponseBodyMode, "bodyless")
             @Assert(resp.proxyResponseBodyBytes, "0")
+            @Assert(resp.proxyDownstreamBodyMode, "bodyless")
+            @Assert(resp.proxyDownstreamBodyBytes, "0")
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
@@ -269,6 +277,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -323,6 +333,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(parseProxyDecimalInt64(resp.proxyRequestBodyBytes) > (payload.size / 2), true)
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
             @Assert(hits.size, 0)
             @Assert(exists(fixturePath), false)
         } finally {
@@ -360,6 +372,8 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyBytes, "0")
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
         } finally {
             shutdownApp(proxy, proxyFuture)
         }
@@ -402,7 +416,9 @@ public class ProxyMiddlewareTestSuite {
                         resp.header(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
                         resp.header(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
                         resp.header(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
-                        resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? ""
+                        resp.header(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? ""
                     )
                 } catch (_: Exception) {
                     if (attempt == 19) {
@@ -578,7 +594,9 @@ public class ProxyMiddlewareTestSuite {
             headers.get(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
             headers.get(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? "",
             headers.get(IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER) ?? "",
-            headers.get(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? ""
+            headers.get(IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER) ?? ""
         )
     }
 
@@ -763,6 +781,8 @@ class ProxyResponseSnapshot {
     let proxyRequestBodyLimitBytes: String
     let proxyResponseBodyMode: String
     let proxyResponseBodyBytes: String
+    let proxyDownstreamBodyMode: String
+    let proxyDownstreamBodyBytes: String
 
     init(
         status: UInt16,
@@ -775,7 +795,9 @@ class ProxyResponseSnapshot {
         proxyRequestBodyBytes: String,
         proxyRequestBodyLimitBytes: String,
         proxyResponseBodyMode: String,
-        proxyResponseBodyBytes: String
+        proxyResponseBodyBytes: String,
+        proxyDownstreamBodyMode: String,
+        proxyDownstreamBodyBytes: String
     ) {
         this.status = status
         this.bodyText = bodyText
@@ -788,5 +810,7 @@ class ProxyResponseSnapshot {
         this.proxyRequestBodyLimitBytes = proxyRequestBodyLimitBytes
         this.proxyResponseBodyMode = proxyResponseBodyMode
         this.proxyResponseBodyBytes = proxyResponseBodyBytes
+        this.proxyDownstreamBodyMode = proxyDownstreamBodyMode
+        this.proxyDownstreamBodyBytes = proxyDownstreamBodyBytes
     }
 }

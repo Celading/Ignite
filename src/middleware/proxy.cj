@@ -14,11 +14,15 @@ public let IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_r
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_limit_bytes"
 public let IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_response_body_mode"
 public let IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_response_body_bytes"
+public let IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_downstream_body_mode"
+public let IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_downstream_body_bytes"
 public let IGNITE_PROXY_REQUEST_BODY_MODE_HEADER: String = "x-ignite-proxy-request-body-mode"
 public let IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER: String = "x-ignite-proxy-request-body-bytes"
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER: String = "x-ignite-proxy-request-body-limit-bytes"
 public let IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER: String = "x-ignite-proxy-response-body-mode"
 public let IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER: String = "x-ignite-proxy-response-body-bytes"
+public let IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER: String = "x-ignite-proxy-downstream-body-mode"
+public let IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER: String = "x-ignite-proxy-downstream-body-bytes"
 
 public class ProxyConfig {
     public var target: String
@@ -122,6 +126,8 @@ public func proxyObserveHeaderMiddleware(): Handler {
         )
         emitProxyObserveHeader(ctx, IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, IGNITE_PROXY_RESPONSE_BODY_MODE_HEADER)
         emitProxyObserveHeader(ctx, IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, IGNITE_PROXY_RESPONSE_BODY_BYTES_HEADER)
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, IGNITE_PROXY_DOWNSTREAM_BODY_MODE_HEADER)
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_HEADER)
     }
 }
 
@@ -310,9 +316,20 @@ func recordProxyResponseBodyBytes(ctx: Ctx, bytes: Int64): Unit {
     ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, bytes.toString())
 }
 
+func recordProxyDownstreamBodyMode(ctx: Ctx, mode: String): Unit {
+    ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, mode)
+}
+
+func recordProxyDownstreamBodyBytes(ctx: Ctx, bytes: Int64): Unit {
+    ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, bytes.toString())
+}
+
 func sendObservedProxyStringResponse(ctx: Ctx, status: UInt16, body: String): Unit {
+    let size = body.toArray().size
     recordProxyResponseBodyMode(ctx, "known-length-stream")
-    recordProxyResponseBodyBytes(ctx, body.toArray().size)
+    recordProxyResponseBodyBytes(ctx, size)
+    recordProxyDownstreamBodyMode(ctx, "known-length-stream")
+    recordProxyDownstreamBodyBytes(ctx, size)
     ctx.status(status).sendString(body)
 }
 
@@ -359,6 +376,7 @@ func normalizeProxyTempDir(path: String): String {
 
 func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
     observeProxyResponseBody(ctx, resp)
+    observeProxyDownstreamBody(ctx, resp)
     _ = ctx.status(resp.status)
     let responseBuilder = ctx.httpContext().responseBuilder
     responseBuilder.addHeaders(buildProxyResponseHeaders(ctx, resp))
@@ -381,6 +399,26 @@ func observeProxyResponseBody(ctx: Ctx, resp: HttpResponse): Unit {
             recordProxyResponseBodyBytes(ctx, size)
         case None =>
             recordProxyResponseBodyMode(ctx, "unknown-length-stream")
+    }
+}
+
+func observeProxyDownstreamBody(ctx: Ctx, resp: HttpResponse): Unit {
+    if (proxyResponseMustBeBodyless(ctx.method, resp.status)) {
+        recordProxyDownstreamBodyMode(ctx, "bodyless")
+        recordProxyDownstreamBodyBytes(ctx, 0)
+        return
+    }
+
+    match (resp.bodySize) {
+        case Some(size) =>
+            recordProxyDownstreamBodyMode(ctx, "known-length-stream")
+            recordProxyDownstreamBodyBytes(ctx, size)
+        case None =>
+            if (isHttp2Protocol(ctx.protocol)) {
+                recordProxyDownstreamBodyMode(ctx, "h2-data-stream")
+            } else {
+                recordProxyDownstreamBodyMode(ctx, "http11-chunked")
+            }
     }
 }
 
