@@ -4,6 +4,7 @@ import ignite.{Handler, Ctx}
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
 import std.collection.ArrayList
 import std.fs.{File, OpenMode, removeIfExists}
+import std.io.InputStream
 import std.random.Random
 import std.time.DateTime
 import ignite.security as security
@@ -15,12 +16,14 @@ public class ProxyConfig {
     public var x509Verify: ?security.X509VerifyOption = None
     public var bufferUnknownLengthBodyToFile: Bool = false
     public var unknownLengthBodyTempDir: String = "/tmp"
+    public var maxBufferedBodyBytes: Int64 = 0
 
     public init(target: String, pathRewrite!: Array<(String, String)> = [],
                 timeout!: Duration = Duration.second * 30,
                 x509Verify!: ?security.X509VerifyOption = None,
                 bufferUnknownLengthBodyToFile!: Bool = false,
-                unknownLengthBodyTempDir!: String = "/tmp") {
+                unknownLengthBodyTempDir!: String = "/tmp",
+                maxBufferedBodyBytes!: Int64 = 0) {
         this.target = target
         this.pathRewrite = pathRewrite
         this.timeout = timeout
@@ -29,6 +32,16 @@ public class ProxyConfig {
         }
         this.bufferUnknownLengthBodyToFile = bufferUnknownLengthBodyToFile
         this.unknownLengthBodyTempDir = normalizeProxyTempDir(unknownLengthBodyTempDir)
+        this.maxBufferedBodyBytes = if (maxBufferedBodyBytes > 0) { maxBufferedBodyBytes } else { 0 }
+    }
+}
+
+class ProxyBufferedBodyTooLargeException <: Exception {
+    public let limitBytes: Int64
+
+    public init(limitBytes: Int64, message: String) {
+        super(message)
+        this.limitBytes = limitBytes
     }
 }
 
@@ -64,6 +77,8 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
             } finally {
                 closeProxyRequestBodyAttachment(bodyAttachment)
             }
+        } catch (e: ProxyBufferedBodyTooLargeException) {
+            ctx.status(413).sendString("Payload Too Large: ${e.message}")
         } catch (e: security.SecurityException) {
             markSecurityContext(
                 ctx,
@@ -164,11 +179,54 @@ func attachBufferedProxyRequestBody(
     config: ProxyConfig
 ): ProxyRequestBodyAttachment {
     let tempPath = buildProxyTempBodyPath(config.unknownLengthBodyTempDir)
-    let saved = ctx.saveBodyToFile(tempPath)
+    let saved = streamProxyBufferedRequestBodyToFile(
+        ctx.requestBody(),
+        tempPath,
+        config.maxBufferedBodyBytes
+    )
     headers.add("content-length", saved.toString())
     let replayFile = File(tempPath, OpenMode.Read)
     reqBuilder.body(replayFile)
     ProxyRequestBodyAttachment(replayFile: replayFile, tempPath: tempPath)
+}
+
+func streamProxyBufferedRequestBodyToFile(
+    stream: InputStream,
+    destPath: String,
+    maxBytes: Int64
+): Int64 {
+    let file = File(destPath, OpenMode.Write)
+    let buf = Array<UInt8>(8192, repeat: 0)
+    var total: Int64 = 0
+    var completed = false
+    try {
+        while (true) {
+            let n = stream.read(buf)
+            if (n <= 0) {
+                completed = true
+                break
+            }
+            let nextTotal = total + n
+            if (maxBytes > 0 && nextTotal > maxBytes) {
+                throw ProxyBufferedBodyTooLargeException(
+                    maxBytes,
+                    "proxy buffered request body exceeds limit=${maxBytes}"
+                )
+            }
+            file.write(buf[..n])
+            total = nextTotal
+        }
+    } finally {
+        try {
+            file.close()
+        } catch (_: Exception) { }
+        if (!completed) {
+            try {
+                removeIfExists(destPath)
+            } catch (_: Exception) { }
+        }
+    }
+    total
 }
 
 func closeProxyRequestBodyAttachment(attachment: ?ProxyRequestBodyAttachment): Unit {

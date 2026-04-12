@@ -4,7 +4,7 @@ import ignite.*
 import ignite.client.RestClient
 import ignite.middleware.*
 import std.collection.{ArrayList, HashMap}
-import std.fs.{File, OpenMode}
+import std.fs.{exists, File, OpenMode}
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
 
@@ -153,6 +153,55 @@ public class ProxyMiddlewareTestSuite {
             @Assert(contains(resp.bodyText, "content-length=${payload.size}"), true)
             @Assert(contains(resp.bodyText, "transfer-encoding=chunked"), false)
             @Assert(readTextFile(fixturePath), payload)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareRejectsBufferedUnknownLengthUploadOverLimit(): Unit {
+        let upstreamPort = choosePort(1831)
+        let proxyPort = choosePort(1837)
+        let fixturePath = "/tmp/ignite_proxy_chunked_upload_over_limit.txt"
+        let payload = buildLargeAsciiPayload()
+        let hits = ArrayList<String>()
+
+        let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        upstream.post("/up/chunked-limit", { ctx =>
+            hits.add("hit")
+            let saved = ctx.saveBodyToFile(fixturePath)
+            _ = ctx.status(201).sendString("saved=${saved}")
+        })
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")],
+                bufferUnknownLengthBodyToFile: true,
+                maxBufferedBodyBytes: payload.size / 2
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/chunked-limit",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(413))
+            @Assert(contains(resp.bodyText, "exceeds limit"), true)
+            @Assert(hits.size, 0)
+            @Assert(exists(fixturePath), false)
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
