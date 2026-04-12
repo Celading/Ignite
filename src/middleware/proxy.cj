@@ -94,7 +94,7 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
             recordProxyRequestBodyMode(ctx, "temp-file-buffered-over-limit")
             recordProxyRequestBodyBytes(ctx, e.attemptedBytes)
             recordProxyRequestBodyLimitBytes(ctx, e.limitBytes)
-            ctx.status(413).sendString("Payload Too Large: ${e.message}")
+            sendObservedProxyStringResponse(ctx, 413, "Payload Too Large: ${e.message}")
         } catch (e: security.SecurityException) {
             markSecurityContext(
                 ctx,
@@ -103,9 +103,9 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
                 "proxy",
                 "target=${targetUrl}"
             )
-            ctx.status(502).sendString("Bad Gateway: ${e.message}")
+            sendObservedProxyStringResponse(ctx, 502, "Bad Gateway: ${e.message}")
         } catch (e: Exception) {
-            ctx.status(502).sendString("Bad Gateway: ${e.message}")
+            sendObservedProxyStringResponse(ctx, 502, "Bad Gateway: ${e.message}")
         }
     }
 }
@@ -308,6 +308,12 @@ func recordProxyResponseBodyMode(ctx: Ctx, mode: String): Unit {
 
 func recordProxyResponseBodyBytes(ctx: Ctx, bytes: Int64): Unit {
     ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, bytes.toString())
+}
+
+func sendObservedProxyStringResponse(ctx: Ctx, status: UInt16, body: String): Unit {
+    recordProxyResponseBodyMode(ctx, "known-length-stream")
+    recordProxyResponseBodyBytes(ctx, body.toArray().size)
+    ctx.status(status).sendString(body)
 }
 
 func emitProxyObserveHeader(ctx: Ctx, localKey: String, headerName: String): Unit {

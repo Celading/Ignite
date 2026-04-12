@@ -321,12 +321,46 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.proxyRequestBodyMode, "temp-file-buffered-over-limit")
             @Assert(resp.proxyRequestBodyLimitBytes, (payload.size / 2).toString())
             @Assert(parseProxyDecimalInt64(resp.proxyRequestBodyBytes) > (payload.size / 2), true)
-            @Assert(resp.proxyResponseBodyMode, "")
-            @Assert(resp.proxyResponseBodyBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
             @Assert(hits.size, 0)
             @Assert(exists(fixturePath), false)
         } finally {
             shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareObservesLocalBadGatewayResponse(): Unit {
+        let upstreamPort = choosePort(1843)
+        let proxyPort = choosePort(1847)
+
+        let proxy = App(config: Config())
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRequestWithRetry(
+                "GET",
+                "http://127.0.0.1:${proxyPort}/proxy/missing-upstream"
+            )
+            @Assert(resp.status, UInt16(502))
+            @Assert(contains(resp.bodyText, "Bad Gateway:"), true)
+            @Assert(resp.proxyRequestBodyMode, "known-length-stream")
+            @Assert(resp.proxyRequestBodyBytes, "0")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+        } finally {
             shutdownApp(proxy, proxyFuture)
         }
     }
