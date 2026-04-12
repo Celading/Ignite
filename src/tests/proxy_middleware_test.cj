@@ -29,6 +29,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        installProxyBodyObserveHeaderMirror(proxy)
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -55,6 +56,9 @@ public class ProxyMiddlewareTestSuite {
             @Assert(contains(resp.bodyText, "token=abc123"), true)
             @Assert(contains(resp.bodyText, "content-type=text/plain; charset=utf-8"), true)
             @Assert(contains(resp.bodyText, "forwarded-host=127.0.0.1:${proxyPort}"), true)
+            @Assert(resp.proxyRequestBodyMode, "known-length-stream")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -77,6 +81,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config())
+        installProxyBodyObserveHeaderMirror(proxy)
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -102,6 +107,9 @@ public class ProxyMiddlewareTestSuite {
             @Assert(resp.contentLength, payload.size.toString())
             @Assert(resp.acceptRanges, "bytes")
             @Assert(resp.xUpstream, "ok")
+            @Assert(resp.proxyRequestBodyMode, "known-length-stream")
+            @Assert(resp.proxyRequestBodyBytes, "0")
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
@@ -126,6 +134,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        installProxyBodyObserveHeaderMirror(proxy)
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -152,6 +161,9 @@ public class ProxyMiddlewareTestSuite {
             @Assert(contains(resp.bodyText, "saved=${payload.size}"), true)
             @Assert(contains(resp.bodyText, "content-length=${payload.size}"), true)
             @Assert(contains(resp.bodyText, "transfer-encoding=chunked"), false)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(readTextFile(fixturePath), payload)
         } finally {
             shutdownApp(upstream, upstreamFuture)
@@ -175,6 +187,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        installProxyBodyObserveHeaderMirror(proxy)
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -200,6 +213,9 @@ public class ProxyMiddlewareTestSuite {
             )
             @Assert(resp.status, UInt16(413))
             @Assert(contains(resp.bodyText, "exceeds limit"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered-over-limit")
+            @Assert(resp.proxyRequestBodyLimitBytes, (payload.size / 2).toString())
+            @Assert(parseProxyDecimalInt64(resp.proxyRequestBodyBytes) > (payload.size / 2), true)
             @Assert(hits.size, 0)
             @Assert(exists(fixturePath), false)
         } finally {
@@ -240,7 +256,10 @@ public class ProxyMiddlewareTestSuite {
                         resp.header("content-type") ?? "",
                         resp.header("content-length") ?? "",
                         resp.header("accept-ranges") ?? "",
-                        resp.header("x-upstream") ?? ""
+                        resp.header("x-upstream") ?? "",
+                        resp.header("x-ignite-proxy-request-body-mode") ?? "",
+                        resp.header("x-ignite-proxy-request-body-bytes") ?? "",
+                        resp.header("x-ignite-proxy-request-body-limit-bytes") ?? ""
                     )
                 } catch (_: Exception) {
                     if (attempt == 19) {
@@ -411,7 +430,10 @@ public class ProxyMiddlewareTestSuite {
             headers.get("content-type") ?? "",
             headers.get("content-length") ?? "",
             headers.get("accept-ranges") ?? "",
-            headers.get("x-upstream") ?? ""
+            headers.get("x-upstream") ?? "",
+            headers.get("x-ignite-proxy-request-body-mode") ?? "",
+            headers.get("x-ignite-proxy-request-body-bytes") ?? "",
+            headers.get("x-ignite-proxy-request-body-limit-bytes") ?? ""
         )
     }
 
@@ -478,6 +500,39 @@ public class ProxyMiddlewareTestSuite {
         int64ToHex(value / 16) + hex[value % 16].toString()
     }
 
+    func parseProxyDecimalInt64(text: String): Int64 {
+        let trimmed = text.trimAscii()
+        if (trimmed.size == 0) {
+            throw Exception("invalid decimal integer")
+        }
+        var value: Int64 = 0
+        for (ch in trimmed.toRuneArray()) {
+            if (ch < r'0' || ch > r'9') {
+                throw Exception("invalid decimal integer")
+            }
+            value = value * 10 + (Int64(UInt32(ch)) - Int64(UInt32(r'0')))
+        }
+        value
+    }
+
+    func installProxyBodyObserveHeaderMirror(app: App): Unit {
+        app.use({ ctx =>
+            ctx.next()
+            let mode = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? ""
+            if (mode.size > 0) {
+                let _ = ctx.setHeader("x-ignite-proxy-request-body-mode", mode)
+            }
+            let bytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? ""
+            if (bytes.size > 0) {
+                let _ = ctx.setHeader("x-ignite-proxy-request-body-bytes", bytes)
+            }
+            let limit = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
+            if (limit.size > 0) {
+                let _ = ctx.setHeader("x-ignite-proxy-request-body-limit-bytes", limit)
+            }
+        })
+    }
+
     func indexOfProxyText(text: String, target: String): Int64 {
         let a = text.toRuneArray()
         let b = target.toRuneArray()
@@ -542,6 +597,9 @@ class ProxyResponseSnapshot {
     let contentLength: String
     let acceptRanges: String
     let xUpstream: String
+    let proxyRequestBodyMode: String
+    let proxyRequestBodyBytes: String
+    let proxyRequestBodyLimitBytes: String
 
     init(
         status: UInt16,
@@ -549,7 +607,10 @@ class ProxyResponseSnapshot {
         contentType: String,
         contentLength: String,
         acceptRanges: String,
-        xUpstream: String
+        xUpstream: String,
+        proxyRequestBodyMode: String,
+        proxyRequestBodyBytes: String,
+        proxyRequestBodyLimitBytes: String
     ) {
         this.status = status
         this.bodyText = bodyText
@@ -557,5 +618,8 @@ class ProxyResponseSnapshot {
         this.contentLength = contentLength
         this.acceptRanges = acceptRanges
         this.xUpstream = xUpstream
+        this.proxyRequestBodyMode = proxyRequestBodyMode
+        this.proxyRequestBodyBytes = proxyRequestBodyBytes
+        this.proxyRequestBodyLimitBytes = proxyRequestBodyLimitBytes
     }
 }

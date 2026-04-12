@@ -9,6 +9,10 @@ import std.random.Random
 import std.time.DateTime
 import ignite.security as security
 
+public let IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_request_body_mode"
+public let IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_bytes"
+public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_limit_bytes"
+
 public class ProxyConfig {
     public var target: String
     public var pathRewrite: Array<(String, String)> = []
@@ -38,10 +42,12 @@ public class ProxyConfig {
 
 class ProxyBufferedBodyTooLargeException <: Exception {
     public let limitBytes: Int64
+    public let attemptedBytes: Int64
 
-    public init(limitBytes: Int64, message: String) {
+    public init(limitBytes: Int64, attemptedBytes: Int64, message: String) {
         super(message)
         this.limitBytes = limitBytes
+        this.attemptedBytes = attemptedBytes
     }
 }
 
@@ -78,6 +84,9 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
                 closeProxyRequestBodyAttachment(bodyAttachment)
             }
         } catch (e: ProxyBufferedBodyTooLargeException) {
+            recordProxyRequestBodyMode(ctx, "temp-file-buffered-over-limit")
+            recordProxyRequestBodyBytes(ctx, e.attemptedBytes)
+            recordProxyRequestBodyLimitBytes(ctx, e.limitBytes)
             ctx.status(413).sendString("Payload Too Large: ${e.message}")
         } catch (e: security.SecurityException) {
             markSecurityContext(
@@ -129,8 +138,12 @@ func attachProxyRequestBody(
 ): ?ProxyRequestBodyAttachment {
     if (let Some(cached) <- ctx.cachedBodyBytes()) {
         if (cached.size > 0 || shouldForwardRequestBody(ctx)) {
+            recordProxyRequestBodyMode(ctx, "cached-body")
+            recordProxyRequestBodyBytes(ctx, cached.size)
             headers.add("content-length", cached.size.toString())
             reqBuilder.body(cached)
+        } else {
+            recordProxyRequestBodyMode(ctx, "skipped")
         }
         return None
     }
@@ -139,22 +152,30 @@ func attachProxyRequestBody(
     match (request.bodySize) {
         case Some(size) =>
             if (size > 0 || shouldForwardRequestBody(ctx)) {
+                recordProxyRequestBodyMode(ctx, "known-length-stream")
+                recordProxyRequestBodyBytes(ctx, size)
                 headers.add("content-length", size.toString())
                 reqBuilder.body(request.body)
+            } else {
+                recordProxyRequestBodyMode(ctx, "skipped")
             }
             return None
         case None =>
             if (!shouldForwardRequestBody(ctx)) {
+                recordProxyRequestBodyMode(ctx, "skipped")
                 return None
             }
             if (shouldProxyBufferUnknownLengthBodyToFile(targetUrl, config)) {
                 return attachBufferedProxyRequestBody(reqBuilder, headers, ctx, config)
             }
             if (proxyTargetScheme(targetUrl) == "http") {
+                recordProxyRequestBodyMode(ctx, "chunked-stream")
                 headers.add("transfer-encoding", "chunked")
                 reqBuilder.body(request.body)
             } else {
                 let buffered = ctx.bodyBytes()
+                recordProxyRequestBodyMode(ctx, "memory-buffered")
+                recordProxyRequestBodyBytes(ctx, buffered.size)
                 headers.add("content-length", buffered.size.toString())
                 reqBuilder.body(buffered)
             }
@@ -184,6 +205,8 @@ func attachBufferedProxyRequestBody(
         tempPath,
         config.maxBufferedBodyBytes
     )
+    recordProxyRequestBodyMode(ctx, "temp-file-buffered")
+    recordProxyRequestBodyBytes(ctx, saved)
     headers.add("content-length", saved.toString())
     let replayFile = File(tempPath, OpenMode.Read)
     reqBuilder.body(replayFile)
@@ -210,6 +233,7 @@ func streamProxyBufferedRequestBodyToFile(
             if (maxBytes > 0 && nextTotal > maxBytes) {
                 throw ProxyBufferedBodyTooLargeException(
                     maxBytes,
+                    nextTotal,
                     "proxy buffered request body exceeds limit=${maxBytes}"
                 )
             }
@@ -242,6 +266,18 @@ func closeProxyRequestBodyAttachment(attachment: ?ProxyRequestBodyAttachment): U
             } catch (_: Exception) { }
         }
     }
+}
+
+func recordProxyRequestBodyMode(ctx: Ctx, mode: String): Unit {
+    ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY, mode)
+}
+
+func recordProxyRequestBodyBytes(ctx: Ctx, bytes: Int64): Unit {
+    ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, bytes.toString())
+}
+
+func recordProxyRequestBodyLimitBytes(ctx: Ctx, limitBytes: Int64): Unit {
+    ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, limitBytes.toString())
 }
 
 func shouldProxyBufferUnknownLengthBodyToFile(targetUrl: String, config: ProxyConfig): Bool {
