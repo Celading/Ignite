@@ -3,6 +3,9 @@ package ignite.middleware
 import ignite.{Handler, Ctx}
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
 import std.collection.ArrayList
+import std.fs.{File, OpenMode, removeIfExists}
+import std.random.Random
+import std.time.DateTime
 import ignite.security as security
 
 public class ProxyConfig {
@@ -10,16 +13,22 @@ public class ProxyConfig {
     public var pathRewrite: Array<(String, String)> = []
     public var timeout: Duration = Duration.second * 30
     public var x509Verify: ?security.X509VerifyOption = None
+    public var bufferUnknownLengthBodyToFile: Bool = false
+    public var unknownLengthBodyTempDir: String = "/tmp"
 
     public init(target: String, pathRewrite!: Array<(String, String)> = [],
                 timeout!: Duration = Duration.second * 30,
-                x509Verify!: ?security.X509VerifyOption = None) {
+                x509Verify!: ?security.X509VerifyOption = None,
+                bufferUnknownLengthBodyToFile!: Bool = false,
+                unknownLengthBodyTempDir!: String = "/tmp") {
         this.target = target
         this.pathRewrite = pathRewrite
         this.timeout = timeout
         if (let Some(option) <- x509Verify) {
             this.x509Verify = Some(option.copy())
         }
+        this.bufferUnknownLengthBodyToFile = bufferUnknownLengthBodyToFile
+        this.unknownLengthBodyTempDir = normalizeProxyTempDir(unknownLengthBodyTempDir)
     }
 }
 
@@ -46,11 +55,15 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
                 .method(ctx.method)
                 .url(targetUrl)
             let outboundHeaders = buildProxyRequestHeaders(ctx)
-            attachProxyRequestBody(reqBuilder, outboundHeaders, ctx, targetUrl)
+            let bodyAttachment = attachProxyRequestBody(reqBuilder, outboundHeaders, ctx, targetUrl, config)
             reqBuilder.addHeaders(outboundHeaders)
 
-            let resp = client.send(reqBuilder.build())
-            relayProxyResponse(ctx, resp)
+            try {
+                let resp = client.send(reqBuilder.build())
+                relayProxyResponse(ctx, resp)
+            } finally {
+                closeProxyRequestBodyAttachment(bodyAttachment)
+            }
         } catch (e: security.SecurityException) {
             markSecurityContext(
                 ctx,
@@ -96,14 +109,15 @@ func attachProxyRequestBody(
     reqBuilder: HttpRequestBuilder,
     headers: HttpHeaders,
     ctx: Ctx,
-    targetUrl: String
-): Unit {
+    targetUrl: String,
+    config: ProxyConfig
+): ?ProxyRequestBodyAttachment {
     if (let Some(cached) <- ctx.cachedBodyBytes()) {
         if (cached.size > 0 || shouldForwardRequestBody(ctx)) {
             headers.add("content-length", cached.size.toString())
             reqBuilder.body(cached)
         }
-        return
+        return None
     }
 
     let request = ctx.httpContext().request
@@ -113,9 +127,13 @@ func attachProxyRequestBody(
                 headers.add("content-length", size.toString())
                 reqBuilder.body(request.body)
             }
+            return None
         case None =>
             if (!shouldForwardRequestBody(ctx)) {
-                return
+                return None
+            }
+            if (shouldProxyBufferUnknownLengthBodyToFile(targetUrl, config)) {
+                return attachBufferedProxyRequestBody(reqBuilder, headers, ctx, config)
             }
             if (proxyTargetScheme(targetUrl) == "http") {
                 headers.add("transfer-encoding", "chunked")
@@ -125,7 +143,80 @@ func attachProxyRequestBody(
                 headers.add("content-length", buffered.size.toString())
                 reqBuilder.body(buffered)
             }
+            None
     }
+}
+
+class ProxyRequestBodyAttachment {
+    public let replayFile: ?File
+    public let tempPath: String
+
+    public init(replayFile!: ?File = None, tempPath!: String = "") {
+        this.replayFile = replayFile
+        this.tempPath = tempPath
+    }
+}
+
+func attachBufferedProxyRequestBody(
+    reqBuilder: HttpRequestBuilder,
+    headers: HttpHeaders,
+    ctx: Ctx,
+    config: ProxyConfig
+): ProxyRequestBodyAttachment {
+    let tempPath = buildProxyTempBodyPath(config.unknownLengthBodyTempDir)
+    let saved = ctx.saveBodyToFile(tempPath)
+    headers.add("content-length", saved.toString())
+    let replayFile = File(tempPath, OpenMode.Read)
+    reqBuilder.body(replayFile)
+    ProxyRequestBodyAttachment(replayFile: replayFile, tempPath: tempPath)
+}
+
+func closeProxyRequestBodyAttachment(attachment: ?ProxyRequestBodyAttachment): Unit {
+    if (let Some(state) <- attachment) {
+        if (let Some(file) <- state.replayFile) {
+            try {
+                file.close()
+            } catch (_: Exception) { }
+        }
+        if (state.tempPath.trimAscii().size > 0) {
+            try {
+                removeIfExists(state.tempPath)
+            } catch (_: Exception) { }
+        }
+    }
+}
+
+func shouldProxyBufferUnknownLengthBodyToFile(targetUrl: String, config: ProxyConfig): Bool {
+    if (config.bufferUnknownLengthBodyToFile) {
+        return true
+    }
+    proxyTargetScheme(targetUrl) != "http"
+}
+
+func buildProxyTempBodyPath(baseDir: String): String {
+    let normalizedDir = normalizeProxyTempDir(baseDir)
+    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+    let rng = Random()
+    var suffix = ""
+    let hex = "0123456789abcdef".toRuneArray()
+    var i: Int64 = 0
+    while (i < 12) {
+        suffix += hex[Int64(rng.nextUInt64() % 16)].toString()
+        i += 1
+    }
+    normalizedDir + "/ignite-proxy-body-${nowMs}-${suffix}.tmp"
+}
+
+func normalizeProxyTempDir(path: String): String {
+    let trimmed = path.trimAscii()
+    if (trimmed.size == 0) {
+        return "/tmp"
+    }
+    let runes = trimmed.toRuneArray()
+    if (runes[runes.size - 1] == r'/') {
+        return trimmed[..trimmed.size - 1]
+    }
+    trimmed
 }
 
 func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
