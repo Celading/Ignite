@@ -90,12 +90,16 @@ func buildProxyAuditDetail(ctx: Ctx): String {
     let limit = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
     let responseMode = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? ""
     let responseBytes = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? ""
+    let downstreamMode = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY) ?? ""
+    let downstreamBytes = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY) ?? ""
     if (
         mode.trimAscii().size == 0 &&
         bytes.trimAscii().size == 0 &&
         limit.trimAscii().size == 0 &&
         responseMode.trimAscii().size == 0 &&
-        responseBytes.trimAscii().size == 0
+        responseBytes.trimAscii().size == 0 &&
+        downstreamMode.trimAscii().size == 0 &&
+        downstreamBytes.trimAscii().size == 0
     ) {
         return ""
     }
@@ -115,6 +119,12 @@ func buildProxyAuditDetail(ctx: Ctx): String {
     }
     if (responseBytes.trimAscii().size > 0) {
         detail = appendAuditDetailField(detail, "proxyResponseBodyBytes", responseBytes)
+    }
+    if (downstreamMode.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyDownstreamBodyMode", downstreamMode)
+    }
+    if (downstreamBytes.trimAscii().size > 0) {
+        detail = appendAuditDetailField(detail, "proxyDownstreamBodyBytes", downstreamBytes)
     }
     detail
 }

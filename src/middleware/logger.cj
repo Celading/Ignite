@@ -138,13 +138,17 @@ public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
         let proxyBodyLimitBytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
         let proxyResponseBodyMode = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? ""
         let proxyResponseBodyBytes = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? ""
+        let proxyDownstreamBodyMode = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY) ?? ""
+        let proxyDownstreamBodyBytes = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY) ?? ""
         let message = appendProxyLogSuffix(
             baseMsg,
             proxyBodyMode,
             proxyBodyBytes,
             proxyBodyLimitBytes,
             proxyResponseBodyMode,
-            proxyResponseBodyBytes
+            proxyResponseBodyBytes,
+            proxyDownstreamBodyMode,
+            proxyDownstreamBodyBytes
         )
         let ts = DateTime.now().toString()
         if (config.jsonLine) {
@@ -163,7 +167,9 @@ public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
                     proxyBodyBytes,
                     proxyBodyLimitBytes,
                     proxyResponseBodyMode,
-                    proxyResponseBodyBytes
+                    proxyResponseBodyBytes,
+                    proxyDownstreamBodyMode,
+                    proxyDownstreamBodyBytes
                 )
             )
         } else {
@@ -201,14 +207,18 @@ func toJsonLogLine(
     proxyBodyBytes: String,
     proxyBodyLimitBytes: String,
     proxyResponseBodyMode: String,
-    proxyResponseBodyBytes: String
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
 ): String {
     let proxyJson = buildProxyLogJsonFields(
         proxyBodyMode,
         proxyBodyBytes,
         proxyBodyLimitBytes,
         proxyResponseBodyMode,
-        proxyResponseBodyBytes
+        proxyResponseBodyBytes,
+        proxyDownstreamBodyMode,
+        proxyDownstreamBodyBytes
     )
     #"{"timestamp":""# + escapeJsonLog(timestamp) +
         #"","level":"# + level.toString() +
@@ -234,7 +244,9 @@ func appendProxyLogSuffix(
     proxyBodyBytes: String,
     proxyBodyLimitBytes: String,
     proxyResponseBodyMode: String,
-    proxyResponseBodyBytes: String
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
 ): String {
     var message = baseMsg
     message = appendProxyLogPart(message, "proxyBodyMode", proxyBodyMode)
@@ -242,6 +254,8 @@ func appendProxyLogSuffix(
     message = appendProxyLogPart(message, "proxyBodyLimitBytes", proxyBodyLimitBytes)
     message = appendProxyLogPart(message, "proxyResponseBodyMode", proxyResponseBodyMode)
     message = appendProxyLogPart(message, "proxyResponseBodyBytes", proxyResponseBodyBytes)
+    message = appendProxyLogPart(message, "proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    message = appendProxyLogPart(message, "proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
     message
 }
 
@@ -257,7 +271,9 @@ func buildProxyLogJsonFields(
     proxyBodyBytes: String,
     proxyBodyLimitBytes: String,
     proxyResponseBodyMode: String,
-    proxyResponseBodyBytes: String
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
 ): String {
     var out = ""
     out += buildOptionalJsonLogField("proxyBodyMode", proxyBodyMode)
@@ -265,6 +281,8 @@ func buildProxyLogJsonFields(
     out += buildOptionalJsonLogField("proxyBodyLimitBytes", proxyBodyLimitBytes)
     out += buildOptionalJsonLogField("proxyResponseBodyMode", proxyResponseBodyMode)
     out += buildOptionalJsonLogField("proxyResponseBodyBytes", proxyResponseBodyBytes)
+    out += buildOptionalJsonLogField("proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    out += buildOptionalJsonLogField("proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
     out
 }
 

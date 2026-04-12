@@ -26,6 +26,8 @@ public class AuditProxyDetailTestSuite {
             ctx.next()
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "2")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, "2")
         })
         app.post("/proxy-detail", { ctx =>
             let _ = ctx.status(201).sendString("ok")
@@ -39,7 +41,7 @@ public class AuditProxyDetailTestSuite {
         @Assert(
             contains(
                 auditPayload,
-                "\"detail\":\"proxyBodyMode=temp-file-buffered;proxyBodyBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=2\""
+                "\"detail\":\"proxyBodyMode=temp-file-buffered;proxyBodyBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=2;proxyDownstreamBodyMode=known-length-stream;proxyDownstreamBodyBytes=2\""
             ),
             true
         )
@@ -66,6 +68,8 @@ public class AuditProxyDetailTestSuite {
             ctx.next()
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "17")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, "17")
         })
         app.post("/proxy-detail-append", { ctx =>
             let _ = ctx.status(413).sendString("Payload Too Large")
@@ -79,7 +83,7 @@ public class AuditProxyDetailTestSuite {
         @Assert(
             contains(
                 auditPayload,
-                "\"detail\":\"target=https://example.internal/up;proxyBodyMode=temp-file-buffered-over-limit;proxyBodyBytes=16384;proxyBodyLimitBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=17\""
+                "\"detail\":\"target=https://example.internal/up;proxyBodyMode=temp-file-buffered-over-limit;proxyBodyBytes=16384;proxyBodyLimitBytes=8192;proxyResponseBodyMode=known-length-stream;proxyResponseBodyBytes=17;proxyDownstreamBodyMode=known-length-stream;proxyDownstreamBodyBytes=17\""
             ),
             true
         )

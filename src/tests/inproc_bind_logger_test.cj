@@ -151,6 +151,8 @@ public class InprocBindLoggerTestSuite {
             ctx.next()
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
             ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "2")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, "2")
         })
         app.post("/json-log-proxy", { ctx =>
             let _ = ctx.status(201).sendString("ok")
@@ -166,10 +168,12 @@ public class InprocBindLoggerTestSuite {
         @Assert(contains(line, #""proxyBodyLimitBytes":"8192""#), true)
         @Assert(contains(line, #""proxyResponseBodyMode":"known-length-stream""#), true)
         @Assert(contains(line, #""proxyResponseBodyBytes":"2""#), true)
+        @Assert(contains(line, #""proxyDownstreamBodyMode":"known-length-stream""#), true)
+        @Assert(contains(line, #""proxyDownstreamBodyBytes":"2""#), true)
         @Assert(
             contains(
                 line,
-                #"proxyBodyMode=temp-file-buffered proxyBodyBytes=16384 proxyBodyLimitBytes=8192 proxyResponseBodyMode=known-length-stream proxyResponseBodyBytes=2"#
+                #"proxyBodyMode=temp-file-buffered proxyBodyBytes=16384 proxyBodyLimitBytes=8192 proxyResponseBodyMode=known-length-stream proxyResponseBodyBytes=2 proxyDownstreamBodyMode=known-length-stream proxyDownstreamBodyBytes=2"#
             ),
             true
         )

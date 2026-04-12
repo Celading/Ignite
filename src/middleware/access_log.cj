@@ -55,7 +55,9 @@ public func accessLogMiddleware(config!: AccessLogConfig = AccessLogConfig()): H
             ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? "",
             ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? "",
             ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? "",
-            ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? ""
+            ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY) ?? ""
         )
         config.output(log)
     }
@@ -67,7 +69,9 @@ func appendAccessLogProxyFields(
     proxyBodyBytes: String,
     proxyBodyLimitBytes: String,
     proxyResponseBodyMode: String,
-    proxyResponseBodyBytes: String
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
 ): String {
     var out = log
     out = appendAccessLogField(out, "proxyBodyMode", proxyBodyMode)
@@ -75,6 +79,8 @@ func appendAccessLogProxyFields(
     out = appendAccessLogField(out, "proxyBodyLimitBytes", proxyBodyLimitBytes)
     out = appendAccessLogField(out, "proxyResponseBodyMode", proxyResponseBodyMode)
     out = appendAccessLogField(out, "proxyResponseBodyBytes", proxyResponseBodyBytes)
+    out = appendAccessLogField(out, "proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    out = appendAccessLogField(out, "proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
     out
 }
 
