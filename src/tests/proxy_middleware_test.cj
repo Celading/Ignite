@@ -29,7 +29,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
-        installProxyBodyObserveHeaderMirror(proxy)
+        proxy.use(proxyObserveHeaderMiddleware())
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -81,7 +81,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config())
-        installProxyBodyObserveHeaderMirror(proxy)
+        proxy.use(proxyObserveHeaderMiddleware())
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -134,7 +134,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
-        installProxyBodyObserveHeaderMirror(proxy)
+        proxy.use(proxyObserveHeaderMiddleware())
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -187,7 +187,7 @@ public class ProxyMiddlewareTestSuite {
         })
 
         let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
-        installProxyBodyObserveHeaderMirror(proxy)
+        proxy.use(proxyObserveHeaderMiddleware())
         proxy.use(proxyMiddleware(
             ProxyConfig(
                 "http://127.0.0.1:${upstreamPort}",
@@ -257,9 +257,9 @@ public class ProxyMiddlewareTestSuite {
                         resp.header("content-length") ?? "",
                         resp.header("accept-ranges") ?? "",
                         resp.header("x-upstream") ?? "",
-                        resp.header("x-ignite-proxy-request-body-mode") ?? "",
-                        resp.header("x-ignite-proxy-request-body-bytes") ?? "",
-                        resp.header("x-ignite-proxy-request-body-limit-bytes") ?? ""
+                        resp.header(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
+                        resp.header(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? ""
                     )
                 } catch (_: Exception) {
                     if (attempt == 19) {
@@ -431,9 +431,9 @@ public class ProxyMiddlewareTestSuite {
             headers.get("content-length") ?? "",
             headers.get("accept-ranges") ?? "",
             headers.get("x-upstream") ?? "",
-            headers.get("x-ignite-proxy-request-body-mode") ?? "",
-            headers.get("x-ignite-proxy-request-body-bytes") ?? "",
-            headers.get("x-ignite-proxy-request-body-limit-bytes") ?? ""
+            headers.get(IGNITE_PROXY_REQUEST_BODY_MODE_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER) ?? "",
+            headers.get(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER) ?? ""
         )
     }
 
@@ -513,24 +513,6 @@ public class ProxyMiddlewareTestSuite {
             value = value * 10 + (Int64(UInt32(ch)) - Int64(UInt32(r'0')))
         }
         value
-    }
-
-    func installProxyBodyObserveHeaderMirror(app: App): Unit {
-        app.use({ ctx =>
-            ctx.next()
-            let mode = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? ""
-            if (mode.size > 0) {
-                let _ = ctx.setHeader("x-ignite-proxy-request-body-mode", mode)
-            }
-            let bytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? ""
-            if (bytes.size > 0) {
-                let _ = ctx.setHeader("x-ignite-proxy-request-body-bytes", bytes)
-            }
-            let limit = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
-            if (limit.size > 0) {
-                let _ = ctx.setHeader("x-ignite-proxy-request-body-limit-bytes", limit)
-            }
-        })
     }
 
     func indexOfProxyText(text: String, target: String): Int64 {

@@ -12,6 +12,9 @@ import ignite.security as security
 public let IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_request_body_mode"
 public let IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_bytes"
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_limit_bytes"
+public let IGNITE_PROXY_REQUEST_BODY_MODE_HEADER: String = "x-ignite-proxy-request-body-mode"
+public let IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER: String = "x-ignite-proxy-request-body-bytes"
+public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER: String = "x-ignite-proxy-request-body-limit-bytes"
 
 public class ProxyConfig {
     public var target: String
@@ -100,6 +103,19 @@ public func proxyMiddleware(config: ProxyConfig): Handler {
         } catch (e: Exception) {
             ctx.status(502).sendString("Bad Gateway: ${e.message}")
         }
+    }
+}
+
+public func proxyObserveHeaderMiddleware(): Handler {
+    { ctx: Ctx =>
+        ctx.next()
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY, IGNITE_PROXY_REQUEST_BODY_MODE_HEADER)
+        emitProxyObserveHeader(ctx, IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, IGNITE_PROXY_REQUEST_BODY_BYTES_HEADER)
+        emitProxyObserveHeader(
+            ctx,
+            IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY,
+            IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_HEADER
+        )
     }
 }
 
@@ -278,6 +294,14 @@ func recordProxyRequestBodyBytes(ctx: Ctx, bytes: Int64): Unit {
 
 func recordProxyRequestBodyLimitBytes(ctx: Ctx, limitBytes: Int64): Unit {
     ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, limitBytes.toString())
+}
+
+func emitProxyObserveHeader(ctx: Ctx, localKey: String, headerName: String): Unit {
+    let value = ctx.getLocal(localKey) ?? ""
+    if (value.trimAscii().size == 0) {
+        return
+    }
+    let _ = ctx.setHeader(headerName, value)
 }
 
 func shouldProxyBufferUnknownLengthBodyToFile(targetUrl: String, config: ProxyConfig): Bool {
