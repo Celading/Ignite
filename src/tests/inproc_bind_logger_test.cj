@@ -131,6 +131,46 @@ public class InprocBindLoggerTestSuite {
         @Assert(contains(line, #""message":"[GET] /json-log 200 "#), true)
     }
 
+    @TestCase
+    public func testLoggerJsonLineIncludesProxyObserveFields(): Unit {
+        let lines = ArrayList<String>()
+        let cfg = LoggerConfig(
+            output: { line => lines.add(line) },
+            enableEntityLog: false
+        )
+        cfg.jsonLine = true
+        cfg.linuxStyle = false
+        cfg.enableSelfCheck = false
+
+        let app = App(config: Config())
+        app.use(loggerMiddleware(config: cfg))
+        app.use({ ctx =>
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY, "temp-file-buffered")
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, "16384")
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, "8192")
+            ctx.next()
+        })
+        app.post("/json-log-proxy", { ctx =>
+            let _ = ctx.status(201).sendString("ok")
+        })
+
+        let resp = app.handleForTest("POST", "/json-log-proxy", body: "proxy-body")
+        @Assert(resp.status, UInt16(201))
+        @Assert(lines.size > 0, true)
+
+        let line = lines[lines.size - 1]
+        @Assert(contains(line, #""proxyBodyMode":"temp-file-buffered""#), true)
+        @Assert(contains(line, #""proxyBodyBytes":"16384""#), true)
+        @Assert(contains(line, #""proxyBodyLimitBytes":"8192""#), true)
+        @Assert(
+            contains(
+                line,
+                #"proxyBodyMode=temp-file-buffered proxyBodyBytes=16384 proxyBodyLimitBytes=8192"#
+            ),
+            true
+        )
+    }
+
     func decodeCreateUserReq(jsonValue: JsonValue): CreateUserReq {
         let obj = jsonValue.asObject()
         let name = requireStringField(obj, "name")
