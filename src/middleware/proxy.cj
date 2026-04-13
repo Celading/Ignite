@@ -3,7 +3,8 @@ package ignite.middleware
 import ignite.{Handler, Ctx}
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
 import std.collection.ArrayList
-import std.fs.{Directory, File, OpenMode, exists, removeIfExists}
+import std.env.getVariable
+import std.fs.{Directory, File, OpenMode, Path, exists, removeIfExists}
 import std.io.InputStream
 import std.random.Random
 import std.time.DateTime
@@ -30,14 +31,14 @@ public class ProxyConfig {
     public var timeout: Duration = Duration.second * 30
     public var x509Verify: ?security.X509VerifyOption = None
     public var bufferUnknownLengthBodyToFile: Bool = false
-    public var unknownLengthBodyTempDir: String = "/tmp"
+    public var unknownLengthBodyTempDir: String = ""
     public var maxBufferedBodyBytes: Int64 = 0
 
     public init(target: String, pathRewrite!: Array<(String, String)> = [],
                 timeout!: Duration = Duration.second * 30,
                 x509Verify!: ?security.X509VerifyOption = None,
                 bufferUnknownLengthBodyToFile!: Bool = false,
-                unknownLengthBodyTempDir!: String = "/tmp",
+                unknownLengthBodyTempDir!: String = "",
                 maxBufferedBodyBytes!: Int64 = 0) {
         this.target = target
         this.pathRewrite = pathRewrite
@@ -360,7 +361,7 @@ func buildProxyTempBodyPath(baseDir: String): String {
         suffix += hex[Int64(rng.nextUInt64() % 16)].toString()
         i += 1
     }
-    normalizedDir + "/ignite-proxy-body-${nowMs}-${suffix}.tmp"
+    Path(normalizedDir).join("ignite-proxy-body-${nowMs}-${suffix}.tmp").toString()
 }
 
 func ensureProxyTempDirExists(path: String): Unit {
@@ -385,13 +386,22 @@ func ensureProxyTempDirExists(path: String): Unit {
 func normalizeProxyTempDir(path: String): String {
     let trimmed = path.trimAscii()
     if (trimmed.size == 0) {
-        return "/tmp"
-    }
-    let runes = trimmed.toRuneArray()
-    if (runes[runes.size - 1] == r'/') {
-        return trimmed[..trimmed.size - 1]
+        return detectDefaultProxyTempDir()
     }
     trimmed
+}
+
+func detectDefaultProxyTempDir(): String {
+    let keys = ["TMPDIR", "TEMP", "TMP"]
+    for (key in keys) {
+        if (let Some(value) <- getVariable(key)) {
+            let trimmed = value.trimAscii()
+            if (trimmed.size > 0) {
+                return trimmed
+            }
+        }
+    }
+    "/tmp"
 }
 
 func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {

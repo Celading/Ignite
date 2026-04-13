@@ -4,6 +4,7 @@ import ignite.*
 import ignite.client.RestClient
 import ignite.middleware.*
 import std.collection.{ArrayList, HashMap}
+import std.env.{getVariable, removeVariable, setVariable}
 import std.fs.{Directory, exists, File, OpenMode, removeIfExists}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
@@ -504,6 +505,128 @@ public class ProxyMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testProxyMiddlewareUsesTmpdirEnvForBufferedUnknownLengthUploadByDefault(): Unit {
+        let upstreamPort = choosePort(1832)
+        let proxyPort = choosePort(1833)
+        let tempRoot = "/tmp/ignite_proxy_tmpdir_env_${proxyPort}"
+        let tempDir = tempRoot + "/env-body"
+        let payload = buildLargeAsciiPayload()
+        let envSnapshot = snapshotProxyTempEnv()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+        applyProxyTempEnv(Some(tempDir), None, None)
+
+        let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        upstream.post("/up/chunked-env", { ctx =>
+            let saved = ctx.bodyBytes().size
+            let contentLength = ctx.header("content-length") ?? ""
+            _ = ctx.status(201).sendString("saved=${saved};content-length=${contentLength}")
+        })
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")],
+                bufferUnknownLengthBodyToFile: true
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/chunked-env",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(201))
+            @Assert(contains(resp.bodyText, "saved=${payload.size}"), true)
+            @Assert(contains(resp.bodyText, "content-length=${payload.size}"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+            restoreProxyTempEnv(envSnapshot)
+            _ = removeIfExists(tempRoot, recursive: true)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewarePrefersExplicitTempDirOverEnvDefault(): Unit {
+        let upstreamPort = choosePort(1834)
+        let proxyPort = choosePort(1835)
+        let envRoot = "/tmp/ignite_proxy_env_dir_${proxyPort}"
+        let explicitRoot = "/tmp/ignite_proxy_explicit_dir_${proxyPort}"
+        let envDir = envRoot + "/env-body"
+        let explicitDir = explicitRoot + "/explicit-body"
+        let payload = buildLargeAsciiPayload()
+        let envSnapshot = snapshotProxyTempEnv()
+
+        _ = removeIfExists(envRoot, recursive: true)
+        _ = removeIfExists(explicitRoot, recursive: true)
+        applyProxyTempEnv(Some(envDir), None, None)
+
+        let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        upstream.post("/up/chunked-explicit", { ctx =>
+            let saved = ctx.bodyBytes().size
+            let contentLength = ctx.header("content-length") ?? ""
+            _ = ctx.status(201).sendString("saved=${saved};content-length=${contentLength}")
+        })
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")],
+                bufferUnknownLengthBodyToFile: true,
+                unknownLengthBodyTempDir: explicitDir
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/chunked-explicit",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(201))
+            @Assert(contains(resp.bodyText, "saved=${payload.size}"), true)
+            @Assert(contains(resp.bodyText, "content-length=${payload.size}"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(exists(explicitDir), true)
+            @Assert(Directory.isEmpty(explicitDir), true)
+            @Assert(exists(envDir), false)
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+            restoreProxyTempEnv(envSnapshot)
+            _ = removeIfExists(envRoot, recursive: true)
+            _ = removeIfExists(explicitRoot, recursive: true)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareRejectsBufferedUnknownLengthUploadOverLimit(): Unit {
         let upstreamPort = choosePort(1831)
         let proxyPort = choosePort(1837)
@@ -808,6 +931,34 @@ public class ProxyMiddlewareTestSuite {
         UInt16(raw)
     }
 
+    func snapshotProxyTempEnv(): ProxyTempEnvSnapshot {
+        ProxyTempEnvSnapshot(
+            getVariable("TMPDIR"),
+            getVariable("TEMP"),
+            getVariable("TMP")
+        )
+    }
+
+    func restoreProxyTempEnv(snapshot: ProxyTempEnvSnapshot): Unit {
+        applyProxyTempEnv(snapshot.tmpdir, snapshot.temp, snapshot.tmp)
+    }
+
+    func applyProxyTempEnv(tmpdir: ?String, temp: ?String, tmp: ?String): Unit {
+        applyProxyEnvVar("TMPDIR", tmpdir)
+        applyProxyEnvVar("TEMP", temp)
+        applyProxyEnvVar("TMP", tmp)
+    }
+
+    func applyProxyEnvVar(key: String, value: ?String): Unit {
+        match (value) {
+            case Some(text) => setVariable(key, text)
+            case None =>
+                try {
+                    removeVariable(key)
+                } catch (_: Exception) { }
+        }
+    }
+
     func buildLargeAsciiPayload(): String {
         let line = "ignite-proxy-streaming-regression-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"
         var out = ""
@@ -1056,6 +1207,18 @@ class ProxyRawHttpResponse {
 
     func header(name: String): ?String {
         headers.get(name.trimAscii().toAsciiLower())
+    }
+}
+
+class ProxyTempEnvSnapshot {
+    let tmpdir: ?String
+    let temp: ?String
+    let tmp: ?String
+
+    public init(tmpdir: ?String, temp: ?String, tmp: ?String) {
+        this.tmpdir = tmpdir
+        this.temp = temp
+        this.tmp = tmp
     }
 }
 
