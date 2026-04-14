@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SERVER_BIN="/tmp/ignite_sample_h2wire"
 SERVER_LOG="/tmp/ignite_sample_h2wire.log"
+TLS_GUARD_BIN="/tmp/ignite_sample_h2wire_tls_guard"
+TLS_GUARD_LOG="/tmp/ignite_sample_h2wire_tls_guard.log"
 VERIFY_SCRIPT="${ROOT}/manual/samples/h2wire/verify_http2.mjs"
 
 detect_stdx_static() {
@@ -63,6 +65,10 @@ if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/../_helper/testdata/tls/ser
 fi
 
 IGNITE_SAMPLE_COMPILE_ONLY=1 "${ROOT}/manual/samples/_shared/run_server_sample.sh" "manual/samples/h2wire/main.cj" "${SERVER_BIN}"
+IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/h2wire/tls_guard.cj" \
+  "${TLS_GUARD_BIN}"
 
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
@@ -85,6 +91,14 @@ case "$(uname -s)" in
     ;;
 esac
 
+if ! "${TLS_GUARD_BIN}" >"${TLS_GUARD_LOG}" 2>&1; then
+  echo "[sample/h2wire] isolated TLS guard failed before server launch." >&2
+  echo "[sample/h2wire] the current workspace still cannot complete stdx TLS config build for this sample." >&2
+  echo "[sample/h2wire] inspect ${TLS_GUARD_LOG}" >&2
+  sed -n '1,160p' "${TLS_GUARD_LOG}" >&2
+  exit 1
+fi
+
 "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID="$!"
 
@@ -92,7 +106,7 @@ ready=0
 for _ in $(seq 1 50); do
   if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
     echo "[sample/h2wire] server exited before probe could connect." >&2
-    echo "[sample/h2wire] this usually means the current stdx TLS build path aborted during startup." >&2
+    echo "[sample/h2wire] this usually means the current stdx TLS build path aborted during startup after the isolated guard had passed." >&2
     echo "[sample/h2wire] inspect ${SERVER_LOG}" >&2
     sed -n '1,160p' "${SERVER_LOG}" >&2
     exit 1

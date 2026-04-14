@@ -26,6 +26,7 @@ Run commands from the repository root that contains `cjpm.toml`.
    - Lightweight HTML / CSS composition with `IgniteKit`
 6. `manual/samples/h2wire`
    - Local H2 on-wire smoke for `ctx.writer()` and large-file return
+   - Includes an isolated TLS guard step so current stdx startup aborts are captured as reproducible blockers instead of only crashing the sample service
 
 ## Additional samples
 

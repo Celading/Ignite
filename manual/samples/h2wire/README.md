@@ -40,16 +40,18 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 这个 probe 会：
 
 1. 编译当前仓的 Ignite 与样例程序
-2. 启动一个本地 TLS 服务
-3. 用 Node 内建 `http2` 客户端验证：
+2. 先用一个隔离的 TLS guard 进程探测 `precheck -> stdx TLS config build` 这条路径
+3. 如果 guard 通过，再启动一个本地 TLS 服务
+4. 用 Node 内建 `http2` 客户端验证：
    - ALPN 结果确实是 `h2`
    - `/stream` 没有 `Transfer-Encoding`
    - `/stream` 是多次 data event 到达，而不是单次整包
    - `/file` 没有 `Transfer-Encoding`
    - `/file` 的大响应体大小与 `content-length` 一致
 
-如果样例在启动阶段直接 abort，并且 log 里出现 `stdx.crypto.keys` / `decodeFromPem` / `SIGABRT`，那不是 probe 写错了，而是当前工作区已知的 `stdx` TLS 构造阻塞又被稳定复现了。
-这正是这条 smoke 路线当前要保留下来的价值：把“本地 H2 on-wire 没闭”从口头判断变成可重复失败证据。
+如果 guard 阶段就失败，并且 log 里出现 `stdx.crypto.keys` / `decodeFromPem` / `SIGABRT`，那不是 probe 写错了，而是当前工作区已知的 `stdx` TLS 构造阻塞又被稳定复现了。
+这样做的意义是：即使底层当前还没修，probe 也会先把问题收束到一个隔离进程里，而不是直接把正式样例服务进程炸掉。
+这条 smoke 路线当前保留下来的价值，正是把“本地 H2 on-wire 没闭”从口头判断变成可重复失败证据。
 
 ## 环境变量（仅在自动探测失败时）
 
