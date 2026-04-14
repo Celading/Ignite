@@ -684,6 +684,101 @@ public class ProxyMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testProxyMiddlewareUsesTempFileFallbackForUnknownLengthUploadToHttpsTarget(): Unit {
+        let upstreamPort = choosePort(1844)
+        let proxyPort = choosePort(1845)
+        let tempRoot = "/tmp/ignite_proxy_https_unknown_length_${proxyPort}"
+        let tempDir = tempRoot + "/https-body"
+        let payload = buildLargeAsciiPayload()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "https://127.0.0.1:${upstreamPort}",
+                unknownLengthBodyTempDir: tempDir
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/https-fallback",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(502))
+            @Assert(contains(resp.bodyText, "Bad Gateway:"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownApp(proxy, proxyFuture)
+            _ = removeIfExists(tempRoot, recursive: true)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareRejectsHttpsUnknownLengthUploadWhenBufferedTempFileExceedsLimit(): Unit {
+        let upstreamPort = choosePort(1846)
+        let proxyPort = choosePort(1849)
+        let tempRoot = "/tmp/ignite_proxy_https_unknown_length_limit_${proxyPort}"
+        let tempDir = tempRoot + "/https-body"
+        let payload = buildLargeAsciiPayload()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "https://127.0.0.1:${upstreamPort}",
+                unknownLengthBodyTempDir: tempDir,
+                maxBufferedBodyBytes: payload.size / 2
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/https-fallback-limit",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(413))
+            @Assert(contains(resp.bodyText, "exceeds limit"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered-over-limit")
+            @Assert(resp.proxyRequestBodyLimitBytes, (payload.size / 2).toString())
+            @Assert(parseProxyDecimalInt64(resp.proxyRequestBodyBytes) > (payload.size / 2), true)
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownApp(proxy, proxyFuture)
+            _ = removeIfExists(tempRoot, recursive: true)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareObservesLocalBadGatewayResponse(): Unit {
         let upstreamPort = choosePort(1843)
         let proxyPort = choosePort(1847)
