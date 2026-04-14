@@ -4,13 +4,17 @@ import std.collection.ArrayList
 import std.env.*
 import std.fs.{exists, FileInfo}
 import std.io.InputStream
-import std.time.DateTime
+import std.sync.Mutex
 import stdx.net.http.{
     HttpContext, HttpRequestHandler,
     HttpRequestDistributor, HttpRequestBuilder,
     HttpHeaders, ClientBuilder, Client
 }
 import ignite.api2
+
+let _inprocTestPortPlannerMutex = Mutex()
+let _reservedInprocTestPorts = ArrayList<UInt16>()
+var _inprocTestPortPlannerNonce: Int64 = 0
 
 public class AppTestResponse {
     public let status: UInt16
@@ -420,38 +424,42 @@ public class App {
     ): AppTestResponse {
         setupSwaggerRoute()
         let host = "127.0.0.1"
-        let client = ClientBuilder()
-            .readTimeout(Duration.second * 1)
-            .writeTimeout(Duration.second * 1)
-            .poolSize(2)
-            .build()
-
+        let claimedPorts = claimInprocTestPorts(method, path)
         try {
-            for (port in chooseInprocTestPorts(method, path)) {
-                resetStartupObserveState()
-                let serverFuture = spawn {
-                    this.listen(host, port)
-                }
-                try {
-                    if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
-                        if (event.phase == "failed") {
-                            if (event.failureCode == "ADDRESS_IN_USE") {
-                                continue
-                            }
-                            throw Exception(
-                                "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
-                            )
-                        }
+            let client = ClientBuilder()
+                .readTimeout(Duration.second * 1)
+                .writeTimeout(Duration.second * 1)
+                .poolSize(2)
+                .build()
+            try {
+                for (port in claimedPorts) {
+                    resetStartupObserveState()
+                    let serverFuture = spawn {
+                        this.listen(host, port)
                     }
-                    return sendHandleForTestRequest(client, method, path, host, port, body, headers)
-                } finally {
-                    shutdownHandleForTestServer(_engine, serverFuture)
+                    try {
+                        if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
+                            if (event.phase == "failed") {
+                                if (event.failureCode == "ADDRESS_IN_USE") {
+                                    continue
+                                }
+                                throw Exception(
+                                    "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
+                                )
+                            }
+                        }
+                        return sendHandleForTestRequest(client, method, path, host, port, body, headers)
+                    } finally {
+                        shutdownHandleForTestServer(_engine, serverFuture)
+                    }
                 }
+            } finally {
+                try {
+                    client.close()
+                } catch (_: Exception) { }
             }
         } finally {
-            try {
-                client.close()
-            } catch (_: Exception) { }
+            releaseInprocTestPorts(claimedPorts)
         }
         throw Exception("handleForTest failed to connect path=${path}")
     }
@@ -969,19 +977,79 @@ func shutdownHandleForTestServer(engine: ServerEngine, serverFuture: Future<Unit
     }
 }
 
-func chooseInprocTestPorts(method: String, path: String): Array<UInt16> {
-    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-    let seed = nowMs + stableInprocTestPortHash(method, path)
-    let offsetRange: Int64 = 10000
-    let stride: Int64 = 7919
-    let out = ArrayList<UInt16>()
+func claimInprocTestPorts(method: String, path: String): Array<UInt16> {
+    synchronized(_inprocTestPortPlannerMutex) {
+        let seed = buildInprocTestPortSeed(method, path, _inprocTestPortPlannerNonce)
+        _inprocTestPortPlannerNonce += 1
+        let claimed = ArrayList<UInt16>()
+        let offsetRange: Int64 = 10000
+        let stride: Int64 = 7919
+        var step: Int64 = 0
+        while (claimed.size < 8 && step < offsetRange) {
+            let raw = 42000 + positiveInprocPortModulo(seed + (step * stride), offsetRange)
+            let port = UInt16(raw)
+            if (!containsInprocPort(_reservedInprocTestPorts, port) && !containsInprocPort(claimed, port)) {
+                claimed.add(port)
+                _reservedInprocTestPorts.add(port)
+            }
+            step += 1
+        }
+        if (claimed.size < 8) {
+            throw Exception("handleForTest failed to claim enough in-proc test ports")
+        }
+        claimed.toArray()
+    }
+}
+
+func releaseInprocTestPorts(ports: Array<UInt16>): Unit {
+    synchronized(_inprocTestPortPlannerMutex) {
+        for (port in ports) {
+            removeInprocPort(_reservedInprocTestPorts, port)
+        }
+    }
+}
+
+func buildInprocTestPortSeed(method: String, path: String, nonce: Int64): Int64 {
+    stableInprocTestPortHash(method, path) +
+        (stableInprocTestProcessHash() * 31) +
+        (nonce * 127)
+}
+
+func stableInprocTestProcessHash(): Int64 {
+    var pidText = "0"
+    try {
+        pidText = "${getProcessId()}"
+    } catch (_: Exception) { }
+    stableInprocTestPortHash("PID", pidText)
+}
+
+func positiveInprocPortModulo(value: Int64, modulo: Int64): Int64 {
+    let raw = value % modulo
+    if (raw < 0) {
+        return raw + modulo
+    }
+    raw
+}
+
+func containsInprocPort(ports: ArrayList<UInt16>, target: UInt16): Bool {
+    for (port in ports) {
+        if (port == target) {
+            return true
+        }
+    }
+    false
+}
+
+func removeInprocPort(ports: ArrayList<UInt16>, target: UInt16): Bool {
     var i: Int64 = 0
-    while (i < 8) {
-        let raw = 42000 + ((seed + (i * stride)) % offsetRange)
-        out.add(UInt16(raw))
+    while (i < ports.size) {
+        if (ports[i] == target) {
+            let _ = ports.remove(at: i)
+            return true
+        }
         i += 1
     }
-    out.toArray()
+    false
 }
 
 func stableInprocTestPortHash(method: String, path: String): Int64 {
