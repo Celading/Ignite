@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.6.1-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.22-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.6.1</span>                    │
+│                  <span style="color:#88C0D0;">Ignite v0.6.22</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.6.1</i></span>│
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.6.22</i></span>│
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.6.1)
+## Current Status (0.6.22)
 
 - See `manual/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD` for the current public baseline and milestone timeline.
 
@@ -534,6 +534,8 @@ app.get("/stream", { ctx =>
 })
 ```
 
+`ctx.writer()` is an incremental response-body writer. Under HTTP/1.1 this can map to chunked semantics; under HTTP/2 it must not emit `Transfer-Encoding`, and the underlying `stdx.net.http.HttpResponseWriter` contract is what makes repeated `write(...)` calls package and send data.
+
 ### Static files & SPA fallback (static / staticSpa)
 
 **Static directory only:** `app.static(prefix, root)` maps URL path to files under `root`; only responds when the file exists, otherwise the request is passed to later routes or 404.
@@ -721,12 +723,12 @@ More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe
 | Retry/backoff | `useRetry(config)`, idempotent methods retry by default; `request().retry(config)` / `request().disableRetry()` |
 | X509 verify entry | `useX509Verify(option)`; `request().x509Verify(option)` / `request().disableX509Verify()` |
 | Hook pipeline | `onRequest`, `onResponse`, `onError` (both `RestClient` and `RequestBuilder`) |
-| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; error hook receives `[ignite.client.observe] ...` wrapper text |
+| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` and `transportTouchpoint()` can replay the structured response-side view; error hook receives `[ignite.client.observe] ...` wrapper text |
 | Builder | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
 | Base URL | `baseUrl("https://api.example.com")` |
 | Default headers | `defaultHeader(name, value)` |
 | Cookies | `useCookies()` or `useCookies(store)`; supports `domain/path/max-age/secure/httpOnly/sameSite` and multi `set-cookie` |
-| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` (optimized for large payload paths) |
+| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `observeSnapshot()`, `transportTouchpoint()`, `isOk()`/`isSuccess()`, `discard()` (optimized for large payload paths) |
 
 ### In-proc test entry (`handleForTest`)
 

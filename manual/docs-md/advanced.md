@@ -61,6 +61,13 @@ app.get("/stream", { ctx =>
 })
 ```
 
+这里要把协议语义分清：
+
+- `ctx.writer()` 表示“增量写响应体”，不是“强行给所有协议都套上 chunked”。
+- HTTP/1.1 下，这条路径可以继续表现为 chunked 语义。
+- HTTP/2 下，不能再发 `Transfer-Encoding`；Ignite 现在只在非 H2 路径补这个头。
+- 当前底层 `stdx.net.http.HttpResponseWriter` 的本地 contract 写明：HTTP/2 下每次 `write(...)` 会把数据封装并发出。但这仍应和真实 H2 on-wire 验证分开表述，不要把“协议上成立”直接写成“本仓所有集成路径都已完全验透”。
+
 ## 静态文件
 
 如果只是做简单静态目录映射，使用 `app.static(prefix, root)` 即可。

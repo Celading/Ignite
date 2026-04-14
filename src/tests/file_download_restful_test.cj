@@ -77,6 +77,28 @@ public class FileDownloadAndRestfulTestSuite {
     }
 
     @TestCase
+    public func testSaveBodyToFileStreamsLargeUploadPayload(): Unit {
+        let fixturePath = "/tmp/ignite_push_upload_fixture.txt"
+        let payload = buildLargeAsciiPayload() + buildLargeAsciiPayload()
+
+        let app = App(config: Config(bodyLimit: 1024 * 1024))
+        app.post("/push-upload", { ctx =>
+            let saved = ctx.saveBodyToFile(fixturePath)
+            _ = ctx.status(201).json(#"{"saved":"# + saved.toString() + #"}"#)
+        })
+
+        let resp = app.handleForTest(
+            "POST",
+            "/push-upload",
+            body: payload,
+            headers: [("content-type", "text/plain; charset=utf-8")]
+        )
+        @Assert(resp.status, UInt16(201))
+        @Assert(contains(resp.body, #""saved":"# + payload.size.toString()), true)
+        @Assert(readTextFile(fixturePath), payload)
+    }
+
+    @TestCase
     public func testRestfulCrudEndToEnd(): Unit {
         let app = App(config: Config())
         let store = TodoStore()
@@ -215,6 +237,23 @@ public class FileDownloadAndRestfulTestSuite {
         let file = File(path, OpenMode.Write)
         file.write(body.toArray())
         file.close()
+    }
+
+    func readTextFile(path: String): String {
+        let file = File(path, OpenMode.Read)
+        let buf = ArrayList<UInt8>()
+        let tmp = Array<UInt8>(4096, repeat: 0)
+        while (true) {
+            let n = file.read(tmp)
+            if (n <= 0) {
+                break
+            }
+            for (i in 0..n) {
+                buf.add(tmp[i])
+            }
+        }
+        file.close()
+        String.fromUtf8(buf.toArray())
     }
 
     func sliceText(text: String, start: Int64, endExclusive: Int64): String {

@@ -80,9 +80,21 @@ public class ClientTransportSelectionTestSuite {
             @Assert(publicPaths[0], "stable-default")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "low")
+            @Assert(readHeader(resp, "x-ignite-observe-selected-reason"), "stable_default_path")
+            @Assert(readHeader(resp, "x-ignite-observe-fallback-chain"), "-")
+            @Assert(readHeader(resp, "x-ignite-observe-candidate-order"), "stdx-default,jinguissl-provider-candidate")
+            @Assert(readHeader(resp, "x-ignite-observe-transport-tags"), "scene=client,scheme=http")
             @Assert(touchpointMarks.size, 2)
             @Assert(touchpointMarks[0], "global:stdx-http-client:stable-default")
             @Assert(touchpointMarks[1], "local:stdx-http-client:low")
+            match (resp.transportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "stdx-http-client")
+                    @Assert(touchpoint.selectedReason, "stable_default_path")
+                    @Assert(touchpoint.candidateOrder, "stdx-default,jinguissl-provider-candidate")
+                    @Assert(touchpoint.transportTags, "scene=client,scheme=http")
+                case None => @Fail("expected response transport touchpoint")
+            }
             match (client.lastClientTransportTouchpoint()) {
                 case Some(touchpoint) =>
                     @Assert(touchpoint.selectedBackend, "stdx-http-client")

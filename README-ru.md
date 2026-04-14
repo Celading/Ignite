@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.6.1-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.22-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.6.1</span>                    │
+│                  <span style="color:#88C0D0;">Ignite v0.6.22</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.6.1</i></span>│
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.6.22</i></span>│
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.6.1)
+## Текущее состояние (0.6.22)
 
 - Для актуальной публичной базовой точки и временной шкалы версий используйте `manual/README.md`, `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
@@ -484,6 +484,8 @@ app.get("/stream", { ctx =>
 })
 ```
 
+`ctx.writer()` — это интерфейс поэтапной записи тела ответа. В HTTP/1.1 это может соответствовать chunked-семантике; в HTTP/2 заголовок `Transfer-Encoding` отправлять нельзя, и повторные `write(...)` должны опираться на контракт нижележащего `stdx.net.http.HttpResponseWriter`.
+
 ### Статические файлы и откат для SPA (static / staticSpa)
 
 **Только статика:** `app.static(prefix, root)` сопоставляет URL с файлами в `root`; ответ отдаётся только при существовании файла, иначе запрос уходит дальше по маршрутам или в 404.
@@ -645,7 +647,8 @@ client.close()
 | Base URL | `baseUrl("https://api.example.com")` |
 | Заголовки по умолчанию | `defaultHeader(name, value)` |
 | Cookie | `useCookies()` или `useCookies(store)`; поддерживает `domain/path/max-age/secure/httpOnly/sameSite` и несколько `set-cookie` |
-| Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` |
+| Наблюдаемость | Успешные ответы несут `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` и `transportTouchpoint()` восстанавливают структурированный view на стороне ответа; error hook по-прежнему получает текст вида `[ignite.client.observe] ...` |
+| Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `observeSnapshot()`, `transportTouchpoint()`, `isOk()`/`isSuccess()`, `discard()` |
 
 ### Обработка ошибок и корректное завершение
 

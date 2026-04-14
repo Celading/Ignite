@@ -199,6 +199,22 @@ public class ClientHookTestSuite {
             @Assert(observeJson.size, 1)
             @Assert(containsClientHookText(observeJson[0], "\"outcome\":\"success\""), true)
             @Assert(containsClientHookText(observeJson[0], "\"responseStatus\":200"), true)
+            match (resp.observeSnapshot()) {
+                case Some(snapshot) =>
+                    @Assert(snapshot.outcome, "success")
+                    @Assert(snapshot.responseStatus, 200)
+                    @Assert(snapshot.backendId, "stdx-http-client")
+                    @Assert(snapshot.transportTags, "scene=client,scheme=http")
+                case None => @Fail("expected response observe snapshot")
+            }
+            match (resp.transportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "stdx-http-client")
+                    @Assert(touchpoint.selectedReason, "stable_default_path")
+                    @Assert(touchpoint.fallbackChain, "-")
+                    @Assert(touchpoint.transportTags, "scene=client,scheme=http")
+                case None => @Fail("expected response transport touchpoint")
+            }
             match (client.lastClientObserveSnapshot()) {
                 case Some(snapshot) =>
                     @Assert(snapshot.outcome, "success")

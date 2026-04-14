@@ -92,12 +92,17 @@ app.get("/search/:type", { ctx =>
 
 `Ctx` 提供的响应方法覆盖了多数服务常用路径：
 
+- `ctx.requestBody()`：拿到底层 `InputStream`，适合自己做流式消费
+- `ctx.bodyBytes()` / `ctx.bodyString()`：把请求体读成字节或字符串，适合普通体积请求
+- `ctx.saveBodyToFile(path)`：把请求体直接推到文件，适合大 body 上传落盘
 - `ctx.json(body)`：直接回 JSON 字符串
 - `ctx.jsonSerialize(obj)`：类型实现序列化能力时回 JSON
 - `ctx.jsonEncode(obj)`：走 `JsonEncodable` 或自定义 `Config.jsonEncoder`
 - `ctx.sendString(body)`：纯文本响应
 - `ctx.html(body)`：HTML 响应
 - `ctx.send(bytes)`：原始字节
+- `ctx.writer()`：增量写响应体；HTTP/1.1 下可表现为 chunked，HTTP/2 下不应该再补 `Transfer-Encoding`
+- `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头
 - `ctx.sendStatus(404)`：状态码 + 默认消息
 - `ctx.redirect("/login")`：重定向
 - `ctx.noContent()`：`204 No Content`
@@ -108,6 +113,28 @@ app.get("/ping", { ctx =>
     ctx.status(200).sendString("pong")
 })
 ```
+
+大上传场景更推荐这样写：
+
+```cangjie
+app.post("/upload-large", { ctx =>
+    let saved = ctx.saveBodyToFile("/tmp/upload-large.bin")
+    ctx.status(201).json(#"{"saved":"# + saved.toString() + #"}"#)
+})
+```
+
+如果你要问“HTTP/2 下还能不能流式返回”，答案不是靠 `Transfer-Encoding`：
+
+- RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
+- `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
+- 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
+
+如果你在 Client 侧用了 `RestClient`，响应拿回来后还可以继续读结构化 transport 留痕：
+
+- `resp.observeSnapshot()`：把响应头里的 observe 字段回放成 `ClientObserveSnapshot`
+- `resp.transportTouchpoint()`：把已选 backend / reason / fallbackChain 等字段回放成 `ClientTransportTouchpoint`
+
+这样做的好处是，联调排障时不必只盯日志文本，也不用手工一个个去读 `x-ignite-observe-*` 头。
 
 ## 路由组
 

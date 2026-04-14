@@ -655,6 +655,10 @@ public class RequestBuilder {
             resp.headers.add("x-ignite-observe-crypto-provider-id", selectionDecision.cryptoProviderId)
             resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
             resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
+            resp.headers.add("x-ignite-observe-transport-tags", selectionDecision.observabilityTags)
+            resp.headers.add("x-ignite-observe-selected-reason", selectionDecision.selectedReason)
+            resp.headers.add("x-ignite-observe-fallback-chain", selectionDecision.fallbackChain)
+            resp.headers.add("x-ignite-observe-candidate-order", selectionDecision.candidateOrder)
         } catch (_: Exception) {}
     }
 

@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.6.1-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.22-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                    <span style="color:#88C0D0;">Ignite v0.6.1</span>                     │
+│                   <span style="color:#88C0D0;">Ignite v0.6.22</span>                     │
 │   <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>    │
 │                                                       │
 │   Touchpoints .......... 16   Processes .......... 1  │
 │   Prefork ......... Disabled   PID .......... 67271   │
-│                                        <span style="color:#8A8A8A;"><i>_Ignite 0.6.1</i></span> │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.6.22</i></span> │
 └───────────────────────────────────────────────────────┘
 </pre>
 <span style="font-weight:300;font-size:38px">Ignite (叶燧)</span><br/>
@@ -127,7 +127,8 @@ main() {
 - 接口可解释：Swagger / OpenAPI、`InterfaceSpec`、`TestOption`、`x-ignite-test` 和 `kmode` 让接口不仅能跑，还能讲清楚。
 - 错误收得住：`bindJsonOr400` 统一常见请求绑定错误语义，首跑排障少走弯路。
 - 路由更像“框架”而不是“脚手架”：命名路由、`RouteOption.operationId`、`urlFor`、组级中间件都已经接上。
-- 联调不分家：内置 `RestClient`、Builder 模式、Retry / Hook / Observe、Cookie v2、multipart、加密请求与 X509 校验入口。
+- 联调不分家：内置 `RestClient`、Builder 模式、Retry / Hook / Observe、Cookie v2、multipart、加密请求与 X509 校验入口，响应侧也能直接拿 `observeSnapshot()` / `transportTouchpoint()`。
+- 大请求体有直落盘路径：`requestBody()` / `saveBodyToFile(...)` 可以避免先把整包 body 全塞进内存。
 - 静态和动态都能接：`static`、`staticSpa`、`IgniteKit` 都在公开能力面上。
 - 边界说人话：当前 HTTPS 默认路径、压缩支持范围、样例入口都写在公开文档里，不让你靠猜。
 
@@ -137,7 +138,7 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 
 - `App`：负责把服务真正支起来，路由、生命周期、错误处理、Swagger 都从这里起手。
 - `Router / Group`：负责把接口按模块排整齐，不用每个项目自己重新发明组织方式。
-- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，是你最常打交道的对象。
+- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，是你最常打交道的对象；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`。
 - `Config`：负责把服务名、版本、超时、Swagger、TLS、Banner、kMode 这些运行期口径收在一起。
 - `RouteOption`：负责把接口的 `summary`、`tag`、`operationId`、请求体、响应和测试元数据挂上去。
 - `RestClient`：负责让调用端别再另造一套陌生心智，联调时直接沿用 Ignite 的语义。
@@ -216,6 +217,8 @@ ignite/
 > Fueling the engines of innovation.
 
 - [`brotli_middleware`](https://gitcode.com/copur/brotli_middleware) - 面向 Ignite 生态的 Brotli 中间件扩展
+
+更多 `IgniteKit-*` 扩展与 `Cangku / Cangjie-Cangku` 同级基础设施方向仍在内部整理中，当前公开口径仍以已落地能力为准。
 
 ## 文档与入口
 
