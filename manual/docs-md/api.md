@@ -101,6 +101,7 @@ app.get("/search/:type", { ctx =>
 - `ctx.sendString(body)`：纯文本响应
 - `ctx.html(body)`：HTML 响应
 - `ctx.send(bytes)`：原始字节
+- `ctx.sendStream(stream, ...)`：直接发送 `InputStream`，适合大响应体或文件式输出
 - `ctx.writer()`：增量写响应体；HTTP/1.1 下可表现为 chunked，HTTP/2 下不应该再补 `Transfer-Encoding`
 - `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头
 - `ctx.sendStatus(404)`：状态码 + 默认消息
@@ -132,6 +133,7 @@ app.post("/upload-large", { ctx =>
 如果你要问“HTTP/2 下还能不能流式返回”，答案不是靠 `Transfer-Encoding`：
 
 - RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
+- `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
 - `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
 - 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
 

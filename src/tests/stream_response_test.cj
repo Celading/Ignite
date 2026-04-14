@@ -30,6 +30,35 @@ public class StreamResponseTestSuite {
     }
 
     @TestCase
+    public func testSendStreamKnownLengthOverRealHttpKeepsContentLengthWithoutTransferEncoding(): Unit {
+        let payload = buildLargeAsciiPayload()
+        let port = chooseStreamTestPort(1833)
+        let app = App(config: Config())
+        app.get("/stream-known-wire", { ctx =>
+            let stream = SendStreamBytesInput(toSendStreamByteArray(payload.toArray()))
+            _ = ctx.sendStream(
+                stream,
+                contentType: "text/plain; charset=utf-8",
+                contentLength: Some(payload.size)
+            )
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendRawStreamHttpWithRetry(port, "GET", "/stream-known-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-type") ?? "", "text/plain; charset=utf-8")
+            @Assert(resp.header("content-length") ?? "", payload.size.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.body, payload)
+        } finally {
+            shutdownStreamTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testSendStreamUnknownLengthFallsBackToChunkedForHttp11(): Unit {
         let payload = buildLargeAsciiPayload()
         let port = chooseStreamTestPort(1841)
@@ -73,6 +102,35 @@ public class StreamResponseTestSuite {
         @Assert(resp.header("transfer-encoding") ?? "", "")
         @Assert(resp.body, "")
         @Assert(tracked.closed, true)
+    }
+
+    @TestCase
+    public func testHeadSendStreamOverRealHttpKeepsHeadersWithoutBodyAndClosesStream(): Unit {
+        let tracked = SendStreamTrackingInput(toSendStreamByteArray("ignite-head-stream".toArray()))
+        let port = chooseStreamTestPort(1851)
+        let app = App(config: Config())
+        app.head("/stream-head-wire", { ctx =>
+            _ = ctx.sendStream(
+                tracked,
+                contentType: "application/octet-stream",
+                contentLength: Some(Int64(18))
+            )
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendRawStreamHttpWithRetry(port, "HEAD", "/stream-head-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-type") ?? "", "application/octet-stream")
+            @Assert(resp.header("content-length") ?? "", "18")
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.body, "")
+            @Assert(tracked.closed, true)
+        } finally {
+            shutdownStreamTestApp(app, serverFuture)
+        }
     }
 
     func buildLargeAsciiPayload(): String {
