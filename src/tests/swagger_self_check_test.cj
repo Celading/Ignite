@@ -42,7 +42,7 @@ public class SwaggerSelfCheckTestSuite {
         app.swagger(SwaggerInfo(
             title: "Swagger Self Check",
             description: "verifies 0500 self-check metadata",
-            version: "0.5.31"
+            version: "0.5.68"
         ))
         app.post(
             "/echo",
@@ -58,6 +58,22 @@ public class SwaggerSelfCheckTestSuite {
         @Assert(contains(resp.body, #""example": {"name":"ignite","trace":true}"#), true)
         @Assert(contains(resp.body, #""example": {"ok":true,"name":"ignite"}"#), true)
         @Assert(contains(resp.body, #""/swagger/json""#), false)
+    }
+
+    @TestCase
+    public func testSwaggerJsonEscapesControlCharacters(): Unit {
+        let app = App(config: Config(enableSwagger: true))
+        app.swagger(SwaggerInfo(
+            title: buildControlText("Bad", UInt8(1), "Title"),
+            description: buildControlText("Line", UInt8(0), "Break") + String.fromUtf8([UInt8(8), UInt8(12)]),
+            version: "0.5.68"
+        ))
+        app.get("/ok", { ctx => _ = ctx.sendString("ok") })
+
+        let resp = app.handleForTest("GET", "/swagger/json")
+        @Assert(resp.status, UInt16(200))
+        @Assert(contains(resp.body, "Bad\\u0001Title"), true)
+        @Assert(contains(resp.body, "Line\\u0000Break\\b\\f"), true)
     }
 
     @TestCase
@@ -161,5 +177,9 @@ public class SwaggerSelfCheckTestSuite {
             i += 1
         }
         false
+    }
+
+    func buildControlText(prefix: String, code: UInt8, suffix: String): String {
+        prefix + String.fromUtf8([code]) + suffix
     }
 }

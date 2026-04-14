@@ -359,7 +359,9 @@ public class RequestBuilder {
                 e,
                 elapsedMs(observeStart),
                 0,
-                collectObserveFields()
+                collectObserveFields(),
+                "request_prepare",
+                false
             )
             for (hook in _errorHooks) {
                 try {
@@ -398,7 +400,7 @@ public class RequestBuilder {
                 }
                 return resp
             } catch (e: Exception) {
-                if (shouldRetryError(retryCfg, canRetryMethod, attempt)) {
+                if (shouldRetryError(e, retryCfg, canRetryMethod, attempt)) {
                     applyBackoffDelay(retryCfg, attempt)
                     attempt += 1
                     continue
@@ -409,7 +411,9 @@ public class RequestBuilder {
                     e,
                     durationMs,
                     retryCount,
-                    collectObserveFields()
+                    collectObserveFields(),
+                    "",
+                    false
                 )
                 for (hook in _errorHooks) {
                     try {
@@ -452,9 +456,11 @@ public class RequestBuilder {
             return "TIMEOUT"
         }
         let hasTls = containsStr(msg, "tls")
+        let hasSsl = containsStr(msg, "ssl")
+        let hasHandshake = containsStr(msg, "handshake")
         let hasX509 = containsStr(msg, "x509")
         let hasCertificate = containsStr(msg, "certificate")
-        if (hasTls || hasX509 || hasCertificate) {
+        if (hasTls || hasSsl || hasHandshake || hasX509 || hasCertificate) {
             return "TLS"
         }
         let hasConnection = containsStr(msg, "connection")
@@ -465,6 +471,79 @@ public class RequestBuilder {
             return "NETWORK"
         }
         "UNKNOWN"
+    }
+
+    func classifyErrorPhase(origin: Exception, phaseHint: String): String {
+        if (phaseHint.size > 0) {
+            return phaseHint
+        }
+        let msg = origin.message.toAsciiLower()
+        if (containsStr(msg, "tls must be configured") || containsStr(msg, "https requests are sent")) {
+            return "handshake"
+        }
+        if (containsStr(msg, "handshake") || containsStr(msg, "ssl")) {
+            return "handshake"
+        }
+        if (containsStr(msg, "certificate") || containsStr(msg, "x509")) {
+            return "verify"
+        }
+        if (containsStr(msg, "read") && containsStr(msg, "timeout")) {
+            return "read"
+        }
+        if (containsStr(msg, "write") && containsStr(msg, "timeout")) {
+            return "write"
+        }
+        if (containsStr(msg, "connect") || containsStr(msg, "refused") || containsStr(msg, "socket")) {
+            return "connect"
+        }
+        if (containsStr(msg, "timeout")) {
+            return "transport"
+        }
+        "unknown"
+    }
+
+    func classifyErrorCauseCode(origin: Exception, errClass: String, phase: String): String {
+        let msg = origin.message.toAsciiLower()
+        if (errClass == "CRYPTO") {
+            if (containsStr(msg, "unavailable")) {
+                return "crypto_unavailable"
+            }
+            if (containsStr(msg, "decrypt")) {
+                return "decrypt_failed"
+            }
+            return "crypto_error"
+        }
+        if (errClass == "TLS") {
+            if (containsStr(msg, "tls must be configured") || containsStr(msg, "https requests are sent")) {
+                return "tls_not_configured"
+            }
+            if (phase == "handshake") {
+                return "tls_handshake_error"
+            }
+            if (phase == "verify" || containsStr(msg, "certificate") || containsStr(msg, "x509")) {
+                return "tls_verify_error"
+            }
+            return "tls_error"
+        }
+        if (errClass == "TIMEOUT") {
+            if (phase == "connect") {
+                return "connect_timeout"
+            }
+            if (phase == "read") {
+                return "read_timeout"
+            }
+            if (phase == "write") {
+                return "write_timeout"
+            }
+            return "timeout_error"
+        }
+        if (errClass == "NETWORK") {
+            if (containsStr(msg, "refused")) {
+                return "connection_refused"
+            }
+            return "connect_error"
+        }
+        "unknown_error"
     }
 
     func collectObserveFields(): String {
@@ -510,12 +589,16 @@ public class RequestBuilder {
         origin: Exception,
         durationMs: Int64,
         retryCount: Int64,
-        fields: String
+        fields: String,
+        phaseHint: String,
+        retryable: Bool
     ): Exception {
         let errClass = classifyError(origin)
+        let phase = classifyErrorPhase(origin, phaseHint)
+        let causeCode = classifyErrorCauseCode(origin, errClass, phase)
         let fieldText = if (fields.size == 0) { "-" } else { fields }
         Exception(
-            "[ignite.client.observe] errorClass=${errClass} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}; cause=${origin.message}"
+            "[ignite.client.observe] errorClass=${errClass} phase=${phase} causeCode=${causeCode} retryable=${retryable} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}; cause=${origin.message}"
         )
     }
 
@@ -551,10 +634,15 @@ public class RequestBuilder {
     }
 
     func shouldRetryError(
+        origin: Exception,
         config: ClientRetryConfig,
         canRetryMethod: Bool,
         attempt: Int64
     ): Bool {
+        let errClass = classifyError(origin)
+        if (errClass == "TLS" || errClass == "CRYPTO") {
+            return false
+        }
         canRetryMethod && attempt < config.maxAttempts
     }
 
@@ -592,13 +680,7 @@ public class RequestBuilder {
     }
 
     func spinWait(delayMs: Int64): Unit {
-        let start = MonoTime.now()
-        while (true) {
-            let elapsed = (MonoTime.now() - start).toMilliseconds()
-            if (elapsed >= delayMs) {
-                break
-            }
-        }
+        sleep(Duration.millisecond * delayMs)
     }
 
     func containsInt64(list: ArrayList<Int64>, value: Int64): Bool {

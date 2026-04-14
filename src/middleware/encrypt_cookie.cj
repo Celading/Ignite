@@ -22,7 +22,7 @@ public class EncryptCookieConfig {
         keyId!: String = "k1",
         keyRing!: HashMap<String, Array<UInt8>> = HashMap<String, Array<UInt8>>(),
         algorithm!: String = "AES-256-GCM",
-        enableLegacyDecrypt!: Bool = true,
+        enableLegacyDecrypt!: Bool = false,
         legacyDecryptWarn!: Bool = false,
         legacyDecryptWarnHook!: ?LegacyDecryptWarnHook = None,
         providerKind!: security.SecurityProviderKind = security.SecurityProviderKind.jinguiSSL,

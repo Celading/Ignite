@@ -1,23 +1,27 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
+import std.collection.ArrayList
 import std.collection.concurrent.ConcurrentHashMap
 import std.time.MonoTime
 import std.sync.Mutex
 
 public class CacheConfig {
     public var expiration: Duration = Duration.second * 60
+    public var cleanupEvery: Int64 = 64
     public var keyGenerator: ?((Ctx) -> String) = None
     public var cacheControl: String = ""
     public var methods: Array<String> = ["GET"]
 
     public init(
         expiration!: Duration = Duration.second * 60,
+        cleanupEvery!: Int64 = 64,
         keyGenerator!: ?((Ctx) -> String) = None,
         cacheControl!: String = "",
         methods!: Array<String> = ["GET"]
     ) {
         this.expiration = expiration
+        this.cleanupEvery = if (cleanupEvery > 0) { cleanupEvery } else { 64 }
         this.keyGenerator = keyGenerator
         this.cacheControl = cacheControl
         this.methods = methods
@@ -36,9 +40,14 @@ class CacheEntry {
     }
 }
 
+class CacheSweepState {
+    var cleanupTicks: Int64 = 0
+}
+
 public func cacheMiddleware(config!: CacheConfig = CacheConfig()): Handler {
     let store = ConcurrentHashMap<String, CacheEntry>()
     let mtx = Mutex()
+    let sweepState = CacheSweepState()
 
     { ctx: Ctx =>
         var isCacheable = false
@@ -61,8 +70,14 @@ public func cacheMiddleware(config!: CacheConfig = CacheConfig()): Handler {
         }
 
         synchronized(mtx) {
+            let now = MonoTime.now()
+            sweepState.cleanupTicks += 1
+            if (sweepState.cleanupTicks >= config.cleanupEvery) {
+                cleanupExpiredCacheEntries(store, now, config.expiration)
+                sweepState.cleanupTicks = 0
+            }
             if (let Some(entry) <- store.get(key)) {
-                let elapsed = MonoTime.now() - entry.createdAt
+                let elapsed = now - entry.createdAt
                 if (elapsed < config.expiration) {
                     ctx.setHeader("X-Cache", "HIT")
                     if (config.cacheControl.size > 0) {
@@ -85,5 +100,21 @@ public func cacheMiddleware(config!: CacheConfig = CacheConfig()): Handler {
                 store.add(key, CacheEntry(body, ct))
             }
         }
+    }
+}
+
+func cleanupExpiredCacheEntries(
+    store: ConcurrentHashMap<String, CacheEntry>,
+    now: MonoTime,
+    expiration: Duration
+): Unit {
+    let staleKeys = ArrayList<String>()
+    for ((entryKey, entry) in store) {
+        if ((now - entry.createdAt) >= expiration) {
+            staleKeys.add(entryKey)
+        }
+    }
+    for (entryKey in staleKeys) {
+        store.remove(entryKey)
     }
 }

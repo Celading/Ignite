@@ -1,7 +1,6 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
-import std.fs.{Path}
+import ignite.{Handler, Ctx, resolveStaticAssetPath}
 
 public class StaticFileConfig {
     public var root: String = "./public"
@@ -29,9 +28,18 @@ public func staticFileMiddleware(config!: StaticFileConfig = StaticFileConfig())
             return
         }
 
-        var filePath = config.root + ctx.path
-        if (ctx.path == "/" || ctx.path.size == 0) {
-            filePath = config.root + "/" + config.index
+        let filePathOpt = if (ctx.path == "/" || ctx.path.size == 0) {
+            resolveStaticAssetPath(config.root, config.index)
+        } else {
+            resolveStaticAssetPath(config.root, ctx.path)
+        }
+        if (let None <- filePathOpt) {
+            ctx.next()
+            return
+        }
+        let filePath = match (filePathOpt) {
+            case Some(path) => path
+            case None => ""
         }
 
         if (config.maxAge > 0) {

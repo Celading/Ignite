@@ -1,50 +1,31 @@
 # Ignite Manual
 
-`manual/` is the current public documentation surface for this repository.
+`manual/` 是当前仓库的公开文档中枢，用来承接根 README 之后的正文、样例与协作说明。
 
-If you are evaluating Ignite for the first time, use this order:
+## 推荐阅读顺序
 
-1. `README.md` or `README-en.md`
-2. `manual/samples/README.md`
-3. `CHANGELOG.MD` or `CHANGELOG-en.MD`
-4. `manual/skills/README.md`
+1. [`../README.md`](../README.md)
+2. [`docs-md/README.md`](docs-md/README.md)
+3. [`samples/README.md`](samples/README.md)
+4. [`skills/README.md`](skills/README.md)
+5. [`../CHANGELOG.MD`](../CHANGELOG.MD) / [`../CHANGELOG-en.MD`](../CHANGELOG-en.MD)
 
-## Public boundary
+## 各入口负责什么
 
-- This tree is the public-facing manual for the repository.
-- Historical notes, internal execution logs, archived experiments, and maintainer-only process docs are intentionally not linked from here.
-- When public wording and internal wording differ, this `manual/` tree and the root README files are the public contract.
+- 根 `README.md`：项目门面、价值主张、平台口径、总入口分流。
+- `manual/docs-md/`：`0500` 中文正文主入口，也是后续 `docs-web` 的内容源稿。
+- `manual/samples/`：可运行路径，帮助你按顺序验证 Ignite 的公开能力。
+- `manual/skills/`：AI 协作说明，约束 Codex、OpenCode、Claude Code 等助手在公开边界内工作。
+- `CHANGELOG*`：阶段时间线、版本收口与公开变动记录。
 
-## First-run path
+## 公开边界
 
-Run commands from the repository root that contains `cjpm.toml` (current layout: `Ignite/`).
+- `manual/` 只放公开面向的文档，不承接归档实验、维护者私有流程或 `_helper` 内部材料。
+- 如果公开表达和内部表达不同，以根 README、`manual/` 与 `CHANGELOG*` 为准。
+- 本目录不负责定义新的技术承诺，只负责把当前已经公开确认的能力讲清楚。
 
-Recommended first-run order:
+## docs-md 与 docs-web 的关系
 
-1. `manual/samples/hello`
-2. `manual/samples/api`
-3. `manual/samples/swagger`
-4. `manual/samples/client`
-5. `manual/samples/ignitekit`
-
-`manual/samples/dualport`, `manual/samples/files`, and `manual/samples/middleware` are additional reference samples once the basics are clear.
-
-## Current docs split
-
-- `manual/samples/README.md`: runnable sample matrix and reading order
-- `manual/skills/README.md`: how to use AI assistants and project skills responsibly with Ignite
-- `CHANGELOG.MD`: Chinese milestone timeline
-- `CHANGELOG-en.MD`: English milestone timeline
-
-## 0.5.31 closeout notes
-
-- The default `0500` startup banner preview is now width-aligned with the runtime output, including the `Touchpoints` label and the small `_Ignite <framework-version>` signature.
-- Swagger startup output is now documented as a separate switch: `enableSwagger` controls the routes, while `enablePrintSwaggerUrl` controls only the startup line.
-- The current HTTPS default remains the existing stdx TLS path or reverse-proxy TLS termination; `jinguissl` is not documented as a drop-in listener replacement in this public manual.
-
-## Reserved integration points
-
-- `manual/docs-md/`: reserved for the upcoming markdown documentation set
-- `manual/docs-web/`: reserved for the upcoming website-oriented docs content
-
-Until those sections are merged, prefer the root README files plus the sample docs in `manual/samples/`.
+- `docs-md` 是正文源。
+- `docs-web` 是后续的网站呈现层。
+- 网站内容以后直接从 `docs-md` 抽取，不再反向定义 `docs-md` 的章节结构。

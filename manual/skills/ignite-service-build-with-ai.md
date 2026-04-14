@@ -1,6 +1,6 @@
 # Build Ignite Services With AI Assistants
 
-This guide is written for Codex, OpenCode, Claude Code, and similar repository-aware assistants.
+This guide is written for Codex, OpenCode, Claude Code, and similar repository-aware assistants, but it is really for the maintainers working with them.
 
 ## Goal
 
@@ -26,6 +26,18 @@ If the task touches a runnable example, also load the closest sample under `manu
 - add Swagger metadata and `RouteOption.operationId`
 - add `InterfaceSpec` / `TestOption` for first-run verification
 - write or refresh sample docs after code changes
+
+## Especially good for small private programs
+
+If the goal is a personal tool or a tiny internal service, AI works best when the scope is intentionally small:
+
+- one real workflow
+- one nearest sample
+- one request binding path
+- one or two tests
+- one small doc update
+
+That is usually enough to get a useful first version without turning the task into a fake “big product”. A lot of good services start exactly this way.
 
 ## Tasks that still need maintainer judgment
 
@@ -60,6 +72,8 @@ If you are working from the workspace root instead of `Ignite/`, adjust the scri
 - Public docs should not bind Ignite to a `fasthttp` identity.
 - Public docs should not promise `br`, QUIC, `io_uring`, or a default server-stack replacement unless the milestone has explicitly landed.
 
+These boundaries matter because once a helper assistant writes something into public docs or sample copy, people will naturally treat it as current truth.
+
 ## Practical service-building guidance
 
 ### 1. Begin with the right sample
@@ -89,6 +103,15 @@ If you are working from the workspace root instead of `Ignite/`, adjust the scri
 - Archived workspace helper docs may contain historical or internal-only details.
 - Do not quote archived/internal material into public README, website copy, or release notes without maintainer review.
 
+If you are giving an AI assistant repo context, be deliberate here. More files does not always mean better output.
+
+### 5. Keep Cangjie work pragmatic
+
+- Prefer explicit code over clever code.
+- Check `cjpm.toml` before assuming a compiler or framework bug.
+- Treat build/test stability as part of the feature, not as cleanup work.
+- If a helper can be extracted cleanly, do that before proposing a deep runtime rewrite.
+
 ## Prompt pattern that works well
 
 Use prompts like:
@@ -108,3 +131,15 @@ Ask the assistant to finish only when all of these are true:
 - sample/docs paths are updated
 - public wording stays inside the current repository contract
 - no internal-only helper material is exposed by accident
+
+## Small-project reminder
+
+For a hobby project or private tool, “done enough to be useful” is a real milestone.
+
+Do not let the assistant turn:
+
+- a private helper
+- a local service
+- a personal dashboard
+
+into a bloated framework exercise.

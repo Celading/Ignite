@@ -1,7 +1,6 @@
 package ignite.middleware
 
 import std.collection.ArrayList
-import std.random.Random
 import ignite.security as security
 
 func base64Decode(input: String): Array<UInt8> {
@@ -74,18 +73,7 @@ func generateRandomHex(length: Int64): String {
     if (length <= 0) {
         return ""
     }
-    try {
-        security.randomHex(length)
-    } catch (_: security.SecurityException) {
-        let rng = Random()
-        let hexChars = "0123456789abcdef".toRuneArray()
-        var result = ""
-        for (_ in 0..length) {
-            let idx = Int64(rng.nextUInt64() % 16)
-            result += hexChars[idx].toString()
-        }
-        result
-    }
+    security.randomHex(length)
 }
 
 func strStartsWith(s: String, prefix: String): Bool {

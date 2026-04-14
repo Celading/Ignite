@@ -271,9 +271,9 @@ public class SwaggerGenerator {
         sb.append("{\n")
         sb.append("  \"openapi\": \"3.0.0\",\n")
         sb.append("  \"info\": {\n")
-        sb.append("    \"title\": \"${info.title}\",\n")
-        sb.append("    \"description\": \"${info.description}\",\n")
-        sb.append("    \"version\": \"${info.version}\"\n")
+        sb.append("    \"title\": " + jsonStringLiteral(info.title) + ",\n")
+        sb.append("    \"description\": " + jsonStringLiteral(info.description) + ",\n")
+        sb.append("    \"version\": " + jsonStringLiteral(info.version) + "\n")
         sb.append("  },\n")
         sb.append("  \"paths\": {\n")
 
@@ -665,23 +665,7 @@ func jsonStringLiteral(value: String): String {
 }
 
 func escapeJsonString(value: String): String {
-    var out = ""
-    for (r in value.toRuneArray()) {
-        if (r == r'\\') {
-            out += "\\\\"
-        } else if (r == r'"') {
-            out += "\\\""
-        } else if (r == r'\n') {
-            out += "\\n"
-        } else if (r == r'\r') {
-            out += "\\r"
-        } else if (r == r'\t') {
-            out += "\\t"
-        } else {
-            out += r.toString()
-        }
-    }
-    out
+    escapeJsonText(value)
 }
 
 class StringBuilder {

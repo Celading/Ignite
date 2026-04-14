@@ -1,6 +1,6 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
+import ignite.{Handler, Ctx, escapeJsonText}
 import ignite.governance.*
 import std.time.{MonoTime, DateTime}
 
@@ -193,21 +193,5 @@ func toJsonLogLine(
 }
 
 func escapeJsonLog(input: String): String {
-    var out = ""
-    for (r in input.toRuneArray()) {
-        if (r == r'\\') {
-            out += "\\\\"
-        } else if (r == r'"') {
-            out += "\\\""
-        } else if (r == r'\n') {
-            out += "\\n"
-        } else if (r == r'\r') {
-            out += "\\r"
-        } else if (r == r'\t') {
-            out += "\\t"
-        } else {
-            out += r.toString()
-        }
-    }
-    out
+    escapeJsonText(input)
 }

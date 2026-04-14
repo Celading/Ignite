@@ -1,5 +1,6 @@
 package ignite.governance
 
+import ignite.escapeJsonText
 import std.time.DateTime
 import std.random.Random
 
@@ -148,23 +149,7 @@ func boolToJson(b: Bool): String {
 }
 
 func escapeJson(s: String): String {
-    var out = ""
-    for (r in s.toRuneArray()) {
-        if (r == r'"') {
-            out += "\\\""
-        } else if (r == r'\\') {
-            out += "\\\\"
-        } else if (r == r'\n') {
-            out += "\\n"
-        } else if (r == r'\r') {
-            out += "\\r"
-        } else if (r == r'\t') {
-            out += "\\t"
-        } else {
-            out += r.toString()
-        }
-    }
-    out
+    escapeJsonText(s)
 }
 
 public func riskByStatus(status: UInt16): Int64 {

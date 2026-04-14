@@ -9,7 +9,7 @@ main() {
     app.swagger(SwaggerInfo(
         title: "Ignite Swagger Sample",
         description: "RouteOption driven OpenAPI + self-check sample for Ignite 0.5.x",
-        version: "0.5.31"
+        version: "0.5.68"
     ))
 
     let healthOption = RouteOption()

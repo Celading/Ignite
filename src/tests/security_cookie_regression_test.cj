@@ -1,7 +1,8 @@
 package ignite.tests
 
+import ignite.{App, Config}
+import ignite.middleware.{EncryptCookieConfig, encryptCookieMiddleware, encryptValue, decryptValue}
 import ignite.security.*
-import ignite.middleware.{encryptValue, decryptValue}
 import std.collection.HashMap
 
 @Test
@@ -66,6 +67,27 @@ public class SecurityCookieRegressionTestSuite {
     public func testEncryptValueAlwaysWritesV1Envelope(): Unit {
         let encoded = encryptValue("new-write", "rolling-key")
         @Assert(startsWith(encoded, "v1."), true)
+    }
+
+    @TestCase
+    public func testEncryptCookieMiddlewareDisablesLegacyDecryptByDefault(): Unit {
+        let app = App(config: Config())
+        app.use(
+            encryptCookieMiddleware(
+                EncryptCookieConfig(key: "k")
+            )
+        )
+        app.get("/cookie", { ctx =>
+            _ = ctx.sendString(ctx.cookies("sid") ?? "")
+        })
+
+        let resp = app.handleForTest(
+            "GET",
+            "/cookie",
+            headers: [("cookie", "sid=Bw4MCggS")]
+        )
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "Bw4MCggS")
     }
 
     func buildConfig(rawKey: String, kid!: String = "k1"): SecurityConfig {
