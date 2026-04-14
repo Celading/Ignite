@@ -24,6 +24,8 @@ Run commands from the repository root that contains `cjpm.toml`.
    - Encrypted JSON, multipart, observe headers
 5. `manual/samples/ignitekit`
    - Lightweight HTML / CSS composition with `IgniteKit`
+6. `manual/samples/h2wire`
+   - Local H2 on-wire smoke for `ctx.writer()` and large-file return
 
 ## Additional samples
 
@@ -31,6 +33,8 @@ Run commands from the repository root that contains `cjpm.toml`.
   - Two listeners in one app process for local verification
 - `manual/samples/files`
   - `sendFile`, `download`, `sendFileRange`
+- `manual/samples/h2wire`
+  - H2 on-wire smoke for repeated writer flush and large-file return
 - `manual/samples/middleware`
   - Middleware composition and request flow
 
@@ -41,6 +45,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/api/run.sh
 ./manual/samples/swagger/run.sh
 ./manual/samples/client/run_demo.sh
+./manual/samples/h2wire/probe.sh
 ```
 
 ## Notes

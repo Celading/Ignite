@@ -71,6 +71,7 @@ COMMON_IMPORTS=(
 )
 COMMON_LINKS=(
   -L "${ROOT}/target/release/ignite"
+  -L "${ROOT}/target/release/lisi"
   -lignite.middleware
   -lignite.governance
   -lignite.client
@@ -78,22 +79,29 @@ COMMON_LINKS=(
   -lignite.api2
   -lignite.security
   -lignite.api2.GetData
-  -L "${ROOT}/target/release/jinguiSSL"
-  -ljinguiSSL.contract
-  -ljinguiSSL.crypto.tls
-  -ljinguiSSL.crypto.x509
-  -ljinguiSSL.crypto.ssh
-  -ljinguiSSL.crypto.rsa
-  -ljinguiSSL.crypto.ed25519
-  -ljinguiSSL.crypto.x25519
-  -ljinguiSSL.crypto.ecc
-  -ljinguiSSL.crypto.digest
-  -ljinguiSSL.crypto.chacha20
-  -ljinguiSSL.crypto.aes
-  -ljinguiSSL.crypto.utils
-  -ljinguiSSL.crypto.compliance
-  -ljinguiSSL.crypto.bignum
-  -ljinguiSSL.crypto.error
+  -llisi.transport
+  -llisi.runtime
+  -llisi.net.TlsTool
+  -llisi.net
+  -llisi.logger
+  -llisi.term
+  -llisi
+  -L "${ROOT}/target/release/jinguissl"
+  -ljinguissl.contract
+  -ljinguissl.crypto.tls
+  -ljinguissl.crypto.x509
+  -ljinguissl.crypto.ssh
+  -ljinguissl.crypto.rsa
+  -ljinguissl.crypto.ed25519
+  -ljinguissl.crypto.x25519
+  -ljinguissl.crypto.ecc
+  -ljinguissl.crypto.digest
+  -ljinguissl.crypto.chacha20
+  -ljinguissl.crypto.aes
+  -ljinguissl.crypto.utils
+  -ljinguissl.crypto.compliance
+  -ljinguissl.crypto.bignum
+  -ljinguissl.crypto.error
   -L "${STDX_STATIC}/stdx"
   -lstdx.encoding.json
   -lstdx.serialization.serialization
