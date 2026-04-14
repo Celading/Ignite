@@ -1,6 +1,13 @@
 # Ignite Samples
 
-Run commands from the repository root that contains `cjpm.toml` (current layout: `Ignite/`).
+这个目录负责“把 Ignite 跑起来”，不是完整手册。
+
+在开始之前，建议先读：
+
+1. [`../../README.md`](../../README.md)
+2. [`../docs-md/Guide.md`](../docs-md/Guide.md)
+
+Run commands from the repository root that contains `cjpm.toml`.
 
 ## Recommended order
 
@@ -16,7 +23,7 @@ Run commands from the repository root that contains `cjpm.toml` (current layout:
    - Built-in `RestClient`
    - Encrypted JSON, multipart, observe headers
 5. `manual/samples/ignitekit`
-   - Lightweight HTML/CSS composition with `IgniteKit`
+   - Lightweight HTML / CSS composition with `IgniteKit`
 
 ## Additional samples
 
@@ -42,4 +49,4 @@ Run commands from the repository root that contains `cjpm.toml` (current layout:
 - If stdx or runtime libraries cannot be auto-detected, set:
   - `IGNITE_STDX_STATIC=/path/to/cj_stdx_*_llvm/static`
   - `IGNITE_CJ_RUNTIME_LIB_DIR=/path/to/cangjie/runtime/lib/<platform>`
-- These samples are the current public reference path. Archived helper docs may describe older layouts and should not be treated as the public entrypoint.
+- These samples are the public runnable path. Archived helper docs may describe older layouts and should not be treated as the public entrypoint.

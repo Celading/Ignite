@@ -42,7 +42,7 @@ public class SwaggerSelfCheckTestSuite {
         app.swagger(SwaggerInfo(
             title: "Swagger Self Check",
             description: "verifies 0500 self-check metadata",
-            version: "0.5.31"
+            version: "0.5.68"
         ))
         app.post(
             "/echo",
@@ -64,9 +64,9 @@ public class SwaggerSelfCheckTestSuite {
     public func testSwaggerJsonEscapesControlCharacters(): Unit {
         let app = App(config: Config(enableSwagger: true))
         app.swagger(SwaggerInfo(
-            title: "Bad\u0001Title",
-            description: "Line\u0000Break\b\f",
-            version: "0.5.31"
+            title: buildControlText("Bad", UInt8(1), "Title"),
+            description: buildControlText("Line", UInt8(0), "Break") + String.fromUtf8([UInt8(8), UInt8(12)]),
+            version: "0.5.68"
         ))
         app.get("/ok", { ctx => _ = ctx.sendString("ok") })
 
@@ -177,5 +177,9 @@ public class SwaggerSelfCheckTestSuite {
             i += 1
         }
         false
+    }
+
+    func buildControlText(prefix: String, code: UInt8, suffix: String): String {
+        prefix + String.fromUtf8([code]) + suffix
     }
 }
