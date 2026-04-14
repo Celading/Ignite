@@ -1,8 +1,10 @@
 package ignite.tests
 
 import ignite.*
-import std.collection.ArrayList
+import std.collection.{ArrayList, HashMap}
 import std.fs.{File, OpenMode}
+import std.net.{TcpSocket, IPSocketAddress}
+import std.time.DateTime
 
 @Test
 public class FileDownloadAndRestfulTestSuite {
@@ -96,6 +98,82 @@ public class FileDownloadAndRestfulTestSuite {
         @Assert(resp.status, UInt16(201))
         @Assert(contains(resp.body, #""saved":"# + payload.size.toString()), true)
         @Assert(readTextFile(fixturePath), payload)
+    }
+
+    @TestCase
+    public func testSaveBodyToFileStreamsKnownLengthUploadOverRealHttp(): Unit {
+        let fixturePath = "/tmp/ignite_push_upload_wire_known.txt"
+        let payload = buildLargeAsciiPayload() + "known-length-tail"
+        let port = chooseUploadTestPort(1881)
+
+        let app = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        app.post("/push-upload-wire-known", { ctx =>
+            let cacheBefore = cacheStateLabel(ctx.cachedBodyBytes())
+            let saved = ctx.saveBodyToFile(fixturePath)
+            let cacheAfter = cacheStateLabel(ctx.cachedBodyBytes())
+            _ = ctx
+                .setHeader("x-body-cache-before", cacheBefore)
+                .setHeader("x-body-cache-after", cacheAfter)
+                .status(201)
+                .json(#"{"saved":"# + saved.toString() + #"}"#)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendKnownLengthUploadWithRetry(
+                port,
+                "/push-upload-wire-known",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(201))
+            @Assert(resp.header("x-body-cache-before") ?? "", "miss")
+            @Assert(resp.header("x-body-cache-after") ?? "", "miss")
+            @Assert(contains(resp.body, #""saved":"# + payload.size.toString()), true)
+            @Assert(readTextFile(fixturePath), payload)
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testSaveBodyToFileStreamsChunkedUploadOverRealHttp(): Unit {
+        let fixturePath = "/tmp/ignite_push_upload_wire_chunked.txt"
+        let payload = buildLargeAsciiPayload() + buildLargeAsciiPayload() + "chunked-tail"
+        let port = chooseUploadTestPort(1889)
+
+        let app = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        app.post("/push-upload-wire-chunked", { ctx =>
+            let cacheBefore = cacheStateLabel(ctx.cachedBodyBytes())
+            let saved = ctx.saveBodyToFile(fixturePath)
+            let cacheAfter = cacheStateLabel(ctx.cachedBodyBytes())
+            _ = ctx
+                .setHeader("x-body-cache-before", cacheBefore)
+                .setHeader("x-body-cache-after", cacheAfter)
+                .status(201)
+                .json(#"{"saved":"# + saved.toString() + #"}"#)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendChunkedUploadWithRetry(
+                port,
+                "/push-upload-wire-chunked",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(201))
+            @Assert(resp.header("x-body-cache-before") ?? "", "miss")
+            @Assert(resp.header("x-body-cache-after") ?? "", "miss")
+            @Assert(contains(resp.body, #""saved":"# + payload.size.toString()), true)
+            @Assert(readTextFile(fixturePath), payload)
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
     }
 
     @TestCase
@@ -256,6 +334,247 @@ public class FileDownloadAndRestfulTestSuite {
         String.fromUtf8(buf.toArray())
     }
 
+    func cacheStateLabel(bytes: ?Array<UInt8>): String {
+        match (bytes) {
+            case Some(_) => "hit"
+            case None => "miss"
+        }
+    }
+
+    func chooseUploadTestPort(offset: Int64): UInt16 {
+        let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+        let raw = 46000 + ((nowMs + offset) % 10000)
+        UInt16(raw)
+    }
+
+    func shutdownUploadTestApp(app: App, future: Future<Unit>): Unit {
+        app.shutdown()
+        try {
+            let _ = future.get(Duration.second * 1)
+        } catch (_: Exception) {
+            future.cancel()
+        }
+    }
+
+    func sendKnownLengthUploadWithRetry(
+        port: UInt16,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        var attempt: Int64 = 0
+        while (attempt < 20) {
+            try {
+                return sendKnownLengthUpload(port, target, body, headers: headers)
+            } catch (_: Exception) {
+                if (attempt == 19) {
+                    throw Exception("failed to connect upload test server: ${port} ${target}")
+                }
+                sleep(Duration.millisecond * 50)
+                attempt += 1
+            }
+        }
+        throw Exception("failed to connect upload test server: ${port} ${target}")
+    }
+
+    func sendKnownLengthUpload(
+        port: UInt16,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            let bodyBytes = body.toArray()
+            var request = "POST ${target} HTTP/1.1\r\n"
+            request += "host: 127.0.0.1:${port}\r\n"
+            request += "content-length: ${bodyBytes.size}\r\n"
+            request += "connection: close\r\n"
+            for ((key, value) in headers) {
+                request += "${key}: ${value}\r\n"
+            }
+            request += "\r\n"
+            socket.write(request.toArray())
+            socket.write(bodyBytes)
+            readRawUploadResponse(socket)
+        } finally {
+            socket.close()
+        }
+    }
+
+    func sendChunkedUploadWithRetry(
+        port: UInt16,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        var attempt: Int64 = 0
+        while (attempt < 20) {
+            try {
+                return sendChunkedUpload(port, target, body, headers: headers)
+            } catch (_: Exception) {
+                if (attempt == 19) {
+                    throw Exception("failed to connect chunked upload test server: ${port} ${target}")
+                }
+                sleep(Duration.millisecond * 50)
+                attempt += 1
+            }
+        }
+        throw Exception("failed to connect chunked upload test server: ${port} ${target}")
+    }
+
+    func sendChunkedUpload(
+        port: UInt16,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            var request = "POST ${target} HTTP/1.1\r\n"
+            request += "host: 127.0.0.1:${port}\r\n"
+            request += "transfer-encoding: chunked\r\n"
+            request += "connection: close\r\n"
+            for ((key, value) in headers) {
+                request += "${key}: ${value}\r\n"
+            }
+            request += "\r\n"
+            socket.write(request.toArray())
+            writeChunkedUploadBody(socket, body)
+            readRawUploadResponse(socket)
+        } finally {
+            socket.close()
+        }
+    }
+
+    func writeChunkedUploadBody(socket: TcpSocket, body: String): Unit {
+        let bytes = body.toArray()
+        var index: Int64 = 0
+        let chunkSize: Int64 = 2048
+        while (index < bytes.size) {
+            let end = if (index + chunkSize < bytes.size) { index + chunkSize } else { bytes.size }
+            let chunk = bytes[index..end]
+            let header = int64ToHex(chunk.size) + "\r\n"
+            socket.write(header.toArray())
+            socket.write(chunk)
+            socket.write("\r\n".toArray())
+            index = end
+        }
+        socket.write("0\r\n\r\n".toArray())
+    }
+
+    func readRawUploadResponse(socket: TcpSocket): UploadRawHttpResponse {
+        let buf = Array<UInt8>(4096, repeat: 0)
+        var raw = ""
+        while (true) {
+            let n = socket.read(buf)
+            if (n <= 0) {
+                break
+            }
+            raw += String.fromUtf8(buf[..n])
+        }
+        parseRawUploadResponse(raw)
+    }
+
+    func parseRawUploadResponse(raw: String): UploadRawHttpResponse {
+        let splitIdx = indexOfText(raw, "\r\n\r\n")
+        let headerText = if (splitIdx >= 0) { raw[..splitIdx] } else { raw }
+        let rawBody = if (splitIdx >= 0) { raw[splitIdx + 4..raw.size] } else { "" }
+        let lines = headerText.split("\r\n")
+        if (lines.size == 0) {
+            throw Exception("raw upload response missing status line")
+        }
+
+        let status = parseStatusCode(lines[0])
+        let headers = HashMap<String, String>()
+        var i: Int64 = 1
+        while (i < lines.size) {
+            let line = lines[i]
+            let colonIdx = indexOfRune(line, r':')
+            if (colonIdx > 0) {
+                let key = line[..colonIdx].trimAscii().toAsciiLower()
+                let value = line[colonIdx + 1..line.size].trimAscii()
+                headers.add(key, value)
+            }
+            i += 1
+        }
+
+        let body = if ((headers.get("transfer-encoding") ?? "") == "chunked") {
+            decodeChunkedBody(rawBody)
+        } else {
+            rawBody
+        }
+        UploadRawHttpResponse(status, headers, body)
+    }
+
+    func parseStatusCode(statusLine: String): UInt16 {
+        let parts = statusLine.split(" ")
+        if (parts.size < 2) {
+            throw Exception("invalid status line: ${statusLine}")
+        }
+        let digits = parts[1].trimAscii()
+        if (digits.size == 0) {
+            throw Exception("invalid status code: ${statusLine}")
+        }
+        var value: Int64 = 0
+        for (ch in digits.toRuneArray()) {
+            if (ch < r'0' || ch > r'9') {
+                throw Exception("invalid status code: ${statusLine}")
+            }
+            value = value * 10 + (Int64(UInt32(ch)) - Int64(UInt32(r'0')))
+        }
+        UInt16(value)
+    }
+
+    func decodeChunkedBody(raw: String): String {
+        var idx: Int64 = 0
+        var out = ""
+        while (idx < raw.size) {
+            let lineEnd = indexOfText(raw[idx..raw.size], "\r\n")
+            if (lineEnd < 0) {
+                throw Exception("invalid chunked response")
+            }
+            let sizeText = raw[idx..idx + lineEnd].trimAscii()
+            let chunkSize = parseHexInt64(sizeText)
+            idx += lineEnd + 2
+            if (chunkSize == 0) {
+                break
+            }
+            out += raw[idx..idx + chunkSize]
+            idx += chunkSize + 2
+        }
+        out
+    }
+
+    func parseHexInt64(text: String): Int64 {
+        let trimmed = text.trimAscii().toAsciiLower()
+        if (trimmed.size == 0) {
+            throw Exception("invalid hex integer")
+        }
+        var value: Int64 = 0
+        for (ch in trimmed.toRuneArray()) {
+            let digit = if (ch >= r'0' && ch <= r'9') {
+                Int64(UInt32(ch) - UInt32(r'0'))
+            } else if (ch >= r'a' && ch <= r'f') {
+                Int64(UInt32(ch) - UInt32(r'a')) + 10
+            } else {
+                throw Exception("invalid hex integer")
+            }
+            value = value * 16 + digit
+        }
+        value
+    }
+
+    func int64ToHex(value: Int64): String {
+        let hex = "0123456789abcdef".toRuneArray()
+        if (value < 16) {
+            return hex[value].toString()
+        }
+        int64ToHex(value / 16) + hex[value % 16].toString()
+    }
+
     func sliceText(text: String, start: Int64, endExclusive: Int64): String {
         let runes = text.toRuneArray()
         var out = ""
@@ -341,6 +660,40 @@ public class FileDownloadAndRestfulTestSuite {
         }
         out
     }
+
+    func indexOfText(text: String, target: String): Int64 {
+        let a = text.toRuneArray()
+        let b = target.toRuneArray()
+        if (b.size == 0) { return 0 }
+        if (a.size < b.size) { return -1 }
+        var i: Int64 = 0
+        while (i <= a.size - b.size) {
+            var ok = true
+            var j: Int64 = 0
+            while (j < b.size) {
+                if (a[i + j] != b[j]) {
+                    ok = false
+                    break
+                }
+                j += 1
+            }
+            if (ok) { return i }
+            i += 1
+        }
+        -1
+    }
+
+    func indexOfRune(text: String, target: Rune): Int64 {
+        let runes = text.toRuneArray()
+        var i: Int64 = 0
+        while (i < runes.size) {
+            if (runes[i] == target) {
+                return i
+            }
+            i += 1
+        }
+        -1
+    }
 }
 
 public class TodoItem {
@@ -411,5 +764,21 @@ public class TodoStore {
         }
         items = kept
         removed
+    }
+}
+
+class UploadRawHttpResponse {
+    let status: UInt16
+    let headers: HashMap<String, String>
+    let body: String
+
+    init(status: UInt16, headers: HashMap<String, String>, body: String) {
+        this.status = status
+        this.headers = headers
+        this.body = body
+    }
+
+    func header(name: String): ?String {
+        headers.get(name.trimAscii().toAsciiLower())
     }
 }

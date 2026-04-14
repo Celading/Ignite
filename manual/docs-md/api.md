@@ -123,6 +123,12 @@ app.post("/upload-large", { ctx =>
 })
 ```
 
+这条大 body 落盘路径现在不只是 `handleForTest(...)` 下可用：
+
+- 真实 HTTP/1.1 `content-length` 上传已经有回归覆盖
+- 真实 HTTP/1.1 `chunked` 上传也已经有回归覆盖
+- 现有回归还会确认 `saveBodyToFile(...)` 没有先把请求体塞进 `ctx.bodyBytes()` 缓存再落盘
+
 如果你要问“HTTP/2 下还能不能流式返回”，答案不是靠 `Transfer-Encoding`：
 
 - RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
