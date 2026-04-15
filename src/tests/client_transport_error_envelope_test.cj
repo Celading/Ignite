@@ -222,6 +222,58 @@ public class ClientTransportErrorEnvelopeTestSuite {
     }
 
     @TestCase
+    public func testExperimentalProviderUnavailableSuggestsStableFallback(): Unit {
+        let observedMessages = ArrayList<String>()
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+            .allowExperimentalTransport()
+            .preferTransportBackend("jinguissl-provider-candidate")
+            .onError({ e =>
+                observedMessages.add(e.message)
+            })
+
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("https://127.0.0.1:18443/transport-provider-unavailable-fallback")
+                .allowExperimentalTransport()
+                .preferTransportBackend("jinguissl-provider-candidate")
+                .header("x-ignite-log-case", "transport-provider-unavailable-fallback")
+                .onRequest({ _ =>
+                    throw Exception("tls provider unavailable during tls attach")
+                })
+                .send()
+            @Fail("experimental provider unavailable should fail before network send")
+        } catch (e: Exception) {
+            @Assert(e.message.size > 0, true)
+        } finally {
+            client.close()
+        }
+
+        @Assert(observedMessages.size, 1)
+        @Assert(contains(observedMessages[0], "[ignite.client.observe]"), true)
+        @Assert(contains(observedMessages[0], "errorClass=TLS"), true)
+        @Assert(contains(observedMessages[0], "phase=request_prepare"), true)
+        @Assert(contains(observedMessages[0], "causeCode=provider_unavailable"), true)
+        @Assert(contains(observedMessages[0], "backendId=jinguissl-provider-candidate"), true)
+        @Assert(contains(observedMessages[0], "providerId=tls:jinguissl"), true)
+        @Assert(contains(observedMessages[0], "publicPath=experimental-only"), true)
+        @Assert(contains(observedMessages[0], "riskLevel=medium"), true)
+        @Assert(contains(observedMessages[0], "transportTags=scene=client,scheme=https"), true)
+        @Assert(contains(observedMessages[0], "retryable=false"), true)
+        @Assert(contains(observedMessages[0], "fallbackSuggested=true"), true)
+        @Assert(contains(observedMessages[0], "connectionConsumed=false"), true)
+        @Assert(contains(observedMessages[0], "fallbackFrom=jinguissl-provider-candidate@tls:jinguissl"), true)
+        @Assert(contains(observedMessages[0], "fallbackTo=stdx-http-client"), true)
+        @Assert(contains(observedMessages[0], "fallbackOutcome=suggested-only"), true)
+        @Assert(contains(observedMessages[0], "retryCount=0"), true)
+        @Assert(contains(observedMessages[0], "fields=case=transport-provider-unavailable-fallback"), true)
+    }
+
+    @TestCase
     public func testRequestLevelExperimentalOverrideUsesLisiExperimentalSelection(): Unit {
         let observedMessages = ArrayList<String>()
         let client = RestClient(
