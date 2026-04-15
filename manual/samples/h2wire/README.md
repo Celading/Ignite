@@ -65,3 +65,7 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 - `IGNITE_CJ_RUNTIME_LIB_DIR=/path/to/cangjie/runtime/lib/<platform>`
 - `IGNITE_SAMPLE_TLS_CERT=/path/to/server-cert.pem`
 - `IGNITE_SAMPLE_TLS_KEY=/path/to/server-key.pem`
+- `IGNITE_H2_TLS_GUARD_STAGES=precheck,cert_decode,key_decode,stdx_build`
+  默认按这个顺序跑；也可以只传 `key_decode`
+- `IGNITE_H2_TLS_GUARD_ONLY=1`
+  只跑 guard，不启动主服务；适合定点排查某个证书或私钥输入

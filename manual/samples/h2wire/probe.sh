@@ -7,6 +7,8 @@ SERVER_LOG="/tmp/ignite_sample_h2wire.log"
 TLS_GUARD_BIN="/tmp/ignite_sample_h2wire_tls_guard"
 TLS_GUARD_LOG_ROOT="/tmp/ignite_sample_h2wire_tls_guard"
 VERIFY_SCRIPT="${ROOT}/manual/samples/h2wire/verify_http2.mjs"
+GUARD_STAGES_RAW="${IGNITE_H2_TLS_GUARD_STAGES:-precheck,cert_decode,key_decode,stdx_build}"
+GUARD_ONLY="${IGNITE_H2_TLS_GUARD_ONLY:-0}"
 
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
@@ -102,10 +104,19 @@ run_guard_stage() {
   fi
 }
 
-run_guard_stage "precheck"
-run_guard_stage "cert_decode"
-run_guard_stage "key_decode"
-run_guard_stage "stdx_build"
+IFS=',' read -r -a guard_stages <<<"${GUARD_STAGES_RAW}"
+for stage in "${guard_stages[@]}"; do
+  trimmed_stage="$(printf '%s' "${stage}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "${trimmed_stage}" ]]; then
+    continue
+  fi
+  run_guard_stage "${trimmed_stage}"
+done
+
+if [[ "${GUARD_ONLY}" == "1" ]]; then
+  echo "[sample/h2wire] guard-only run passed stages=${GUARD_STAGES_RAW}"
+  exit 0
+fi
 
 "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID="$!"
