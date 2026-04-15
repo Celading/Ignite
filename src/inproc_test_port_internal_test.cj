@@ -1,5 +1,7 @@
 package ignite
 
+import std.fs.{exists, removeIfExists}
+
 @Test
 public class InprocTestPortInternalTestSuite {
     @TestCase
@@ -33,6 +35,39 @@ public class InprocTestPortInternalTestSuite {
         } finally {
             releaseInprocTestPorts(ports)
         }
+    }
+
+    @TestCase
+    public func testClaimInprocTestPortsSkipExistingCrossProcessLease(): Unit {
+        let leaseRoot = "/tmp/ignite_inproc_port_internal_skip_existing"
+        _ = removeIfExists(leaseRoot, recursive: true)
+
+        let blocked = previewInprocTestPortCandidates("GET", "/lease-aware", 0, count: 1)[0]
+        @Assert(tryClaimCrossProcessInprocTestPortLease(blocked, leaseRoot: leaseRoot), true)
+
+        let ports = claimInprocTestPortsForPlannerNonce("GET", "/lease-aware", 0, leaseRoot: leaseRoot)
+        try {
+            @Assert(ports.size, Int64(8))
+            @Assert(containsInprocPortArray(ports, blocked), false)
+        } finally {
+            releaseClaimedInprocTestPorts(ports, leaseRoot: leaseRoot)
+            releaseCrossProcessInprocTestPortLease(blocked, leaseRoot: leaseRoot)
+            _ = removeIfExists(leaseRoot, recursive: true)
+        }
+    }
+
+    @TestCase
+    public func testReleaseClaimedInprocTestPortsRemovesCrossProcessLeaseDirs(): Unit {
+        let leaseRoot = "/tmp/ignite_inproc_port_internal_release_cleanup"
+        _ = removeIfExists(leaseRoot, recursive: true)
+
+        let ports = claimInprocTestPortsForPlannerNonce("POST", "/lease-release", 1, leaseRoot: leaseRoot)
+        let leasePath = buildInprocTestPortLeasePath(ports[0], resolveInprocTestPortLeaseRoot(leaseRoot))
+        @Assert(exists(leasePath), true)
+
+        releaseClaimedInprocTestPorts(ports, leaseRoot: leaseRoot)
+        @Assert(exists(leasePath), false)
+        _ = removeIfExists(leaseRoot, recursive: true)
     }
 }
 

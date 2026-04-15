@@ -2,7 +2,7 @@ package ignite
 
 import std.collection.ArrayList
 import std.env.*
-import std.fs.{exists, FileInfo}
+import std.fs.{Directory, exists, File, FileInfo, OpenMode, Path, removeIfExists}
 import std.io.InputStream
 import std.sync.Mutex
 import stdx.net.http.{
@@ -979,33 +979,171 @@ func shutdownHandleForTestServer(engine: ServerEngine, serverFuture: Future<Unit
 
 func claimInprocTestPorts(method: String, path: String): Array<UInt16> {
     synchronized(_inprocTestPortPlannerMutex) {
-        let seed = buildInprocTestPortSeed(method, path, _inprocTestPortPlannerNonce)
+        let nonce = _inprocTestPortPlannerNonce
         _inprocTestPortPlannerNonce += 1
-        let claimed = ArrayList<UInt16>()
-        let offsetRange: Int64 = 10000
-        let stride: Int64 = 7919
-        var step: Int64 = 0
-        while (claimed.size < 8 && step < offsetRange) {
-            let raw = 42000 + positiveInprocPortModulo(seed + (step * stride), offsetRange)
-            let port = UInt16(raw)
-            if (!containsInprocPort(_reservedInprocTestPorts, port) && !containsInprocPort(claimed, port)) {
-                claimed.add(port)
-                _reservedInprocTestPorts.add(port)
+        claimInprocTestPortsForPlannerNonce(method, path, nonce)
+    }
+}
+
+func claimInprocTestPortsForPlannerNonce(
+    method: String,
+    path: String,
+    nonce: Int64,
+    leaseRoot!: String = ""
+): Array<UInt16> {
+    let candidates = previewInprocTestPortCandidates(method, path, nonce, count: 10000)
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    let claimed = ArrayList<UInt16>()
+    try {
+        for (port in candidates) {
+            if (containsInprocPort(_reservedInprocTestPorts, port) || containsInprocPort(claimed, port)) {
+                continue
             }
-            step += 1
+            if (!tryClaimCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)) {
+                continue
+            }
+            claimed.add(port)
+            _reservedInprocTestPorts.add(port)
+            if (claimed.size == 8) {
+                return claimed.toArray()
+            }
         }
-        if (claimed.size < 8) {
-            throw Exception("handleForTest failed to claim enough in-proc test ports")
+        throw Exception("handleForTest failed to claim enough in-proc test ports")
+    } catch (e: Exception) {
+        for (port in claimed) {
+            removeInprocPort(_reservedInprocTestPorts, port)
+            releaseCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)
         }
-        claimed.toArray()
+        throw e
+    }
+}
+
+func previewInprocTestPortCandidates(
+    method: String,
+    path: String,
+    nonce: Int64,
+    count!: Int64 = 8
+): Array<UInt16> {
+    if (count <= 0) {
+        return []
+    }
+    let seed = buildInprocTestPortSeed(method, path, nonce)
+    let candidates = ArrayList<UInt16>()
+    let offsetRange: Int64 = 10000
+    let stride: Int64 = 7919
+    var step: Int64 = 0
+    while (candidates.size < count && step < offsetRange) {
+        let raw = 42000 + positiveInprocPortModulo(seed + (step * stride), offsetRange)
+        let port = UInt16(raw)
+        if (!containsInprocPort(candidates, port)) {
+            candidates.add(port)
+        }
+        step += 1
+    }
+    candidates.toArray()
+}
+
+func resolveInprocTestPortLeaseRoot(rootOverride: String): String {
+    let trimmedOverride = rootOverride.trimAscii()
+    if (trimmedOverride.size > 0) {
+        return trimmedOverride
+    }
+    if (let Some(raw) <- getVariable("IGNITE_INPROC_TEST_PORT_LEASE_DIR")) {
+        let trimmed = raw.trimAscii()
+        if (trimmed.size > 0) {
+            return trimmed
+        }
+    }
+    "/tmp/ignite_handle_for_test_port_leases"
+}
+
+func tryClaimCrossProcessInprocTestPortLease(
+    port: UInt16,
+    leaseRoot!: String = ""
+): Bool {
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    ensureInprocTestPortLeaseRootExists(resolvedLeaseRoot)
+    let leasePath = buildInprocTestPortLeasePath(port, resolvedLeaseRoot)
+    try {
+        Directory.create(leasePath)
+        writeInprocTestPortLeaseOwner(leasePath, port)
+        return true
+    } catch (e: Exception) {
+        if (exists(leasePath)) {
+            return false
+        }
+        throw e
+    }
+}
+
+func releaseCrossProcessInprocTestPortLease(
+    port: UInt16,
+    leaseRoot!: String = ""
+): Unit {
+    let leasePath = buildInprocTestPortLeasePath(port, resolveInprocTestPortLeaseRoot(leaseRoot))
+    try {
+        removeIfExists(leasePath, recursive: true)
+    } catch (_: Exception) { }
+}
+
+func buildInprocTestPortLeasePath(port: UInt16, leaseRoot: String): String {
+    Path(leaseRoot).join("port-${port}").toString()
+}
+
+func ensureInprocTestPortLeaseRootExists(root: String): Unit {
+    var attempt: Int64 = 0
+    while (attempt < 4) {
+        try {
+            Directory.create(root, recursive: true)
+            return
+        } catch (e: Exception) {
+            if (exists(root)) {
+                return
+            }
+            if (attempt == 3) {
+                throw e
+            }
+            sleep(Duration.millisecond * 5)
+            attempt += 1
+        }
+    }
+}
+
+func writeInprocTestPortLeaseOwner(leasePath: String, port: UInt16): Unit {
+    let ownerPath = Path(leasePath).join("owner.txt").toString()
+    var pidText = "0"
+    try {
+        pidText = "${getProcessId()}"
+    } catch (_: Exception) { }
+    let file = File(ownerPath, OpenMode.Write)
+    try {
+        file.write("pid=${pidText};port=${port}\n".toArray())
+    } catch (e: Exception) {
+        try {
+            file.close()
+        } catch (_: Exception) { }
+        try {
+            removeIfExists(leasePath, recursive: true)
+        } catch (_: Exception) { }
+        throw e
+    }
+    file.close()
+}
+
+func releaseClaimedInprocTestPorts(
+    ports: Array<UInt16>,
+    leaseRoot!: String = ""
+): Unit {
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    for (port in ports) {
+        removeInprocPort(_reservedInprocTestPorts, port)
+        releaseCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)
     }
 }
 
 func releaseInprocTestPorts(ports: Array<UInt16>): Unit {
     synchronized(_inprocTestPortPlannerMutex) {
-        for (port in ports) {
-            removeInprocPort(_reservedInprocTestPorts, port)
-        }
+        releaseClaimedInprocTestPorts(ports)
     }
 }
 
