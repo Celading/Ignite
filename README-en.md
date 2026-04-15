@@ -135,12 +135,13 @@ If you are using Ignite inside your own application repository rather than valid
 | **Route groups** | `app.group("/api")` with nested groups and auto-prefix |
 | **WebSocket** | One-line WebSocket upgrade |
 | **SSE** | Built-in Server-Sent Events |
-| **Streaming** | Chunked Transfer Encoding |
+| **Streaming** | `ctx.writer()` and `ctx.sendStream(...)` for incremental responses; HTTP/1.1 may use chunked framing, HTTP/2 must rely on the lower writer contract instead of `Transfer-Encoding` |
 | **Swagger** | OpenAPI 3.0 + Swagger UI with cache (`enableSwaggerCache`), `?refresh=1` to force refresh |
 | **TLS/HTTP2** | Native TLS with HTTP/2 ALPN |
 | **HTTP client** | Built-in `RestClient` with builder-style API |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`, optional `Config.jsonEncoder`; `ignite.serializeJson` / `deserializeJson` |
 | **Files & Range** | `ctx.sendFile`, `ctx.download` (attachment name), `ctx.sendFileRange` (HTTP Range 206/416) |
+| **Large body path** | `ctx.saveBodyToFile(path)` can push large request bodies straight to disk without first forcing a full in-memory body cache |
 | **static / staticSpa** | `app.static(prefix, root)` for static only; `app.staticSpa(prefix, root, indexFile)` for static-first + SPA fallback to index |
 | **Graceful shutdown** | `onShutdown` hook for cleanup |
 
@@ -185,9 +186,10 @@ app.post("/upload", { ctx =>
 
     // Body
     let body = ctx.bodyString()
+    let saved = ctx.saveBodyToFile("/tmp/upload.bin")
 
     // Response
-    ctx.status(201).json(#"{"status": "created"}"#)
+    ctx.status(201).json(#"{"status": "created", "saved": ${saved}}"#)
 })
 ```
 
@@ -206,12 +208,15 @@ ctx.noContent()                  // 204 No Content
 ctx.sendFile(path)               // send file by path
 ctx.download(path, filename)     // attachment (optional filename)
 ctx.sendFileRange(path)          // HTTP Range → 206/416
+ctx.sendStream(stream, ...)      // stream InputStream as the response body
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
     secure: true
 )
 ```
+
+For large uploads, prefer `ctx.saveBodyToFile(path)` so the request body can be pushed directly to disk instead of being forced through `ctx.bodyBytes()` first. For large response bodies, `ctx.sendStream(...)` now has real HTTP/1.1 regression coverage on known-length, unknown-length, and `HEAD` paths; HTTP/2 multi-write behavior still depends on the underlying writer/TLS route and is not claimed closed from README wording alone.
 
 ### Route groups
 
@@ -526,6 +531,14 @@ app.get("/events", { ctx =>
 ### Streaming response
 
 ```cangjie
+app.get("/stream-file", { ctx =>
+    let stream = File.openRead("large-report.txt")
+    _ = ctx.sendStream(
+        stream,
+        contentType: "text/plain; charset=utf-8"
+    )
+})
+
 app.get("/stream", { ctx =>
     let writer = ctx.writer()
     writer.writeString("chunk 1\n")
@@ -534,7 +547,7 @@ app.get("/stream", { ctx =>
 })
 ```
 
-`ctx.writer()` is an incremental response-body writer. Under HTTP/1.1 this can map to chunked semantics; under HTTP/2 it must not emit `Transfer-Encoding`, and the underlying `stdx.net.http.HttpResponseWriter` contract is what makes repeated `write(...)` calls package and send data.
+`ctx.sendStream(...)` is the safer public path when you already have an `InputStream` and want to keep a large response body off the heap. `ctx.writer()` is the lower-level incremental writer. Under HTTP/1.1 that may map to chunked semantics; under HTTP/2 it must not emit `Transfer-Encoding`, and repeated `write(...)` calls still depend on the lower `stdx.net.http.HttpResponseWriter` contract to package and send data.
 
 ### Static files & SPA fallback (static / staticSpa)
 

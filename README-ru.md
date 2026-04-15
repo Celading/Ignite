@@ -135,12 +135,13 @@ cjpm build
 | **Группы маршрутов** | `app.group("/api")` с вложенными группами и авто-префиксом |
 | **WebSocket** | Апгрейд до WebSocket в одну строку |
 | **SSE** | Встроенная поддержка Server-Sent Events |
-| **Потоковая отдача** | Chunked Transfer Encoding |
+| **Потоковая отдача** | `ctx.writer()` и `ctx.sendStream(...)` для поэтапного ответа; в HTTP/1.1 это может быть chunked, а в HTTP/2 нужно опираться на нижележащий writer-контракт, а не на `Transfer-Encoding` |
 | **Swagger** | OpenAPI 3.0 и Swagger UI с кэшем (`enableSwaggerCache`), `?refresh=1` для принудительного обновления |
 | **TLS/HTTP2** | Нативный TLS и HTTP/2 по ALPN |
 | **HTTP-клиент** | Встроенный `RestClient` в стиле builder |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`, опционально `Config.jsonEncoder`; `ignite.serializeJson` / `deserializeJson` |
 | **Файлы и Range** | `ctx.sendFile`, `ctx.download` (имя вложения), `ctx.sendFileRange` (HTTP Range 206/416) |
+| **Путь для больших тел** | `ctx.saveBodyToFile(path)` может сразу складывать большой request body на диск, не заставляя сначала прогонять его через полный in-memory кэш |
 | **static / staticSpa** | `app.static(prefix, root)` — только статика; `app.staticSpa(prefix, root, indexFile)` — статика + откат на index для SPA |
 | **Корректное завершение** | Хук `onShutdown` для освобождения ресурсов |
 
@@ -185,9 +186,10 @@ app.post("/upload", { ctx =>
 
     // Тело запроса
     let body = ctx.bodyString()
+    let saved = ctx.saveBodyToFile("/tmp/upload.bin")
 
     // Ответ
-    ctx.status(201).json(#"{"status": "created"}"#)
+    ctx.status(201).json(#"{"status": "created", "saved": ${saved}}"#)
 })
 ```
 
@@ -206,12 +208,15 @@ ctx.noContent()                  // 204 No Content
 ctx.sendFile(path)               // отдача файла по пути
 ctx.download(path, filename)     // вложение (filename опционален)
 ctx.sendFileRange(path)          // HTTP Range → 206/416
+ctx.sendStream(stream, ...)      // потоковая отдача InputStream как тела ответа
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
     secure: true
 )
 ```
+
+Для больших загрузок стоит предпочитать `ctx.saveBodyToFile(path)`, чтобы тело запроса сразу шло на диск, а не через `ctx.bodyBytes()`. Для больших ответов `ctx.sendStream(...)` уже покрыт реальными HTTP/1.1-регрессиями для `known-length`, `unknown-length` и `HEAD`; поведение многократной записи в HTTP/2 по-прежнему зависит от нижнего writer/TLS-маршрута, и README не должен выдавать это за уже закрытый вопрос.
 
 ### Группы маршрутов
 
@@ -476,6 +481,14 @@ app.get("/events", { ctx =>
 ### Потоковый ответ
 
 ```cangjie
+app.get("/stream-file", { ctx =>
+    let stream = File.openRead("large-report.txt")
+    _ = ctx.sendStream(
+        stream,
+        contentType: "text/plain; charset=utf-8"
+    )
+})
+
 app.get("/stream", { ctx =>
     let writer = ctx.writer()
     writer.writeString("chunk 1\n")
@@ -484,7 +497,7 @@ app.get("/stream", { ctx =>
 })
 ```
 
-`ctx.writer()` — это интерфейс поэтапной записи тела ответа. В HTTP/1.1 это может соответствовать chunked-семантике; в HTTP/2 заголовок `Transfer-Encoding` отправлять нельзя, и повторные `write(...)` должны опираться на контракт нижележащего `stdx.net.http.HttpResponseWriter`.
+`ctx.sendStream(...)` — более безопасный публичный путь, когда у вас уже есть `InputStream` и нужно не держать большой ответ целиком в heap. `ctx.writer()` — это более низкоуровневый интерфейс поэтапной записи тела ответа. В HTTP/1.1 это может соответствовать chunked-семантике; в HTTP/2 заголовок `Transfer-Encoding` отправлять нельзя, и повторные `write(...)` должны опираться на контракт нижележащего `stdx.net.http.HttpResponseWriter`.
 
 ### Статические файлы и откат для SPA (static / staticSpa)
 
