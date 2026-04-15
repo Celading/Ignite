@@ -27,6 +27,9 @@ Run commands from the repository root that contains `cjpm.toml`.
 6. `manual/samples/h2wire`
    - Local H2 on-wire smoke for `ctx.writer()` and large-file return
    - Includes an isolated TLS guard step so current stdx startup aborts are captured as reproducible blockers instead of only crashing the sample service
+7. `manual/samples/handlefortest`
+   - Multi-process stress probe for `App.handleForTest(...)`
+   - Reuses one shared lease root so cross-process port planning can be exercised from files alone
 
 ## Additional samples
 
@@ -36,6 +39,8 @@ Run commands from the repository root that contains `cjpm.toml`.
   - `sendFile`, `download`, `sendFileRange`
 - `manual/samples/h2wire`
   - H2 on-wire smoke for repeated writer flush and large-file return
+- `manual/samples/handlefortest`
+  - Multi-process stress probe for file-backed cross-process in-proc port leases
 - `manual/samples/middleware`
   - Middleware composition and request flow
 
@@ -47,6 +52,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/swagger/run.sh
 ./manual/samples/client/run_demo.sh
 ./manual/samples/h2wire/probe.sh
+./manual/samples/handlefortest/probe.sh
 ```
 
 ## Notes
