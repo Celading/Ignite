@@ -2,9 +2,13 @@ import ignite.api2
 import std.env.getVariable
 import std.fs.{exists, File, OpenMode}
 import std.collection.ArrayList
+import stdx.crypto.x509.X509Certificate
+import stdx.crypto.keys.GeneralPrivateKey
+import stdx.net.tls.TlsServerConfig
 
 let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
 let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
+let H2_GUARD_DEFAULT_STAGE = "full"
 
 main() {
     let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT", H2_WIRE_CERT_FALLBACK)
@@ -16,6 +20,41 @@ main() {
 
     let certPem = readTextFile(certFile)
     let keyPem = readTextFile(keyFile)
+    let stage = resolveGuardStage()
+    println("[sample/h2wire] tls guard stage=${stage}")
+    runGuardStage(stage, certPem, keyPem)
+}
+
+func resolveGuardStage(): String {
+    if (let Some(raw) <- getVariable("IGNITE_H2_TLS_GUARD_STAGE")) {
+        let normalized = raw.trimAscii().toAsciiLower()
+        if (
+            normalized == "precheck" ||
+            normalized == "cert_decode" ||
+            normalized == "key_decode" ||
+            normalized == "stdx_build" ||
+            normalized == "full"
+        ) {
+            return normalized
+        }
+    }
+    H2_GUARD_DEFAULT_STAGE
+}
+
+func runGuardStage(stage: String, certPem: String, keyPem: String): Unit {
+    match (stage) {
+        case "precheck" => runPrecheck(certPem, keyPem)
+        case "cert_decode" => runCertDecode(certPem)
+        case "key_decode" => runKeyDecode(keyPem)
+        case "stdx_build" => runStdxBuild(certPem, keyPem)
+        case "full" =>
+            runPrecheck(certPem, keyPem)
+            runStdxBuild(certPem, keyPem)
+        case _ => throw Exception("unsupported guard stage=${stage}")
+    }
+}
+
+func runPrecheck(certPem: String, keyPem: String): Unit {
     let normalizedAlpn = api2.precheckHttpServerTlsConfigInput(
         certPem,
         keyPem,
@@ -23,14 +62,23 @@ main() {
         requireHttp2Alpn: true
     )
     println("[sample/h2wire] tls guard precheck ok: " + joinText(normalizedAlpn, ","))
+}
 
-    let _ = api2.loadTlsServerConfigForHttp2(
-        certPem,
-        keyPem,
-        alpnProtocols: ["h2", "http/1.1"],
-        requireHttp2Alpn: true,
-        enablePrecheck: true
-    )
+func runCertDecode(certPem: String): Unit {
+    let certChain = X509Certificate.decodeFromPem(certPem)
+    println("[sample/h2wire] tls guard cert decode ok: chain=${certChain.size}")
+}
+
+func runKeyDecode(keyPem: String): Unit {
+    let _ = GeneralPrivateKey.decodeFromPem(keyPem)
+    println("[sample/h2wire] tls guard key decode ok")
+}
+
+func runStdxBuild(certPem: String, keyPem: String): Unit {
+    let certChain = X509Certificate.decodeFromPem(certPem)
+    let certKey = GeneralPrivateKey.decodeFromPem(keyPem)
+    var tlsConfig = TlsServerConfig(certChain, certKey)
+    tlsConfig.supportedAlpnProtocols = ["h2", "http/1.1"]
     println("[sample/h2wire] tls guard stdx build ok")
 }
 

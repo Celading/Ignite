@@ -41,6 +41,11 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 
 1. 编译当前仓的 Ignite 与样例程序
 2. 先用一个隔离的 TLS guard 进程探测 `precheck -> stdx TLS config build` 这条路径
+   这条 guard 现在会继续拆成四段顺序探测：
+   - `precheck`
+   - `cert decode`
+   - `key decode`
+   - `stdx build`
 3. 如果 guard 通过，再启动一个本地 TLS 服务
 4. 用 Node 内建 `http2` 客户端验证：
    - ALPN 结果确实是 `h2`
@@ -50,7 +55,8 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
    - `/file` 的大响应体大小与 `content-length` 一致
 
 如果 guard 阶段就失败，并且 log 里出现 `stdx.crypto.keys` / `decodeFromPem` / `SIGABRT`，那不是 probe 写错了，而是当前工作区已知的 `stdx` TLS 构造阻塞又被稳定复现了。
-这样做的意义是：即使底层当前还没修，probe 也会先把问题收束到一个隔离进程里，而不是直接把正式样例服务进程炸掉。
+这条 probe 现在会把失败收束到一个明确阶段，而不是只给一个笼统的 “TLS build failed”，更不会直接把正式样例服务进程炸掉。
+在当前工作区，这条 smoke 已经把已知崩溃进一步缩到 `key decode` 阶段，也就是 `GeneralPrivateKey.decodeFromPem(...)` 的 native abort。
 这条 smoke 路线当前保留下来的价值，正是把“本地 H2 on-wire 没闭”从口头判断变成可重复失败证据。
 
 ## 环境变量（仅在自动探测失败时）

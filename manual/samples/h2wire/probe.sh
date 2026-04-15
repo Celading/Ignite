@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SERVER_BIN="/tmp/ignite_sample_h2wire"
 SERVER_LOG="/tmp/ignite_sample_h2wire.log"
 TLS_GUARD_BIN="/tmp/ignite_sample_h2wire_tls_guard"
-TLS_GUARD_LOG="/tmp/ignite_sample_h2wire_tls_guard.log"
+TLS_GUARD_LOG_ROOT="/tmp/ignite_sample_h2wire_tls_guard"
 VERIFY_SCRIPT="${ROOT}/manual/samples/h2wire/verify_http2.mjs"
 
 detect_stdx_static() {
@@ -91,13 +91,21 @@ case "$(uname -s)" in
     ;;
 esac
 
-if ! "${TLS_GUARD_BIN}" >"${TLS_GUARD_LOG}" 2>&1; then
-  echo "[sample/h2wire] isolated TLS guard failed before server launch." >&2
-  echo "[sample/h2wire] the current workspace still cannot complete stdx TLS config build for this sample." >&2
-  echo "[sample/h2wire] inspect ${TLS_GUARD_LOG}" >&2
-  sed -n '1,160p' "${TLS_GUARD_LOG}" >&2
-  exit 1
-fi
+run_guard_stage() {
+  local stage="$1"
+  local log_path="${TLS_GUARD_LOG_ROOT}_${stage}.log"
+  if ! IGNITE_H2_TLS_GUARD_STAGE="${stage}" "${TLS_GUARD_BIN}" >"${log_path}" 2>&1; then
+    echo "[sample/h2wire] isolated TLS guard failed at stage=${stage} before server launch." >&2
+    echo "[sample/h2wire] inspect ${log_path}" >&2
+    sed -n '1,160p' "${log_path}" >&2
+    return 1
+  fi
+}
+
+run_guard_stage "precheck"
+run_guard_stage "cert_decode"
+run_guard_stage "key_decode"
+run_guard_stage "stdx_build"
 
 "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID="$!"
