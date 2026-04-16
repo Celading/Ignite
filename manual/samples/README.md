@@ -36,7 +36,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 - `manual/samples/dualport`
   - Two listeners in one app process for local verification
 - `manual/samples/files`
-  - `sendFile`, `download`, `sendFileRange`
+  - `sendFile`, `download`, `sendFileRange`, `sendStream`, `saveBodyToFile`
 - `manual/samples/h2wire`
   - H2 on-wire smoke for repeated writer flush and large-file return
 - `manual/samples/handlefortest`
@@ -51,6 +51,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/api/run.sh
 ./manual/samples/swagger/run.sh
 ./manual/samples/client/run_demo.sh
+./manual/samples/files/run.sh
 ./manual/samples/h2wire/probe.sh
 ./manual/samples/handlefortest/probe.sh
 ```

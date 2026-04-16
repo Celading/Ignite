@@ -129,6 +129,7 @@ app.post("/upload-large", { ctx =>
 - 真实 HTTP/1.1 `content-length` 上传已经有回归覆盖
 - 真实 HTTP/1.1 `chunked` 上传也已经有回归覆盖
 - 现有回归还会确认 `saveBodyToFile(...)` 没有先把请求体塞进 `ctx.bodyBytes()` 缓存再落盘
+- 如果你想直接跑可视化入口，当前可以从 [`manual/samples/files/README.md`](../samples/files/README.md) 开始
 
 如果你要问“HTTP/2 下还能不能流式返回”，答案不是靠 `Transfer-Encoding`：
 
@@ -136,6 +137,7 @@ app.post("/upload-large", { ctx =>
 - `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
 - `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
 - 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
+- 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
 
 如果你在 Client 侧用了 `RestClient`，响应拿回来后还可以继续读结构化 transport 留痕：
 
