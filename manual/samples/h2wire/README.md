@@ -37,6 +37,21 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 ./manual/samples/h2wire/probe.sh
 ```
 
+如果你只想快速看当前私钥 decode 阻塞是不是跟 key 形态相关，可以执行：
+
+```bash
+./manual/samples/h2wire/guard_matrix.sh
+```
+
+这条脚本会自动生成传统 RSA PEM（PKCS#1）副本，并对下面 4 个 case 只跑 `key_decode` guard：
+
+- `key-a:pkcs8`
+- `key-b:pkcs8`
+- `key-a:pkcs1`
+- `key-b:pkcs1`
+
+输出只保留 case 结果与简短诊断，适合做本地 TLS 阻塞的快速复验。
+
 这个 probe 会：
 
 1. 编译当前仓的 Ignite 与样例程序
