@@ -155,6 +155,7 @@ app.post("/upload-large", { ctx =>
 - `sliceBytes(...)`
 - `readUint16BE(...)` / `readUint32BE(...)`
 - `decodeCbor(...)` / `decodeCborMap(...)`
+- `decodeCoseEc2PublicKey(...)`
 
 这组能力当前的定位不是“完整二进制框架”，而是 `ig0600` 先把共享 primitive 稳定下来，避免 `security`、`client crypto`、`jwt`、后续 `WebAuthn` 需求继续各自复制一套实现。
 
@@ -163,14 +164,16 @@ import ignite.binary.*
 
 let signCount = readUint32BE(authenticatorData, 33)
 let challenge = String.fromUtf8(base64UrlDecode(challengeB64u))
+let coseKey = decodeCoseEc2PublicKey(credentialPublicKeyBytes)
 ```
 
 当前边界也要说清楚：
 
 - 这里只是最小 primitive 层
 - `CBOR` 目前只覆盖 definite-length 的 `unsigned / negative / bytes / text / array / map`
+- `COSE` 目前也只覆盖最窄的 read-only `ES256 / P-256 EC2 COSE_Key` 结构化提取
 - 还不是完整 `CBOR` ecosystem
-- 也不是完整 `COSE_Key` 解释层
+- 也不是完整 `COSE_Key` 解释层，更不是通用 `COSE` framework
 - 更不是 WebAuthn ceremony 本身
 
 ## 路由组
