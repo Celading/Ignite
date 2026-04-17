@@ -2,6 +2,8 @@ package ignite.binary
 
 public enum AuthenticatorDataErrorCode <: Equatable<AuthenticatorDataErrorCode> & ToString {
     | TruncatedInput
+    | MissingAttestedCredentialData
+    | MalformedCredentialPublicKey
 
     public operator func ==(right: AuthenticatorDataErrorCode): Bool {
         ordinalValue() == right.ordinalValue()
@@ -14,12 +16,16 @@ public enum AuthenticatorDataErrorCode <: Equatable<AuthenticatorDataErrorCode> 
     public func ordinalValue(): Int64 {
         match (this) {
             case TruncatedInput => 0
+            case MissingAttestedCredentialData => 1
+            case MalformedCredentialPublicKey => 2
         }
     }
 
     public func toString(): String {
         match (this) {
             case TruncatedInput => "TRUNCATED_INPUT"
+            case MissingAttestedCredentialData => "MISSING_ATTESTED_CREDENTIAL_DATA"
+            case MalformedCredentialPublicKey => "MALFORMED_CREDENTIAL_PUBLIC_KEY"
         }
     }
 }
@@ -96,6 +102,31 @@ public class AuthenticatorData {
     }
 }
 
+public class AuthenticatorAttestedCredentialData {
+    public let aaguid: Array<UInt8>
+    public let credentialId: Array<UInt8>
+    public let credentialPublicKeyBytes: Array<UInt8>
+    public let remainingBytes: Array<UInt8>
+
+    public init(
+        aaguid: Array<UInt8>,
+        credentialId: Array<UInt8>,
+        credentialPublicKeyBytes: Array<UInt8>,
+        remainingBytes!: Array<UInt8> = []
+    ) {
+        if (aaguid.size != 16) {
+            throw AuthenticatorDataException(
+                AuthenticatorDataErrorCode.TruncatedInput,
+                "attested credential data AAGUID must be 16 bytes"
+            )
+        }
+        this.aaguid = cloneBytes(aaguid)
+        this.credentialId = cloneBytes(credentialId)
+        this.credentialPublicKeyBytes = cloneBytes(credentialPublicKeyBytes)
+        this.remainingBytes = cloneBytes(remainingBytes)
+    }
+}
+
 public func decodeAuthenticatorData(input: Array<UInt8>): AuthenticatorData {
     if (input.size < AuthenticatorData.fixedHeaderLength) {
         throw AuthenticatorDataException(
@@ -109,4 +140,79 @@ public func decodeAuthenticatorData(input: Array<UInt8>): AuthenticatorData {
     let signCount = readUint32BE(input, 33)
     let tail = sliceBytes(input, AuthenticatorData.fixedHeaderLength)
     AuthenticatorData(rpIdHash, flags, signCount, tail: tail)
+}
+
+public func decodeAttestedCredentialData(
+    input: AuthenticatorData,
+    option!: CborDecodeOption = CborDecodeOption()
+): AuthenticatorAttestedCredentialData {
+    if (!input.flags.hasAttestedCredentialData()) {
+        throw AuthenticatorDataException(
+            AuthenticatorDataErrorCode.MissingAttestedCredentialData,
+            "authenticatorData does not carry attested credential data"
+        )
+    }
+    decodeAttestedCredentialDataTail(input.tail, option: option)
+}
+
+func decodeAttestedCredentialDataTail(
+    input: Array<UInt8>,
+    option!: CborDecodeOption = CborDecodeOption()
+): AuthenticatorAttestedCredentialData {
+    if (input.size < 18) {
+        throw AuthenticatorDataException(
+            AuthenticatorDataErrorCode.TruncatedInput,
+            "attested credential data must be at least 18 bytes"
+        )
+    }
+
+    let aaguid = sliceBytes(input, 0, end: 16)
+    let credentialIdLength = Int64(readUint16BE(input, 16))
+    let credentialIdEnd = 18 + credentialIdLength
+    if (credentialIdEnd > input.size) {
+        throw AuthenticatorDataException(
+            AuthenticatorDataErrorCode.TruncatedInput,
+            "attested credential data ended before credentialId completed"
+        )
+    }
+
+    let credentialId = sliceBytes(input, 18, end: credentialIdEnd)
+    let keyAndRemaining = sliceBytes(input, credentialIdEnd)
+    if (keyAndRemaining.size == 0) {
+        throw AuthenticatorDataException(
+            AuthenticatorDataErrorCode.TruncatedInput,
+            "attested credential data missing credentialPublicKey"
+        )
+    }
+
+    let prefix = decodeCredentialPublicKeyPrefix(keyAndRemaining, option: option)
+    let credentialPublicKeyBytes = sliceBytes(keyAndRemaining, 0, end: prefix.bytesRead)
+    let remainingBytes = sliceBytes(keyAndRemaining, prefix.bytesRead)
+    AuthenticatorAttestedCredentialData(
+        aaguid,
+        credentialId,
+        credentialPublicKeyBytes,
+        remainingBytes: remainingBytes
+    )
+}
+
+func decodeCredentialPublicKeyPrefix(
+    input: Array<UInt8>,
+    option!: CborDecodeOption = CborDecodeOption()
+): CborPrefixDecodeResult {
+    try {
+        let prefix = decodeCborPrefix(input, option: option)
+        if (prefix.value.kind != CborKind.MapValue) {
+            throw AuthenticatorDataException(
+                AuthenticatorDataErrorCode.MalformedCredentialPublicKey,
+                "credentialPublicKey must be a CBOR map"
+            )
+        }
+        prefix
+    } catch (e: CborException) {
+        throw AuthenticatorDataException(
+            AuthenticatorDataErrorCode.MalformedCredentialPublicKey,
+            "credentialPublicKey is not a valid CBOR map: ${e.message}"
+        )
+    }
 }

@@ -255,6 +255,25 @@ public func decodeCborMap(
     value
 }
 
+class CborPrefixDecodeResult {
+    let value: CborValue
+    let bytesRead: Int64
+
+    init(value: CborValue, bytesRead: Int64) {
+        this.value = value
+        this.bytesRead = bytesRead
+    }
+}
+
+func decodeCborPrefix(
+    input: Array<UInt8>,
+    option!: CborDecodeOption = CborDecodeOption()
+): CborPrefixDecodeResult {
+    let reader = CborReader(cloneBytes(input), option)
+    let value = reader.readValue(0)
+    CborPrefixDecodeResult(value, reader.offset)
+}
+
 class CborReader {
     let data: Array<UInt8>
     let option: CborDecodeOption

@@ -60,6 +60,81 @@ public class BinaryAuthenticatorDataTestSuite {
     }
 }
 
+@Test
+public class BinaryAttestedCredentialDataTestSuite {
+    @TestCase
+    public func testDecodeAttestedCredentialDataSlicesStableFields(): Unit {
+        let wire = buildAuthDataWire(
+            "c1",
+            "00112233445566778899aabbccddeeff" +
+            "0004" +
+            "deadbeef" +
+            "a50102032620012158200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202258202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40" +
+            "a0"
+        )
+
+        let authData = decodeAuthenticatorData(authHexToBytes(wire))
+        let attested = decodeAttestedCredentialData(authData)
+        let coseKey = decodeCoseEc2PublicKey(attested.credentialPublicKeyBytes)
+
+        @Assert(authBytesToHex(attested.aaguid), "00112233445566778899aabbccddeeff")
+        @Assert(authBytesToHex(attested.credentialId), "deadbeef")
+        @Assert(authBytesToHex(attested.remainingBytes), "a0")
+        @Assert(coseKey.algorithm, CoseAlgorithm.Es256)
+        @Assert(coseKey.curve, CoseCurve.P256)
+    }
+
+    @TestCase
+    public func testDecodeAttestedCredentialDataRejectsMissingAtFlag(): Unit {
+        let wire = buildAuthDataWire(
+            "01",
+            "00112233445566778899aabbccddeeff" +
+            "0002" +
+            "cafe" +
+            "a0"
+        )
+
+        let authData = decodeAuthenticatorData(authHexToBytes(wire))
+        assertAttestedFailure(
+            authData,
+            AuthenticatorDataErrorCode.MissingAttestedCredentialData
+        )
+    }
+
+    @TestCase
+    public func testDecodeAttestedCredentialDataRejectsTruncatedCredentialId(): Unit {
+        let wire = buildAuthDataWire(
+            "41",
+            "00112233445566778899aabbccddeeff" +
+            "0004" +
+            "dead"
+        )
+
+        let authData = decodeAuthenticatorData(authHexToBytes(wire))
+        assertAttestedFailure(
+            authData,
+            AuthenticatorDataErrorCode.TruncatedInput
+        )
+    }
+
+    @TestCase
+    public func testDecodeAttestedCredentialDataRejectsMalformedCredentialPublicKey(): Unit {
+        let wire = buildAuthDataWire(
+            "41",
+            "00112233445566778899aabbccddeeff" +
+            "0004" +
+            "deadbeef" +
+            "83010203"
+        )
+
+        let authData = decodeAuthenticatorData(authHexToBytes(wire))
+        assertAttestedFailure(
+            authData,
+            AuthenticatorDataErrorCode.MalformedCredentialPublicKey
+        )
+    }
+}
+
 func assertAuthenticatorFailure(
     bytes: Array<UInt8>,
     expectedCode: AuthenticatorDataErrorCode
@@ -70,6 +145,25 @@ func assertAuthenticatorFailure(
     } catch (e: AuthenticatorDataException) {
         @Assert(e.code, expectedCode)
     }
+}
+
+func assertAttestedFailure(
+    input: AuthenticatorData,
+    expectedCode: AuthenticatorDataErrorCode
+): Unit {
+    try {
+        let _ = decodeAttestedCredentialData(input)
+        @Fail("attested credential data decode should have failed")
+    } catch (e: AuthenticatorDataException) {
+        @Assert(e.code, expectedCode)
+    }
+}
+
+func buildAuthDataWire(flagsHex: String, tailHex: String): String {
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" +
+        flagsHex +
+        "0000002a" +
+        tailHex
 }
 
 func authHexToBytes(input: String): Array<UInt8> {
