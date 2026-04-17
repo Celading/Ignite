@@ -146,6 +146,31 @@ app.post("/upload-large", { ctx =>
 
 这样做的好处是，联调排障时不必只盯日志文本，也不用手工一个个去读 `x-ignite-observe-*` 头。
 
+## `ignite.binary`
+
+如果你在写协议型中间件、认证组件，或者准备处理 `CBOR / COSE / authenticatorData` 这类二进制结构，`ignite.binary` 现在已经有第一批最小 helper 可以直接拿来用：
+
+- `base64UrlEncode(...)` / `base64UrlDecode(...)`
+- `cloneBytes(...)`
+- `sliceBytes(...)`
+- `readUint16BE(...)` / `readUint32BE(...)`
+
+这组能力当前的定位不是“完整二进制框架”，而是 `ig0600` 先把共享 primitive 稳定下来，避免 `security`、`client crypto`、`jwt`、后续 `WebAuthn` 需求继续各自复制一套实现。
+
+```cangjie
+import ignite.binary.*
+
+let signCount = readUint32BE(authenticatorData, 33)
+let challenge = String.fromUtf8(base64UrlDecode(challengeB64u))
+```
+
+当前边界也要说清楚：
+
+- 这里只是最小 primitive 层
+- 还不是完整 `CBOR` parser
+- 也不是完整 `COSE_Key` 解释层
+- 更不是 WebAuthn ceremony 本身
+
 ## 路由组
 
 当接口需要按模块拆分时，用 `group` 会比手动拼路径更顺：

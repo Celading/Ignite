@@ -1,6 +1,7 @@
 package ignite.tests
 
 import ignite.*
+import ignite.binary.base64UrlEncode
 import ignite.middleware.{JwtConfig, jwtMiddleware}
 import jinguissl.crypto.digest.{HashAlgorithm, hmac}
 import std.time.DateTime
@@ -92,29 +93,6 @@ public class JwtMiddlewareTestSuite {
         let signingInput = header + "." + payload
         let signature = base64UrlEncode(hmac(HashAlgorithm.SHA256, secret.toArray(), signingInput.toArray()))
         signingInput + "." + signature
-    }
-
-    func base64UrlEncode(input: Array<UInt8>): String {
-        let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toRuneArray()
-        var out = ""
-        var i: Int64 = 0
-        while (i < input.size) {
-            let b0 = Int64(input[i])
-            let b1 = if (i + 1 < input.size) { Int64(input[i + 1]) } else { 0 }
-            let b2 = if (i + 2 < input.size) { Int64(input[i + 2]) } else { 0 }
-            let triple = (b0 << 16) | (b1 << 8) | b2
-
-            out += table[(triple >> 18) & 0x3F].toString()
-            out += table[(triple >> 12) & 0x3F].toString()
-            if (i + 1 < input.size) {
-                out += table[(triple >> 6) & 0x3F].toString()
-            }
-            if (i + 2 < input.size) {
-                out += table[triple & 0x3F].toString()
-            }
-            i += 3
-        }
-        out
     }
 
     func nowUnixSeconds(): Int64 {

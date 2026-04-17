@@ -1,6 +1,7 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
+import ignite.binary.cloneBytes
 import ignite.security
 import std.collection.HashMap
 
@@ -173,16 +174,6 @@ func firstKeyId(ring: HashMap<String, Array<UInt8>>): ?String {
         return Some(kid)
     }
     None
-}
-
-func cloneBytes(input: Array<UInt8>): Array<UInt8> {
-    let out = Array<UInt8>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = input[i]
-        i += 1
-    }
-    out
 }
 
 func joinExceptNames(exceptNames: Array<String>): String {

@@ -1,5 +1,6 @@
 package ignite.api2
 
+import ignite.binary.{base64UrlEncode, base64UrlDecode, cloneBytes}
 import std.collection.{HashMap, ArrayList}
 import std.random.Random
 
@@ -313,9 +314,9 @@ public func decryptEnvelopeV1(
     match (config.keyRing.get(envelope.kid)) {
         case Some(key) =>
             let provider = clientCryptoProvider(config.providerKind)
-            let nonce = base64UrlDecode(envelope.nonce)
-            let ct = base64UrlDecode(envelope.ct)
-            let tag = base64UrlDecode(envelope.tag)
+            let nonce = decodeEnvelopeSegmentOrThrow(envelope.nonce)
+            let ct = decodeEnvelopeSegmentOrThrow(envelope.ct)
+            let tag = decodeEnvelopeSegmentOrThrow(envelope.tag)
             provider.aeadDecrypt(key, nonce, ct, tag, aad)
         case None =>
             throw ClientCryptoException(ClientCryptoErrorCode.KeyNotFound, "key id not found: ${envelope.kid}")
@@ -410,14 +411,12 @@ func toUInt8Array(input: Array<Byte>): Array<UInt8> {
     out
 }
 
-func cloneBytes(input: Array<UInt8>): Array<UInt8> {
-    let out = Array<UInt8>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = input[i]
-        i += 1
+func decodeEnvelopeSegmentOrThrow(segment: String): Array<UInt8> {
+    try {
+        base64UrlDecode(segment)
+    } catch (_: Exception) {
+        throw ClientCryptoException(BadEnvelope, "invalid base64url field in envelope")
     }
-    out
 }
 
 func deriveStream(key: Array<UInt8>, nonce: Array<UInt8>, size: Int64): Array<UInt8> {
@@ -493,72 +492,6 @@ func constantTimeEquals(left: Array<UInt8>, right: Array<UInt8>): Bool {
     diff == 0
 }
 
-func base64UrlEncode(input: Array<UInt8>): String {
-    let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toRuneArray()
-    var i: Int64 = 0
-    var out = ""
-    while (i < input.size) {
-        let b0 = Int64(input[i])
-        let b1 = if (i + 1 < input.size) { Int64(input[i + 1]) } else { -1 }
-        let b2 = if (i + 2 < input.size) { Int64(input[i + 2]) } else { -1 }
-
-        let x0 = b0 >> 2
-        let x1 = ((b0 & 0x03) << 4) | (if (b1 >= 0) { (b1 >> 4) & 0x0F } else { 0 })
-        out += table[x0].toString()
-        out += table[x1].toString()
-
-        if (b1 >= 0) {
-            let x2 = ((b1 & 0x0F) << 2) | (if (b2 >= 0) { (b2 >> 6) & 0x03 } else { 0 })
-            out += table[x2].toString()
-        }
-        if (b2 >= 0) {
-            let x3 = b2 & 0x3F
-            out += table[x3].toString()
-        }
-
-        i += 3
-    }
-    out
-}
-
-func base64UrlDecode(input: String): Array<UInt8> {
-    let cleaned = input.trimAscii()
-    if (cleaned.size == 0) {
-        return []
-    }
-
-    let chars = cleaned.toRuneArray()
-    let out = ArrayList<UInt8>()
-
-    var buffer: Int64 = 0
-    var bits: Int64 = 0
-
-    for (ch in chars) {
-        let idx = base64UrlIndex(ch)
-        if (idx < 0) {
-            throw ClientCryptoException(BadEnvelope, "invalid base64url character")
-        }
-        buffer = (buffer << 6) | idx
-        bits += 6
-        if (bits >= 8) {
-            bits -= 8
-            out.add(UInt8((buffer >> bits) & 0xFF))
-        }
-    }
-    out.toArray()
-}
-
-func base64UrlIndex(ch: Rune): Int64 {
-    let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toRuneArray()
-    var i = 0
-    while (i < table.size) {
-        if (table[i] == ch) {
-            return i
-        }
-        i += 1
-    }
-    return -1
-}
 
 func removeAsciiSpaces(s: String): String {
     let chars = s.toRuneArray()

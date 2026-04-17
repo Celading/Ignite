@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.6.34"
+  version = "0.6.35"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -18,6 +18,9 @@
   output-type = "static"
 
 [package.package-configuration."ignite.security"]
+  output-type = "static"
+
+[package.package-configuration."ignite.binary"]
   output-type = "static"
 
 [dependencies]
