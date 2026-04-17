@@ -26,6 +26,10 @@ main() {
         tlsKeyFile: keyFile
     ))
 
+    app.get("/", { ctx =>
+        _ = ctx.json(#"{"ok":true,"sample":"h2wire","route":"root"}"#)
+    })
+
     app.get("/health", { ctx =>
         _ = ctx.json(#"{"ok":true,"sample":"h2wire"}"#)
     })
@@ -52,6 +56,7 @@ main() {
 
     println("[sample/h2wire] listening on https://${H2_WIRE_HOST}:${H2_WIRE_PORT}")
     println("[sample/h2wire] local fixture bytes: ${fixture.size}")
+    println("[sample/h2wire] try: curl -k --http2 -i https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/")
     println("[sample/h2wire] try: curl -k --http2 -i https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/health")
     println("[sample/h2wire] try: curl -k --http2 -N https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/stream")
     println("[sample/h2wire] try: curl -k --http2 -o /tmp/ignite_h2_wire.out -D - https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/file")

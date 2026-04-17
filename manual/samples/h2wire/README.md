@@ -4,6 +4,7 @@
 
 - `ctx.writer()` 在 TLS + ALPN 的 H2 路径下可以多次写出响应体
 - `sendFile(...)` 的大文件返回在 H2 路径下不依赖 `Transfer-Encoding`
+- 一旦本地 TLS/provider 路线稳定下来，可以直接挂上 `h2spec` 做额外 conformance smoke
 
 ## 运行服务
 
@@ -24,6 +25,7 @@ export IGNITE_SAMPLE_TLS_KEY=/path/to/server-key.pem
 启动后可手动验证：
 
 ```bash
+curl -k --http2 -i https://127.0.0.1:18444/
 curl -k --http2 -i https://127.0.0.1:18444/health
 curl -k --http2 -N https://127.0.0.1:18444/stream
 curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
@@ -74,6 +76,37 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 在当前工作区，这条 smoke 已经把已知崩溃进一步缩到 `key decode` 阶段，也就是 `GeneralPrivateKey.decodeFromPem(...)` 的 native abort。
 这条 smoke 路线当前保留下来的价值，正是把“本地 H2 on-wire 没闭”从口头判断变成可重复失败证据。
 
+## h2spec smoke
+
+如果你本地已经装了 `h2spec`，并且 TLS/provider 路线已稳定，可以执行：
+
+```bash
+./manual/samples/h2wire/h2spec_smoke.sh
+```
+
+这条脚本会：
+
+1. 先复用当前 `probe.sh` 的 staged TLS guard（默认不跳过）
+2. 再单独拉起 `h2wire` sample 服务
+3. 用 `h2spec` 对目标地址跑一组可配置的 smoke case
+
+当前默认只跑：
+
+```text
+generic
+```
+
+这样做的目的不是“现在就宣称 H2 已完全收口”，而是：
+
+- 把将来的 conformance 工位先接到样例上
+- 让后续稳定 TLS/provider 路线出现后，可以直接补跑 `h2spec`
+
+如果你现在只是想检查 staged 命令长什么样，而不是立即执行：
+
+```bash
+IGNITE_H2SPEC_PREPARE_ONLY=1 ./manual/samples/h2wire/h2spec_smoke.sh
+```
+
 ## 环境变量（仅在自动探测失败时）
 
 - `IGNITE_STDX_STATIC=/path/to/cj_stdx_*_llvm/static`
@@ -84,3 +117,16 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
   默认按这个顺序跑；也可以只传 `key_decode`
 - `IGNITE_H2_TLS_GUARD_ONLY=1`
   只跑 guard，不启动主服务；适合定点排查某个证书或私钥输入
+- `IGNITE_H2SPEC_BIN=/path/to/h2spec`
+- `IGNITE_H2SPEC_HOST=127.0.0.1`
+- `IGNITE_H2SPEC_PORT=18444`
+- `IGNITE_H2SPEC_PATH=/`
+- `IGNITE_H2SPEC_SPECS="generic"`
+- `IGNITE_H2SPEC_PREPARE_ONLY=1`
+  只打印 staged `h2spec` 命令，不实际执行
+- `IGNITE_H2SPEC_SKIP_GUARD=1`
+  跳过 guard-first 路径，直接起服务并跑 `h2spec`
+- `IGNITE_H2SPEC_STRICT=1`
+  让 `h2spec` 打开 strict mode
+- `IGNITE_H2SPEC_DRYRUN=1`
+  只展示 `h2spec` 将要运行的 case 列表

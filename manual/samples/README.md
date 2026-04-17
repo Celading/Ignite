@@ -53,6 +53,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/client/run_demo.sh
 ./manual/samples/files/run.sh
 ./manual/samples/h2wire/probe.sh
+./manual/samples/h2wire/h2spec_smoke.sh
 ./manual/samples/handlefortest/probe.sh
 ```
 
