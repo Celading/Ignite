@@ -39,7 +39,7 @@ public class BinaryHelperTestSuite {
         source[4] = UInt8(50)
 
         let cloned = cloneBytes(source)
-        let sliced = sliceBytes(source, 1, 4)
+        let sliced = sliceBytes(source, 1, end: 4)
         source[1] = UInt8(99)
 
         @Assert(Int64(cloned[1]), 20)

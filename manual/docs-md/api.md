@@ -154,6 +154,7 @@ app.post("/upload-large", { ctx =>
 - `cloneBytes(...)`
 - `sliceBytes(...)`
 - `readUint16BE(...)` / `readUint32BE(...)`
+- `decodeCbor(...)` / `decodeCborMap(...)`
 
 这组能力当前的定位不是“完整二进制框架”，而是 `ig0600` 先把共享 primitive 稳定下来，避免 `security`、`client crypto`、`jwt`、后续 `WebAuthn` 需求继续各自复制一套实现。
 
@@ -167,7 +168,8 @@ let challenge = String.fromUtf8(base64UrlDecode(challengeB64u))
 当前边界也要说清楚：
 
 - 这里只是最小 primitive 层
-- 还不是完整 `CBOR` parser
+- `CBOR` 目前只覆盖 definite-length 的 `unsigned / negative / bytes / text / array / map`
+- 还不是完整 `CBOR` ecosystem
 - 也不是完整 `COSE_Key` 解释层
 - 更不是 WebAuthn ceremony 本身
 
