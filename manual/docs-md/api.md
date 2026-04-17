@@ -158,6 +158,7 @@ app.post("/upload-large", { ctx =>
 - `decodeCoseEc2PublicKey(...)`
 - `decodeAuthenticatorData(...)`
 - `decodeAttestedCredentialData(...)`
+- `decodeAttestationObject(...)`
 
 这组能力当前的定位不是“完整二进制框架”，而是 `ig0600` 先把共享 primitive 稳定下来，避免 `security`、`client crypto`、`jwt`、后续 `WebAuthn` 需求继续各自复制一套实现。
 
@@ -169,6 +170,7 @@ let challenge = String.fromUtf8(base64UrlDecode(challengeB64u))
 let coseKey = decodeCoseEc2PublicKey(credentialPublicKeyBytes)
 let authData = decodeAuthenticatorData(authenticatorData)
 let attested = decodeAttestedCredentialData(authData)
+let attestation = decodeAttestationObject(attestationObjectBytes)
 ```
 
 当前边界也要说清楚：
@@ -178,9 +180,10 @@ let attested = decodeAttestedCredentialData(authData)
 - `COSE` 目前也只覆盖最窄的 read-only `ES256 / P-256 EC2 COSE_Key` 结构化提取
 - `authenticatorData` 目前只覆盖固定头解包：`rpIdHash / flags / signCount / tail`
 - attested credential data 目前只覆盖 `AAGUID / credentialId / credentialPublicKeyBytes / remainingBytes`
+- `attestationObject` 目前只覆盖最外层 `fmt / authData / attStmt`
 - 还不是完整 `CBOR` ecosystem
 - 也不是完整 `COSE_Key` 解释层，更不是通用 `COSE` framework
-- 也还不是完整 `authenticatorData` / attested credential data / extensions 解释层
+- 也还不是完整 `attestationObject` / attestation statement / trust chain 解释层
 - 更不是 WebAuthn ceremony 本身
 
 ## 路由组
