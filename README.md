@@ -126,7 +126,7 @@ main() {
 - 治理不缺席：安全、审计、日志、请求 ID、限流、压缩、缓存、会话、重写、代理、健康检查都在主线能力面里。
 - 接口可解释：Swagger / OpenAPI、`InterfaceSpec`、`TestOption`、`x-ignite-test` 和 `kmode` 让接口不仅能跑，还能讲清楚。
 - 错误收得住：`bindJsonOr400` 统一常见请求绑定错误语义，首跑排障少走弯路。
-- 路由更像“框架”而不是“脚手架”：命名路由、`RouteOption.operationId`、`urlFor`、组级中间件都已经接上。
+- 路由更像“框架”而不是“脚手架”：命名路由、`RouteOption.operationId`、`urlFor`、组级中间件、route-level handler array、可替换 `404/405` hook 都已经接上。
 - 联调不分家：内置 `RestClient`、Builder 模式、Retry / Hook / Observe、Cookie v2、multipart、加密请求与 X509 校验入口，响应侧也能直接拿 `observeSnapshot()` / `transportTouchpoint()`。
 - 大请求体有直落盘路径：`requestBody()` / `saveBodyToFile(...)` 可以避免先把整包 body 全塞进内存。
 - 静态和动态都能接：`static`、`staticSpa`、`IgniteKit` 都在公开能力面上。
@@ -138,7 +138,7 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 
 - `App`：负责把服务真正支起来，路由、生命周期、错误处理、Swagger 都从这里起手。
 - `Router / Group`：负责把接口按模块排整齐，不用每个项目自己重新发明组织方式。
-- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，是你最常打交道的对象；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`。
+- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，也是 request locals 的承载面；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`。
 - `Config`：负责把服务名、版本、超时、Swagger、TLS、Banner、kMode 这些运行期口径收在一起。
 - `RouteOption`：负责把接口的 `summary`、`tag`、`operationId`、请求体、响应和测试元数据挂上去。
 - `RestClient`：负责让调用端别再另造一套陌生心智，联调时直接沿用 Ignite 的语义。

@@ -3,6 +3,15 @@
 ## Ignite `0600`
 > Transport decoupling begins, observability keeps tightening
 
+### v0.6.41 `Ignite Now`
+> Route-surface closeout refresh
+
+- `=Fix` The router now lets `"/*"` match the root path `"/"` while still keeping an explicit `"/"` route ahead of the catch-all
+- `+Feature` `App` / `Group` `get/post/put/delete/patch/head/options/all` now accept public `Array<Handler>` route chains, so per-route middleware no longer has to hide behind nested wrapper helpers
+- `+Feature` `App` now exposes `notFound(...)` and `methodNotAllowed(...)` hooks while preserving the global middleware chain, `Allow` header behavior, and `OPTIONS` semantics
+- `+Feature` `Ctx` now exposes `setLocalValue(...)` / `getLocalValue<T>(...)` so typed request locals can coexist with the legacy string-local API
+- `=Docs` Synced `manual/docs-md/api.md`, multilingual README wording, internal truth files, and version constants to `0.6.41`
+
 ### v0.6.1 `Ignite Now`
 > First working baseline of the `0600` line
 

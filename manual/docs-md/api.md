@@ -62,6 +62,19 @@ app.delete("/users/:id", deleteUser)
 app.all("/health", healthHandler)
 ```
 
+如果你希望像 Express / Fiber 那样在单条路由上挂一个明确的 handler chain，现在也可以直接传 `Array<Handler>`：
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
 当你需要补充 Swagger 或接口元数据时，可以把 `RouteOption` 一起传入：
 
 ```cangjie
@@ -72,6 +85,20 @@ option.withOperationId("user.create")
 
 app.post("/users", createUser, option: option)
 ```
+
+如果你想替换默认的 `404 / 405` 返回体，也可以在 `App` 层注册 hook：
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+当前 contract 里，这两条 fallback 仍会继续经过全局 middleware 链，`405` 也仍会保留 `Allow` 头与 `OPTIONS` 语义。
 
 ## 路径参数与查询参数
 
@@ -87,6 +114,44 @@ app.get("/search/:type", { ctx =>
     ctx.json(#"{"type":"${kind}","q":"${keyword}"}"#)
 })
 ```
+
+## 请求级 locals
+
+如果中间件和处理函数之间只需要传递字符串，继续用原来的：
+
+- `ctx.setLocal(key, value)`
+- `ctx.getLocal(key)`
+
+如果你需要在一次请求内临时携带 typed object / typed scalar，现在也可以用：
+
+- `ctx.setLocalValue(key, value)`
+- `ctx.getLocalValue<T>(key)`
+
+```cangjie
+class CurrentActor {
+    let id: String
+    init(id: String) {
+        this.id = id
+    }
+}
+
+app.use({ ctx =>
+    ctx.setLocal("mode", "strict")
+    ctx.setLocalValue("actor", CurrentActor("u-1"))
+    ctx.next()
+})
+
+app.get("/me", { ctx =>
+    let mode = ctx.getLocal("mode") ?? "unknown"
+    let actorId = match (ctx.getLocalValue<CurrentActor>("actor")) {
+        case Some(actor) => actor.id
+        case None => "missing"
+    }
+    _ = ctx.json(#"{"mode":"${mode}","actor":"${actorId}"}"#)
+})
+```
+
+这层设计当前的定位是“补足 request-context 表达力”，不是引入一个复杂的 DI 容器，因此生命周期仍然严格限定在单次请求内。
 
 ## 响应方法一览
 

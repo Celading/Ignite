@@ -162,6 +162,33 @@ app.delete("/users/:id", deleteUser)
 app.all("/health", healthCheck)
 ```
 
+Методы маршрутов у `App` и `Group` теперь также принимают `Array<Handler>`, если нужен явный per-route handler chain без вложенных wrapper helper:
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
+На уровне `App` теперь можно заменить и стандартные тела для `404 / 405`:
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+При этом fallback по-прежнему проходит через глобальную цепочку middleware, а `405` сохраняет `Allow` и текущую семантику `OPTIONS`.
+
 ### Параметры пути и запроса
 
 ```cangjie
@@ -217,6 +244,8 @@ ctx.setCookie("token", value,    // Set-Cookie
 ```
 
 Для больших загрузок стоит предпочитать `ctx.saveBodyToFile(path)`, чтобы тело запроса сразу шло на диск, а не через `ctx.bodyBytes()`. Для больших ответов `ctx.sendStream(...)` уже покрыт реальными HTTP/1.1-регрессиями для `known-length`, `unknown-length` и `HEAD`; поведение многократной записи в HTTP/2 по-прежнему зависит от нижнего writer/TLS-маршрута, и README не должен выдавать это за уже закрытый вопрос.
+
+Для request-scoped состояния можно по-прежнему использовать строковые `ctx.setLocal(...)` / `ctx.getLocal(...)`, а если middleware или route нужен typed value, теперь доступны `ctx.setLocalValue(...)` / `ctx.getLocalValue<T>(...)`.
 
 ### Группы маршрутов
 

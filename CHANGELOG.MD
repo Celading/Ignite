@@ -3,6 +3,15 @@
 ## Ignite `0600`
 > 传输解耦起步、观测留痕加固
 
+### v0.6.41 `Ignite Now`
+> 路由扩展面收口刷新
+
+- `=修复` router 现在允许 `"/*"` 在根路径 `"/"` 上命中，同时保持显式 `"/"` 路由优先于 catch-all
+- `+特性` `App` / `Group` 的 `get/post/put/delete/patch/head/options/all` 现在都支持 `Array<Handler>` 公开写法，减少 route-level middleware 只能靠包装函数嵌套的表达负担
+- `+特性` `App` 新增 `notFound(...)` 与 `methodNotAllowed(...)` hook，仍保留全局 middleware 链、`Allow` 头与 `OPTIONS` 语义
+- `+特性` `Ctx` 新增 `setLocalValue(...)` / `getLocalValue<T>(...)`，让 typed request locals 可以和原有字符串 locals 并存
+- `=文档` 同步 `manual/docs-md/api.md`、README 多语言说明、内部 truth files 与版本常量到 `0.6.41`
+
 ### v0.6.1 `Ignite Now`
 > `0600` 首个工作基线版
 

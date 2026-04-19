@@ -162,6 +162,33 @@ app.delete("/users/:id", deleteUser)
 app.all("/health", healthCheck)
 ```
 
+Route methods on both `App` and `Group` also accept `Array<Handler>` when you want a clear per-route handler chain instead of nested wrapper helpers:
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
+You can also replace the default `404 / 405` bodies at the `App` layer:
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+The fallback still flows through the global middleware chain, and `405` still keeps the `Allow` header plus the existing `OPTIONS` semantics.
+
 ### Path & query params
 
 ```cangjie
@@ -217,6 +244,8 @@ ctx.setCookie("token", value,    // Set-Cookie
 ```
 
 For large uploads, prefer `ctx.saveBodyToFile(path)` so the request body can be pushed directly to disk instead of being forced through `ctx.bodyBytes()` first. For large response bodies, `ctx.sendStream(...)` now has real HTTP/1.1 regression coverage on known-length, unknown-length, and `HEAD` paths; HTTP/2 multi-write behavior still depends on the underlying writer/TLS route and is not claimed closed from README wording alone.
+
+For per-request state, keep using `ctx.setLocal(...)` / `ctx.getLocal(...)` for string locals, or move to `ctx.setLocalValue(...)` / `ctx.getLocalValue<T>(...)` when a route or middleware needs typed request-scoped values.
 
 ### Route groups
 
