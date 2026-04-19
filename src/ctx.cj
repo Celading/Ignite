@@ -16,6 +16,7 @@ public class Ctx {
     let _app: App
     var _params: HashMap<String, String> = HashMap<String, String>()
     var _locals: HashMap<String, String> = HashMap<String, String>()
+    var _localValues: HashMap<String, Any> = HashMap<String, Any>()
     var _route: ?Route = None
     var _handlers: ArrayList<Handler> = ArrayList<Handler>()
     var _handlerIndex: Int64 = -1
@@ -502,6 +503,26 @@ public class Ctx {
 
     public func setLocal(key: String, value: String): Unit {
         _locals.add(key, value)
+        _localValues.add(key, value)
+    }
+
+    public func getLocalValue<T>(key: String): ?T where T <: Any {
+        match (_localValues.get(key)) {
+            case Some(value) =>
+                match (value) {
+                    case typed: T => Some(typed)
+                    case _ => None
+                }
+            case None => None
+        }
+    }
+
+    public func setLocalValue<T>(key: String, value: T): Unit where T <: Any {
+        _localValues.add(key, value)
+        match (value) {
+            case text: String => _locals.add(key, text)
+            case _ => let _ = _locals.remove(key)
+        }
     }
 
     // ── App reference ──

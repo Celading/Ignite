@@ -45,6 +45,8 @@ public class App {
     var _swaggerRouteInstalled: Bool = false
     var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
     var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
+    var _notFoundHandler: ?Handler = None
+    var _methodNotAllowedHandler: ?Handler = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -58,44 +60,88 @@ public class App {
     // ── HTTP method routes ──
 
     public func get(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("GET", path, wrapSingle(handler), option: option)
+        registerRoute("GET", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func get(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("GET", path, wrapMany(handlers), option)
         this
     }
 
     public func post(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("POST", path, wrapSingle(handler), option: option)
+        registerRoute("POST", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func post(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("POST", path, wrapMany(handlers), option)
         this
     }
 
     public func put(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("PUT", path, wrapSingle(handler), option: option)
+        registerRoute("PUT", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func put(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("PUT", path, wrapMany(handlers), option)
         this
     }
 
     public func delete(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("DELETE", path, wrapSingle(handler), option: option)
+        registerRoute("DELETE", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func delete(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("DELETE", path, wrapMany(handlers), option)
         this
     }
 
     public func patch(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("PATCH", path, wrapSingle(handler), option: option)
+        registerRoute("PATCH", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func patch(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("PATCH", path, wrapMany(handlers), option)
         this
     }
 
     public func head(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("HEAD", path, wrapSingle(handler), option: option)
+        registerRoute("HEAD", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func head(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("HEAD", path, wrapMany(handlers), option)
         this
     }
 
     public func options(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("OPTIONS", path, wrapSingle(handler), option: option)
+        registerRoute("OPTIONS", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func options(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("OPTIONS", path, wrapMany(handlers), option)
         this
     }
 
     public func all(path: String, handler: Handler, option!: ?RouteOption = None): App {
         let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
         for (method in methods) {
-            router.addRoute(method, path, wrapSingle(handler), option: option)
+            registerRoute(method, path, wrapSingle(handler), option)
+        }
+        this
+    }
+
+    public func all(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        let wrapped = wrapMany(handlers)
+        for (method in methods) {
+            registerRoute(method, path, cloneHandlers(wrapped), option)
         }
         this
     }
@@ -201,6 +247,16 @@ public class App {
 
     public func group(prefix: String): Group {
         Group(this, prefix)
+    }
+
+    public func notFound(handler: Handler): App {
+        _notFoundHandler = Some(handler)
+        this
+    }
+
+    public func methodNotAllowed(handler: Handler): App {
+        _methodNotAllowedHandler = Some(handler)
+        this
     }
 
     // ── Route management ──
@@ -479,6 +535,34 @@ public class App {
         list
     }
 
+    func wrapMany(handlers: Array<Handler>): ArrayList<Handler> {
+        if (handlers.size == 0) {
+            throw Exception("[Ignite] Route handlers array must contain at least one handler.")
+        }
+        let list = ArrayList<Handler>()
+        for (handler in handlers) {
+            list.add(handler)
+        }
+        list
+    }
+
+    func cloneHandlers(handlers: ArrayList<Handler>): ArrayList<Handler> {
+        let list = ArrayList<Handler>()
+        for (handler in handlers) {
+            list.add(handler)
+        }
+        list
+    }
+
+    func registerRoute(
+        method: String,
+        path: String,
+        handlers: ArrayList<Handler>,
+        option: ?RouteOption
+    ): Unit {
+        router.addRoute(method, path, handlers, option: option)
+    }
+
     func notifyStartupObserve(event: ServerStartupObserveEvent): Unit {
         _lastServerStartupObserveEvent = Some(event)
         for (hook in _startupObserveHooks) {
@@ -656,9 +740,15 @@ public class App {
                 ctx.setHeader("allow", allowHeader)
                 if (requestMethod == "OPTIONS") {
                     let _ = ctx.noContent()
+                } else if (let Some(handler) <- _methodNotAllowedHandler) {
+                    let _ = ctx.status(405)
+                    handler(ctx)
                 } else {
                     let _ = ctx.status(405).sendString("Method Not Allowed")
                 }
+            } else if (let Some(handler) <- _notFoundHandler) {
+                let _ = ctx.status(404)
+                handler(ctx)
             } else {
                 let _ = ctx.status(404).sendString("Cannot ${requestMethod} ${requestPath}")
             }
