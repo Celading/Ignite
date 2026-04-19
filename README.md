@@ -182,7 +182,6 @@ ignite/
 ├── manual/docs-md/      # 中文正文文档源稿
 ├── manual/docs-web/     # 后续网站化呈现层
 ├── manual/samples/      # 可运行样例与首跑路径
-├── manual/skills/       # AI 协作说明与边界
 ├── CHANGELOG.MD         # 中文版本时间线
 └── CHANGELOG-en.MD      # 英文版本时间线
 ```
@@ -224,7 +223,6 @@ ignite/
 
 - [`manual/docs-md/README.md`](manual/docs-md/README.md)：中文正文主入口，适合从首页继续往深处看。
 - [`manual/samples/README.md`](manual/samples/README.md)：最快把 Ignite 跑起来的样例矩阵和顺序。
-- [`manual/skills/README.md`](manual/skills/README.md)：如果你准备和 Codex、OpenCode、Claude Code 一起协作，再看这份边界说明。
 - [`CHANGELOG.MD`](CHANGELOG.MD)：中文版本时间线与阶段收口记录。
 - [`CHANGELOG-en.MD`](CHANGELOG-en.MD)：英文版本时间线。
 - [`manual/docs-web/README.md`](manual/docs-web/README.md)：后续网站文档的入口预留位。
@@ -234,7 +232,6 @@ ignite/
 - 如果你是第一次接触 Ignite，建议先跑 `hello -> api -> swagger -> client` 这条样例路径，再判断它是不是你要的框架。
 - 如果你已经在业务里用上了，欢迎把 issue、建议、踩坑和改进点带回来，Ignite 很需要真实反馈来继续长大。
 - 如果你准备参与贡献，文档修正、样例回归、公开能力补充和低风险问题收口，都是非常好的入口。
-- 如果你使用 AI 协作，请再看 [`manual/skills/README.md`](manual/skills/README.md)，别让助手把内部材料或没落地的承诺写进公开面。
 
 ## 许可证
 

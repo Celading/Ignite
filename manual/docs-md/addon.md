@@ -19,7 +19,6 @@ ignite/
 ├── manual/docs-md/       # 中文正文文档源稿
 ├── manual/docs-web/      # 网站文档呈现层占位
 ├── manual/samples/       # 可运行样例
-├── manual/skills/        # AI 协作说明
 ├── CHANGELOG.MD          # 中文版本时间线
 └── CHANGELOG-en.MD       # 英文版本时间线
 ```
@@ -51,8 +50,7 @@ ignite/
 1. 根 [`../../README.md`](../../README.md)
 2. [`README.md`](README.md)
 3. [`../samples/README.md`](../samples/README.md)
-4. [`../skills/README.md`](../skills/README.md)
-5. [`../../CHANGELOG.MD`](../../CHANGELOG.MD)
+4. [`../../CHANGELOG.MD`](../../CHANGELOG.MD)
 
 各自职责是：
 
@@ -60,21 +58,7 @@ ignite/
 - 根 README 里的 `Ignite 生态`：项目故事、公开展示与外部认知入口
 - `docs-md`：正文与能力解释
 - `samples`：可运行路径
-- `skills`：AI 协作边界
 - `CHANGELOG`：版本时间线
-
-## `manual/samples` 与 `manual/skills` 的关系
-
-这两个目录都属于公开入口，但职责不同：
-
-- `manual/samples/` 解决“怎么最快跑起来、怎么复现公开能力”
-- `manual/skills/` 解决“怎么和 AI 助手一起做事而不越界”
-
-如果你要迁移业务服务，比较推荐的顺序是：
-
-1. 先按样例跑通
-2. 再读对应 docs-md 页面
-3. 最后再把 AI 助手接进来协作
 
 ## 后续演进与参与方式
 

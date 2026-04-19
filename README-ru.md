@@ -790,7 +790,6 @@ ignite/
 - `manual/README.md` — текущий публичный manual и порядок чтения.
 - `manual/samples/README.md` — матрица примеров и порядок первого запуска.
 - `manual/samples/client/README.md` — примеры end-to-end client usage.
-- `manual/skills/README.md` — роль skills и правила работы с AI-ассистентами.
 - `CHANGELOG.MD` и `CHANGELOG-en.MD` — временная шкала версий.
 - `manual/docs-md/` и `manual/docs-web/` зарезервированы под следующий публичный docs merge.
 

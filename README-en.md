@@ -891,7 +891,6 @@ Still evaluating Ignite? The fastest path is to try the samples in this order: `
 - `manual/README.md` for the current public manual and reading order.
 - `manual/samples/README.md` for sample entry order and runnable examples.
 - `manual/samples/client/README.md` for end-to-end client usage.
-- `manual/skills/README.md` for AI-assistant collaboration boundaries and service-building guidance.
 - `CHANGELOG.MD` and `CHANGELOG-en.MD` for the milestone timeline.
 - `manual/docs-md/` and `manual/docs-web/` are reserved for the next public docs merge.
 

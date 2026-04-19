@@ -1,21 +1,19 @@
 # Ignite Manual
 
-`manual/` 是当前仓库的公开文档中枢，用来承接根 README 之后的正文、样例与协作说明。
+`manual/` 是当前仓库的公开文档中枢，用来承接根 README 之后的正文与样例说明。
 
 ## 推荐阅读顺序
 
 1. [`../README.md`](../README.md)
 2. [`docs-md/README.md`](docs-md/README.md)
 3. [`samples/README.md`](samples/README.md)
-4. [`skills/README.md`](skills/README.md)
-5. [`../CHANGELOG.MD`](../CHANGELOG.MD) / [`../CHANGELOG-en.MD`](../CHANGELOG-en.MD)
+4. [`../CHANGELOG.MD`](../CHANGELOG.MD) / [`../CHANGELOG-en.MD`](../CHANGELOG-en.MD)
 
 ## 各入口负责什么
 
 - 根 `README.md`：项目门面、价值主张、平台口径、总入口分流。
 - `manual/docs-md/`：`0500` 中文正文主入口，也是后续 `docs-web` 的内容源稿。
 - `manual/samples/`：可运行路径，帮助你按顺序验证 Ignite 的公开能力。
-- `manual/skills/`：AI 协作说明，约束 Codex、OpenCode、Claude Code 等助手在公开边界内工作。
 - `CHANGELOG*`：阶段时间线、版本收口与公开变动记录。
 
 ## 公开边界
