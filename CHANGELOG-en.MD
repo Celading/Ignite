@@ -10,7 +10,7 @@
 - `+Feature` `App` / `Group` `get/post/put/delete/patch/head/options/all` now accept public `Array<Handler>` route chains, so per-route middleware no longer has to hide behind nested wrapper helpers
 - `+Feature` `App` now exposes `notFound(...)` and `methodNotAllowed(...)` hooks while preserving the global middleware chain, `Allow` header behavior, and `OPTIONS` semantics
 - `+Feature` `Ctx` now exposes `setLocalValue(...)` / `getLocalValue<T>(...)` so typed request locals can coexist with the legacy string-local API
-- `=Docs` Synced `manual/docs-md/api.md`, multilingual README wording, internal truth files, and version constants to `0.6.41`
+- `=Docs` Synced `manual/docs-md/api.md`, multilingual README wording, route-facing positioning, and version constants to `0.6.41`
 
 ### v0.6.1 `Ignite Now`
 > First working baseline of the `0600` line
@@ -51,7 +51,7 @@
 
 - `=Docs` Sync the current public baseline version to `0.5.25`
 - `=Docs` Align `README.md`, `README-en.md`, and `README-ru.md` with the current repository layout, dependency syntax, and public entrypoints
-- `=Docs` Keep `manual/` as the public documentation surface and continue excluding legacy `docs/` paths and internal archive material from the public view
+- `=Docs` Keep `manual/` as the public documentation surface and continue tightening the public entrypoint and directory view
 - `=Docs` Keep first-run guidance on a verifiable path instead of presenting this repository itself as a directly runnable `cjpm run` application
 - `=Chore` Sync package version, Swagger sample metadata, and related tests to `0.5.25`
 

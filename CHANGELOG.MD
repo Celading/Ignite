@@ -10,7 +10,7 @@
 - `+特性` `App` / `Group` 的 `get/post/put/delete/patch/head/options/all` 现在都支持 `Array<Handler>` 公开写法，减少 route-level middleware 只能靠包装函数嵌套的表达负担
 - `+特性` `App` 新增 `notFound(...)` 与 `methodNotAllowed(...)` hook，仍保留全局 middleware 链、`Allow` 头与 `OPTIONS` 语义
 - `+特性` `Ctx` 新增 `setLocalValue(...)` / `getLocalValue<T>(...)`，让 typed request locals 可以和原有字符串 locals 并存
-- `=文档` 同步 `manual/docs-md/api.md`、README 多语言说明、内部 truth files 与版本常量到 `0.6.41`
+- `=文档` 同步 `manual/docs-md/api.md`、README 多语言说明、目标航线表述与版本常量到 `0.6.41`
 
 ### v0.6.1 `Ignite Now`
 > `0600` 首个工作基线版
@@ -51,7 +51,7 @@
 
 - `=文档` 将当前公开版本基线同步到 `0.5.25`
 - `=文档` README / README-en / README-ru 对齐当前仓库布局、依赖写法与公开入口
-- `=文档` 明确 `manual/` 为公开文档入口，继续避免旧 `docs/` 与内部存档路径混入公开视图
+- `=文档` 明确 `manual/` 为公开文档入口，继续收束公开入口与目录视图
 - `=文档` 首跑说明继续以可验证路径为准，不把当前仓库包装成可直接 `cjpm run` 的可执行项目
 - `=杂项` 包版本、Swagger 示例元数据与相关测试版本同步到 `0.5.25`
 
