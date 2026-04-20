@@ -586,6 +586,8 @@ class CookieRequestContext {
 public type ClientRequestHook = (HttpRequestBuilder) -> Unit
 public type ClientResponseHook = (ClientResponse) -> Unit
 public type ClientErrorHook = (Exception) -> Unit
+public type ClientObserveHook = (ClientObserveSnapshot) -> Unit
+public type ClientTransportTouchpointHook = (ClientTransportTouchpoint) -> Unit
 
 public class ClientRetryConfig {
     public var enabled: Bool

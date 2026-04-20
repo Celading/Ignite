@@ -24,34 +24,70 @@ public class Group {
         addRoute("GET", path, handler, option)
     }
 
+    public func get(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("GET", path, handlers, option)
+    }
+
     public func post(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("POST", path, handler, option)
+    }
+
+    public func post(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("POST", path, handlers, option)
     }
 
     public func put(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("PUT", path, handler, option)
     }
 
+    public func put(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("PUT", path, handlers, option)
+    }
+
     public func delete(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("DELETE", path, handler, option)
+    }
+
+    public func delete(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("DELETE", path, handlers, option)
     }
 
     public func patch(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("PATCH", path, handler, option)
     }
 
+    public func patch(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("PATCH", path, handlers, option)
+    }
+
     public func head(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("HEAD", path, handler, option)
+    }
+
+    public func head(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("HEAD", path, handlers, option)
     }
 
     public func options(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         addRoute("OPTIONS", path, handler, option)
     }
 
+    public func options(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        addRoute("OPTIONS", path, handlers, option)
+    }
+
     public func all(path: String, handler: Handler, option!: ?RouteOption = None): Group {
         let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
         for (method in methods) {
             addRoute(method, path, handler, option)
+        }
+        this
+    }
+
+    public func all(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): Group {
+        let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        for (method in methods) {
+            addRoute(method, path, handlers, option)
         }
         this
     }
@@ -107,6 +143,20 @@ public class Group {
         let allHandlers = ArrayList<Handler>()
         collectMiddlewares(allHandlers)
         allHandlers.add(handler)
+        _app.router.addRoute(method, fullPath, allHandlers, option: option)
+        this
+    }
+
+    func addRoute(method: String, path: String, handlers: Array<Handler>, option: ?RouteOption): Group {
+        if (handlers.size == 0) {
+            throw Exception("[Ignite] Route handlers array must contain at least one handler.")
+        }
+        let fullPath = joinPath(_prefix, path)
+        let allHandlers = ArrayList<Handler>()
+        collectMiddlewares(allHandlers)
+        for (handler in handlers) {
+            allHandlers.add(handler)
+        }
         _app.router.addRoute(method, fullPath, allHandlers, option: option)
         this
     }

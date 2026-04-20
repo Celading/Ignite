@@ -53,7 +53,13 @@ public class ClientTlsTransportTestSuite {
             @Assert(contains(observedMessages[0], "errorClass=TLS"), true)
             @Assert(contains(observedMessages[0], "phase=handshake"), true)
             @Assert(contains(observedMessages[0], "causeCode=tls_not_configured"), true)
+            @Assert(contains(observedMessages[0], "backendId=stdx-http-client"), true)
+            @Assert(contains(observedMessages[0], "providerId=tls:stdx-default"), true)
+            @Assert(contains(observedMessages[0], "publicPath=stable-default"), true)
+            @Assert(contains(observedMessages[0], "transportTags=scene=client,scheme=https"), true)
             @Assert(contains(observedMessages[0], "retryable=false"), true)
+            @Assert(contains(observedMessages[0], "fallbackSuggested=false"), true)
+            @Assert(contains(observedMessages[0], "connectionConsumed=false"), true)
             @Assert(contains(observedMessages[0], "retryCount=0"), true)
             @Assert(contains(observedMessages[0], "fields=case=tls-handshake-mismatch"), true)
         } finally {

@@ -7,11 +7,15 @@ public class AuditSecurityFieldTestSuite {
     @TestCase
     public func testAuditEventContainsSecurityFields(): Unit {
         let event = AuditEvent()
+        event.guardEvent = "kmode_failover"
+        event.guardExitCause = "single_flight_skip"
         event.securityEvent = "decrypt_failed,signature_failed"
         event.securityCode = "DECRYPT_FAILED"
         event.securitySource = "encrypt_cookie"
         let json = event.toJson()
 
+        @Assert(contains(json, "\"guardEvent\":\"kmode_failover\""), true)
+        @Assert(contains(json, "\"guardExitCause\":\"single_flight_skip\""), true)
         @Assert(contains(json, "\"securityEvent\":\"decrypt_failed,signature_failed\""), true)
         @Assert(contains(json, "\"securityCode\":\"DECRYPT_FAILED\""), true)
         @Assert(contains(json, "\"securitySource\":\"encrypt_cookie\""), true)

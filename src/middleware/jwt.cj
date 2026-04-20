@@ -1,6 +1,7 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
+import ignite.binary.base64UrlDecode
 import std.collection.ArrayList
 import std.time.DateTime
 import stdx.encoding.json.{JsonValue, JsonObject}
@@ -339,46 +340,4 @@ func substringByRuneRange(text: String, start: Int64, end: Int64): String {
         out += chars[i].toString()
     }
     out
-}
-
-func base64UrlDecode(input: String): Array<UInt8> {
-    let chars = input.toRuneArray()
-    if (chars.size == 0) {
-        return []
-    }
-    let out = ArrayList<UInt8>()
-    var buffer: Int64 = 0
-    var bits: Int64 = 0
-    for (ch in chars) {
-        let idx = base64UrlIndex(ch)
-        if (idx < 0) {
-            throw Exception("invalid base64url character")
-        }
-        buffer = (buffer << 6) | idx
-        bits += 6
-        if (bits >= 8) {
-            bits -= 8
-            out.add(UInt8((buffer >> bits) & 0xFF))
-        }
-    }
-    out.toArray()
-}
-
-func base64UrlIndex(ch: Rune): Int64 {
-    if (ch >= r'A' && ch <= r'Z') {
-        return Int64(UInt32(ch)) - Int64(UInt32(r'A'))
-    }
-    if (ch >= r'a' && ch <= r'z') {
-        return Int64(UInt32(ch)) - Int64(UInt32(r'a')) + 26
-    }
-    if (ch >= r'0' && ch <= r'9') {
-        return Int64(UInt32(ch)) - Int64(UInt32(r'0')) + 52
-    }
-    if (ch == r'-') {
-        return 62
-    }
-    if (ch == r'_') {
-        return 63
-    }
-    -1
 }

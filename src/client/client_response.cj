@@ -86,6 +86,58 @@ public class ClientResponse {
         list
     }
 
+    public func observeSnapshot(): ?ClientObserveSnapshot {
+        if (!hasObserveHeaders()) {
+            return None
+        }
+        let errorClass = normalizedObserveErrorClass(headerOr("x-ignite-observe-error-class", "NONE"))
+        Some(
+            ClientObserveSnapshot(
+                if (errorClass == "NONE") { "success" } else { "error" },
+                errorClass,
+                "response",
+                "-",
+                headerOr("x-ignite-observe-backend-id", "-"),
+                headerOr("x-ignite-observe-provider-id", "-"),
+                headerOr("x-ignite-observe-crypto-provider-id", "-"),
+                headerOr("x-ignite-observe-public-path", "-"),
+                headerOr("x-ignite-observe-risk-level", "-"),
+                headerOr("x-ignite-observe-transport-tags", "-"),
+                false,
+                false,
+                false,
+                parseObserveInt64("x-ignite-observe-retry-count", 0),
+                parseObserveInt64("x-ignite-observe-duration-ms", 0),
+                headerOr("x-ignite-observe-fields", "-"),
+                status,
+                "-",
+                "-",
+                "-",
+                false,
+                ""
+            )
+        )
+    }
+
+    public func transportTouchpoint(): ?ClientTransportTouchpoint {
+        if (!hasObserveHeaders()) {
+            return None
+        }
+        Some(
+            ClientTransportTouchpoint(
+                headerOr("x-ignite-observe-candidate-order", "-"),
+                headerOr("x-ignite-observe-backend-id", "-"),
+                headerOr("x-ignite-observe-selected-reason", "-"),
+                headerOr("x-ignite-observe-fallback-chain", "-"),
+                headerOr("x-ignite-observe-provider-id", "-"),
+                headerOr("x-ignite-observe-crypto-provider-id", "-"),
+                headerOr("x-ignite-observe-public-path", "-"),
+                headerOr("x-ignite-observe-risk-level", "-"),
+                headerOr("x-ignite-observe-transport-tags", "-")
+            )
+        )
+    }
+
     public func discard(): Unit {
         let tmp = Array<UInt8>(16384, repeat: 0)
         while (true) {
@@ -94,4 +146,47 @@ public class ClientResponse {
             }
         }
     }
+
+    func hasObserveHeaders(): Bool {
+        if (let Some(_backend) <- header("x-ignite-observe-backend-id")) {
+            return true
+        }
+        false
+    }
+
+    func headerOr(name: String, fallback: String): String {
+        if (let Some(value) <- header(name)) {
+            return value
+        }
+        fallback
+    }
+
+    func normalizedObserveErrorClass(value: String): String {
+        if (value == "NONE") {
+            return "NONE"
+        }
+        value
+    }
+
+    func parseObserveInt64(name: String, fallback: Int64): Int64 {
+        if (let Some(value) <- header(name)) {
+            return parseDecimalInt64(value, fallback)
+        }
+        fallback
+    }
+}
+
+func parseDecimalInt64(value: String, fallback: Int64): Int64 {
+    let digits = value.trimAscii()
+    if (digits.size == 0) {
+        return fallback
+    }
+    var result: Int64 = 0
+    for (ch in digits.toRuneArray()) {
+        if (ch < r'0' || ch > r'9') {
+            return fallback
+        }
+        result = result * 10 + (Int64(UInt32(ch)) - Int64(UInt32(r'0')))
+    }
+    result
 }

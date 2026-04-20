@@ -133,6 +133,23 @@ public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
         } else {
             "[${method}] ${path} ${status} ${latencyMs}ms"
         }
+        let proxyBodyMode = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? ""
+        let proxyBodyBytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? ""
+        let proxyBodyLimitBytes = ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? ""
+        let proxyResponseBodyMode = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? ""
+        let proxyResponseBodyBytes = ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? ""
+        let proxyDownstreamBodyMode = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY) ?? ""
+        let proxyDownstreamBodyBytes = ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY) ?? ""
+        let message = appendProxyLogSuffix(
+            baseMsg,
+            proxyBodyMode,
+            proxyBodyBytes,
+            proxyBodyLimitBytes,
+            proxyResponseBodyMode,
+            proxyResponseBodyBytes,
+            proxyDownstreamBodyMode,
+            proxyDownstreamBodyBytes
+        )
         let ts = DateTime.now().toString()
         if (config.jsonLine) {
             safeLog(
@@ -145,23 +162,30 @@ public func loggerMiddleware(config!: LoggerConfig = LoggerConfig()): Handler {
                     status,
                     latencyMs,
                     kmode,
-                    baseMsg
+                    message,
+                    proxyBodyMode,
+                    proxyBodyBytes,
+                    proxyBodyLimitBytes,
+                    proxyResponseBodyMode,
+                    proxyResponseBodyBytes,
+                    proxyDownstreamBodyMode,
+                    proxyDownstreamBodyBytes
                 )
             )
         } else {
             if (config.enableEntityLog) {
                 if (config.linuxStyle) {
-                    let line = linuxLogLine(ts, level, requestId, baseMsg, kmode)
+                    let line = linuxLogLine(ts, level, requestId, message, kmode)
                     safeLog(line)
                 } else {
-                    safeLog(baseMsg)
+                    safeLog(message)
                 }
             } else {
                 if (config.linuxStyle) {
-                    let line = linuxLogLine(ts, level, requestId, baseMsg, kmode)
+                    let line = linuxLogLine(ts, level, requestId, message, kmode)
                     safeLog(line)
                 } else {
-                    safeLog(baseMsg)
+                    safeLog(message)
                 }
             }
         }
@@ -178,8 +202,24 @@ func toJsonLogLine(
     status: UInt16,
     latencyMs: Int64,
     kmode: Bool,
-    message: String
+    message: String,
+    proxyBodyMode: String,
+    proxyBodyBytes: String,
+    proxyBodyLimitBytes: String,
+    proxyResponseBodyMode: String,
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
 ): String {
+    let proxyJson = buildProxyLogJsonFields(
+        proxyBodyMode,
+        proxyBodyBytes,
+        proxyBodyLimitBytes,
+        proxyResponseBodyMode,
+        proxyResponseBodyBytes,
+        proxyDownstreamBodyMode,
+        proxyDownstreamBodyBytes
+    )
     #"{"timestamp":""# + escapeJsonLog(timestamp) +
         #"","level":"# + level.toString() +
         #","levelName":""# + escapeJsonLog(levelName(level)) +
@@ -189,9 +229,66 @@ func toJsonLogLine(
         #"","status":"# + status.toString() +
         #","latencyMs":"# + latencyMs.toString() +
         #","kmode":"# + kmode.toString() +
-        #","message":""# + escapeJsonLog(message) + #""}"#
+        #","message":""# + escapeJsonLog(message) + #"""# +
+        proxyJson +
+        #"}"#
 }
 
 func escapeJsonLog(input: String): String {
     escapeJsonText(input)
+}
+
+func appendProxyLogSuffix(
+    baseMsg: String,
+    proxyBodyMode: String,
+    proxyBodyBytes: String,
+    proxyBodyLimitBytes: String,
+    proxyResponseBodyMode: String,
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
+): String {
+    var message = baseMsg
+    message = appendProxyLogPart(message, "proxyBodyMode", proxyBodyMode)
+    message = appendProxyLogPart(message, "proxyBodyBytes", proxyBodyBytes)
+    message = appendProxyLogPart(message, "proxyBodyLimitBytes", proxyBodyLimitBytes)
+    message = appendProxyLogPart(message, "proxyResponseBodyMode", proxyResponseBodyMode)
+    message = appendProxyLogPart(message, "proxyResponseBodyBytes", proxyResponseBodyBytes)
+    message = appendProxyLogPart(message, "proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    message = appendProxyLogPart(message, "proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
+    message
+}
+
+func appendProxyLogPart(message: String, key: String, value: String): String {
+    if (value.trimAscii().size == 0) {
+        return message
+    }
+    message + " ${key}=${value}"
+}
+
+func buildProxyLogJsonFields(
+    proxyBodyMode: String,
+    proxyBodyBytes: String,
+    proxyBodyLimitBytes: String,
+    proxyResponseBodyMode: String,
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
+): String {
+    var out = ""
+    out += buildOptionalJsonLogField("proxyBodyMode", proxyBodyMode)
+    out += buildOptionalJsonLogField("proxyBodyBytes", proxyBodyBytes)
+    out += buildOptionalJsonLogField("proxyBodyLimitBytes", proxyBodyLimitBytes)
+    out += buildOptionalJsonLogField("proxyResponseBodyMode", proxyResponseBodyMode)
+    out += buildOptionalJsonLogField("proxyResponseBodyBytes", proxyResponseBodyBytes)
+    out += buildOptionalJsonLogField("proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    out += buildOptionalJsonLogField("proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
+    out
+}
+
+func buildOptionalJsonLogField(fieldName: String, value: String): String {
+    if (value.trimAscii().size == 0) {
+        return ""
+    }
+    ",\"" + escapeJsonLog(fieldName) + "\":\"" + escapeJsonLog(value) + "\""
 }

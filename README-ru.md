@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.68-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.24-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.5.68</span>                    │
+│                  <span style="color:#88C0D0;">Ignite v0.6.24</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.5.68</i></span>│
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.6.24</i></span>│
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.5.68)
+## Текущее состояние (0.6.24)
 
 - Для актуальной публичной базовой точки и временной шкалы версий используйте `manual/README.md`, `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
@@ -135,12 +135,13 @@ cjpm build
 | **Группы маршрутов** | `app.group("/api")` с вложенными группами и авто-префиксом |
 | **WebSocket** | Апгрейд до WebSocket в одну строку |
 | **SSE** | Встроенная поддержка Server-Sent Events |
-| **Потоковая отдача** | Chunked Transfer Encoding |
+| **Потоковая отдача** | `ctx.writer()` и `ctx.sendStream(...)` для поэтапного ответа; в HTTP/1.1 это может быть chunked, а в HTTP/2 нужно опираться на нижележащий writer-контракт, а не на `Transfer-Encoding` |
 | **Swagger** | OpenAPI 3.0 и Swagger UI с кэшем (`enableSwaggerCache`), `?refresh=1` для принудительного обновления |
 | **TLS/HTTP2** | Нативный TLS и HTTP/2 по ALPN |
 | **HTTP-клиент** | Встроенный `RestClient` в стиле builder |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`, опционально `Config.jsonEncoder`; `ignite.serializeJson` / `deserializeJson` |
 | **Файлы и Range** | `ctx.sendFile`, `ctx.download` (имя вложения), `ctx.sendFileRange` (HTTP Range 206/416) |
+| **Путь для больших тел** | `ctx.saveBodyToFile(path)` может сразу складывать большой request body на диск, не заставляя сначала прогонять его через полный in-memory кэш |
 | **static / staticSpa** | `app.static(prefix, root)` — только статика; `app.staticSpa(prefix, root, indexFile)` — статика + откат на index для SPA |
 | **Корректное завершение** | Хук `onShutdown` для освобождения ресурсов |
 
@@ -160,6 +161,33 @@ app.delete("/users/:id", deleteUser)
 // Все HTTP-методы
 app.all("/health", healthCheck)
 ```
+
+Методы маршрутов у `App` и `Group` теперь также принимают `Array<Handler>`, если нужен явный per-route handler chain без вложенных wrapper helper:
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
+На уровне `App` теперь можно заменить и стандартные тела для `404 / 405`:
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+При этом fallback по-прежнему проходит через глобальную цепочку middleware, а `405` сохраняет `Allow` и текущую семантику `OPTIONS`.
 
 ### Параметры пути и запроса
 
@@ -185,9 +213,10 @@ app.post("/upload", { ctx =>
 
     // Тело запроса
     let body = ctx.bodyString()
+    let saved = ctx.saveBodyToFile("/tmp/upload.bin")
 
     // Ответ
-    ctx.status(201).json(#"{"status": "created"}"#)
+    ctx.status(201).json(#"{"status": "created", "saved": ${saved}}"#)
 })
 ```
 
@@ -206,12 +235,17 @@ ctx.noContent()                  // 204 No Content
 ctx.sendFile(path)               // отдача файла по пути
 ctx.download(path, filename)     // вложение (filename опционален)
 ctx.sendFileRange(path)          // HTTP Range → 206/416
+ctx.sendStream(stream, ...)      // потоковая отдача InputStream как тела ответа
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
     secure: true
 )
 ```
+
+Для больших загрузок стоит предпочитать `ctx.saveBodyToFile(path)`, чтобы тело запроса сразу шло на диск, а не через `ctx.bodyBytes()`. Для больших ответов `ctx.sendStream(...)` уже покрыт реальными HTTP/1.1-регрессиями для `known-length`, `unknown-length` и `HEAD`; поведение многократной записи в HTTP/2 по-прежнему зависит от нижнего writer/TLS-маршрута, и README не должен выдавать это за уже закрытый вопрос.
+
+Для request-scoped состояния можно по-прежнему использовать строковые `ctx.setLocal(...)` / `ctx.getLocal(...)`, а если middleware или route нужен typed value, теперь доступны `ctx.setLocalValue(...)` / `ctx.getLocalValue<T>(...)`.
 
 ### Группы маршрутов
 
@@ -476,6 +510,14 @@ app.get("/events", { ctx =>
 ### Потоковый ответ
 
 ```cangjie
+app.get("/stream-file", { ctx =>
+    let stream = File.openRead("large-report.txt")
+    _ = ctx.sendStream(
+        stream,
+        contentType: "text/plain; charset=utf-8"
+    )
+})
+
 app.get("/stream", { ctx =>
     let writer = ctx.writer()
     writer.writeString("chunk 1\n")
@@ -483,6 +525,8 @@ app.get("/stream", { ctx =>
     writer.writeString("chunk 3\n")
 })
 ```
+
+`ctx.sendStream(...)` — более безопасный публичный путь, когда у вас уже есть `InputStream` и нужно не держать большой ответ целиком в heap. `ctx.writer()` — это более низкоуровневый интерфейс поэтапной записи тела ответа. В HTTP/1.1 это может соответствовать chunked-семантике; в HTTP/2 заголовок `Transfer-Encoding` отправлять нельзя, и повторные `write(...)` должны опираться на контракт нижележащего `stdx.net.http.HttpResponseWriter`.
 
 ### Статические файлы и откат для SPA (static / staticSpa)
 
@@ -645,7 +689,8 @@ client.close()
 | Base URL | `baseUrl("https://api.example.com")` |
 | Заголовки по умолчанию | `defaultHeader(name, value)` |
 | Cookie | `useCookies()` или `useCookies(store)`; поддерживает `domain/path/max-age/secure/httpOnly/sameSite` и несколько `set-cookie` |
-| Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` |
+| Наблюдаемость | Успешные ответы несут `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` и `transportTouchpoint()` восстанавливают структурированный view на стороне ответа; error hook по-прежнему получает текст вида `[ignite.client.observe] ...` |
+| Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `observeSnapshot()`, `transportTouchpoint()`, `isOk()`/`isSuccess()`, `discard()` |
 
 ### Обработка ошибок и корректное завершение
 
@@ -745,7 +790,6 @@ ignite/
 - `manual/README.md` — текущий публичный manual и порядок чтения.
 - `manual/samples/README.md` — матрица примеров и порядок первого запуска.
 - `manual/samples/client/README.md` — примеры end-to-end client usage.
-- `manual/skills/README.md` — роль skills и правила работы с AI-ассистентами.
 - `CHANGELOG.MD` и `CHANGELOG-en.MD` — временная шкала версий.
 - `manual/docs-md/` и `manual/docs-web/` зарезервированы под следующий публичный docs merge.
 

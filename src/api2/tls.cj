@@ -60,8 +60,40 @@ public class TlsConfigLoadException <: Exception {
     }
 }
 
+public class TlsStartupFailureSnapshot {
+    public let stage: String
+    public let tlsErrorCode: String
+    public let igniteErrorCode: String
+    public let sourceCode: String
+    public let hint: String
+
+    public init(
+        stage: String,
+        tlsErrorCode: String,
+        igniteErrorCode: String,
+        sourceCode: String,
+        hint: String
+    ) {
+        this.stage = stage
+        this.tlsErrorCode = tlsErrorCode
+        this.igniteErrorCode = igniteErrorCode
+        this.sourceCode = sourceCode
+        this.hint = hint
+    }
+}
+
 public func tlsToIgniteErrorCode(code: TlsConfigLoadErrorCode): String {
     "TLS_${code.toString()}"
+}
+
+public func tlsStartupFailureSnapshot(e: TlsConfigLoadException): TlsStartupFailureSnapshot {
+    TlsStartupFailureSnapshot(
+        tlsStageFromSourceCode(e.sourceCode),
+        e.code.toString(),
+        tlsToIgniteErrorCode(e.code),
+        e.sourceCode,
+        tlsHintForCode(e.code)
+    )
 }
 
 public func tlsMapContractErrorCode(contractCode: String): TlsConfigLoadErrorCode {
@@ -173,8 +205,42 @@ func normalizeAlpnProtocolsFallback(alpnProtocols: Array<String>): Array<String>
     out.toArray()
 }
 
-// jinguiSSL contract may expose TLS-session related symbols through its public ABI.
-// Keep one explicit type anchor so test linking consistently includes jinguissl.crypto.tls.
+func tlsStageFromSourceCode(sourceCode: String): String {
+    let normalized = sourceCode.trimAscii().toAsciiUpper()
+    if (normalized.startsWith("STDX_")) {
+        return "stdx_tls_build"
+    }
+    "jinguiSSL_precheck"
+}
+
+func tlsHintForCode(code: TlsConfigLoadErrorCode): String {
+    match (code) {
+        case TlsConfigLoadErrorCode.BadInput =>
+            "check cert/key pem format and ALPN list (h2,http/1.1)"
+        case TlsConfigLoadErrorCode.VerifyFailed =>
+            "check certificate chain and private key match"
+        case TlsConfigLoadErrorCode.KeyNotFound =>
+            "check key source and key id mapping"
+        case TlsConfigLoadErrorCode.CryptoUnavailable =>
+            "check crypto runtime and dependency availability"
+        case TlsConfigLoadErrorCode.ComplianceRejected =>
+            "check compliance policy and allowed algorithms"
+        case TlsConfigLoadErrorCode.Unsupported =>
+            "check unsupported tls option or algorithm setting"
+        case TlsConfigLoadErrorCode.InternalError =>
+            "check stdx tls build path and runtime exception details"
+    }
+}
+
+// jinguiSSL contract and TLS-session helpers may expose symbols through public ABI edges.
+// Keep explicit type anchors so test linking consistently includes the needed subpackages.
+func _useContractExceptionType(value!: ?ContractException = None): Bool {
+    if (let Some(_error) <- value) {
+        return true
+    }
+    false
+}
+
 func _useTlsSessionCacheType(value!: ?TlsSessionCache = None): Bool {
     if (let Some(_cache) <- value) {
         return true

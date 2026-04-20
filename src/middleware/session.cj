@@ -1,10 +1,7 @@
 package ignite.middleware
 
 import ignite.{Handler, Ctx}
-import std.collection.ArrayList
-import std.collection.concurrent.ConcurrentHashMap
 import std.time.DateTime
-import std.sync.Mutex
 
 public class SessionConfig {
     public var cookieName: String = "ignite_session"
@@ -34,67 +31,14 @@ public class SessionConfig {
     }
 }
 
-public class SessionStore {
-    let data = ConcurrentHashMap<String, String>()
-    let touchedAt = ConcurrentHashMap<String, Int64>()
-
-    public init() {}
-
-    public func get(sessionId: String, key: String): ?String {
-        data.get("${sessionId}:${key}")
-    }
-
-    public func set(sessionId: String, key: String, value: String): Unit {
-        data.add("${sessionId}:${key}", value)
-        touch(sessionId, sessionNowMs())
-    }
-
-    public func delete(sessionId: String, key: String): Unit {
-        data.remove("${sessionId}:${key}")
-    }
-
-    public func touch(sessionId: String, nowMs: Int64): Unit {
-        touchedAt.add(sessionId, nowMs)
-    }
-
-    public func cleanupExpired(ttlMs: Int64, nowMs: Int64): Unit {
-        if (ttlMs <= 0) {
-            return
-        }
-        let staleSessions = ArrayList<String>()
-        for ((sessionId, touchedMs) in touchedAt) {
-            if ((nowMs - touchedMs) >= ttlMs) {
-                staleSessions.add(sessionId)
-            }
-        }
-        for (sessionId in staleSessions) {
-            touchedAt.remove(sessionId)
-            removeSessionData(sessionId)
-        }
-    }
-
-    func removeSessionData(sessionId: String): Unit {
-        let prefix = "${sessionId}:"
-        let staleKeys = ArrayList<String>()
-        for ((entryKey, _value) in data) {
-            if (entryKey.startsWith(prefix)) {
-                staleKeys.add(entryKey)
-            }
-        }
-        for (entryKey in staleKeys) {
-            data.remove(entryKey)
-        }
-    }
-}
-
-public let DEFAULT_SESSION_STORE: SessionStore = SessionStore()
+public let DEFAULT_SESSION_STORE: SessionStoreBackend = SessionStore()
 
 class SessionSweepState {
     var cleanupTicks: Int64 = 0
 }
 
 public func sessionMiddleware(config!: SessionConfig = SessionConfig(),
-                              store!: SessionStore = DEFAULT_SESSION_STORE): Handler {
+                              store!: SessionStoreBackend = DEFAULT_SESSION_STORE): Handler {
     let sweepState = SessionSweepState()
     { ctx: Ctx =>
         let nowMs = sessionNowMs()

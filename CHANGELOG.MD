@@ -1,5 +1,27 @@
 # Ignite Changelog
 
+## Ignite `0600`
+> 传输解耦起步、观测留痕加固
+
+### v0.6.41 `Ignite Now`
+> 路由扩展面收口刷新
+
+- `=修复` router 现在允许 `"/*"` 在根路径 `"/"` 上命中，同时保持显式 `"/"` 路由优先于 catch-all
+- `+特性` `App` / `Group` 的 `get/post/put/delete/patch/head/options/all` 现在都支持 `Array<Handler>` 公开写法，减少 route-level middleware 只能靠包装函数嵌套的表达负担
+- `+特性` `App` 新增 `notFound(...)` 与 `methodNotAllowed(...)` hook，仍保留全局 middleware 链、`Allow` 头与 `OPTIONS` 语义
+- `+特性` `Ctx` 新增 `setLocalValue(...)` / `getLocalValue<T>(...)`，让 typed request locals 可以和原有字符串 locals 并存
+- `=文档` 同步 `manual/docs-md/api.md`、README 多语言说明、目标航线表述与版本常量到 `0.6.41`
+
+### v0.6.1 `Ignite Now`
+> `0600` 首个工作基线版
+
+- `=文档` 将当前活跃版本基线从 `0.5.31` 提升到 `0.6.1`，标记 `0600` 迭代线开始
+- `+特性` Client 新增结构化 observe 快照，可通过 `onObserve(...)` 获取成功 / 失败观测结果，并支持 `JSON / log line` 双输出
+- `+特性` Client 补齐 transport touchpoint 留痕，请求结束后可读取最近一次 transport 选择与 observe 快照
+- `+特性` Server 启动观察链继续加固，启动失败分类、transport touchpoint 与 observe snapshot 现在更容易形成连续诊断面
+- `=修复` transport 错误模型补入 TLS handshake fallback candidate 的内部判定语义，但当前公开 HTTPS 默认路径与 fallback 承诺不变
+- `=文档` README / README-en / README-ru / Swagger sample / 版本常量同步到 `0.6.1`
+
 ## Ignite `0500`
 > 可用、可信、快上手
 
@@ -11,7 +33,7 @@
 - `=修复` `RequestBuilder` 退避等待从忙等改为 `sleep`，减少无意义 CPU 空转
 - `=修复` Swagger JSON 输出对 `title / description / version` 做统一 JSON 转义，补齐控制字符回归
 - `+测试` 新增 client timeout / TLS transport、response hook observe header 与 Swagger / JSON 转义回归覆盖
-- `=文档` 根 README 与 manual 入口正文收口，补齐 `docs-md` 主入口与 AI 协作说明
+- `=文档` 根 README 与 manual 入口正文收口，补齐 `docs-md` 主入口与公开文档分流说明
 - `=杂项` 包版本、框架版本常量、Swagger sample 与自检测试版本统一到 `0.5.68`
 
 ### v0.5.31 `Ignite Now`
@@ -40,7 +62,7 @@
 
 - `=文档` 将当前公开版本基线同步到 `0.5.25`
 - `=文档` README / README-en / README-ru 对齐当前仓库布局、依赖写法与公开入口
-- `=文档` 明确 `manual/` 为公开文档入口，继续避免旧 `docs/` 与内部存档路径混入公开视图
+- `=文档` 明确 `manual/` 为公开文档入口，继续收束公开入口与目录视图
 - `=文档` 首跑说明继续以可验证路径为准，不把当前仓库包装成可直接 `cjpm run` 的可执行项目
 - `=杂项` 包版本、Swagger 示例元数据与相关测试版本同步到 `0.5.25`
 

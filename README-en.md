@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.68-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.24-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.5.68</span>                    │
+│                  <span style="color:#88C0D0;">Ignite v0.6.24</span>                    │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.5.68</i></span>│
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.6.24</i></span>│
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.5.68)
+## Current Status (0.6.24)
 
 - See `manual/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD` for the current public baseline and milestone timeline.
 
@@ -135,12 +135,13 @@ If you are using Ignite inside your own application repository rather than valid
 | **Route groups** | `app.group("/api")` with nested groups and auto-prefix |
 | **WebSocket** | One-line WebSocket upgrade |
 | **SSE** | Built-in Server-Sent Events |
-| **Streaming** | Chunked Transfer Encoding |
+| **Streaming** | `ctx.writer()` and `ctx.sendStream(...)` for incremental responses; HTTP/1.1 may use chunked framing, HTTP/2 must rely on the lower writer contract instead of `Transfer-Encoding` |
 | **Swagger** | OpenAPI 3.0 + Swagger UI with cache (`enableSwaggerCache`), `?refresh=1` to force refresh |
 | **TLS/HTTP2** | Native TLS with HTTP/2 ALPN |
 | **HTTP client** | Built-in `RestClient` with builder-style API |
 | **JSON** | `ctx.jsonSerialize` / `ctx.jsonEncode`, optional `Config.jsonEncoder`; `ignite.serializeJson` / `deserializeJson` |
 | **Files & Range** | `ctx.sendFile`, `ctx.download` (attachment name), `ctx.sendFileRange` (HTTP Range 206/416) |
+| **Large body path** | `ctx.saveBodyToFile(path)` can push large request bodies straight to disk without first forcing a full in-memory body cache |
 | **static / staticSpa** | `app.static(prefix, root)` for static only; `app.staticSpa(prefix, root, indexFile)` for static-first + SPA fallback to index |
 | **Graceful shutdown** | `onShutdown` hook for cleanup |
 
@@ -160,6 +161,33 @@ app.delete("/users/:id", deleteUser)
 // All HTTP methods
 app.all("/health", healthCheck)
 ```
+
+Route methods on both `App` and `Group` also accept `Array<Handler>` when you want a clear per-route handler chain instead of nested wrapper helpers:
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
+You can also replace the default `404 / 405` bodies at the `App` layer:
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+The fallback still flows through the global middleware chain, and `405` still keeps the `Allow` header plus the existing `OPTIONS` semantics.
 
 ### Path & query params
 
@@ -185,9 +213,10 @@ app.post("/upload", { ctx =>
 
     // Body
     let body = ctx.bodyString()
+    let saved = ctx.saveBodyToFile("/tmp/upload.bin")
 
     // Response
-    ctx.status(201).json(#"{"status": "created"}"#)
+    ctx.status(201).json(#"{"status": "created", "saved": ${saved}}"#)
 })
 ```
 
@@ -206,12 +235,17 @@ ctx.noContent()                  // 204 No Content
 ctx.sendFile(path)               // send file by path
 ctx.download(path, filename)     // attachment (optional filename)
 ctx.sendFileRange(path)          // HTTP Range → 206/416
+ctx.sendStream(stream, ...)      // stream InputStream as the response body
 ctx.setCookie("token", value,    // Set-Cookie
     maxAge: 3600,
     httpOnly: true,
     secure: true
 )
 ```
+
+For large uploads, prefer `ctx.saveBodyToFile(path)` so the request body can be pushed directly to disk instead of being forced through `ctx.bodyBytes()` first. For large response bodies, `ctx.sendStream(...)` now has real HTTP/1.1 regression coverage on known-length, unknown-length, and `HEAD` paths; HTTP/2 multi-write behavior still depends on the underlying writer/TLS route and is not claimed closed from README wording alone.
+
+For per-request state, keep using `ctx.setLocal(...)` / `ctx.getLocal(...)` for string locals, or move to `ctx.setLocalValue(...)` / `ctx.getLocalValue<T>(...)` when a route or middleware needs typed request-scoped values.
 
 ### Route groups
 
@@ -526,6 +560,14 @@ app.get("/events", { ctx =>
 ### Streaming response
 
 ```cangjie
+app.get("/stream-file", { ctx =>
+    let stream = File.openRead("large-report.txt")
+    _ = ctx.sendStream(
+        stream,
+        contentType: "text/plain; charset=utf-8"
+    )
+})
+
 app.get("/stream", { ctx =>
     let writer = ctx.writer()
     writer.writeString("chunk 1\n")
@@ -533,6 +575,8 @@ app.get("/stream", { ctx =>
     writer.writeString("chunk 3\n")
 })
 ```
+
+`ctx.sendStream(...)` is the safer public path when you already have an `InputStream` and want to keep a large response body off the heap. `ctx.writer()` is the lower-level incremental writer. Under HTTP/1.1 that may map to chunked semantics; under HTTP/2 it must not emit `Transfer-Encoding`, and repeated `write(...)` calls still depend on the lower `stdx.net.http.HttpResponseWriter` contract to package and send data.
 
 ### Static files & SPA fallback (static / staticSpa)
 
@@ -721,12 +765,12 @@ More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe
 | Retry/backoff | `useRetry(config)`, idempotent methods retry by default; `request().retry(config)` / `request().disableRetry()` |
 | X509 verify entry | `useX509Verify(option)`; `request().x509Verify(option)` / `request().disableX509Verify()` |
 | Hook pipeline | `onRequest`, `onResponse`, `onError` (both `RestClient` and `RequestBuilder`) |
-| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; error hook receives `[ignite.client.observe] ...` wrapper text |
+| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` and `transportTouchpoint()` can replay the structured response-side view; error hook receives `[ignite.client.observe] ...` wrapper text |
 | Builder | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
 | Base URL | `baseUrl("https://api.example.com")` |
 | Default headers | `defaultHeader(name, value)` |
 | Cookies | `useCookies()` or `useCookies(store)`; supports `domain/path/max-age/secure/httpOnly/sameSite` and multi `set-cookie` |
-| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `isOk()`/`isSuccess()`, `discard()` (optimized for large payload paths) |
+| Response | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `observeSnapshot()`, `transportTouchpoint()`, `isOk()`/`isSuccess()`, `discard()` (optimized for large payload paths) |
 
 ### In-proc test entry (`handleForTest`)
 
@@ -847,7 +891,6 @@ Still evaluating Ignite? The fastest path is to try the samples in this order: `
 - `manual/README.md` for the current public manual and reading order.
 - `manual/samples/README.md` for sample entry order and runnable examples.
 - `manual/samples/client/README.md` for end-to-end client usage.
-- `manual/skills/README.md` for AI-assistant collaboration boundaries and service-building guidance.
 - `CHANGELOG.MD` and `CHANGELOG-en.MD` for the milestone timeline.
 - `manual/docs-md/` and `manual/docs-web/` are reserved for the next public docs merge.
 

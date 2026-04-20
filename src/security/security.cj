@@ -1,6 +1,7 @@
 package ignite.security
 
 import ignite.api2
+import ignite.binary.{base64UrlEncode, base64UrlDecode, cloneBytes}
 import std.collection.{HashMap, ArrayList}
 import std.sync.Mutex
 
@@ -285,6 +286,8 @@ public func verifyX509Target(
         )
         let accepted = try {
             verifyHook(ctx)
+        } catch (e: SecurityException) {
+            throw e
         } catch (_: Exception) {
             false
         }
@@ -372,7 +375,11 @@ public func openCookieValueV1(
         throw SecurityException(BadEnvelope, "cookie value is not v1 envelope")
     }
     let payload = encodedValue[3..encodedValue.size]
-    let envelopeJson = String.fromUtf8(base64UrlDecode(payload))
+    let envelopeJson = try {
+        String.fromUtf8(base64UrlDecode(payload))
+    } catch (_: Exception) {
+        throw SecurityException(BadEnvelope, "invalid cookie envelope encoding")
+    }
     let plain = decryptEnvelopeV1(
         config,
         envelopeJson,
@@ -445,16 +452,6 @@ func mapClientError(e: api2.ClientCryptoException): SecurityException {
         case api2.ClientCryptoErrorCode.CryptoUnavailable => CryptoUnavailable
     }
     SecurityException(code, e.message)
-}
-
-func cloneBytes(input: Array<UInt8>): Array<UInt8> {
-    let out = Array<UInt8>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = input[i]
-        i += 1
-    }
-    out
 }
 
 func normalizeAlg(raw: String): String {
@@ -645,72 +642,6 @@ func startsWith(s: String, prefix: String): Bool {
         i += 1
     }
     true
-}
-
-func base64UrlEncode(input: Array<UInt8>): String {
-    let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toRuneArray()
-    var i: Int64 = 0
-    var out = ""
-    while (i < input.size) {
-        let b0 = Int64(input[i])
-        let b1 = if (i + 1 < input.size) { Int64(input[i + 1]) } else { -1 }
-        let b2 = if (i + 2 < input.size) { Int64(input[i + 2]) } else { -1 }
-
-        let x0 = b0 >> 2
-        let x1 = ((b0 & 0x03) << 4) | (if (b1 >= 0) { (b1 >> 4) & 0x0F } else { 0 })
-        out += table[x0].toString()
-        out += table[x1].toString()
-
-        if (b1 >= 0) {
-            let x2 = ((b1 & 0x0F) << 2) | (if (b2 >= 0) { (b2 >> 6) & 0x03 } else { 0 })
-            out += table[x2].toString()
-        }
-        if (b2 >= 0) {
-            let x3 = b2 & 0x3F
-            out += table[x3].toString()
-        }
-
-        i += 3
-    }
-    out
-}
-
-func base64UrlDecode(input: String): Array<UInt8> {
-    let cleaned = input.trimAscii()
-    if (cleaned.size == 0) {
-        return []
-    }
-
-    let chars = cleaned.toRuneArray()
-    let out = ArrayList<UInt8>()
-    var buffer: Int64 = 0
-    var bits: Int64 = 0
-
-    for (ch in chars) {
-        let idx = base64UrlIndex(ch)
-        if (idx < 0) {
-            throw SecurityException(BadEnvelope, "invalid base64url character")
-        }
-        buffer = (buffer << 6) | idx
-        bits += 6
-        if (bits >= 8) {
-            bits -= 8
-            out.add(UInt8((buffer >> bits) & 0xFF))
-        }
-    }
-    out.toArray()
-}
-
-func base64UrlIndex(ch: Rune): Int64 {
-    let table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".toRuneArray()
-    var i = 0
-    while (i < table.size) {
-        if (table[i] == ch) {
-            return i
-        }
-        i += 1
-    }
-    return -1
 }
 
 func hexNibble(ch: Rune): Int64 {

@@ -62,6 +62,19 @@ app.delete("/users/:id", deleteUser)
 app.all("/health", healthHandler)
 ```
 
+如果你希望像 Express / Fiber 那样在单条路由上挂一个明确的 handler chain，现在也可以直接传 `Array<Handler>`：
+
+```cangjie
+let userReadChain: Array<Handler> = [
+    requireAuth,
+    auditUserRead,
+    listUsers
+]
+
+app.get("/users", userReadChain)
+app.post("/users", [requireAuth, createUser])
+```
+
 当你需要补充 Swagger 或接口元数据时，可以把 `RouteOption` 一起传入：
 
 ```cangjie
@@ -72,6 +85,20 @@ option.withOperationId("user.create")
 
 app.post("/users", createUser, option: option)
 ```
+
+如果你想替换默认的 `404 / 405` 返回体，也可以在 `App` 层注册 hook：
+
+```cangjie
+app.notFound({ ctx =>
+    let _ = ctx.status(404).json(#"{"error":"route_not_found"}"#)
+})
+
+app.methodNotAllowed({ ctx =>
+    let _ = ctx.status(405).json(#"{"error":"method_not_allowed"}"#)
+})
+```
+
+当前 contract 里，这两条 fallback 仍会继续经过全局 middleware 链，`405` 也仍会保留 `Allow` 头与 `OPTIONS` 语义。
 
 ## 路径参数与查询参数
 
@@ -88,16 +115,60 @@ app.get("/search/:type", { ctx =>
 })
 ```
 
+## 请求级 locals
+
+如果中间件和处理函数之间只需要传递字符串，继续用原来的：
+
+- `ctx.setLocal(key, value)`
+- `ctx.getLocal(key)`
+
+如果你需要在一次请求内临时携带 typed object / typed scalar，现在也可以用：
+
+- `ctx.setLocalValue(key, value)`
+- `ctx.getLocalValue<T>(key)`
+
+```cangjie
+class CurrentActor {
+    let id: String
+    init(id: String) {
+        this.id = id
+    }
+}
+
+app.use({ ctx =>
+    ctx.setLocal("mode", "strict")
+    ctx.setLocalValue("actor", CurrentActor("u-1"))
+    ctx.next()
+})
+
+app.get("/me", { ctx =>
+    let mode = ctx.getLocal("mode") ?? "unknown"
+    let actorId = match (ctx.getLocalValue<CurrentActor>("actor")) {
+        case Some(actor) => actor.id
+        case None => "missing"
+    }
+    _ = ctx.json(#"{"mode":"${mode}","actor":"${actorId}"}"#)
+})
+```
+
+这层设计当前的定位是“补足 request-context 表达力”，不是引入一个复杂的 DI 容器，因此生命周期仍然严格限定在单次请求内。
+
 ## 响应方法一览
 
 `Ctx` 提供的响应方法覆盖了多数服务常用路径：
 
+- `ctx.requestBody()`：拿到底层 `InputStream`，适合自己做流式消费
+- `ctx.bodyBytes()` / `ctx.bodyString()`：把请求体读成字节或字符串，适合普通体积请求
+- `ctx.saveBodyToFile(path)`：把请求体直接推到文件，适合大 body 上传落盘
 - `ctx.json(body)`：直接回 JSON 字符串
 - `ctx.jsonSerialize(obj)`：类型实现序列化能力时回 JSON
 - `ctx.jsonEncode(obj)`：走 `JsonEncodable` 或自定义 `Config.jsonEncoder`
 - `ctx.sendString(body)`：纯文本响应
 - `ctx.html(body)`：HTML 响应
 - `ctx.send(bytes)`：原始字节
+- `ctx.sendStream(stream, ...)`：直接发送 `InputStream`，适合大响应体或文件式输出
+- `ctx.writer()`：增量写响应体；HTTP/1.1 下可表现为 chunked，HTTP/2 下不应该再补 `Transfer-Encoding`
+- `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头
 - `ctx.sendStatus(404)`：状态码 + 默认消息
 - `ctx.redirect("/login")`：重定向
 - `ctx.noContent()`：`204 No Content`
@@ -108,6 +179,77 @@ app.get("/ping", { ctx =>
     ctx.status(200).sendString("pong")
 })
 ```
+
+大上传场景更推荐这样写：
+
+```cangjie
+app.post("/upload-large", { ctx =>
+    let saved = ctx.saveBodyToFile("/tmp/upload-large.bin")
+    ctx.status(201).json(#"{"saved":"# + saved.toString() + #"}"#)
+})
+```
+
+这条大 body 落盘路径现在不只是 `handleForTest(...)` 下可用：
+
+- 真实 HTTP/1.1 `content-length` 上传已经有回归覆盖
+- 真实 HTTP/1.1 `chunked` 上传也已经有回归覆盖
+- 现有回归还会确认 `saveBodyToFile(...)` 没有先把请求体塞进 `ctx.bodyBytes()` 缓存再落盘
+- 如果你想直接跑可视化入口，当前可以从 [`manual/samples/files/README.md`](../samples/files/README.md) 开始
+
+如果你要问“HTTP/2 下还能不能流式返回”，答案不是靠 `Transfer-Encoding`：
+
+- RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
+- `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
+- `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
+- 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
+- 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
+
+如果你在 Client 侧用了 `RestClient`，响应拿回来后还可以继续读结构化 transport 留痕：
+
+- `resp.observeSnapshot()`：把响应头里的 observe 字段回放成 `ClientObserveSnapshot`
+- `resp.transportTouchpoint()`：把已选 backend / reason / fallbackChain 等字段回放成 `ClientTransportTouchpoint`
+
+这样做的好处是，联调排障时不必只盯日志文本，也不用手工一个个去读 `x-ignite-observe-*` 头。
+
+## `ignite.binary`
+
+如果你在写协议型中间件、认证组件，或者准备处理 `CBOR / COSE / authenticatorData` 这类二进制结构，`ignite.binary` 现在已经有第一批最小 helper 可以直接拿来用：
+
+- `base64UrlEncode(...)` / `base64UrlDecode(...)`
+- `cloneBytes(...)`
+- `sliceBytes(...)`
+- `readUint16BE(...)` / `readUint32BE(...)`
+- `decodeCbor(...)` / `decodeCborMap(...)`
+- `decodeCoseEc2PublicKey(...)`
+- `decodeAuthenticatorData(...)`
+- `decodeAttestedCredentialData(...)`
+- `decodeAttestationObject(...)`
+
+这组能力当前的定位不是“完整二进制框架”，而是 `ig0600` 先把共享 primitive 稳定下来，避免 `security`、`client crypto`、`jwt`、后续 `WebAuthn` 需求继续各自复制一套实现。
+
+```cangjie
+import ignite.binary.*
+
+let signCount = readUint32BE(authenticatorData, 33)
+let challenge = String.fromUtf8(base64UrlDecode(challengeB64u))
+let coseKey = decodeCoseEc2PublicKey(credentialPublicKeyBytes)
+let authData = decodeAuthenticatorData(authenticatorData)
+let attested = decodeAttestedCredentialData(authData)
+let attestation = decodeAttestationObject(attestationObjectBytes)
+```
+
+当前边界也要说清楚：
+
+- 这里只是最小 primitive 层
+- `CBOR` 目前只覆盖 definite-length 的 `unsigned / negative / bytes / text / array / map`
+- `COSE` 目前也只覆盖最窄的 read-only `ES256 / P-256 EC2 COSE_Key` 结构化提取
+- `authenticatorData` 目前只覆盖固定头解包：`rpIdHash / flags / signCount / tail`
+- attested credential data 目前只覆盖 `AAGUID / credentialId / credentialPublicKeyBytes / remainingBytes`
+- `attestationObject` 目前只覆盖最外层 `fmt / authData / attStmt`
+- 还不是完整 `CBOR` ecosystem
+- 也不是完整 `COSE_Key` 解释层，更不是通用 `COSE` framework
+- 也还不是完整 `attestationObject` / attestation statement / trust chain 解释层
+- 更不是 WebAuthn ceremony 本身
 
 ## 路由组
 

@@ -16,9 +16,15 @@ public class RestClient {
     var _cryptoConfig: ?api2.ClientCryptoConfig = None
     var _x509Verify: ?security.X509VerifyOption = None
     var _retryConfig: ClientRetryConfig = ClientRetryConfig()
+    var _preferredTransportBackendHint: String = ""
+    var _allowExperimentalTransport: Bool = false
     var _requestHooks: ArrayList<ClientRequestHook> = ArrayList<ClientRequestHook>()
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
+    var _observeHooks: ArrayList<ClientObserveHook> = ArrayList<ClientObserveHook>()
+    var _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook> = ArrayList<ClientTransportTouchpointHook>()
+    var _lastClientTransportTouchpoint: ?ClientTransportTouchpoint = None
+    var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
 
     public init() {
         _client = ClientBuilder().build()
@@ -105,6 +111,20 @@ public class RestClient {
         this
     }
 
+    public func preferTransportBackend(backendId: String): RestClient {
+        _preferredTransportBackendHint = backendId.trimAscii()
+        this
+    }
+
+    public func withTransportBackendHint(backendId: String): RestClient {
+        preferTransportBackend(backendId)
+    }
+
+    public func allowExperimentalTransport(enable!: Bool = true): RestClient {
+        _allowExperimentalTransport = enable
+        this
+    }
+
     public func onRequest(hook: ClientRequestHook): RestClient {
         _requestHooks.add(hook)
         this
@@ -130,6 +150,32 @@ public class RestClient {
 
     public func onErrorHook(hook: ClientErrorHook): RestClient {
         onError(hook)
+    }
+
+    public func onObserve(hook: ClientObserveHook): RestClient {
+        _observeHooks.add(hook)
+        this
+    }
+
+    public func onObserveHook(hook: ClientObserveHook): RestClient {
+        onObserve(hook)
+    }
+
+    public func onTransportTouchpoint(hook: ClientTransportTouchpointHook): RestClient {
+        _transportTouchpointHooks.add(hook)
+        this
+    }
+
+    public func onTransportTouchpointHook(hook: ClientTransportTouchpointHook): RestClient {
+        onTransportTouchpoint(hook)
+    }
+
+    public func lastClientTransportTouchpoint(): ?ClientTransportTouchpoint {
+        _lastClientTransportTouchpoint
+    }
+
+    public func lastClientObserveSnapshot(): ?ClientObserveSnapshot {
+        _lastClientObserveSnapshot
     }
 
     func requireCryptoConfig(): api2.ClientCryptoConfig {
@@ -276,9 +322,19 @@ public class RestClient {
             _cryptoConfig,
             _x509Verify,
             _retryConfig,
+            _preferredTransportBackendHint,
+            _allowExperimentalTransport,
             _requestHooks,
             _responseHooks,
-            _errorHooks
+            _errorHooks,
+            _observeHooks,
+            _transportTouchpointHooks,
+            captureObserveHook: { snapshot =>
+                _lastClientObserveSnapshot = Some(snapshot)
+            },
+            captureTransportTouchpointHook: { touchpoint =>
+                _lastClientTransportTouchpoint = Some(touchpoint)
+            }
         )
     }
 

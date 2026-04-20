@@ -21,6 +21,20 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.lastEnableTlsPrecheck, false)
         @Assert(engine.readyCalled, true)
         @Assert(engine.receivedDistributor, true)
+        match (engine.lastTransportTouchpoint) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.publicPath, "stable-default")
+                @Assert(touchpoint.providerId, "-")
+            case None => @Fail("expected server transport touchpoint")
+        }
+        match (app.lastServerTransportTouchpoint()) {
+            case Some(touchpoint) =>
+                @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                @Assert(touchpoint.publicPath, "stable-default")
+                @Assert(touchpoint.providerId, "-")
+            case None => @Fail("expected app transport touchpoint snapshot")
+        }
     }
 }
 
@@ -32,6 +46,7 @@ class SpyServerEngine <: ServerEngine {
     var lastAddr: String = ""
     var lastPort: UInt16 = 0
     var lastEnableTlsPrecheck: Bool = true
+    var lastTransportTouchpoint: ?ServerTransportTouchpoint = None
 
     public override func listen(
         option: ServerEngineListenOption,
@@ -42,6 +57,7 @@ class SpyServerEngine <: ServerEngine {
         lastAddr = option.addr
         lastPort = option.port
         lastEnableTlsPrecheck = option.enableTlsPrecheck
+        lastTransportTouchpoint = option.transportTouchpoint
         let _ = distributor
         receivedDistributor = true
         if (let Some(cb) <- onReady) {

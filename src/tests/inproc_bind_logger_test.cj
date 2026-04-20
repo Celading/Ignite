@@ -4,6 +4,7 @@ import ignite.*
 import ignite.middleware.*
 import std.collection.ArrayList
 import stdx.encoding.json.{JsonValue, JsonObject}
+import stdx.net.http.HttpRequestDistributor
 
 @Test
 public class InprocBindLoggerTestSuite {
@@ -23,6 +24,23 @@ public class InprocBindLoggerTestSuite {
         @Assert(resp.status, UInt16(200))
         @Assert(resp.body, "pong-1")
         @Assert(resp.header("x-mw") ?? "", "hit")
+    }
+
+    @TestCase
+    public func testHandleForTestRetriesOnAddressInUse(): Unit {
+        let app = App(config: Config())
+        let engine = RetryAddressInUseEngine()
+        app.serverEngine(engine)
+        app.get("/retry-port", { ctx =>
+            ctx.sendString("retry-ok")
+        })
+
+        let resp = app.handleForTest("GET", "/retry-port")
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "retry-ok")
+        @Assert(engine.listenCalls, 2)
+        @Assert(engine.attemptedPorts.size, 2)
+        @Assert(engine.attemptedPorts[0] == engine.attemptedPorts[1], false)
     }
 
     @TestCase
@@ -113,6 +131,54 @@ public class InprocBindLoggerTestSuite {
         @Assert(contains(line, #""message":"[GET] /json-log 200 "#), true)
     }
 
+    @TestCase
+    public func testLoggerJsonLineIncludesProxyObserveFields(): Unit {
+        let lines = ArrayList<String>()
+        let cfg = LoggerConfig(
+            output: { line => lines.add(line) },
+            enableEntityLog: false
+        )
+        cfg.jsonLine = true
+        cfg.linuxStyle = false
+        cfg.enableSelfCheck = false
+
+        let app = App(config: Config())
+        app.use(loggerMiddleware(config: cfg))
+        app.use({ ctx =>
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY, "temp-file-buffered")
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY, "16384")
+            ctx.setLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY, "8192")
+            ctx.next()
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY, "2")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY, "known-length-stream")
+            ctx.setLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY, "2")
+        })
+        app.post("/json-log-proxy", { ctx =>
+            let _ = ctx.status(201).sendString("ok")
+        })
+
+        let resp = app.handleForTest("POST", "/json-log-proxy", body: "proxy-body")
+        @Assert(resp.status, UInt16(201))
+        @Assert(lines.size > 0, true)
+
+        let line = lines[lines.size - 1]
+        @Assert(contains(line, #""proxyBodyMode":"temp-file-buffered""#), true)
+        @Assert(contains(line, #""proxyBodyBytes":"16384""#), true)
+        @Assert(contains(line, #""proxyBodyLimitBytes":"8192""#), true)
+        @Assert(contains(line, #""proxyResponseBodyMode":"known-length-stream""#), true)
+        @Assert(contains(line, #""proxyResponseBodyBytes":"2""#), true)
+        @Assert(contains(line, #""proxyDownstreamBodyMode":"known-length-stream""#), true)
+        @Assert(contains(line, #""proxyDownstreamBodyBytes":"2""#), true)
+        @Assert(
+            contains(
+                line,
+                #"proxyBodyMode=temp-file-buffered proxyBodyBytes=16384 proxyBodyLimitBytes=8192 proxyResponseBodyMode=known-length-stream proxyResponseBodyBytes=2 proxyDownstreamBodyMode=known-length-stream proxyDownstreamBodyBytes=2"#
+            ),
+            true
+        )
+    }
+
     func decodeCreateUserReq(jsonValue: JsonValue): CreateUserReq {
         let obj = jsonValue.asObject()
         let name = requireStringField(obj, "name")
@@ -164,5 +230,28 @@ struct CreateUserReq {
     init(name: String, age: Int64) {
         this.name = name
         this.age = age
+    }
+}
+
+class RetryAddressInUseEngine <: ServerEngine {
+    let delegate = StdxServerEngine()
+    public var listenCalls: Int64 = 0
+    public let attemptedPorts = ArrayList<UInt16>()
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        distributor: HttpRequestDistributor,
+        onReady: ?(() -> Unit)
+    ): Unit {
+        listenCalls += 1
+        attemptedPorts.add(option.port)
+        if (listenCalls == 1) {
+            throw Exception("bind failed: address already in use")
+        }
+        delegate.listen(option, distributor, onReady)
+    }
+
+    public override func shutdown(): Unit {
+        delegate.shutdown()
     }
 }

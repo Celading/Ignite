@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.5.68-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.6.24-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                    <span style="color:#88C0D0;">Ignite v0.5.68</span>                     │
+│                   <span style="color:#88C0D0;">Ignite v0.6.24</span>                     │
 │   <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>    │
 │                                                       │
 │   Touchpoints .......... 16   Processes .......... 1  │
 │   Prefork ......... Disabled   PID .......... 67271   │
-│                                        <span style="color:#8A8A8A;"><i>_Ignite 0.5.68</i></span> │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.6.24</i></span> │
 └───────────────────────────────────────────────────────┘
 </pre>
 <span style="font-weight:300;font-size:38px">Ignite (叶燧)</span><br/>
@@ -126,8 +126,9 @@ main() {
 - 治理不缺席：安全、审计、日志、请求 ID、限流、压缩、缓存、会话、重写、代理、健康检查都在主线能力面里。
 - 接口可解释：Swagger / OpenAPI、`InterfaceSpec`、`TestOption`、`x-ignite-test` 和 `kmode` 让接口不仅能跑，还能讲清楚。
 - 错误收得住：`bindJsonOr400` 统一常见请求绑定错误语义，首跑排障少走弯路。
-- 路由更像“框架”而不是“脚手架”：命名路由、`RouteOption.operationId`、`urlFor`、组级中间件都已经接上。
-- 联调不分家：内置 `RestClient`、Builder 模式、Retry / Hook / Observe、Cookie v2、multipart、加密请求与 X509 校验入口。
+- 路由更像“框架”而不是“脚手架”：命名路由、`RouteOption.operationId`、`urlFor`、组级中间件、route-level handler array、可替换 `404/405` hook 都已经接上。
+- 联调不分家：内置 `RestClient`、Builder 模式、Retry / Hook / Observe、Cookie v2、multipart、加密请求与 X509 校验入口，响应侧也能直接拿 `observeSnapshot()` / `transportTouchpoint()`。
+- 大请求体有直落盘路径：`requestBody()` / `saveBodyToFile(...)` 可以避免先把整包 body 全塞进内存。
 - 静态和动态都能接：`static`、`staticSpa`、`IgniteKit` 都在公开能力面上。
 - 边界说人话：当前 HTTPS 默认路径、压缩支持范围、样例入口都写在公开文档里，不让你靠猜。
 
@@ -137,7 +138,7 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 
 - `App`：负责把服务真正支起来，路由、生命周期、错误处理、Swagger 都从这里起手。
 - `Router / Group`：负责把接口按模块排整齐，不用每个项目自己重新发明组织方式。
-- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，是你最常打交道的对象。
+- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，也是 request locals 的承载面；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`。
 - `Config`：负责把服务名、版本、超时、Swagger、TLS、Banner、kMode 这些运行期口径收在一起。
 - `RouteOption`：负责把接口的 `summary`、`tag`、`operationId`、请求体、响应和测试元数据挂上去。
 - `RestClient`：负责让调用端别再另造一套陌生心智，联调时直接沿用 Ignite 的语义。
@@ -147,7 +148,7 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 
 ## 中间件
 ### 集成提供大量中间件
-具体方法级说明见 [`manual/docs-md/api.md`](manual/docs-md/middleware.md)。
+具体方法级说明见 [`manual/docs-md/middleware.md`](manual/docs-md/middleware.md)。
 
 ### 自定义中间件
 
@@ -176,12 +177,11 @@ Response ◄── Logger ◄── CORS ◄── Auth ◄───┘
 ## 项目结构
 
 ```text
-Ignite0500/
+ignite/
 ├── src/                 # Ignite 主体源码
 ├── manual/docs-md/      # 中文正文文档源稿
 ├── manual/docs-web/     # 后续网站化呈现层
 ├── manual/samples/      # 可运行样例与首跑路径
-├── manual/skills/       # AI 协作说明与边界
 ├── CHANGELOG.MD         # 中文版本时间线
 └── CHANGELOG-en.MD      # 英文版本时间线
 ```
@@ -217,21 +217,21 @@ Ignite0500/
 
 - [`brotli_middleware`](https://gitcode.com/copur/brotli_middleware) - 面向 Ignite 生态的 Brotli 中间件扩展
 
+更多 `IgniteKit-*` 扩展与 `Cangku / Cangjie-Cangku` 同级基础设施方向仍在内部整理中，当前公开口径仍以已落地能力为准。
+
 ## 文档与入口
 
 - [`manual/docs-md/README.md`](manual/docs-md/README.md)：中文正文主入口，适合从首页继续往深处看。
 - [`manual/samples/README.md`](manual/samples/README.md)：最快把 Ignite 跑起来的样例矩阵和顺序。
-- [`manual/skills/README.md`](manual/skills/README.md)：如果你准备和 Codex、OpenCode、Claude Code 一起协作，再看这份边界说明。
 - [`CHANGELOG.MD`](CHANGELOG.MD)：中文版本时间线与阶段收口记录。
 - [`CHANGELOG-en.MD`](CHANGELOG-en.MD)：英文版本时间线。
-- [`manual/docs-web/index.html`](manual/docs-web/index.html)：后续网站文档的入口预留位。
+- [`manual/docs-web/README.md`](manual/docs-web/README.md)：后续网站文档的入口预留位。
 
 ## 参与后续演进
 
 - 如果你是第一次接触 Ignite，建议先跑 `hello -> api -> swagger -> client` 这条样例路径，再判断它是不是你要的框架。
 - 如果你已经在业务里用上了，欢迎把 issue、建议、踩坑和改进点带回来，Ignite 很需要真实反馈来继续长大。
 - 如果你准备参与贡献，文档修正、样例回归、公开能力补充和低风险问题收口，都是非常好的入口。
-- 如果你使用 AI 协作，请再看 [`manual/skills/README.md`](manual/skills/README.md)，别让助手把内部材料或没落地的承诺写进公开面。
 
 ## 许可证
 

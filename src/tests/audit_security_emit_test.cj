@@ -16,6 +16,8 @@ public class AuditSecurityEmitTestSuite {
         event.riskLevel = 2
         event.statusCode = 503
         event.latencyMs = 9
+        event.guardEvent = "kmode_failover"
+        event.guardExitCause = "matched"
         event.securityEvent = "decrypt_failed,signature_failed"
         event.securityCode = "DECRYPT_FAILED"
         event.securitySource = "encrypt_cookie"
@@ -30,9 +32,13 @@ public class AuditSecurityEmitTestSuite {
         )
 
         @Assert(lines.size, 2)
+        @Assert(contains(lines[0], "guardEvent=kmode_failover"), true)
+        @Assert(contains(lines[0], "guardExitCause=matched"), true)
         @Assert(contains(lines[0], "securityEvent=decrypt_failed,signature_failed"), true)
         @Assert(contains(lines[0], "securityCode=DECRYPT_FAILED"), true)
         @Assert(contains(lines[0], "securitySource=encrypt_cookie"), true)
+        @Assert(contains(lines[1], "\"guardEvent\":\"kmode_failover\""), true)
+        @Assert(contains(lines[1], "\"guardExitCause\":\"matched\""), true)
         @Assert(contains(lines[1], "\"securityEvent\":\"decrypt_failed,signature_failed\""), true)
     }
 
@@ -40,6 +46,8 @@ public class AuditSecurityEmitTestSuite {
     public func testEmitAuditWithoutLinuxStyleStillKeepsSecurityFields(): Unit {
         let lines = ArrayList<String>()
         let event = AuditEvent()
+        event.guardEvent = "kmode_failover"
+        event.guardExitCause = "cooldown_skip"
         event.securityEvent = "cert_rejected"
         event.securityCode = "VERIFY_FAILED"
         event.securitySource = "proxy"
@@ -54,6 +62,8 @@ public class AuditSecurityEmitTestSuite {
         )
 
         @Assert(lines.size, 1)
+        @Assert(contains(lines[0], "\"guardEvent\":\"kmode_failover\""), true)
+        @Assert(contains(lines[0], "\"guardExitCause\":\"cooldown_skip\""), true)
         @Assert(contains(lines[0], "\"securityEvent\":\"cert_rejected\""), true)
         @Assert(contains(lines[0], "\"securityCode\":\"VERIFY_FAILED\""), true)
         @Assert(contains(lines[0], "\"securitySource\":\"proxy\""), true)

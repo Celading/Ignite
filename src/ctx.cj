@@ -16,6 +16,7 @@ public class Ctx {
     let _app: App
     var _params: HashMap<String, String> = HashMap<String, String>()
     var _locals: HashMap<String, String> = HashMap<String, String>()
+    var _localValues: HashMap<String, Any> = HashMap<String, Any>()
     var _route: ?Route = None
     var _handlers: ArrayList<Handler> = ArrayList<Handler>()
     var _handlerIndex: Int64 = -1
@@ -94,6 +95,18 @@ public class Ctx {
 
     public func requestBody(): InputStream {
         _httpCtx.request.body
+    }
+
+    public func saveBodyToFile(destPath: String): Int64 {
+        if (let Some(cached) <- _bodyBytesCache) {
+            writeBytesToFile(destPath, cached)
+            return cached.size
+        }
+        streamRequestBodyToFile(_httpCtx.request.body, destPath)
+    }
+
+    public func cachedBodyBytes(): ?Array<UInt8> {
+        _bodyBytesCache
     }
 
     public func bodyBytes(): Array<UInt8> {
@@ -221,6 +234,34 @@ public class Ctx {
 
     public func send(data: Array<UInt8>): Ctx {
         _httpCtx.responseBuilder.body(data)
+        _responded = true
+        this
+    }
+
+    public func sendStream(
+        stream: InputStream,
+        contentType!: String = "application/octet-stream",
+        contentLength!: ?Int64 = None
+    ): Ctx {
+        let normalizedType = contentType.trimAscii()
+        if (normalizedType.size > 0) {
+            _httpCtx.responseBuilder.header("content-type", normalizedType)
+        }
+        match (contentLength) {
+            case Some(size) =>
+                if (size >= 0) {
+                    _httpCtx.responseBuilder.header("content-length", size.toString())
+                }
+            case None =>
+                if (!isHeadRequest(method) && !isHttp2Protocol(protocol)) {
+                    _httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+                }
+        }
+        if (!isHeadRequest(method)) {
+            _httpCtx.responseBuilder.body(stream)
+        } else {
+            closeStreamIfResource(stream)
+        }
         _responded = true
         this
     }
@@ -462,6 +503,26 @@ public class Ctx {
 
     public func setLocal(key: String, value: String): Unit {
         _locals.add(key, value)
+        _localValues.add(key, value)
+    }
+
+    public func getLocalValue<T>(key: String): ?T where T <: Any {
+        match (_localValues.get(key)) {
+            case Some(value) =>
+                match (value) {
+                    case typed: T => Some(typed)
+                    case _ => None
+                }
+            case None => None
+        }
+    }
+
+    public func setLocalValue<T>(key: String, value: T): Unit where T <: Any {
+        _localValues.add(key, value)
+        match (value) {
+            case text: String => _locals.add(key, text)
+            case _ => let _ = _locals.remove(key)
+        }
     }
 
     // ── App reference ──
@@ -699,31 +760,76 @@ func streamFileSegment(httpCtx: HttpContext, path: String, start: Int64, length:
     let file = File(path, OpenMode.Read)
     try {
         skipFilePrefix(file, start)
-        let writer = HttpResponseWriter(httpCtx)
-        let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
-        var remaining = length
-        while (true) {
-            let window = if (remaining < 0) {
-                buffer
-            } else if (remaining < FILE_STREAM_BUFFER_SIZE) {
-                buffer[..remaining]
-            } else {
-                buffer
+        writeInputStreamToResponse(httpCtx, file, length)
+    } finally {
+        file.close()
+    }
+}
+
+func writeInputStreamToResponse(httpCtx: HttpContext, stream: InputStream, length: Int64): Unit {
+    let writer = HttpResponseWriter(httpCtx)
+    let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
+    var remaining = length
+    while (true) {
+        let window = if (remaining < 0) {
+            buffer
+        } else if (remaining < FILE_STREAM_BUFFER_SIZE) {
+            buffer[..remaining]
+        } else {
+            buffer
+        }
+        let readLen = stream.read(window)
+        if (readLen <= 0) {
+            break
+        }
+        writer.write(window[..readLen])
+        if (remaining >= 0) {
+            remaining -= readLen
+            if (remaining <= 0) {
+                break
             }
-            let readLen = file.read(window)
+        }
+    }
+}
+
+func streamRequestBodyToFile(stream: InputStream, destPath: String): Int64 {
+    let file = File(destPath, OpenMode.Write)
+    let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
+    var total: Int64 = 0
+    try {
+        while (true) {
+            let readLen = stream.read(buffer)
             if (readLen <= 0) {
                 break
             }
-            writer.write(window[..readLen])
-            if (remaining >= 0) {
-                remaining -= readLen
-                if (remaining <= 0) {
-                    break
-                }
+            let chunk = Array<UInt8>(readLen, repeat: 0)
+            var i: Int64 = 0
+            while (i < readLen) {
+                chunk[i] = buffer[i]
+                i += 1
             }
+            file.write(chunk)
+            total += readLen
         }
     } finally {
         file.close()
+    }
+    total
+}
+
+func writeBytesToFile(destPath: String, bytes: Array<UInt8>): Unit {
+    let file = File(destPath, OpenMode.Write)
+    try {
+        file.write(bytes)
+    } finally {
+        file.close()
+    }
+}
+
+func closeStreamIfResource(stream: InputStream): Unit {
+    match (stream) {
+        case closable: Resource => closable.close()
+        case _ => ()
     }
 }
 

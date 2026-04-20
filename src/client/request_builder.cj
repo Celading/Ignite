@@ -17,9 +17,15 @@ public class RequestBuilder {
     let _cryptoConfig: ?api2.ClientCryptoConfig
     let _x509Verify: ?security.X509VerifyOption
     let _retryConfig: ClientRetryConfig
+    let _preferredTransportBackendHint: String
+    let _allowExperimentalTransport: Bool
     let _requestHooks: ArrayList<ClientRequestHook>
     let _responseHooks: ArrayList<ClientResponseHook>
     let _errorHooks: ArrayList<ClientErrorHook>
+    let _observeHooks: ArrayList<ClientObserveHook>
+    let _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>
+    let _captureObserveHook: ?ClientObserveHook
+    let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
     let _headerSnapshot: HashMap<String, String> = HashMap<String, String>()
     var _currentUrl: String = ""
@@ -30,6 +36,9 @@ public class RequestBuilder {
     var _multipartFiles: ?ArrayList<MultipartFile> = None
     var _x509VerifyOverride: ?security.X509VerifyOption = None
     var _retryOverride: ?ClientRetryConfig = None
+    var _requestCryptoConfig: ?api2.ClientCryptoConfig = None
+    var _transportBackendHintOverride: ?String = None
+    var _allowExperimentalTransportOverride: ?Bool = None
 
     public init(
         client: Client,
@@ -39,9 +48,15 @@ public class RequestBuilder {
         cryptoConfig: ?api2.ClientCryptoConfig,
         x509Verify: ?security.X509VerifyOption,
         retryConfig: ClientRetryConfig,
+        preferredTransportBackendHint: String,
+        allowExperimentalTransport: Bool,
         requestHooks: ArrayList<ClientRequestHook>,
         responseHooks: ArrayList<ClientResponseHook>,
-        errorHooks: ArrayList<ClientErrorHook>
+        errorHooks: ArrayList<ClientErrorHook>,
+        observeHooks: ArrayList<ClientObserveHook>,
+        transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>,
+        captureObserveHook!: ?ClientObserveHook = None,
+        captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None
     ) {
         _client = client
         _baseUrl = baseUrl
@@ -50,9 +65,15 @@ public class RequestBuilder {
         _cryptoConfig = cryptoConfig
         _x509Verify = x509Verify
         _retryConfig = retryConfig.copy()
+        _preferredTransportBackendHint = preferredTransportBackendHint
+        _allowExperimentalTransport = allowExperimentalTransport
         _requestHooks = ArrayList<ClientRequestHook>()
         _responseHooks = ArrayList<ClientResponseHook>()
         _errorHooks = ArrayList<ClientErrorHook>()
+        _observeHooks = ArrayList<ClientObserveHook>()
+        _transportTouchpointHooks = ArrayList<ClientTransportTouchpointHook>()
+        _captureObserveHook = captureObserveHook
+        _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
             setHeader(k, v)
         }
@@ -64,6 +85,12 @@ public class RequestBuilder {
         }
         for (hook in errorHooks) {
             _errorHooks.add(hook)
+        }
+        for (hook in observeHooks) {
+            _observeHooks.add(hook)
+        }
+        for (hook in transportTouchpointHooks) {
+            _transportTouchpointHooks.add(hook)
         }
     }
 
@@ -86,6 +113,20 @@ public class RequestBuilder {
             return overrideCfg
         }
         _retryConfig
+    }
+
+    func resolvePreferredTransportBackendHint(): String {
+        if (let Some(overrideHint) <- _transportBackendHintOverride) {
+            return overrideHint
+        }
+        _preferredTransportBackendHint
+    }
+
+    func resolveAllowExperimentalTransport(): Bool {
+        if (let Some(overrideFlag) <- _allowExperimentalTransportOverride) {
+            return overrideFlag
+        }
+        _allowExperimentalTransport
     }
 
     func resolveX509VerifyOption(): ?security.X509VerifyOption {
@@ -128,6 +169,20 @@ public class RequestBuilder {
         this
     }
 
+    public func preferTransportBackend(backendId: String): RequestBuilder {
+        _transportBackendHintOverride = Some(backendId.trimAscii())
+        this
+    }
+
+    public func withTransportBackendHint(backendId: String): RequestBuilder {
+        preferTransportBackend(backendId)
+    }
+
+    public func allowExperimentalTransport(enable!: Bool = true): RequestBuilder {
+        _allowExperimentalTransportOverride = Some(enable)
+        this
+    }
+
     public func onRequest(hook: ClientRequestHook): RequestBuilder {
         _requestHooks.add(hook)
         this
@@ -153,6 +208,24 @@ public class RequestBuilder {
 
     public func onErrorHook(hook: ClientErrorHook): RequestBuilder {
         onError(hook)
+    }
+
+    public func onObserve(hook: ClientObserveHook): RequestBuilder {
+        _observeHooks.add(hook)
+        this
+    }
+
+    public func onObserveHook(hook: ClientObserveHook): RequestBuilder {
+        onObserve(hook)
+    }
+
+    public func onTransportTouchpoint(hook: ClientTransportTouchpointHook): RequestBuilder {
+        _transportTouchpointHooks.add(hook)
+        this
+    }
+
+    public func onTransportTouchpointHook(hook: ClientTransportTouchpointHook): RequestBuilder {
+        onTransportTouchpoint(hook)
     }
 
     public func url(u: String): RequestBuilder {
@@ -242,6 +315,7 @@ public class RequestBuilder {
 
     public func body(b: String): RequestBuilder {
         _builder.body(b)
+        _requestCryptoConfig = None
         this
     }
 
@@ -251,11 +325,13 @@ public class RequestBuilder {
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = None
         this
     }
 
     public func bodyBytes(b: Array<UInt8>): RequestBuilder {
         _builder.body(b)
+        _requestCryptoConfig = None
         this
     }
 
@@ -271,6 +347,7 @@ public class RequestBuilder {
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = Some(cfg)
         this
     }
 
@@ -286,6 +363,7 @@ public class RequestBuilder {
         _formParams = params
         _multipartFields = None
         _multipartFiles = None
+        _requestCryptoConfig = None
         this
     }
 
@@ -300,6 +378,7 @@ public class RequestBuilder {
         _multipartFields = fields
         _multipartFiles = files
         _formParams = None
+        _requestCryptoConfig = None
         this
     }
 
@@ -342,32 +421,82 @@ public class RequestBuilder {
             }
         }
 
+        let resolvedX509Verify = resolveX509VerifyOption()
+        let selectionDecision = buildClientTransportSelectionDecision(
+            urlForHost,
+            resolvedX509Verify,
+            requestCryptoConfig: _requestCryptoConfig,
+            requiresMultipart: hasMultipartPayload(),
+            preferredBackendHint: resolvePreferredTransportBackendHint(),
+            allowExperimental: resolveAllowExperimentalTransport()
+        )
+        notifyTransportTouchpoint(buildClientTransportTouchpoint(selectionDecision))
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
         let canRetryMethod = methodCanRetry(_methodName, retryCfg)
         var attempt: Int64 = 1
 
-        try {
-            if (let Some(verifyOption) <- resolveX509VerifyOption()) {
+        if (let Some(verifyOption) <- resolvedX509Verify) {
+            try {
                 security.verifyX509Target(verifyOption, urlForHost, source: "ignite/client")
+            } catch (e: security.SecurityException) {
+                let observed = buildObservedSnapshot(
+                    e,
+                    elapsedMs(observeStart),
+                    0,
+                    collectObserveFields(),
+                    "verify",
+                    false,
+                    selectionDecision
+                )
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
+                throw e
+            } catch (e: Exception) {
+                let observed = buildObservedSnapshot(
+                    e,
+                    elapsedMs(observeStart),
+                    0,
+                    collectObserveFields(),
+                    "verify",
+                    false,
+                    selectionDecision
+                )
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
+                throw e
             }
+        }
+
+        try {
             for (hook in _requestHooks) {
                 hook(_builder)
             }
-        } catch (e: Exception) {
-            let observed = buildObservedError(
+        } catch (e: api2.ClientCryptoException) {
+            let observed = buildObservedSnapshot(
                 e,
                 elapsedMs(observeStart),
                 0,
                 collectObserveFields(),
                 "request_prepare",
-                false
+                false,
+                selectionDecision
             )
-            for (hook in _errorHooks) {
-                try {
-                    hook(observed)
-                } catch (_: Exception) {}
-            }
+            notifyObserveHooks(observed)
+            notifyErrorHooks(Exception(observed.toLogLine()))
+            throw e
+        } catch (e: Exception) {
+            let observed = buildObservedSnapshot(
+                e,
+                elapsedMs(observeStart),
+                0,
+                collectObserveFields(),
+                "request_prepare",
+                false,
+                selectionDecision
+            )
+            notifyObserveHooks(observed)
+            notifyErrorHooks(Exception(observed.toLogLine()))
             throw e
         }
 
@@ -385,13 +514,22 @@ public class RequestBuilder {
 
                 let retryCount = attempt - 1
                 let durationMs = elapsedMs(observeStart)
+                let observed = buildSuccessfulObserveSnapshot(
+                    resp.status,
+                    durationMs,
+                    retryCount,
+                    collectObserveFields(),
+                    selectionDecision
+                )
                 injectObserveHeaders(
                     resp,
                     durationMs,
                     retryCount,
                     classifyStatus(resp.status),
-                    collectObserveFields()
+                    collectObserveFields(),
+                    selectionDecision
                 )
+                notifyObserveHooks(observed)
                 if (let Some(store) <- _cookieStore) {
                     store.addFromResponse(urlForHost, resp)
                 }
@@ -407,23 +545,55 @@ public class RequestBuilder {
                 }
                 let retryCount = attempt - 1
                 let durationMs = elapsedMs(observeStart)
-                let observed = buildObservedError(
+                let observed = buildObservedSnapshot(
                     e,
                     durationMs,
                     retryCount,
                     collectObserveFields(),
                     "",
-                    false
+                    canRetryMethod,
+                    selectionDecision
                 )
-                for (hook in _errorHooks) {
-                    try {
-                        hook(observed)
-                    } catch (_: Exception) {}
-                }
+                notifyObserveHooks(observed)
+                notifyErrorHooks(Exception(observed.toLogLine()))
                 throw e
             }
         }
         throw Exception("unreachable")
+    }
+
+    func notifyObserveHooks(observed: ClientObserveSnapshot): Unit {
+        if (let Some(hook) <- _captureObserveHook) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
+        for (hook in _observeHooks) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
+    }
+
+    func notifyTransportTouchpoint(touchpoint: ClientTransportTouchpoint): Unit {
+        if (let Some(hook) <- _captureTransportTouchpointHook) {
+            try {
+                hook(touchpoint)
+            } catch (_: Exception) {}
+        }
+        for (hook in _transportTouchpointHooks) {
+            try {
+                hook(touchpoint)
+            } catch (_: Exception) {}
+        }
+    }
+
+    func notifyErrorHooks(observed: Exception): Unit {
+        for (hook in _errorHooks) {
+            try {
+                hook(observed)
+            } catch (_: Exception) {}
+        }
     }
 
     func setHeader(name: String, value: String): Unit {
@@ -441,109 +611,6 @@ public class RequestBuilder {
             return "NONE"
         }
         "HTTP_${code}"
-    }
-
-    func classifyError(e: Exception): String {
-        let msg = e.message.toAsciiLower()
-        let hasCrypto = containsStr(msg, "crypto")
-        let hasDecrypt = containsStr(msg, "decrypt")
-        let hasEnvelope = containsStr(msg, "envelope")
-        if (hasCrypto || hasDecrypt || hasEnvelope) {
-            return "CRYPTO"
-        }
-        let hasTimeout = containsStr(msg, "timeout")
-        if (hasTimeout) {
-            return "TIMEOUT"
-        }
-        let hasTls = containsStr(msg, "tls")
-        let hasSsl = containsStr(msg, "ssl")
-        let hasHandshake = containsStr(msg, "handshake")
-        let hasX509 = containsStr(msg, "x509")
-        let hasCertificate = containsStr(msg, "certificate")
-        if (hasTls || hasSsl || hasHandshake || hasX509 || hasCertificate) {
-            return "TLS"
-        }
-        let hasConnection = containsStr(msg, "connection")
-        let hasNetwork = containsStr(msg, "network")
-        let hasRefused = containsStr(msg, "refused")
-        let hasSocket = containsStr(msg, "socket")
-        if (hasConnection || hasNetwork || hasRefused || hasSocket) {
-            return "NETWORK"
-        }
-        "UNKNOWN"
-    }
-
-    func classifyErrorPhase(origin: Exception, phaseHint: String): String {
-        if (phaseHint.size > 0) {
-            return phaseHint
-        }
-        let msg = origin.message.toAsciiLower()
-        if (containsStr(msg, "tls must be configured") || containsStr(msg, "https requests are sent")) {
-            return "handshake"
-        }
-        if (containsStr(msg, "handshake") || containsStr(msg, "ssl")) {
-            return "handshake"
-        }
-        if (containsStr(msg, "certificate") || containsStr(msg, "x509")) {
-            return "verify"
-        }
-        if (containsStr(msg, "read") && containsStr(msg, "timeout")) {
-            return "read"
-        }
-        if (containsStr(msg, "write") && containsStr(msg, "timeout")) {
-            return "write"
-        }
-        if (containsStr(msg, "connect") || containsStr(msg, "refused") || containsStr(msg, "socket")) {
-            return "connect"
-        }
-        if (containsStr(msg, "timeout")) {
-            return "transport"
-        }
-        "unknown"
-    }
-
-    func classifyErrorCauseCode(origin: Exception, errClass: String, phase: String): String {
-        let msg = origin.message.toAsciiLower()
-        if (errClass == "CRYPTO") {
-            if (containsStr(msg, "unavailable")) {
-                return "crypto_unavailable"
-            }
-            if (containsStr(msg, "decrypt")) {
-                return "decrypt_failed"
-            }
-            return "crypto_error"
-        }
-        if (errClass == "TLS") {
-            if (containsStr(msg, "tls must be configured") || containsStr(msg, "https requests are sent")) {
-                return "tls_not_configured"
-            }
-            if (phase == "handshake") {
-                return "tls_handshake_error"
-            }
-            if (phase == "verify" || containsStr(msg, "certificate") || containsStr(msg, "x509")) {
-                return "tls_verify_error"
-            }
-            return "tls_error"
-        }
-        if (errClass == "TIMEOUT") {
-            if (phase == "connect") {
-                return "connect_timeout"
-            }
-            if (phase == "read") {
-                return "read_timeout"
-            }
-            if (phase == "write") {
-                return "write_timeout"
-            }
-            return "timeout_error"
-        }
-        if (errClass == "NETWORK") {
-            if (containsStr(msg, "refused")) {
-                return "connection_refused"
-            }
-            return "connect_error"
-        }
-        "unknown_error"
     }
 
     func collectObserveFields(): String {
@@ -575,35 +642,113 @@ public class RequestBuilder {
         durationMs: Int64,
         retryCount: Int64,
         errorClass: String,
-        fields: String
+        fields: String,
+        selectionDecision: TransportSelectionDecision
     ): Unit {
         try {
             resp.headers.add("x-ignite-observe-duration-ms", "${durationMs}")
             resp.headers.add("x-ignite-observe-retry-count", "${retryCount}")
             resp.headers.add("x-ignite-observe-error-class", if (errorClass.size == 0) { "NONE" } else { errorClass })
             resp.headers.add("x-ignite-observe-fields", if (fields.size == 0) { "-" } else { fields })
+            resp.headers.add("x-ignite-observe-backend-id", selectionDecision.selectedBackend)
+            resp.headers.add("x-ignite-observe-provider-id", selectionDecision.providerId)
+            resp.headers.add("x-ignite-observe-crypto-provider-id", selectionDecision.cryptoProviderId)
+            resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
+            resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
+            resp.headers.add("x-ignite-observe-transport-tags", selectionDecision.observabilityTags)
+            resp.headers.add("x-ignite-observe-selected-reason", selectionDecision.selectedReason)
+            resp.headers.add("x-ignite-observe-fallback-chain", selectionDecision.fallbackChain)
+            resp.headers.add("x-ignite-observe-candidate-order", selectionDecision.candidateOrder)
         } catch (_: Exception) {}
     }
 
-    func buildObservedError(
+    func buildObservedSnapshot(
+        origin: api2.ClientCryptoException,
+        durationMs: Int64,
+        retryCount: Int64,
+        fields: String,
+        phaseHint: String,
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
+    ): ClientObserveSnapshot {
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
+        )
+    }
+
+    func buildObservedSnapshot(
+        origin: security.SecurityException,
+        durationMs: Int64,
+        retryCount: Int64,
+        fields: String,
+        phaseHint: String,
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
+    ): ClientObserveSnapshot {
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
+        )
+    }
+
+    func buildObservedSnapshot(
         origin: Exception,
         durationMs: Int64,
         retryCount: Int64,
         fields: String,
         phaseHint: String,
-        retryable: Bool
-    ): Exception {
-        let errClass = classifyError(origin)
-        let phase = classifyErrorPhase(origin, phaseHint)
-        let causeCode = classifyErrorCauseCode(origin, errClass, phase)
-        let fieldText = if (fields.size == 0) { "-" } else { fields }
-        Exception(
-            "[ignite.client.observe] errorClass=${errClass} phase=${phase} causeCode=${causeCode} retryable=${retryable} retryCount=${retryCount} durationMs=${durationMs} fields=${fieldText}; cause=${origin.message}"
+        canRetryMethod: Bool,
+        selectionDecision: TransportSelectionDecision
+    ): ClientObserveSnapshot {
+        let envelope = buildTransportErrorEnvelope(
+            origin,
+            phaseHint,
+            canRetryMethod,
+            selectionDecision: selectionDecision
+        )
+        let fallbackRecord = buildSuggestedFallbackDecisionRecord(selectionDecision, envelope)
+        buildClientObserveSnapshot(
+            envelope,
+            durationMs,
+            retryCount,
+            fields,
+            selectionDecision: selectionDecision,
+            fallbackRecord: fallbackRecord
         )
     }
 
     func normalizeMethod(method: String): String {
         method.trimAscii().toAsciiUpper()
+    }
+
+    func hasMultipartPayload(): Bool {
+        if (let Some(_fields) <- _multipartFields) {
+            return true
+        }
+        false
     }
 
     func methodCanRetry(method: String, config: ClientRetryConfig): Bool {
@@ -639,11 +784,11 @@ public class RequestBuilder {
         canRetryMethod: Bool,
         attempt: Int64
     ): Bool {
-        let errClass = classifyError(origin)
-        if (errClass == "TLS" || errClass == "CRYPTO") {
+        if (attempt >= config.maxAttempts) {
             return false
         }
-        canRetryMethod && attempt < config.maxAttempts
+        let envelope = buildTransportErrorEnvelope(origin, "", canRetryMethod)
+        envelope.retryable
     }
 
     func applyBackoffDelay(config: ClientRetryConfig, attempt: Int64): Unit {

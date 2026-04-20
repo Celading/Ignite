@@ -54,7 +54,12 @@ public class ClientTimeoutTransportTestSuite {
             @Assert(contains(observedMessages[0], "errorClass=TIMEOUT"), true)
             @Assert(contains(observedMessages[0], "phase=read"), true)
             @Assert(contains(observedMessages[0], "causeCode=read_timeout"), true)
+            @Assert(contains(observedMessages[0], "backendId=stdx-http-client"), true)
+            @Assert(contains(observedMessages[0], "providerId=-"), true)
+            @Assert(contains(observedMessages[0], "publicPath=stable-default"), true)
             @Assert(contains(observedMessages[0], "retryable=false"), true)
+            @Assert(contains(observedMessages[0], "fallbackSuggested=false"), true)
+            @Assert(contains(observedMessages[0], "connectionConsumed=true"), true)
             @Assert(contains(observedMessages[0], "fields=case=transport-read-timeout"), true)
         } finally {
             probeClient.close()

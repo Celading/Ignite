@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.5.68"
+  version = "0.6.41"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -20,8 +20,12 @@
 [package.package-configuration."ignite.security"]
   output-type = "static"
 
+[package.package-configuration."ignite.binary"]
+  output-type = "static"
+
 [dependencies]
   jinguissl = { git = "https://atomgit.com/cinyu/jinguiSSL" }
+  lisi = { path = "../../lisi/lisi" }
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"

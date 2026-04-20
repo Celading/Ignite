@@ -210,6 +210,18 @@ app.use(compressMiddleware())
 
 反向代理入口。当前公开语义里，它还支持可选的 X509 校验入口，适合在服务内做受控的代理转发。
 
+在 `ig0600` 当前实现里，`proxyMiddleware` 已经补上几条更实用的 payload-path 行为：
+
+- 透传并保留原始 query string
+- 过滤 `connection`、`transfer-encoding` 这类 hop-by-hop 头，避免把 HTTP/1.1 语义头硬塞进不合适的链路
+- 大请求体转发时，若请求体尚未被上层读成内存、且 framing 可安全确定，会直接把请求 `InputStream` 转发给上游，而不是默认整包缓冲
+- 大文件或未知长度响应回传时，会直接 relay 上游响应体，不再强制先读完整包
+
+当前仍保留一条保守约束：
+
+- 如果上游目标是 `https`，并且当前请求体长度未知，框架会默认先落临时文件、补 `content-length` 后再转发，避免错误地发送 `Transfer-Encoding` 到潜在 HTTP/2 链路
+- 这条 `https unknown-length -> temp-file fallback` 回退现在已由回归测试锁住；即使上游连接最终失败，也不会悄悄退回到错误的分块转发语义
+
 ## 组合建议
 
 如果你在搭建一个典型 API 服务，可以从下面这条顺序起步：

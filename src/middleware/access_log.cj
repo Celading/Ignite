@@ -49,6 +49,44 @@ public func accessLogMiddleware(config!: AccessLogConfig = AccessLogConfig()): H
             let ua = ctx.header("user-agent") ?? "-"
             log += " | ${ua}"
         }
+        log = appendAccessLogProxyFields(
+            log,
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_MODE_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_RESPONSE_BODY_BYTES_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_MODE_LOCAL_KEY) ?? "",
+            ctx.getLocal(IGNITE_PROXY_DOWNSTREAM_BODY_BYTES_LOCAL_KEY) ?? ""
+        )
         config.output(log)
     }
+}
+
+func appendAccessLogProxyFields(
+    log: String,
+    proxyBodyMode: String,
+    proxyBodyBytes: String,
+    proxyBodyLimitBytes: String,
+    proxyResponseBodyMode: String,
+    proxyResponseBodyBytes: String,
+    proxyDownstreamBodyMode: String,
+    proxyDownstreamBodyBytes: String
+): String {
+    var out = log
+    out = appendAccessLogField(out, "proxyBodyMode", proxyBodyMode)
+    out = appendAccessLogField(out, "proxyBodyBytes", proxyBodyBytes)
+    out = appendAccessLogField(out, "proxyBodyLimitBytes", proxyBodyLimitBytes)
+    out = appendAccessLogField(out, "proxyResponseBodyMode", proxyResponseBodyMode)
+    out = appendAccessLogField(out, "proxyResponseBodyBytes", proxyResponseBodyBytes)
+    out = appendAccessLogField(out, "proxyDownstreamBodyMode", proxyDownstreamBodyMode)
+    out = appendAccessLogField(out, "proxyDownstreamBodyBytes", proxyDownstreamBodyBytes)
+    out
+}
+
+func appendAccessLogField(log: String, key: String, value: String): String {
+    if (value.trimAscii().size == 0) {
+        return log
+    }
+    log + " | ${key}=${value}"
 }

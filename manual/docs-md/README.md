@@ -23,13 +23,12 @@
 
 - 第一次接触 Ignite，想在仓颉里快速跑起第一个服务的人。
 - 正在把样例迁入业务仓，需要一份比根 README 更完整的公开正文的人。
-- 希望结合 `manual/samples/`、`CHANGELOG*` 与 AI 协作说明来稳定推进服务落地的人。
+- 希望结合 `manual/samples/` 与 `CHANGELOG*` 来稳定推进服务落地的人。
 
 ## 与其他入口的边界
 
 - 根 [`../../README.md`](../../README.md)：项目首页门面，只负责讲方向、竞争力与入口分流。
 - [`../samples/README.md`](../samples/README.md)：可运行路径，重点是怎么最快验证能力，而不是解释全部语义。
-- [`../skills/README.md`](../skills/README.md)：AI 协作说明，重点是让助手不要越过公开边界。
 - [`../../CHANGELOG.MD`](../../CHANGELOG.MD)：版本时间线与阶段收口，不替代手册正文。
 - [`../docs-web/README.md`](../docs-web/README.md)：网站文档占位，后续消费本目录内容。
 

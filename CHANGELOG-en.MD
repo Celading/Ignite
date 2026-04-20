@@ -1,5 +1,27 @@
 # Ignite Changelog
 
+## Ignite `0600`
+> Transport decoupling begins, observability keeps tightening
+
+### v0.6.41 `Ignite Now`
+> Route-surface closeout refresh
+
+- `=Fix` The router now lets `"/*"` match the root path `"/"` while still keeping an explicit `"/"` route ahead of the catch-all
+- `+Feature` `App` / `Group` `get/post/put/delete/patch/head/options/all` now accept public `Array<Handler>` route chains, so per-route middleware no longer has to hide behind nested wrapper helpers
+- `+Feature` `App` now exposes `notFound(...)` and `methodNotAllowed(...)` hooks while preserving the global middleware chain, `Allow` header behavior, and `OPTIONS` semantics
+- `+Feature` `Ctx` now exposes `setLocalValue(...)` / `getLocalValue<T>(...)` so typed request locals can coexist with the legacy string-local API
+- `=Docs` Synced `manual/docs-md/api.md`, multilingual README wording, route-facing positioning, and version constants to `0.6.41`
+
+### v0.6.1 `Ignite Now`
+> First working baseline of the `0600` line
+
+- `=Docs` Raise the current active baseline from `0.5.31` to `0.6.1` and mark the start of the `0600` iteration line
+- `+Feature` Client now exposes structured observe snapshots through `onObserve(...)`, with both `JSON` and `log line` forms
+- `+Feature` Client transport touchpoints are retained so the latest transport selection and observe snapshot can be read after a request
+- `+Feature` Server startup observability keeps tightening, making startup failure classification, transport touchpoints, and observe snapshots easier to read as one diagnosis surface
+- `=Fix` The transport error model now includes internal TLS handshake fallback-candidate semantics, while the public HTTPS default path and fallback promises remain unchanged
+- `=Docs` Sync `README.md`, `README-en.md`, `README-ru.md`, Swagger sample metadata, and version constants to `0.6.1`
+
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 
@@ -11,7 +33,7 @@
 - `=Fix` Replace busy-spin retry backoff with `sleep` to avoid needless CPU burn
 - `=Fix` Escape Swagger JSON `title / description / version` fields consistently, including control-character regression coverage
 - `+Tests` Add client timeout / TLS transport coverage, response-hook observe-header assertions, and Swagger / JSON escaping regressions
-- `=Docs` Close out the root README and manual entry surfaces, including the new `docs-md` entry lane and AI-collaboration notes
+- `=Docs` Close out the root README and manual entry surfaces, including the new `docs-md` entry lane and public documentation routing notes
 - `=Chore` Sync package version, framework version constant, Swagger sample metadata, and self-check tests to `0.5.68`
 
 ### v0.5.31 `Ignite Now`
@@ -40,7 +62,7 @@
 
 - `=Docs` Sync the current public baseline version to `0.5.25`
 - `=Docs` Align `README.md`, `README-en.md`, and `README-ru.md` with the current repository layout, dependency syntax, and public entrypoints
-- `=Docs` Keep `manual/` as the public documentation surface and continue excluding legacy `docs/` paths and internal archive material from the public view
+- `=Docs` Keep `manual/` as the public documentation surface and continue tightening the public entrypoint and directory view
 - `=Docs` Keep first-run guidance on a verifiable path instead of presenting this repository itself as a directly runnable `cjpm run` application
 - `=Chore` Sync package version, Swagger sample metadata, and related tests to `0.5.25`
 

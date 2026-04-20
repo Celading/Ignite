@@ -24,13 +24,23 @@ Run commands from the repository root that contains `cjpm.toml`.
    - Encrypted JSON, multipart, observe headers
 5. `manual/samples/ignitekit`
    - Lightweight HTML / CSS composition with `IgniteKit`
+6. `manual/samples/h2wire`
+   - Local H2 on-wire smoke for `ctx.writer()` and large-file return
+   - Includes an isolated TLS guard step so current stdx startup aborts are captured as reproducible blockers instead of only crashing the sample service
+7. `manual/samples/handlefortest`
+   - Multi-process stress probe for `App.handleForTest(...)`
+   - Reuses one shared lease root so cross-process port planning can be exercised from files alone
 
 ## Additional samples
 
 - `manual/samples/dualport`
   - Two listeners in one app process for local verification
 - `manual/samples/files`
-  - `sendFile`, `download`, `sendFileRange`
+  - `sendFile`, `download`, `sendFileRange`, `sendStream`, `saveBodyToFile`
+- `manual/samples/h2wire`
+  - H2 on-wire smoke for repeated writer flush and large-file return
+- `manual/samples/handlefortest`
+  - Multi-process stress probe for file-backed cross-process in-proc port leases
 - `manual/samples/middleware`
   - Middleware composition and request flow
 
@@ -41,6 +51,10 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/api/run.sh
 ./manual/samples/swagger/run.sh
 ./manual/samples/client/run_demo.sh
+./manual/samples/files/run.sh
+./manual/samples/h2wire/probe.sh
+./manual/samples/h2wire/h2spec_smoke.sh
+./manual/samples/handlefortest/probe.sh
 ```
 
 ## Notes

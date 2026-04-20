@@ -238,21 +238,13 @@ public class Router {
         params: HashMap<String, String>
     ): MatchResult {
         if (index >= segments.size) {
-            match (node.getHandler(method)) {
-                case Some((handlers, route)) =>
-                    if (!validateParams(params, route)) {
-                        return MatchResult.notFound()
-                    }
-                    let allHandlers = buildHandlerChain(handlers)
-                    return MatchResult(
-                        matched: true,
-                        params: params,
-                        handlers: allHandlers,
-                        route: route,
-                        allowedMethods: ArrayList<String>()
-                    )
-                case None => return MatchResult.notFound()
+            if (let Some(result) <- buildNodeMatchResult(node, method, params)) {
+                return result
             }
+            if (let Some(result) <- buildCatchAllMatchResult(node, segments, index, method, params)) {
+                return result
+            }
+            return MatchResult.notFound()
         }
 
         let seg = segments[index]
@@ -278,36 +270,79 @@ public class Router {
             params.remove(paramChild.paramName)
         }
 
-        if (let Some(catchAllChild) <- node.catchAllChild) {
-            var remaining = ""
-            for (i in index..segments.size) {
-                if (i > index) {
-                    remaining += "/"
+        if (let Some(result) <- buildCatchAllMatchResult(node, segments, index, method, params)) {
+            return result
+        }
+
+        MatchResult.notFound()
+    }
+
+    func buildNodeMatchResult(
+        node: TrieNode,
+        method: String,
+        params: HashMap<String, String>
+    ): ?MatchResult {
+        match (node.getHandler(method)) {
+            case Some((handlers, route)) =>
+                if (!validateParams(params, route)) {
+                    return None
                 }
-                remaining += segments[i]
-            }
+                let allHandlers = buildHandlerChain(handlers)
+                Some(MatchResult(
+                    matched: true,
+                    params: params,
+                    handlers: allHandlers,
+                    route: route,
+                    allowedMethods: ArrayList<String>()
+                ))
+            case None => None
+        }
+    }
+
+    func buildCatchAllMatchResult(
+        node: TrieNode,
+        segments: ArrayList<String>,
+        index: Int64,
+        method: String,
+        params: HashMap<String, String>
+    ): ?MatchResult {
+        if (let Some(catchAllChild) <- node.catchAllChild) {
+            let remaining = joinRemainingSegments(segments, index)
             params.add("*", remaining)
             match (catchAllChild.getHandler(method)) {
                 case Some((handlers, route)) =>
                     if (!validateParams(params, route)) {
-                        params.remove("*")
-                        return MatchResult.notFound()
+                        let _ = params.remove("*")
+                        return None
                     }
                     let allHandlers = buildHandlerChain(handlers)
-                    return MatchResult(
+                    return Some(MatchResult(
                         matched: true,
                         params: params,
                         handlers: allHandlers,
                         route: route,
                         allowedMethods: ArrayList<String>()
-                    )
+                    ))
                 case None =>
-                    params.remove("*")
-                    return MatchResult.notFound()
+                    let _ = params.remove("*")
+                    return None
             }
         }
+        None
+    }
 
-        MatchResult.notFound()
+    func joinRemainingSegments(segments: ArrayList<String>, index: Int64): String {
+        if (index >= segments.size) {
+            return ""
+        }
+        var remaining = ""
+        for (i in index..segments.size) {
+            if (i > index) {
+                remaining += "/"
+            }
+            remaining += segments[i]
+        }
+        remaining
     }
 
     func allowedMethodsForPath(normalizedPath: String): ArrayList<String> {

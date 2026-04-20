@@ -2,15 +2,19 @@ package ignite
 
 import std.collection.ArrayList
 import std.env.*
-import std.fs.{exists, FileInfo}
+import std.fs.{Directory, exists, File, FileInfo, OpenMode, Path, removeIfExists}
 import std.io.InputStream
-import std.time.DateTime
+import std.sync.Mutex
 import stdx.net.http.{
     HttpContext, HttpRequestHandler,
     HttpRequestDistributor, HttpRequestBuilder,
-    HttpHeaders, ClientBuilder
+    HttpHeaders, ClientBuilder, Client
 }
 import ignite.api2
+
+let _inprocTestPortPlannerMutex = Mutex()
+let _reservedInprocTestPorts = ArrayList<UInt16>()
+var _inprocTestPortPlannerNonce: Int64 = 0
 
 public class AppTestResponse {
     public let status: UInt16
@@ -35,9 +39,14 @@ public class App {
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
+    var _startupObserveHooks: ArrayList<ServerStartupObserveHook> = ArrayList<ServerStartupObserveHook>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
+    var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
+    var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
+    var _notFoundHandler: ?Handler = None
+    var _methodNotAllowedHandler: ?Handler = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -51,44 +60,88 @@ public class App {
     // ── HTTP method routes ──
 
     public func get(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("GET", path, wrapSingle(handler), option: option)
+        registerRoute("GET", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func get(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("GET", path, wrapMany(handlers), option)
         this
     }
 
     public func post(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("POST", path, wrapSingle(handler), option: option)
+        registerRoute("POST", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func post(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("POST", path, wrapMany(handlers), option)
         this
     }
 
     public func put(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("PUT", path, wrapSingle(handler), option: option)
+        registerRoute("PUT", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func put(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("PUT", path, wrapMany(handlers), option)
         this
     }
 
     public func delete(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("DELETE", path, wrapSingle(handler), option: option)
+        registerRoute("DELETE", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func delete(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("DELETE", path, wrapMany(handlers), option)
         this
     }
 
     public func patch(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("PATCH", path, wrapSingle(handler), option: option)
+        registerRoute("PATCH", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func patch(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("PATCH", path, wrapMany(handlers), option)
         this
     }
 
     public func head(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("HEAD", path, wrapSingle(handler), option: option)
+        registerRoute("HEAD", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func head(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("HEAD", path, wrapMany(handlers), option)
         this
     }
 
     public func options(path: String, handler: Handler, option!: ?RouteOption = None): App {
-        router.addRoute("OPTIONS", path, wrapSingle(handler), option: option)
+        registerRoute("OPTIONS", path, wrapSingle(handler), option)
+        this
+    }
+
+    public func options(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        registerRoute("OPTIONS", path, wrapMany(handlers), option)
         this
     }
 
     public func all(path: String, handler: Handler, option!: ?RouteOption = None): App {
         let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
         for (method in methods) {
-            router.addRoute(method, path, wrapSingle(handler), option: option)
+            registerRoute(method, path, wrapSingle(handler), option)
+        }
+        this
+    }
+
+    public func all(path: String, handlers: Array<Handler>, option!: ?RouteOption = None): App {
+        let methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+        let wrapped = wrapMany(handlers)
+        for (method in methods) {
+            registerRoute(method, path, cloneHandlers(wrapped), option)
         }
         this
     }
@@ -196,6 +249,16 @@ public class App {
         Group(this, prefix)
     }
 
+    public func notFound(handler: Handler): App {
+        _notFoundHandler = Some(handler)
+        this
+    }
+
+    public func methodNotAllowed(handler: Handler): App {
+        _methodNotAllowedHandler = Some(handler)
+        this
+    }
+
     // ── Route management ──
 
     public func removeRoute(method: String, path: String): Bool {
@@ -268,6 +331,11 @@ public class App {
         this
     }
 
+    public func onStartupObserve(hook: ServerStartupObserveHook): App {
+        _startupObserveHooks.add(hook)
+        this
+    }
+
     public func serverEngine(engine: ServerEngine): App {
         _engine = engine
         this
@@ -277,10 +345,19 @@ public class App {
         serverEngine(engine)
     }
 
+    public func lastServerTransportTouchpoint(): ?ServerTransportTouchpoint {
+        _lastServerTransportTouchpoint
+    }
+
+    public func lastServerStartupObserveEvent(): ?ServerStartupObserveEvent {
+        _lastServerStartupObserveEvent
+    }
+
     // ── Server lifecycle ──
 
     public func listen(addr: String, port: UInt16): Unit {
         setupSwaggerRoute()
+        resetStartupObserveState()
 
         if (config.enablePrintRoutes) {
             router.printRoutes()
@@ -298,6 +375,8 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
+        let transportTouchpoint = buildServerTransportTouchpoint(addr, port, hasTls)
+        _lastServerTransportTouchpoint = Some(transportTouchpoint)
 
         let option = ServerEngineListenOption(
             addr,
@@ -308,7 +387,8 @@ public class App {
             config.bodyLimit,
             config.tlsCertFile,
             config.tlsKeyFile,
-            config.enableTlsPrecheck
+            config.enableTlsPrecheck,
+            transportTouchpoint: transportTouchpoint
         )
         try {
             _engine.listen(
@@ -331,22 +411,63 @@ public class App {
                         config.kmode,
                         config.enableBannerSignature
                     )
+                    notifyStartupObserve(
+                        ServerStartupObserveEvent(
+                            "ready",
+                            addr,
+                            port,
+                            scheme,
+                            tlsEnabled,
+                            transportTouchpoint: Some(transportTouchpoint)
+                        )
+                    )
                 }
             )
         } catch (e: api2.TlsConfigLoadException) {
-            let tlsStage = tlsStageFromSourceCode(e.sourceCode)
-            let tlsCode = e.code.toString()
-            let igniteCode = api2.tlsToIgniteErrorCode(e.code)
-            let hint = tlsHintForCode(e.code)
+            let snapshot = api2.tlsStartupFailureSnapshot(e)
             println("[Ignite] Failed to start server on ${addr}:${port} - ${e.message}")
-            println("[Ignite][TLS] tls_stage=${tlsStage} tls_error_code=${tlsCode} ignite_error_code=${igniteCode} source=${e.sourceCode}")
-            println("[Ignite][TLS] hint=${hint}")
+            println("[Ignite][TLS] tls_stage=${snapshot.stage} tls_error_code=${snapshot.tlsErrorCode} ignite_error_code=${snapshot.igniteErrorCode} source=${snapshot.sourceCode}")
+            println("[Ignite][TLS] hint=${snapshot.hint}")
+            notifyStartupObserve(
+                ServerStartupObserveEvent(
+                    "failed",
+                    addr,
+                    port,
+                    scheme,
+                    tlsEnabled,
+                    transportTouchpoint: Some(transportTouchpoint),
+                    failureStage: snapshot.stage,
+                    failureCode: snapshot.tlsErrorCode,
+                    igniteErrorCode: snapshot.igniteErrorCode,
+                    failureSource: snapshot.sourceCode,
+                    hint: snapshot.hint,
+                    message: e.message
+                )
+            )
         } catch (e: Exception) {
             let message = e.message
+            let snapshot = api2.serverStartupFailureSnapshot(message)
             println("[Ignite] Failed to start server on ${addr}:${port} - ${message}")
-            if (shouldPrintPortInUseHint(message)) {
+            println("[Ignite][Listen] stage=${snapshot.stage} listen_error_code=${snapshot.listenErrorCode} ignite_error_code=${snapshot.igniteErrorCode}")
+            println("[Ignite][Listen] hint=${snapshot.hint}")
+            if (snapshot.listenErrorCode == "ADDRESS_IN_USE") {
                 println("[Ignite] Hint: port ${port} may already be in use. Try a different port or kill the existing process.")
             }
+            notifyStartupObserve(
+                ServerStartupObserveEvent(
+                    "failed",
+                    addr,
+                    port,
+                    scheme,
+                    tlsEnabled,
+                    transportTouchpoint: Some(transportTouchpoint),
+                    failureStage: snapshot.stage,
+                    failureCode: snapshot.listenErrorCode,
+                    igniteErrorCode: snapshot.igniteErrorCode,
+                    hint: snapshot.hint,
+                    message: message
+                )
+            )
         }
     }
 
@@ -359,55 +480,41 @@ public class App {
     ): AppTestResponse {
         setupSwaggerRoute()
         let host = "127.0.0.1"
-        let port = chooseInprocTestPort(method, path)
-        let serverFuture = spawn {
-            this.listen(host, port)
-        }
-
-        let client = ClientBuilder()
-            .readTimeout(Duration.second * 1)
-            .writeTimeout(Duration.second * 1)
-            .poolSize(2)
-            .build()
-
+        let claimedPorts = claimInprocTestPorts(method, path)
         try {
-            var attempt: Int64 = 0
-            while (attempt < 20) {
+            for (port in claimedPorts) {
+                resetStartupObserveState()
+                let serverFuture = spawn {
+                    this.listen(host, port)
+                }
+                let client = ClientBuilder()
+                    .readTimeout(Duration.second * 1)
+                    .writeTimeout(Duration.second * 1)
+                    .poolSize(2)
+                    .build()
                 try {
-                    let url = normalizeTestUrl(path, host, port)
-                    let requestBuilder = HttpRequestBuilder()
-                        .method(normalizeHttpMethod(method))
-                        .url(url)
-                    for ((k, v) in headers) {
-                        requestBuilder.header(k, v)
+                    if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
+                        if (event.phase == "failed") {
+                            if (event.failureCode == "ADDRESS_IN_USE") {
+                                continue
+                            }
+                            throw Exception(
+                                "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
+                            )
+                        }
                     }
-                    if (body.size > 0) {
-                        requestBuilder.body(body)
-                    }
-
-                    let response = client.send(requestBuilder.build())
-                    let responseBody = readInputStreamUtf8(response.body)
-                    return AppTestResponse(response.status, responseBody, response.headers)
-                } catch (_: Exception) {
-                    if (attempt == 19) {
-                        throw Exception("handleForTest failed to connect path=${path}")
-                    }
-                    sleep(Duration.millisecond * 50)
-                    attempt += 1
+                    return sendHandleForTestRequest(client, method, path, host, port, body, headers)
+                } finally {
+                    try {
+                        client.close()
+                    } catch (_: Exception) { }
+                    shutdownHandleForTestServer(_engine, serverFuture)
                 }
             }
         } finally {
-            try {
-                client.close()
-            } catch (_: Exception) { }
-            _engine.shutdown()
-            try {
-                let _ = serverFuture.get(Duration.second * 1)
-            } catch (_: Exception) {
-                serverFuture.cancel()
-            }
+            releaseInprocTestPorts(claimedPorts)
         }
-        throw Exception("handleForTest unreachable")
+        throw Exception("handleForTest failed to connect path=${path}")
     }
 
     public func shutdown(): Unit {
@@ -423,6 +530,45 @@ public class App {
         let list = ArrayList<Handler>()
         list.add(handler)
         list
+    }
+
+    func wrapMany(handlers: Array<Handler>): ArrayList<Handler> {
+        if (handlers.size == 0) {
+            throw Exception("[Ignite] Route handlers array must contain at least one handler.")
+        }
+        let list = ArrayList<Handler>()
+        for (handler in handlers) {
+            list.add(handler)
+        }
+        list
+    }
+
+    func cloneHandlers(handlers: ArrayList<Handler>): ArrayList<Handler> {
+        let list = ArrayList<Handler>()
+        for (handler in handlers) {
+            list.add(handler)
+        }
+        list
+    }
+
+    func registerRoute(
+        method: String,
+        path: String,
+        handlers: ArrayList<Handler>,
+        option: ?RouteOption
+    ): Unit {
+        router.addRoute(method, path, handlers, option: option)
+    }
+
+    func notifyStartupObserve(event: ServerStartupObserveEvent): Unit {
+        _lastServerStartupObserveEvent = Some(event)
+        for (hook in _startupObserveHooks) {
+            hook(event)
+        }
+    }
+
+    func resetStartupObserveState(): Unit {
+        _lastServerStartupObserveEvent = None
     }
 
     func setupSwaggerRoute(): Unit {
@@ -591,9 +737,15 @@ public class App {
                 ctx.setHeader("allow", allowHeader)
                 if (requestMethod == "OPTIONS") {
                     let _ = ctx.noContent()
+                } else if (let Some(handler) <- _methodNotAllowedHandler) {
+                    let _ = ctx.status(405)
+                    handler(ctx)
                 } else {
                     let _ = ctx.status(405).sendString("Method Not Allowed")
                 }
+            } else if (let Some(handler) <- _notFoundHandler) {
+                let _ = ctx.status(404)
+                handler(ctx)
             } else {
                 let _ = ctx.status(404).sendString("Cannot ${requestMethod} ${requestPath}")
             }
@@ -850,38 +1002,291 @@ func readInputStreamUtf8(stream: InputStream): String {
     String.fromUtf8(out.toArray())
 }
 
-func chooseInprocTestPort(method: String, path: String): UInt16 {
-    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-    let seed = nowMs + method.size + path.size
-    let raw = 42000 + (seed % 10000)
+func sendHandleForTestRequest(
+    client: Client,
+    method: String,
+    path: String,
+    host: String,
+    port: UInt16,
+    body: String,
+    headers: Array<(String, String)>
+): AppTestResponse {
+    var attempt: Int64 = 0
+    while (attempt < 20) {
+        try {
+            let url = normalizeTestUrl(path, host, port)
+            let requestBuilder = HttpRequestBuilder()
+                .method(normalizeHttpMethod(method))
+                .url(url)
+            for ((k, v) in headers) {
+                requestBuilder.header(k, v)
+            }
+            if (body.size > 0) {
+                requestBuilder.body(body)
+            }
+
+            let response = client.send(requestBuilder.build())
+            let responseBody = readInputStreamUtf8(response.body)
+            return AppTestResponse(response.status, responseBody, response.headers)
+        } catch (_: Exception) {
+            if (attempt == 19) {
+                throw Exception("handleForTest failed to connect path=${path} port=${port}")
+            }
+            sleep(Duration.millisecond * 50)
+            attempt += 1
+        }
+    }
+    throw Exception("handleForTest failed to connect path=${path} port=${port}")
+}
+
+func waitForInprocStartupObserve(app: App, port: UInt16): ?ServerStartupObserveEvent {
+    var attempt: Int64 = 0
+    while (attempt < 4) {
+        match (app.lastServerStartupObserveEvent()) {
+            case Some(event) =>
+                if (event.port == port) {
+                    return Some(event)
+                }
+            case None => ()
+        }
+        sleep(Duration.millisecond * 10)
+        attempt += 1
+    }
+    None
+}
+
+func shutdownHandleForTestServer(engine: ServerEngine, serverFuture: Future<Unit>): Unit {
+    engine.shutdown()
+    try {
+        let _ = serverFuture.get(Duration.millisecond * 100)
+    } catch (_: Exception) {
+        serverFuture.cancel()
+    }
+}
+
+func claimInprocTestPorts(method: String, path: String): Array<UInt16> {
+    synchronized(_inprocTestPortPlannerMutex) {
+        let nonce = _inprocTestPortPlannerNonce
+        _inprocTestPortPlannerNonce += 1
+        claimInprocTestPortsForPlannerNonce(method, path, nonce)
+    }
+}
+
+func claimInprocTestPortsForPlannerNonce(
+    method: String,
+    path: String,
+    nonce: Int64,
+    leaseRoot!: String = ""
+): Array<UInt16> {
+    let seed = buildInprocTestPortSeed(method, path, nonce)
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    let claimed = ArrayList<UInt16>()
+    try {
+        var step: Int64 = 0
+        while (claimed.size < 8 && step < 10000) {
+            let port = buildInprocTestPortCandidate(seed, step)
+            step += 1
+            if (containsInprocPort(_reservedInprocTestPorts, port) || containsInprocPort(claimed, port)) {
+                continue
+            }
+            if (!tryClaimCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)) {
+                continue
+            }
+            claimed.add(port)
+            _reservedInprocTestPorts.add(port)
+        }
+        if (claimed.size == 8) {
+            return claimed.toArray()
+        }
+        throw Exception("handleForTest failed to claim enough in-proc test ports")
+    } catch (e: Exception) {
+        for (port in claimed) {
+            removeInprocPort(_reservedInprocTestPorts, port)
+            releaseCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)
+        }
+        throw e
+    }
+}
+
+func previewInprocTestPortCandidates(
+    method: String,
+    path: String,
+    nonce: Int64,
+    count!: Int64 = 8
+): Array<UInt16> {
+    if (count <= 0) {
+        return []
+    }
+    let seed = buildInprocTestPortSeed(method, path, nonce)
+    let candidates = ArrayList<UInt16>()
+    let wanted = if (count < 10000) { count } else { 10000 }
+    var step: Int64 = 0
+    while (candidates.size < wanted && step < 10000) {
+        candidates.add(buildInprocTestPortCandidate(seed, step))
+        step += 1
+    }
+    candidates.toArray()
+}
+
+func buildInprocTestPortCandidate(seed: Int64, step: Int64): UInt16 {
+    let raw = 42000 + positiveInprocPortModulo(seed + (step * 7919), 10000)
     UInt16(raw)
 }
 
-func tlsStageFromSourceCode(sourceCode: String): String {
-    let normalized = sourceCode.trimAscii().toAsciiUpper()
-    if (normalized.startsWith("STDX_")) {
-        return "stdx_tls_build"
+func resolveInprocTestPortLeaseRoot(rootOverride: String): String {
+    let trimmedOverride = rootOverride.trimAscii()
+    if (trimmedOverride.size > 0) {
+        return trimmedOverride
     }
-    "jinguiSSL_precheck"
+    if (let Some(raw) <- getVariable("IGNITE_INPROC_TEST_PORT_LEASE_DIR")) {
+        let trimmed = raw.trimAscii()
+        if (trimmed.size > 0) {
+            return trimmed
+        }
+    }
+    "/tmp/ignite_handle_for_test_port_leases"
 }
 
-func tlsHintForCode(code: api2.TlsConfigLoadErrorCode): String {
-    match (code) {
-        case api2.TlsConfigLoadErrorCode.BadInput =>
-            "check cert/key pem format and ALPN list (h2,http/1.1)"
-        case api2.TlsConfigLoadErrorCode.VerifyFailed =>
-            "check certificate chain and private key match"
-        case api2.TlsConfigLoadErrorCode.KeyNotFound =>
-            "check key source and key id mapping"
-        case api2.TlsConfigLoadErrorCode.CryptoUnavailable =>
-            "check crypto runtime and dependency availability"
-        case api2.TlsConfigLoadErrorCode.ComplianceRejected =>
-            "check compliance policy and allowed algorithms"
-        case api2.TlsConfigLoadErrorCode.Unsupported =>
-            "check unsupported tls option or algorithm setting"
-        case api2.TlsConfigLoadErrorCode.InternalError =>
-            "check stdx tls build path and runtime exception details"
+func tryClaimCrossProcessInprocTestPortLease(
+    port: UInt16,
+    leaseRoot!: String = ""
+): Bool {
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    ensureInprocTestPortLeaseRootExists(resolvedLeaseRoot)
+    let leasePath = buildInprocTestPortLeasePath(port, resolvedLeaseRoot)
+    try {
+        Directory.create(leasePath)
+        writeInprocTestPortLeaseOwner(leasePath, port)
+        return true
+    } catch (e: Exception) {
+        if (exists(leasePath)) {
+            return false
+        }
+        throw e
     }
+}
+
+func releaseCrossProcessInprocTestPortLease(
+    port: UInt16,
+    leaseRoot!: String = ""
+): Unit {
+    let leasePath = buildInprocTestPortLeasePath(port, resolveInprocTestPortLeaseRoot(leaseRoot))
+    try {
+        removeIfExists(leasePath, recursive: true)
+    } catch (_: Exception) { }
+}
+
+func buildInprocTestPortLeasePath(port: UInt16, leaseRoot: String): String {
+    Path(leaseRoot).join("port-${port}").toString()
+}
+
+func ensureInprocTestPortLeaseRootExists(root: String): Unit {
+    var attempt: Int64 = 0
+    while (attempt < 4) {
+        try {
+            Directory.create(root, recursive: true)
+            return
+        } catch (e: Exception) {
+            if (exists(root)) {
+                return
+            }
+            if (attempt == 3) {
+                throw e
+            }
+            sleep(Duration.millisecond * 5)
+            attempt += 1
+        }
+    }
+}
+
+func writeInprocTestPortLeaseOwner(leasePath: String, port: UInt16): Unit {
+    let ownerPath = Path(leasePath).join("owner.txt").toString()
+    var pidText = "0"
+    try {
+        pidText = "${getProcessId()}"
+    } catch (_: Exception) { }
+    let file = File(ownerPath, OpenMode.Write)
+    try {
+        file.write("pid=${pidText};port=${port}\n".toArray())
+    } catch (e: Exception) {
+        try {
+            file.close()
+        } catch (_: Exception) { }
+        try {
+            removeIfExists(leasePath, recursive: true)
+        } catch (_: Exception) { }
+        throw e
+    }
+    file.close()
+}
+
+func releaseClaimedInprocTestPorts(
+    ports: Array<UInt16>,
+    leaseRoot!: String = ""
+): Unit {
+    let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
+    for (port in ports) {
+        removeInprocPort(_reservedInprocTestPorts, port)
+        releaseCrossProcessInprocTestPortLease(port, leaseRoot: resolvedLeaseRoot)
+    }
+}
+
+func releaseInprocTestPorts(ports: Array<UInt16>): Unit {
+    synchronized(_inprocTestPortPlannerMutex) {
+        releaseClaimedInprocTestPorts(ports)
+    }
+}
+
+func buildInprocTestPortSeed(method: String, path: String, nonce: Int64): Int64 {
+    stableInprocTestPortHash(method, path) +
+        (stableInprocTestProcessHash() * 31) +
+        (nonce * 127)
+}
+
+func stableInprocTestProcessHash(): Int64 {
+    var pidText = "0"
+    try {
+        pidText = "${getProcessId()}"
+    } catch (_: Exception) { }
+    stableInprocTestPortHash("PID", pidText)
+}
+
+func positiveInprocPortModulo(value: Int64, modulo: Int64): Int64 {
+    let raw = value % modulo
+    if (raw < 0) {
+        return raw + modulo
+    }
+    raw
+}
+
+func containsInprocPort(ports: ArrayList<UInt16>, target: UInt16): Bool {
+    for (port in ports) {
+        if (port == target) {
+            return true
+        }
+    }
+    false
+}
+
+func removeInprocPort(ports: ArrayList<UInt16>, target: UInt16): Bool {
+    var i: Int64 = 0
+    while (i < ports.size) {
+        if (ports[i] == target) {
+            let _ = ports.remove(at: i)
+            return true
+        }
+        i += 1
+    }
+    false
+}
+
+func stableInprocTestPortHash(method: String, path: String): Int64 {
+    let text = normalizeHttpMethod(method) + ":" + path.trimAscii()
+    var hash: Int64 = 17
+    for (b in text.toArray()) {
+        hash = ((hash * 131) + Int64(b)) % 10000
+    }
+    hash
 }
 
 class LambdaHttpHandler <: HttpRequestHandler {
@@ -1166,16 +1571,4 @@ func printBanner(
         println(" [Ignite][Net] ${message}")
     }
     println("")
-}
-
-func shouldPrintPortInUseHint(message: String): Bool {
-    let lower = message.trimAscii().toAsciiLower()
-    if (lower.contains("address already in use")) { return true }
-    if (lower.contains("already in use")) { return true }
-    if (lower.contains("eaddrinuse")) { return true }
-    if (lower.contains("port already in use")) { return true }
-    if (lower.contains("port in use")) { return true }
-    if (message.contains("端口已被占用")) { return true }
-    if (message.contains("地址已在使用")) { return true }
-    false
 }
