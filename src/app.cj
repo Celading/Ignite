@@ -482,37 +482,34 @@ public class App {
         let host = "127.0.0.1"
         let claimedPorts = claimInprocTestPorts(method, path)
         try {
-            let client = ClientBuilder()
-                .readTimeout(Duration.second * 1)
-                .writeTimeout(Duration.second * 1)
-                .poolSize(2)
-                .build()
-            try {
-                for (port in claimedPorts) {
-                    resetStartupObserveState()
-                    let serverFuture = spawn {
-                        this.listen(host, port)
-                    }
-                    try {
-                        if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
-                            if (event.phase == "failed") {
-                                if (event.failureCode == "ADDRESS_IN_USE") {
-                                    continue
-                                }
-                                throw Exception(
-                                    "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
-                                )
-                            }
-                        }
-                        return sendHandleForTestRequest(client, method, path, host, port, body, headers)
-                    } finally {
-                        shutdownHandleForTestServer(_engine, serverFuture)
-                    }
+            for (port in claimedPorts) {
+                resetStartupObserveState()
+                let serverFuture = spawn {
+                    this.listen(host, port)
                 }
-            } finally {
+                let client = ClientBuilder()
+                    .readTimeout(Duration.second * 1)
+                    .writeTimeout(Duration.second * 1)
+                    .poolSize(2)
+                    .build()
                 try {
-                    client.close()
-                } catch (_: Exception) { }
+                    if (let Some(event) <- waitForInprocStartupObserve(this, port)) {
+                        if (event.phase == "failed") {
+                            if (event.failureCode == "ADDRESS_IN_USE") {
+                                continue
+                            }
+                            throw Exception(
+                                "handleForTest failed to start path=${path} port=${port} code=${event.failureCode}"
+                            )
+                        }
+                    }
+                    return sendHandleForTestRequest(client, method, path, host, port, body, headers)
+                } finally {
+                    try {
+                        client.close()
+                    } catch (_: Exception) { }
+                    shutdownHandleForTestServer(_engine, serverFuture)
+                }
             }
         } finally {
             releaseInprocTestPorts(claimedPorts)
@@ -1044,7 +1041,7 @@ func sendHandleForTestRequest(
 
 func waitForInprocStartupObserve(app: App, port: UInt16): ?ServerStartupObserveEvent {
     var attempt: Int64 = 0
-    while (attempt < 20) {
+    while (attempt < 4) {
         match (app.lastServerStartupObserveEvent()) {
             case Some(event) =>
                 if (event.port == port) {
@@ -1052,7 +1049,7 @@ func waitForInprocStartupObserve(app: App, port: UInt16): ?ServerStartupObserveE
                 }
             case None => ()
         }
-        sleep(Duration.millisecond * 25)
+        sleep(Duration.millisecond * 10)
         attempt += 1
     }
     None
@@ -1061,7 +1058,7 @@ func waitForInprocStartupObserve(app: App, port: UInt16): ?ServerStartupObserveE
 func shutdownHandleForTestServer(engine: ServerEngine, serverFuture: Future<Unit>): Unit {
     engine.shutdown()
     try {
-        let _ = serverFuture.get(Duration.second * 1)
+        let _ = serverFuture.get(Duration.millisecond * 100)
     } catch (_: Exception) {
         serverFuture.cancel()
     }
@@ -1081,11 +1078,14 @@ func claimInprocTestPortsForPlannerNonce(
     nonce: Int64,
     leaseRoot!: String = ""
 ): Array<UInt16> {
-    let candidates = previewInprocTestPortCandidates(method, path, nonce, count: 10000)
+    let seed = buildInprocTestPortSeed(method, path, nonce)
     let resolvedLeaseRoot = resolveInprocTestPortLeaseRoot(leaseRoot)
     let claimed = ArrayList<UInt16>()
     try {
-        for (port in candidates) {
+        var step: Int64 = 0
+        while (claimed.size < 8 && step < 10000) {
+            let port = buildInprocTestPortCandidate(seed, step)
+            step += 1
             if (containsInprocPort(_reservedInprocTestPorts, port) || containsInprocPort(claimed, port)) {
                 continue
             }
@@ -1094,9 +1094,9 @@ func claimInprocTestPortsForPlannerNonce(
             }
             claimed.add(port)
             _reservedInprocTestPorts.add(port)
-            if (claimed.size == 8) {
-                return claimed.toArray()
-            }
+        }
+        if (claimed.size == 8) {
+            return claimed.toArray()
         }
         throw Exception("handleForTest failed to claim enough in-proc test ports")
     } catch (e: Exception) {
@@ -1119,18 +1119,18 @@ func previewInprocTestPortCandidates(
     }
     let seed = buildInprocTestPortSeed(method, path, nonce)
     let candidates = ArrayList<UInt16>()
-    let offsetRange: Int64 = 10000
-    let stride: Int64 = 7919
+    let wanted = if (count < 10000) { count } else { 10000 }
     var step: Int64 = 0
-    while (candidates.size < count && step < offsetRange) {
-        let raw = 42000 + positiveInprocPortModulo(seed + (step * stride), offsetRange)
-        let port = UInt16(raw)
-        if (!containsInprocPort(candidates, port)) {
-            candidates.add(port)
-        }
+    while (candidates.size < wanted && step < 10000) {
+        candidates.add(buildInprocTestPortCandidate(seed, step))
         step += 1
     }
     candidates.toArray()
+}
+
+func buildInprocTestPortCandidate(seed: Int64, step: Int64): UInt16 {
+    let raw = 42000 + positiveInprocPortModulo(seed + (step * 7919), 10000)
+    UInt16(raw)
 }
 
 func resolveInprocTestPortLeaseRoot(rootOverride: String): String {
