@@ -36,6 +36,27 @@ public class ServerEngineAbstractionTestSuite {
             case None => @Fail("expected app transport touchpoint snapshot")
         }
     }
+
+    @TestCase
+    public func testInjectedServerEngineTracksLatestListenAddressAcrossCalls(): Unit {
+        let app = App(config: Config(enableTlsPrecheck: false))
+        let engine = SpyServerEngine()
+        app.serverEngine(engine)
+
+        app.listen("127.0.0.1", UInt16(38118))
+        app.listen("0.0.0.0", UInt16(38119))
+
+        @Assert(engine.listenCalled, true)
+        @Assert(engine.lastAddr, "0.0.0.0")
+        @Assert(engine.lastPort, UInt16(38119))
+        match (app.lastServerStartupObserveEvent()) {
+            case Some(event) =>
+                @Assert(event.phase, "ready")
+                @Assert(event.addr, "0.0.0.0")
+                @Assert(event.port, UInt16(38119))
+            case None => @Fail("expected latest startup observe event")
+        }
+    }
 }
 
 class SpyServerEngine <: ServerEngine {

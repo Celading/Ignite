@@ -119,7 +119,7 @@ func serverStartupHintForCode(code: ServerStartupErrorCode): String {
         case ServerStartupErrorCode.PermissionDenied =>
             "check listen port permissions, capability, sandbox policy, or privileged port usage"
         case ServerStartupErrorCode.AddressUnavailable =>
-            "check the bind address, local interface status, and whether the requested host exists on this node"
+            "check the bind address, local interface status, and whether the requested host still exists on this node after IP changes; use 0.0.0.0 when you need a wildcard bind"
         case ServerStartupErrorCode.BadInput =>
             "check addr/port input, bind arguments, and startup parameter normalization"
         case ServerStartupErrorCode.InternalError =>

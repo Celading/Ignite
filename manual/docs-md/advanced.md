@@ -44,9 +44,15 @@ app.ws("/chat", { conn =>
 app.get("/events", { ctx =>
     let sse = ctx.sse()
     sse.sendRetry(3000)
+    sse.sendHeartbeat("ready")
     sse.sendEvent(#"{"count":1}"#, event: "counter", id: "1")
 })
 ```
+
+当前这条公开面要诚实说明两点：
+
+- Ignite 现在会给 SSE 路径补 `X-Accel-Buffering: no`，并提供最小 heartbeat comment helper，避免常见代理缓冲误导。
+- 但 `close()` / `flush()` 这类更强的生命周期控制，目前还受 `stdx.net.http.HttpResponseWriter` 已公开 surface 限制，不能在 `0600` 里假装已经补齐。
 
 ## 流式响应
 
@@ -67,6 +73,7 @@ app.get("/stream", { ctx =>
 - HTTP/1.1 下，这条路径可以继续表现为 chunked 语义。
 - HTTP/2 下，不能再发 `Transfer-Encoding`；Ignite 现在只在非 H2 路径补这个头。
 - 当前底层 `stdx.net.http.HttpResponseWriter` 的本地 contract 写明：HTTP/2 下每次 `write(...)` 会把数据封装并发出。但这仍应和真实 H2 on-wire 验证分开表述，不要把“协议上成立”直接写成“本仓所有集成路径都已完全验透”。
+- 当前工作区的本地 H2 on-wire closeout 仍受 `stdx.crypto.keys.GeneralPrivateKey.decodeFromPem(...)` 所在 `key_decode` 路线阻塞；`manual/samples/h2wire/` 的价值在于把这个 blocker 收成可复验样例，而不是提前宣称 H2 已 fully closed。
 
 ## 静态文件
 

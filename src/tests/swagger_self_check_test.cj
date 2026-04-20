@@ -77,6 +77,45 @@ public class SwaggerSelfCheckTestSuite {
     }
 
     @TestCase
+    public func testSwaggerJsonReflectsUpdatedSwaggerInfoAfterRouteSetup(): Unit {
+        let app = App(config: Config(enableSwagger: true))
+
+        let first = app.handleForTest("GET", "/swagger/json")
+        @Assert(first.status, UInt16(200))
+        @Assert(contains(first.body, #""title": "Ignite API""#), true)
+
+        app.swagger(SwaggerInfo(
+            title: "Renamed Swagger Surface",
+            description: "updated after route setup",
+            version: "0.6.42"
+        ))
+
+        let second = app.handleForTest("GET", "/swagger/json")
+        @Assert(second.status, UInt16(200))
+        @Assert(contains(second.body, #""title": "Renamed Swagger Surface""#), true)
+        @Assert(contains(second.body, #""version": "0.6.42""#), true)
+    }
+
+    @TestCase
+    public func testSwaggerJsonRefreshesAfterRouteRename(): Unit {
+        let app = App(config: Config(enableSwagger: true))
+        app.get("/users/:id", { ctx =>
+            _ = ctx.sendString(ctx.params("id"))
+        })
+
+        let first = app.handleForTest("GET", "/swagger/json")
+        @Assert(first.status, UInt16(200))
+        @Assert(contains(first.body, #""operationId": "user.detail""#), false)
+
+        let renamed = app.nameRoute("GET", "/users/:id", "user.detail")
+        @Assert(renamed, true)
+
+        let second = app.handleForTest("GET", "/swagger/json")
+        @Assert(second.status, UInt16(200))
+        @Assert(contains(second.body, #""operationId": "user.detail""#), true)
+    }
+
+    @TestCase
     public func testSelfCheckMockInterceptsRouteInKmode(): Unit {
         let app = App(config: Config(kmode: true))
         app.post(

@@ -58,6 +58,7 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
         if (ctx.method == "HEAD") { return }
         if (shouldSkipStatus(ctx.responseStatus)) { return }
         if ((ctx.header("range") ?? "").size > 0) { return }
+        if ((ctx.getLocal("__ignite_response_kind") ?? "") == "sse") { return }
 
         let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
         if (encoding.size == 0) { return }

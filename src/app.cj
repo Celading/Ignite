@@ -262,11 +262,19 @@ public class App {
     // ── Route management ──
 
     public func removeRoute(method: String, path: String): Bool {
-        router.removeRoute(method, path)
+        let removed = router.removeRoute(method, path)
+        if (removed) {
+            invalidateSwaggerCache()
+        }
+        removed
     }
 
     public func nameRoute(method: String, path: String, name: String): Bool {
-        router.setRouteName(method, path, name)
+        let renamed = router.setRouteName(method, path, name)
+        if (renamed) {
+            invalidateSwaggerCache()
+        }
+        renamed
     }
 
     /// 通过路由名反向生成 URL；优先使用显式 route name，其次使用 RouteOption.operationId。
@@ -558,6 +566,7 @@ public class App {
         option: ?RouteOption
     ): Unit {
         router.addRoute(method, path, handlers, option: option)
+        invalidateSwaggerCache()
     }
 
     func notifyStartupObserve(event: ServerStartupObserveEvent): Unit {
@@ -577,7 +586,6 @@ public class App {
         }
         let swaggerPath = config.swaggerPath + "/json"
         let appRef = this
-        let infoRef = _swaggerInfo
         let hiddenSwaggerOption = RouteOption().asHidden()
         router.addRoute("GET", swaggerPath, wrapSingle({ ctx =>
             let forceRefresh = ctx.query("refresh") ?? ""
@@ -587,7 +595,7 @@ public class App {
                     return
                 }
             }
-            let gen = SwaggerGenerator(infoRef, appRef.router.getRoutes())
+            let gen = SwaggerGenerator(appRef._swaggerInfo, appRef.router.getRoutes())
             let jsonStr = gen.generate()
             if (appRef.config.enableSwaggerCache) {
                 appRef._swaggerJsonCache = jsonStr
