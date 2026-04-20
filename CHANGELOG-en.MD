@@ -25,6 +25,17 @@
 ## Ignite `0500`
 > Usable, trustworthy, quick to start
 
+### v0.5.68 `bugFix`
+> `0500` bugfix closeout for client / swagger observability and release sync
+
+- `=Fix` Stop emitting `HTTP/1.1`-only streaming headers on `HTTP/2` responses so `transfer-encoding` / `connection` do not leak into `h2`
+- `=Fix` Extend `RestClient` observed failures with `phase / causeCode / retryable`, and stop retrying `TLS` / `CRYPTO` failures
+- `=Fix` Replace busy-spin retry backoff with `sleep` to avoid needless CPU burn
+- `=Fix` Escape Swagger JSON `title / description / version` fields consistently, including control-character regression coverage
+- `+Tests` Add client timeout / TLS transport coverage, response-hook observe-header assertions, and Swagger / JSON escaping regressions
+- `=Docs` Close out the root README and manual entry surfaces, including the new `docs-md` entry lane and public documentation routing notes
+- `=Chore` Sync package version, framework version constant, Swagger sample metadata, and self-check tests to `0.5.68`
+
 ### v0.5.31 `Ignite Now`
 > Platform-matrix refinement and README front-page closeout refresh
 

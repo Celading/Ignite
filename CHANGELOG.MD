@@ -25,6 +25,17 @@
 ## Ignite `0500`
 > 可用、可信、快上手
 
+### v0.5.68 `bugFix`
+> `0500` bugfix 收口与 client / swagger 观测修正版
+
+- `=修复` `HTTP/2` 流式响应不再继续带出 `HTTP/1.1` 专属流式头，避免 `transfer-encoding` / `connection` 语义污染 `h2`
+- `=修复` `RestClient` 观测错误补齐 `phase / causeCode / retryable`，并阻止 `TLS` / `CRYPTO` 错误被错误重试
+- `=修复` `RequestBuilder` 退避等待从忙等改为 `sleep`，减少无意义 CPU 空转
+- `=修复` Swagger JSON 输出对 `title / description / version` 做统一 JSON 转义，补齐控制字符回归
+- `+测试` 新增 client timeout / TLS transport、response hook observe header 与 Swagger / JSON 转义回归覆盖
+- `=文档` 根 README 与 manual 入口正文收口，补齐 `docs-md` 主入口与公开文档分流说明
+- `=杂项` 包版本、框架版本常量、Swagger sample 与自检测试版本统一到 `0.5.68`
+
 ### v0.5.31 `Ignite Now`
 > 平台矩阵细化与 README 首屏收口版
 
