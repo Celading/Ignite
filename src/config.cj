@@ -1,5 +1,7 @@
 package ignite
 
+import ignite.api2
+
 public struct Config {
     public var appName: String = "Ignite"
     /// 应用版本，用于启动 Banner 标题；空则显示框架版本。Banner 始终输出，不可关闭。
@@ -28,6 +30,12 @@ public struct Config {
     public var enablePrintRoutes: Bool = false
     /// 为 true 时在 Banner 右下角打印框架签名；仅影响展示，不影响版本读取逻辑。
     public var enableBannerSignature: Bool = true
+    /// 通配监听地址（如 0.0.0.0）在 Banner 和网络通知中采用的网卡选择模式；不改变底层实际 bind 行为。
+    public var startupNetworkMode: api2.StartupNetworkMode = api2.StartupNetworkMode.AutoSingle
+    /// 当 startupNetworkMode = named 时指定要展示/跟踪的网卡名；留空会回退到 auto_single。
+    public var startupNetworkInterface: String = ""
+    /// 为 true 时在启动完成后轮询本机网络快照，检测选定网卡/IP 变化并输出通知。
+    public var enableNetworkChangeNotice: Bool = true
     /// kmode（调试模式）：为 true 时启动后启用类似 debug 行为，Banner 中必打当前 Ignite 版本，并可配合 kmodeMiddleware 使用。
     public var kmode: Bool = false
     /// kmode panic hook：用于 App 顶层异常兜底。返回 true 表示异常已处理（例如触发重启/终止流程），将跳过默认 500 处理。
@@ -61,6 +69,9 @@ public struct Config {
         enablePrintSwaggerUrl!: Bool = true,
         enablePrintRoutes!: Bool = false,
         enableBannerSignature!: Bool = true,
+        startupNetworkMode!: api2.StartupNetworkMode = api2.StartupNetworkMode.AutoSingle,
+        startupNetworkInterface!: String = "",
+        enableNetworkChangeNotice!: Bool = true,
         kmode!: Bool = false,
         kmodePanicHandler!: ?KModePanicHandler = None,
         tlsCertFile!: String = "",
@@ -86,6 +97,9 @@ public struct Config {
         this.enablePrintSwaggerUrl = enablePrintSwaggerUrl
         this.enablePrintRoutes = enablePrintRoutes
         this.enableBannerSignature = enableBannerSignature
+        this.startupNetworkMode = startupNetworkMode
+        this.startupNetworkInterface = startupNetworkInterface
+        this.enableNetworkChangeNotice = enableNetworkChangeNotice
         this.kmode = kmode
         this.kmodePanicHandler = kmodePanicHandler
         this.tlsCertFile = tlsCertFile

@@ -47,6 +47,7 @@ public class App {
     var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
     var _notFoundHandler: ?Handler = None
     var _methodNotAllowedHandler: ?Handler = None
+    var _networkMonitorStopSignal: ?NetworkMonitorStopSignal = None
 
     public init(config!: Config = Config()) {
         this.config = config
@@ -366,6 +367,7 @@ public class App {
     public func listen(addr: String, port: UInt16): Unit {
         setupSwaggerRoute()
         resetStartupObserveState()
+        stopNetworkMonitor()
 
         if (config.enablePrintRoutes) {
             router.printRoutes()
@@ -404,6 +406,11 @@ public class App {
                 distributor,
                 {
                     =>
+                    let networkSelection = api2.resolveBoundNetworkSelection(
+                        addr,
+                        mode: config.startupNetworkMode,
+                        interfaceName: config.startupNetworkInterface
+                    )
                     printBanner(
                         appName,
                         appVersion,
@@ -417,8 +424,10 @@ public class App {
                         config.swaggerPath,
                         config.enablePrintSwaggerUrl,
                         config.kmode,
-                        config.enableBannerSignature
+                        config.enableBannerSignature,
+                        networkSelection
                     )
+                    maybeStartNetworkMonitor(addr, networkSelection)
                     notifyStartupObserve(
                         ServerStartupObserveEvent(
                             "ready",
@@ -476,6 +485,8 @@ public class App {
                     message: message
                 )
             )
+        } finally {
+            stopNetworkMonitor()
         }
     }
 
@@ -526,6 +537,7 @@ public class App {
     }
 
     public func shutdown(): Unit {
+        stopNetworkMonitor()
         for (hook in _shutdownHooks) {
             hook()
         }
@@ -533,6 +545,51 @@ public class App {
     }
 
     // ── Internal ──
+
+    func maybeStartNetworkMonitor(
+        addr: String,
+        initialSelection: api2.StartupNetworkSelection
+    ): Unit {
+        if (!config.enableNetworkChangeNotice) {
+            return
+        }
+        if (!shouldMonitorBoundAddress(addr, initialSelection)) {
+            return
+        }
+        let stopSignal = NetworkMonitorStopSignal()
+        _networkMonitorStopSignal = Some(stopSignal)
+        let bindAddr = addr
+        let mode = config.startupNetworkMode
+        let interfaceName = config.startupNetworkInterface
+        spawn {
+            var previous = initialSelection
+            while (!stopSignal.isStopped()) {
+                sleep(Duration.second * 2)
+                if (stopSignal.isStopped()) {
+                    break
+                }
+                let current = api2.resolveBoundNetworkSelection(
+                    bindAddr,
+                    mode: mode,
+                    interfaceName: interfaceName
+                )
+                if (current.fingerprint != previous.fingerprint) {
+                    println("[Ignite][Net] " + api2.formatStartupNetworkChangeNotice(previous, current))
+                    if (current.warning.size > 0) {
+                        println("[Ignite][Net] " + current.warning)
+                    }
+                    previous = current
+                }
+            }
+        }
+    }
+
+    func stopNetworkMonitor(): Unit {
+        if (let Some(stopSignal) <- _networkMonitorStopSignal) {
+            stopSignal.stop()
+            _networkMonitorStopSignal = None
+        }
+    }
 
     func wrapSingle(handler: Handler): ArrayList<Handler> {
         let list = ArrayList<Handler>()
@@ -1478,7 +1535,8 @@ func printBanner(
     swaggerPath: String,
     enablePrintSwaggerUrl: Bool,
     kmode: Bool,
-    enableBannerSignature: Bool
+    enableBannerSignature: Bool,
+    networkSelection: api2.StartupNetworkSelection
 ): Unit {
     let frameworkVersion = IGNITE_FRAMEWORK_VERSION
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
@@ -1494,29 +1552,16 @@ func printBanner(
     let DOT = esc + "[38;5;240m"
     let ITALIC = esc + "[3m"
 
-    var displayAddr = addr
-    var bannerWarn: ?String = None
-    if (addr == "0.0.0.0") {
-        displayAddr = "127.0.0.1"
-        try {
-            let info = api2.getNetworkInfo()
-            if (info.ips.size > 0) {
-                displayAddr = info.ips[0]
-            } else {
-                bannerWarn = Some("preferred local IP unavailable; banner uses 127.0.0.1 while server stays bound on ${addr}:${port}.")
-            }
-        } catch (e: Exception) {
-            let detail = e.message.trimAscii()
-            bannerWarn = if (detail.size > 0) {
-                Some("local network inspection failed for banner display; using 127.0.0.1. detail=${detail}")
-            } else {
-                Some("local network inspection failed for banner display; using 127.0.0.1.")
-            }
-        }
+    let displayAddr = networkSelection.primaryIP
+    let bannerWarn: ?String = if (networkSelection.warning.size > 0) {
+        Some(networkSelection.warning)
+    } else {
+        None
     }
     let title = "${appName} v${versionDisplay}"
     let url = "${scheme}://${displayAddr}:${port}"
     let endpointLine = bannerComposeEndpointLine(url, addr, port)
+    let networkLine = buildBannerNetworkSelectionLine(networkSelection)
 
     let colW: Int64 = 24
     let col1Line1 = bannerDotFill("Touchpoints", "${touchpointCount}", colW)
@@ -1545,6 +1590,11 @@ func printBanner(
     let splitBoundLine = bannerCenter(endpointBound, innerWidth)
     let statsLine1Styled = bannerTintDots(statsLine1, DOT, BODY)
     let statsLine2Styled = bannerTintDots(statsLine2, DOT, BODY)
+    let networkLineStyled: ?String = if (networkLine.size > 0) {
+        Some(bannerCenter(networkLine, innerWidth))
+    } else {
+        None
+    }
 
     println("")
     println(" ${BORDER}┌${border}┐${R}")
@@ -1560,6 +1610,9 @@ func printBanner(
     } else {
         println(" ${BORDER}│${R}${URL}${splitUrlLine}${R}${BORDER}│${R}")
         println(" ${BORDER}│${R}${MUTED}${splitBoundLine}${R}${BORDER}│${R}")
+    }
+    if (let Some(networkInner) <- networkLineStyled) {
+        println(" ${BORDER}│${R}${MUTED}${networkInner}${R}${BORDER}│${R}")
     }
     println(" ${BORDER}│${R}${emptyInner}${BORDER}│${R}")
     println(" ${BORDER}│${R}${statsLine1Styled}${R}${BORDER}│${R}")
@@ -1579,4 +1632,70 @@ func printBanner(
         println(" [Ignite][Net] ${message}")
     }
     println("")
+}
+
+func buildBannerNetworkSelectionLine(selection: api2.StartupNetworkSelection): String {
+    if (selection.displayInterfacePairs.size == 0) {
+        return ""
+    }
+    let label = if (selection.mode == "multi") {
+        "NICs"
+    } else if (selection.mode == "named" && selection.matchedInterface.size > 0) {
+        "NIC"
+    } else if (selection.mode == "direct") {
+        "Bind"
+    } else {
+        "NIC"
+    }
+    label + ": " + joinBannerValues(selection.displayInterfacePairs, " | ")
+}
+
+func shouldMonitorBoundAddress(
+    addr: String,
+    selection: api2.StartupNetworkSelection
+): Bool {
+    let trimmed = addr.trimAscii()
+    if (trimmed == "127.0.0.1" || trimmed == "::1" || trimmed == "localhost") {
+        return false
+    }
+    if (trimmed == "0.0.0.0" || trimmed == "::" || trimmed == "[::]") {
+        return true
+    }
+    if (selection.mode == "direct") {
+        return true
+    }
+    selection.displayInterfacePairs.size > 0
+}
+
+func joinBannerValues(values: Array<String>, sep: String): String {
+    if (values.size == 0) {
+        return ""
+    }
+    var out = ""
+    var first = true
+    for (value in values) {
+        if (!first) {
+            out += sep
+        }
+        first = false
+        out += value
+    }
+    out
+}
+
+class NetworkMonitorStopSignal {
+    let _mtx = Mutex()
+    var _stopped = false
+
+    func stop(): Unit {
+        synchronized(_mtx) {
+            _stopped = true
+        }
+    }
+
+    func isStopped(): Bool {
+        synchronized(_mtx) {
+            _stopped
+        }
+    }
 }
