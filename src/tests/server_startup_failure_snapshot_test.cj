@@ -31,6 +31,8 @@ public class ServerStartupFailureSnapshotTestSuite {
 
         @Assert(snapshot.listenErrorCode, "ADDRESS_UNAVAILABLE")
         @Assert(snapshot.igniteErrorCode, "LISTEN_ADDRESS_UNAVAILABLE")
+        @Assert(contains(snapshot.hint, "IP changes"), true)
+        @Assert(contains(snapshot.hint, "0.0.0.0"), true)
     }
 
     @TestCase

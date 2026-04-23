@@ -168,7 +168,7 @@ app.get("/me", { ctx =>
 - `ctx.send(bytes)`：原始字节
 - `ctx.sendStream(stream, ...)`：直接发送 `InputStream`，适合大响应体或文件式输出
 - `ctx.writer()`：增量写响应体；HTTP/1.1 下可表现为 chunked，HTTP/2 下不应该再补 `Transfer-Encoding`
-- `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头
+- `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头，并会补最小 anti-buffering 头与 heartbeat helper
 - `ctx.sendStatus(404)`：状态码 + 默认消息
 - `ctx.redirect("/login")`：重定向
 - `ctx.noContent()`：`204 No Content`

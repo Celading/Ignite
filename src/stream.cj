@@ -28,8 +28,10 @@ public class SseWriter {
     public init(httpCtx: HttpContext) {
         _httpCtx = httpCtx
         httpCtx.responseBuilder
+            .status(200)
             .header("content-type", "text/event-stream")
             .header("cache-control", "no-cache")
+            .header("x-accel-buffering", "no")
         let protocol = httpCtx.request.version.toString()
         if (shouldEmitConnectionKeepAliveHeader(protocol)) {
             httpCtx.responseBuilder.header("connection", "keep-alive")
@@ -74,6 +76,12 @@ public class SseWriter {
     public func sendRetry(millis: Int64): Unit {
         let w = ensureWriter()
         w.write("retry: ${millis}\n\n".toArray())
+    }
+
+    /// Minimal heartbeat helper for SSE keepalive comments.
+    /// Public close/flush controls are still limited by stdx HttpResponseWriter surface.
+    public func sendHeartbeat(comment!: String = "ping"): Unit {
+        sendComment(comment)
     }
 }
 

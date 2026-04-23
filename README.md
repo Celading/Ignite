@@ -14,7 +14,7 @@
 │                                       <span style="color:#8A8A8A;"><i>_Ignite 0.6.24</i></span> │
 └───────────────────────────────────────────────────────┘
 </pre>
-<span style="font-weight:300;font-size:38px">Ignite (叶燧)</span><br/>
+<span style="font-weight:300;font-size:38px">Ignite / 叶燧</span><br/>
 <span style="font-weight:100;font-size:26px">以仓颉语言打造、面向真实服务落地的 Web 框架</span>
 <p align="center">
   <strong>仓颉胃，Express味</strong><br>

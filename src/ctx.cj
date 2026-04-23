@@ -468,6 +468,7 @@ public class Ctx {
 
     public func sse(): SseWriter {
         _responded = true
+        setLocal("__ignite_response_kind", "sse")
         SseWriter(_httpCtx)
     }
 
