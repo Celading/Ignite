@@ -21,6 +21,20 @@ func printObserve(label: String, resp: ClientResponse): Unit {
     println("${label} observe => durationMs=${duration}, retryCount=${retryCount}, errorClass=${errClass}, fields=${fields}")
 }
 
+func printRecovery(label: String, resp: ClientResponse): Unit {
+    let observe = resp.observeSnapshot()
+    let touchpoint = resp.transportTouchpoint()
+    let obsStr = match (observe) {
+        case Some(s) => "outcome=${s.outcome},responseStatus=${s.responseStatus},backendId=${s.backendId}"
+        case None => "no observeSnapshot"
+    }
+    let tpStr = match (touchpoint) {
+        case Some(t) => "selectedBackend=${t.selectedBackend},reason=${t.selectedReason}"
+        case None => "no transportTouchpoint"
+    }
+    println("${label} recovery => observe=[${obsStr}] touchpoint=[${tpStr}]")
+}
+
 main() {
     let client = RestClient(
             readTimeout: Duration.second * 15,
@@ -47,11 +61,13 @@ main() {
     let pingResp = client.get("/ping")
     println("GET /ping -> ${pingResp.status} ${pingResp.body()}")
     printObserve("GET /ping", pingResp)
+    printRecovery("GET /ping", pingResp)
 
     let echoPayload = "{\"name\":\"ignite\",\"count\":2}"
     let echoResp = client.postJson("/echo-json", echoPayload)
     println("POST /echo-json -> ${echoResp.status} ${echoResp.body()}")
     printObserve("POST /echo-json", echoResp)
+    printRecovery("POST /echo-json", echoResp)
 
     let securePayload = "{\"scope\":\"client-demo\",\"message\":\"hello secure\"}"
     let secureResp = client.postEncryptedJson(
@@ -61,6 +77,7 @@ main() {
     )
     println("POST /secure-echo -> ${secureResp.status} ${secureResp.body()}")
     printObserve("POST /secure-echo", secureResp)
+    printRecovery("POST /secure-echo", secureResp)
 
     let fields = ArrayList<(String, String)>()
     fields.add(("meta", "client-upload"))
@@ -71,6 +88,7 @@ main() {
     let uploadResp = client.postMultipart("/upload-multipart", fields, files)
     println("POST /upload-multipart -> ${uploadResp.status} ${uploadResp.body()}")
     printObserve("POST /upload-multipart", uploadResp)
+    printRecovery("POST /upload-multipart", uploadResp)
 
     client.close()
 }

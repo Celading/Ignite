@@ -221,6 +221,7 @@ app.use(compressMiddleware())
 
 - 如果上游目标是 `https`，并且当前请求体长度未知，框架会默认先落临时文件、补 `content-length` 后再转发，避免错误地发送 `Transfer-Encoding` 到潜在 HTTP/2 链路
 - 这条 `https unknown-length -> temp-file fallback` 回退现在已由回归测试锁住；即使上游连接最终失败，也不会悄悄退回到错误的分块转发语义
+- 如果你想跑一条更聚焦的 maintainer probe，当前也可以直接执行 `./manual/samples/proxy_transport_acceptance/probe.sh`
 
 ## 组合建议
 

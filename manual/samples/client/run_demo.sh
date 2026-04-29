@@ -6,6 +6,34 @@ SERVER_BIN="/tmp/ignite_client_demo_server"
 CLIENT_BIN="/tmp/ignite_client_demo_client"
 SERVER_LOG="/tmp/ignite_client_demo_server.log"
 
+ensure_cangjie_env() {
+  if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
+    local envsetup=""
+    if [[ -n "${IGNITE_CANGJIE_HOME:-}" && -f "${IGNITE_CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${IGNITE_CANGJIE_HOME}/envsetup.sh"
+    elif [[ -n "${CANGJIE_HOME:-}" && -f "${CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${CANGJIE_HOME}/envsetup.sh"
+    elif [[ -f "/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh" ]]; then
+      envsetup="/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh"
+    fi
+
+    if [[ -n "${envsetup}" ]]; then
+      export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+      # shellcheck disable=SC1090
+      source "${envsetup}"
+    fi
+  fi
+
+  if [[ -z "${SDKROOT:-}" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+
+  if [[ -z "${CANGJIE_STDX_PATH:-}" && -d "/Library/Frameworks/Cangjie/stdx_Build" ]]; then
+    export CANGJIE_STDX_PATH="/Library/Frameworks/Cangjie/stdx_Build"
+  fi
+}
+
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
     printf '%s\n' "${IGNITE_STDX_STATIC}"
@@ -42,6 +70,17 @@ detect_runtime_lib_dir() {
   return 1
 }
 
+collect_package_archives() {
+  local dir="$1"
+  if [[ ! -d "${dir}" ]]; then
+    return 0
+  fi
+
+  find "${dir}" -maxdepth 1 -type f -name "lib*.a" \
+    ! -name "lib*.tests.a" \
+    | sort
+}
+
 cleanup() {
   if [[ -n "${SERVER_PID:-}" ]]; then
     kill "${SERVER_PID}" >/dev/null 2>&1 || true
@@ -49,6 +88,8 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+ensure_cangjie_env
 
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
@@ -66,30 +107,40 @@ fi
 
 COMMON_IMPORTS=(
   --import-path "${ROOT}/target/release"
+  --import-path "${ROOT}/target/release/ignite"
+  --import-path "${ROOT}/target/release/lisi"
+  --import-path "${ROOT}/target/release/jinguissl"
   --import-path "${STDX_STATIC}"
 )
+
+IGNITE_ARCHIVES=()
+while IFS= read -r path; do
+  IGNITE_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/ignite")
+
+LISI_ARCHIVES=()
+while IFS= read -r path; do
+  LISI_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/lisi")
+
+JINGUISSL_ARCHIVES=()
+while IFS= read -r path; do
+  JINGUISSL_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
+
+STDX_ARCHIVES=()
+while IFS= read -r path; do
+  STDX_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${STDX_STATIC}/stdx")
+
 COMMON_LINKS=(
-  -L "${ROOT}/target/release/ignite"
-  -lignite.client
-  -lignite
-  -lignite.api2
-  -lignite.security
-  -lignite.api2.GetData
-  -L "${STDX_STATIC}/stdx"
-  -lstdx.net.http
-  -lstdx.net.tls
-  -lstdx.net.tls.common
-  -lstdx.logger
-  -lstdx.log
-  -lstdx.encoding.url
-  -lstdx.encoding.json.stream
-  -lstdx.crypto.x509
-  -lstdx.crypto.keys
-  -lstdx.encoding.hex
-  -lstdx.crypto.crypto
-  -lstdx.crypto.digest
-  -lstdx.crypto.common
-  -lstdx.encoding.base64
+  "${IGNITE_ARCHIVES[@]}"
+  "${LISI_ARCHIVES[@]}"
+  "${JINGUISSL_ARCHIVES[@]}"
+  "${STDX_ARCHIVES[@]}"
+  "${LISI_ARCHIVES[@]}"
+  "${JINGUISSL_ARCHIVES[@]}"
+  "${STDX_ARCHIVES[@]}"
 )
 
 echo "[client-demo] building ignite package..."
