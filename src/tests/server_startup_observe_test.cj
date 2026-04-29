@@ -111,6 +111,48 @@ public class ServerStartupObserveTestSuite {
         }
     }
 
+    @TestCase
+    public func testStartupObserveEmitsSocketServerEngineShellFailureEvent(): Unit {
+        let app = App(config: Config(enableTlsPrecheck: false))
+        let phases = ArrayList<String>()
+        let codes = ArrayList<String>()
+        let hints = ArrayList<String>()
+        let messages = ArrayList<String>()
+        app.serverEngine(SocketServerEngineShell())
+        app.onStartupObserve({ event =>
+            phases.add(event.phase)
+            codes.add(event.failureCode)
+            hints.add(event.hint)
+            messages.add(event.message)
+        })
+
+        app.listen("127.0.0.1", UInt16(38130))
+
+        @Assert(phases.size, 1)
+        @Assert(phases[0], "failed")
+        @Assert(codes[0], "INTERNAL_ERROR")
+        @Assert(contains(hints[0], "server engine exception details"), true)
+        @Assert(contains(messages[0], "not implemented yet"), true)
+        match (app.lastServerStartupObserveEvent()) {
+            case Some(event) =>
+                @Assert(event.failureStage, "listen_startup")
+                @Assert(event.igniteErrorCode, "LISTEN_INTERNAL_ERROR")
+                @Assert(event.failureSource, "-")
+                @Assert(contains(event.message, "carrier-backed execution remain blocked"), true)
+                match (event.transportTouchpoint) {
+                    case Some(touchpoint) =>
+                        @Assert(touchpoint.selectedBackend, "ignite-socket-server-shell")
+                        @Assert(touchpoint.publicPath, "opt-in-engine-shell")
+                        @Assert(touchpoint.riskLevel, "experimental")
+                        @Assert(touchpoint.fallbackReason, "runtime_not_implemented")
+                    case None => @Fail("expected shell failure transport touchpoint")
+                }
+                let json = event.toJson()
+                @Assert(contains(json, "\"selectedBackend\":\"ignite-socket-server-shell\""), true)
+            case None => @Fail("expected socket server engine shell failure event")
+        }
+    }
+
     func contains(text: String, target: String): Bool {
         let t = text.toRuneArray()
         let p = target.toRuneArray()

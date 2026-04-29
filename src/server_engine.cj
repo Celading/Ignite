@@ -166,6 +166,59 @@ public interface ServerEngine {
     func shutdown(): Unit
 }
 
+public interface ServerEngineTransportTouchpointOverride {
+    func overrideTransportTouchpoint(
+        addr: String,
+        port: UInt16,
+        tlsEnabled: Bool,
+        baseTouchpoint: ServerTransportTouchpoint
+    ): ServerTransportTouchpoint
+}
+
+public class SocketServerEngineShellException <: Exception {
+    public init(message: String) {
+        super(message)
+    }
+}
+
+public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouchpointOverride {
+    public init() {}
+
+    public override func overrideTransportTouchpoint(
+        addr: String,
+        port: UInt16,
+        tlsEnabled: Bool,
+        baseTouchpoint: ServerTransportTouchpoint
+    ): ServerTransportTouchpoint {
+        let _ = addr
+        let _ = port
+        let _ = tlsEnabled
+        buildServerEngineOverrideTouchpoint(
+            baseTouchpoint,
+            "ignite-socket-server-shell",
+            "opt_in_engine_shell_selected",
+            "opt-in-engine-shell",
+            "experimental",
+            "runtime_not_implemented"
+        )
+    }
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        distributor: HttpRequestDistributor,
+        onReady: ?(() -> Unit)
+    ): Unit {
+        let _ = option
+        let _ = distributor
+        let _ = onReady
+        throw SocketServerEngineShellException(
+            "socket server engine shell is not implemented yet; runtime loop, accept loop, and carrier-backed execution remain blocked"
+        )
+    }
+
+    public override func shutdown(): Unit {}
+}
+
 public class StdxServerEngine <: ServerEngine {
     var _server: ?Server = None
 
@@ -264,6 +317,49 @@ func buildServerTransportTouchpoint(addr: String, port: UInt16, tlsEnabled: Bool
     )
 }
 
+func resolveServerTransportTouchpoint(
+    engine: ServerEngine,
+    addr: String,
+    port: UInt16,
+    tlsEnabled: Bool
+): ServerTransportTouchpoint {
+    let baseTouchpoint = buildServerTransportTouchpoint(addr, port, tlsEnabled)
+    if (let Some(provider) <- (engine as ServerEngineTransportTouchpointOverride)) {
+        return provider.overrideTransportTouchpoint(
+            addr,
+            port,
+            tlsEnabled,
+            baseTouchpoint
+        )
+    }
+    baseTouchpoint
+}
+
+func buildServerEngineOverrideTouchpoint(
+    baseTouchpoint: ServerTransportTouchpoint,
+    selectedBackend: String,
+    selectedReason: String,
+    publicPath: String,
+    riskLevel: String,
+    fallbackReason: String
+): ServerTransportTouchpoint {
+    let candidateOrder = prependServerTouchpointCandidate(
+        baseTouchpoint.candidateOrder,
+        selectedBackend
+    )
+    ServerTransportTouchpoint(
+        candidateOrder,
+        baseTouchpoint.blockedCandidates,
+        selectedBackend,
+        selectedReason,
+        baseTouchpoint.providerId,
+        publicPath,
+        riskLevel,
+        baseTouchpoint.tlsEnabled,
+        fallbackReason
+    )
+}
+
 func normalizeServerTouchpointHost(addr: String, port: UInt16): String {
     let trimmed = addr.trimAscii()
     if (trimmed == "0.0.0.0" || trimmed == "::" || trimmed == "[::]") {
@@ -286,6 +382,16 @@ func joinServerTouchpointFields(values: Array<String>): String {
         out += value
     }
     out
+}
+
+func prependServerTouchpointCandidate(existing: String, candidate: String): String {
+    if (candidate.size == 0) {
+        return existing
+    }
+    if (existing.size == 0 || existing == "-") {
+        return candidate
+    }
+    candidate + "," + existing
 }
 
 func normalizeServerBackendId(raw: String): String {
