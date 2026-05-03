@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.6.24-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.7.0-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.6.24</span>                    │
+│                  <span style="color:#88C0D0;">Ignite v0.7.0</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.6.24</i></span>│
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.7.0</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,9 +48,13 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.6.24)
+## Current Status (0.7.0)
 
-- See `manual/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD` for the current public baseline and milestone timeline.
+- `0700` is now the active public/governance line: the goal is not only to add features, but to keep the current capability set easier to hand off, audit, and recover on cloud runs.
+- `H1` is the current ready-now intake lane: `hello / api / client / files` already cover the most practical first-run and payload/stream/client paths.
+- `H2` remains a guarded intake lane: there is smoke, guard, and honest writer/sendStream wording, but Ignite does not claim full commodity-grade closure yet.
+- the self-hosted `server-socket` runway now has a deeper parser/session/body/writer/runtime-experiment ladder, but it is still runway/experiment truth rather than a default public engine switch.
+- for the public baseline and milestone timeline, see `manual/docs-md/README.md`, `CHANGELOG.MD`, and `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐

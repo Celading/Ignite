@@ -1,5 +1,18 @@
 # Ignite Changelog
 
+## Ignite `0700`
+> 资产压缩、协同治理、H1/H2 truth 收口
+
+### v0.7.0 `Ignite Now`
+> `0700` 公开基线版
+
+- `=文档` 将当前公开版本基线从 `0.6.41` 提升到 `0.7.0`
+- `=文档` README / README-en / README-ru 的版本展示、状态说明与当前 `H1 ready-now / H2 guarded intake` 口径重新对齐
+- `=文档` `manual/docs-md/README.md` 与 `manual/samples/README.md` 回归到当前 `0700` 公开入口，补齐 `H1/H2` 首读路径
+- `+特性` 当前 line 已明确把 `transport` accepted-answer proof 与 `client` public recovery proof 收成更易 handoff 的 intake-facing truth
+- `+特性` 自研 `server-socket` 已形成更长的 parser/session/body/writer/runtime-experiment proof ladder，但当前仍保持 experiment/runway 口径，不冒充 default public engine
+- `=杂项` 包版本与框架版本常量同步到 `0.7.0`
+
 ## Ignite `0600`
 > 传输解耦起步、观测留痕加固
 

@@ -1,5 +1,18 @@
 # Ignite Changelog
 
+## Ignite `0700`
+> Asset compression, collaboration governance, and H1/H2 truth closeout
+
+### v0.7.0 `Ignite Now`
+> Public baseline refresh for the `0700` line
+
+- `=Docs` Raise the current public baseline from `0.6.41` to `0.7.0`
+- `=Docs` Realign `README.md`, `README-en.md`, and `README-ru.md` version surfaces, status wording, and the current `H1 ready-now / H2 guarded intake` truth
+- `=Docs` Refresh `manual/docs-md/README.md` and `manual/samples/README.md` so the public entry lane now reflects the current `0700` and `H1/H2` first-read path
+- `+Feature` The current line now keeps the `transport` accepted-answer proof and the `client` public recovery proof in a more handoff-friendly executor-facing truth form
+- `+Feature` The self-hosted `server-socket` lane now has a longer parser/session/body/writer/runtime-experiment proof ladder, while still remaining an experiment/runway truth rather than a default public engine switch
+- `=Chore` Sync the package version and framework version constant to `0.7.0`
+
 ## Ignite `0600`
 > Transport decoupling begins, observability keeps tightening
 
