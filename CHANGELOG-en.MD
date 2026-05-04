@@ -3,6 +3,15 @@
 ## Ignite `0700`
 > Asset compression, collaboration governance, and H1/H2 truth closeout
 
+### v0.7.1 `Ignite Now`
+> retained client recovery reset and failure-path freshness refresh
+
+- `+Feature` `RestClient` now exposes `clearRecoverySnapshots()` so long-lived clients can explicitly reset retained client-side recovery before the next probe / retry / diagnosis wave
+- `+Feature` The current `client` recovery surface is now documented in two layers: response-side replay via `observeSnapshot()/transportTouchpoint()`, and retained client-side recovery via `lastClientObserveSnapshot()/lastClientTransportTouchpoint()`
+- `+Tests` `ClientResponseRecoveryAcceptanceTestSuite` now proves reset + fresh failure-path recovery, showing that an experimental failure still returns the current-round observe / touchpoint after old retained state is cleared
+- `=Docs` README surfaces, the client sample, and `manual/docs-md/api.md` are now aligned with the retained-recovery and reset wording
+- `=Chore` Sync the package version, framework version constant, and banner render fixtures to `0.7.1`
+
 ### v0.7.0 `Ignite Now`
 > Public baseline refresh for the `0700` line
 

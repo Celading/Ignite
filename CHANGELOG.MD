@@ -3,6 +3,15 @@
 ## Ignite `0700`
 > 资产压缩、协同治理、H1/H2 truth 收口
 
+### v0.7.1 `Ignite Now`
+> client retained recovery reset 与 failure-path freshness 刷新版
+
+- `+特性` `RestClient` 新增 `clearRecoverySnapshots()`，允许长生命周期 client 在下一轮 probe / retry / 诊断前显式清空 retained client-side recovery
+- `+特性` 当前 `client` recovery 公开面现在明确分成两层：response-side `observeSnapshot()/transportTouchpoint()` 回放，以及 client-side `lastClientObserveSnapshot()/lastClientTransportTouchpoint()` retained 留痕
+- `+测试` `ClientResponseRecoveryAcceptanceTestSuite` 新增 reset + fresh failure-path acceptance，证明清空旧状态后，新的 experimental failure 仍能回收当前轮的 observe / touchpoint
+- `=文档` README、多语言 README、client sample 与 `manual/docs-md/api.md` 回归到 retained recovery / reset 的最新公开口径
+- `=杂项` 包版本、框架版本常量与 banner render version fixtures 同步到 `0.7.1`
+
 ### v0.7.0 `Ignite Now`
 > `0700` 公开基线版
 

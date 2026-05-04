@@ -35,6 +35,20 @@ func printRecovery(label: String, resp: ClientResponse): Unit {
     println("${label} recovery => observe=[${obsStr}] touchpoint=[${tpStr}]")
 }
 
+func printRetainedRecovery(label: String, client: RestClient): Unit {
+    let observe = client.lastClientObserveSnapshot()
+    let touchpoint = client.lastClientTransportTouchpoint()
+    let obsStr = match (observe) {
+        case Some(s) => "outcome=${s.outcome},phase=${s.phase},backendId=${s.backendId}"
+        case None => "no lastClientObserveSnapshot"
+    }
+    let tpStr = match (touchpoint) {
+        case Some(t) => "selectedBackend=${t.selectedBackend},publicPath=${t.publicPath}"
+        case None => "no lastClientTransportTouchpoint"
+    }
+    println("${label} retained => observe=[${obsStr}] touchpoint=[${tpStr}]")
+}
+
 main() {
     let client = RestClient(
             readTimeout: Duration.second * 15,
@@ -62,12 +76,14 @@ main() {
     println("GET /ping -> ${pingResp.status} ${pingResp.body()}")
     printObserve("GET /ping", pingResp)
     printRecovery("GET /ping", pingResp)
+    printRetainedRecovery("GET /ping", client)
 
     let echoPayload = "{\"name\":\"ignite\",\"count\":2}"
     let echoResp = client.postJson("/echo-json", echoPayload)
     println("POST /echo-json -> ${echoResp.status} ${echoResp.body()}")
     printObserve("POST /echo-json", echoResp)
     printRecovery("POST /echo-json", echoResp)
+    printRetainedRecovery("POST /echo-json", client)
 
     let securePayload = "{\"scope\":\"client-demo\",\"message\":\"hello secure\"}"
     let secureResp = client.postEncryptedJson(
@@ -78,6 +94,7 @@ main() {
     println("POST /secure-echo -> ${secureResp.status} ${secureResp.body()}")
     printObserve("POST /secure-echo", secureResp)
     printRecovery("POST /secure-echo", secureResp)
+    printRetainedRecovery("POST /secure-echo", client)
 
     let fields = ArrayList<(String, String)>()
     fields.add(("meta", "client-upload"))
@@ -89,6 +106,10 @@ main() {
     println("POST /upload-multipart -> ${uploadResp.status} ${uploadResp.body()}")
     printObserve("POST /upload-multipart", uploadResp)
     printRecovery("POST /upload-multipart", uploadResp)
+    printRetainedRecovery("POST /upload-multipart", client)
+
+    client.clearRecoverySnapshots()
+    println("client retained recovery cleared for next probe wave")
 
     client.close()
 }

@@ -144,6 +144,116 @@ public class ClientResponseRecoveryAcceptanceTestSuite {
             }
         }
     }
+
+    @TestCase
+    public func testClearRecoverySnapshotsResetsRetainedStateBeforeFreshFailureRecovery(): Unit {
+        let app = App(config: Config())
+        app.get("/client-acceptance-reset", { ctx =>
+            ctx.sendString("reset-ok")
+        })
+
+        let port = chooseClientRecoveryAcceptancePort(431)
+        let url = "http://127.0.0.1:${port}/client-acceptance-reset"
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        let probeClient = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+
+        try {
+            waitForClientRecoveryAcceptanceReady(probeClient, url)
+
+            let resp = client.request()
+                .method("GET")
+                .url(url)
+                .send()
+
+            @Assert(resp.status, 200)
+            @Assert(resp.body(), "reset-ok")
+
+            match (client.lastClientObserveSnapshot()) {
+                case Some(snapshot) =>
+                    @Assert(snapshot.outcome, "success")
+                    @Assert(snapshot.backendId, "stdx-http-client")
+                    @Assert(snapshot.publicPath, "stable-default")
+                case None => @Fail("expected seeded client observe snapshot")
+            }
+
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "stdx-http-client")
+                    @Assert(touchpoint.publicPath, "stable-default")
+                    @Assert(touchpoint.riskLevel, "low")
+                case None => @Fail("expected seeded client transport touchpoint")
+            }
+
+            client.clearRecoverySnapshots()
+
+            match (client.lastClientObserveSnapshot()) {
+                case Some(_) => @Fail("expected cleared client observe snapshot")
+                case None => ()
+            }
+
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(_) => @Fail("expected cleared client transport touchpoint")
+                case None => ()
+            }
+
+            try {
+                let _ = client.request()
+                    .method("GET")
+                    .url(url)
+                    .allowExperimentalTransport()
+                    .preferTransportBackend("jinguissl-provider-candidate")
+                    .header("x-ignite-log-case", "clear-recovery-reset")
+                    .onRequest({ _ =>
+                        throw Exception("forced failure after clearRecoverySnapshots")
+                    })
+                    .send()
+                @Fail("expected forced request_prepare failure")
+            } catch (e: Exception) {
+                @Assert(e.message.size > 0, true)
+            }
+
+            match (client.lastClientObserveSnapshot()) {
+                case Some(snapshot) =>
+                    @Assert(snapshot.outcome, "error")
+                    @Assert(snapshot.phase, "request_prepare")
+                    @Assert(snapshot.backendId, "jinguissl-provider-candidate")
+                    @Assert(snapshot.publicPath, "experimental-only")
+                    @Assert(snapshot.riskLevel, "medium")
+                    @Assert(snapshot.fields, "case=clear-recovery-reset")
+                case None => @Fail("expected fresh failure observe snapshot")
+            }
+
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "jinguissl-provider-candidate")
+                    @Assert(touchpoint.selectedReason, "preferred_backend_hint")
+                    @Assert(touchpoint.publicPath, "experimental-only")
+                    @Assert(touchpoint.riskLevel, "medium")
+                case None => @Fail("expected fresh failure transport touchpoint")
+            }
+        } finally {
+            probeClient.close()
+            client.close()
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
 }
 
 func waitForClientRecoveryAcceptanceReady(client: RestClient, url: String): Unit {

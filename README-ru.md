@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.7.0-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.7.1-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.7.0</span>                     │
+│                  <span style="color:#88C0D0;">Ignite v0.7.1</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.7.0</i></span> │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.7.1</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.7.0)
+## Текущее состояние (0.7.1)
 
 - `0700` теперь является активной публичной и governance-линией: задача уже не только в добавлении возможностей, но и в том, чтобы текущий набор возможностей было легче передавать, аудировать и восстанавливать в облачных прогонах.
 - `H1` сейчас является ready-now intake-направлением: `hello / api / client / files` уже покрывают наиболее практичный first-run и основные payload/stream/client-сценарии.
@@ -693,7 +693,7 @@ client.close()
 | Base URL | `baseUrl("https://api.example.com")` |
 | Заголовки по умолчанию | `defaultHeader(name, value)` |
 | Cookie | `useCookies()` или `useCookies(store)`; поддерживает `domain/path/max-age/secure/httpOnly/sameSite` и несколько `set-cookie` |
-| Наблюдаемость | Успешные ответы несут `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` и `transportTouchpoint()` восстанавливают структурированный view на стороне ответа; error hook по-прежнему получает текст вида `[ignite.client.observe] ...` |
+| Наблюдаемость | Успешные ответы несут `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` и `transportTouchpoint()` восстанавливают view на стороне ответа; `lastClientObserveSnapshot()` / `lastClientTransportTouchpoint()` удерживают последнее client-side recovery состояние; `clearRecoverySnapshots()` сбрасывает его между волнами probe; error hook по-прежнему получает текст вида `[ignite.client.observe] ...` |
 | Ответ | `status`, `body()`/`bodyBytes()`/`bodyStream()`, `json()`, `header(name)`, `headerValues(name)`, `observeSnapshot()`, `transportTouchpoint()`, `isOk()`/`isSuccess()`, `discard()` |
 
 ### Обработка ошибок и корректное завершение

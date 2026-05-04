@@ -178,6 +178,12 @@ public class RestClient {
         _lastClientObserveSnapshot
     }
 
+    public func clearRecoverySnapshots(): RestClient {
+        _lastClientTransportTouchpoint = None
+        _lastClientObserveSnapshot = None
+        this
+    }
+
     func requireCryptoConfig(): api2.ClientCryptoConfig {
         match (_cryptoConfig) {
             case Some(cfg) => cfg

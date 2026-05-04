@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.7.0-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.7.1-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.7.0</span>                     │
+│                  <span style="color:#88C0D0;">Ignite v0.7.1</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.7.0</i></span> │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.7.1</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,7 +48,7 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.7.0)
+## Current Status (0.7.1)
 
 - `0700` is now the active public/governance line: the goal is not only to add features, but to keep the current capability set easier to hand off, audit, and recover on cloud runs.
 - `H1` is the current ready-now intake lane: `hello / api / client / files` already cover the most practical first-run and payload/stream/client paths.
@@ -769,7 +769,7 @@ More end-to-end client examples (encrypted request / Retry+Hook+Cookie / observe
 | Retry/backoff | `useRetry(config)`, idempotent methods retry by default; `request().retry(config)` / `request().disableRetry()` |
 | X509 verify entry | `useX509Verify(option)`; `request().x509Verify(option)` / `request().disableX509Verify()` |
 | Hook pipeline | `onRequest`, `onResponse`, `onError` (both `RestClient` and `RequestBuilder`) |
-| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` and `transportTouchpoint()` can replay the structured response-side view; error hook receives `[ignite.client.observe] ...` wrapper text |
+| Observability | Success responses include `x-ignite-observe-duration-ms/retry-count/error-class/fields`; `ClientResponse.observeSnapshot()` and `transportTouchpoint()` replay the response-side view; `lastClientObserveSnapshot()` / `lastClientTransportTouchpoint()` retain the latest client-side recovery surface; `clearRecoverySnapshots()` resets that retained state between probe waves; error hook receives `[ignite.client.observe] ...` wrapper text |
 | Builder | `request().method().url().query(k,v).header()/addHeader().basicAuth().bearerToken().form()/multipart().send()` |
 | Base URL | `baseUrl("https://api.example.com")` |
 | Default headers | `defaultHeader(name, value)` |

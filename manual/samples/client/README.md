@@ -28,12 +28,15 @@ Expected output includes:
 - `POST /secure-echo -> 200`
 - `POST /upload-multipart -> 200`
 - observe headers (`x-ignite-observe-*`)
-- recovery output (`resp.observeSnapshot()` / `resp.transportTouchpoint()`)
+- response-side recovery output (`resp.observeSnapshot()` / `resp.transportTouchpoint()`)
+- retained client-side recovery output (`lastClientObserveSnapshot()` / `lastClientTransportTouchpoint()`)
+- one final reset line proving `clearRecoverySnapshots()` can clear retained state between probe waves
 
 ## Notes
 
 - This sample uses `StdxFallback` crypto provider for portability.
 - Client and server both use `aad = "route:/secure-echo"` for encrypted endpoint verification.
+- If you run multi-step probes with one long-lived `RestClient`, use `clearRecoverySnapshots()` when you want the next success/failure to own a fresh retained recovery window.
 - On local macOS setups with multiple Cangjie installs, set `IGNITE_CANGJIE_HOME=/path/to/cangjie` if the script should use a specific toolchain.
 - If stdx/runtime path cannot be auto-detected, set:
   - `IGNITE_STDX_STATIC=/path/to/cj_stdx_*_llvm/static`
