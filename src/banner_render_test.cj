@@ -19,7 +19,7 @@ public class BannerRenderTestSuite {
 
         let lines = renderBannerLines(
             "Ignite-Core 0700 series",
-            "0.7.1",
+            "0.7.2",
             "http",
             "0.0.0.0",
             UInt16(8080),
@@ -56,7 +56,7 @@ public class BannerRenderTestSuite {
     public func testRenaissanceBannerPlainLayout(): Unit {
         let lines = renderBannerLines(
             "Ignite Demo",
-            "0.7.1",
+            "0.7.2",
             "http",
             "0.0.0.0",
             UInt16(8080),
@@ -83,7 +83,7 @@ public class BannerRenderTestSuite {
             2
         )
 
-        @Assert(lines[0], "Ignite Demo v0.7.1")
+        @Assert(lines[0], "Ignite Demo v0.7.2")
         @Assert(containsLine(lines, "(bound on 0.0.0.0:8080)"), true)
         @Assert(containsLine(lines, "NICs: en7=10.0.0.8 | en0=192.168.1.20"), true)
         @Assert(containsLine(lines, "touchpoints: 8   pid: 42"), true)

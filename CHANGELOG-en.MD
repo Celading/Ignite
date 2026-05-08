@@ -3,6 +3,15 @@
 ## Ignite `0700`
 > Asset compression, collaboration governance, and H1/H2 truth closeout
 
+### v0.7.2 `Ignite Now`
+> official client full-consumer-surface wave
+
+- `+Feature` the client full consumer story is now one coherent public path: `manual/samples/client/**` walks through setup, quick GET, JSON POST, builder path, hooks, body access, retained recovery, retry override, encrypted request, and cleanup
+- `+Tests` `ClientHookTestSuite`, `ClientRetryTestSuite`, `ClientStreamingTestSuite`, and `ClientResponseRecoveryAcceptanceTestSuite` now carry the focused regressions for that wave and still pass on the accepted serial `294/294` lane
+- `+Tests` add `ClientHostnameSensitiveTlsProofTestSuite` as the runtime-owned hostname/SNI blocker-anchor suite, keeping the public truth honestly at `not currently proven`
+- `=Docs` sync the multilingual `README`, the client sample README, `manual/docs-md/client.md`, and source-local guidance to the latest client consumer-surface wording
+- `=Chore` sync the package version, framework version constant, and banner render fixtures to `0.7.2`
+
 ### v0.7.1 `Ignite Now`
 > retained client recovery reset and failure-path freshness refresh
 

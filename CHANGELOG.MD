@@ -3,6 +3,15 @@
 ## Ignite `0700`
 > 资产压缩、协同治理、H1/H2 truth 收口
 
+### v0.7.2 `Ignite Now`
+> client full consumer surface 官包版
+
+- `+特性` client full consumer story 现在形成一条完整公开路径：`manual/samples/client/**` 可从 setup / quick GET / JSON POST / builder path / hooks / body access / retained recovery / retry override 一路走到 encrypted request 与 cleanup
+- `+测试` `ClientHookTestSuite`、`ClientRetryTestSuite`、`ClientStreamingTestSuite` 与 `ClientResponseRecoveryAcceptanceTestSuite` 继续补齐 focused regressions，并通过当前 accepted serial lane 的 full `294/294`
+- `+测试` 新增 `ClientHostnameSensitiveTlsProofTestSuite` 作为 runtime-owned hostname/SNI blocker-anchor suite，继续诚实保留 `not currently proven`
+- `=文档` `README` 多语言、client sample README、`manual/docs-md/client.md` 与 source-local guidance 统一到最新 client consumer-surface 口径
+- `=杂项` 包版本、框架版本常量与 banner render version fixtures 同步到 `0.7.2`
+
 ### v0.7.1 `Ignite Now`
 > client retained recovery reset 与 failure-path freshness 刷新版
 
