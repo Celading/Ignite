@@ -254,6 +254,99 @@ public class ClientResponseRecoveryAcceptanceTestSuite {
             }
         }
     }
+
+    @TestCase
+    public func testSequentialRequestsOverwriteRetainedSnapshotsWithoutStaleCarry(): Unit {
+        let app = App(config: Config())
+        app.get("/client-acceptance-sequential-overwrite", { ctx =>
+            ctx.sendString("overwrite-ok")
+        })
+
+        let port = chooseClientRecoveryAcceptancePort(593)
+        let url = "http://127.0.0.1:${port}/client-acceptance-sequential-overwrite"
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        let probeClient = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+
+        try {
+            waitForClientRecoveryAcceptanceReady(probeClient, url)
+
+            let first = client.request()
+                .method("GET")
+                .url(url)
+                .send()
+
+            @Assert(first.status, 200)
+            @Assert(first.body(), "overwrite-ok")
+            assertRetainedSuccessSnapshot(client, "stdx-http-client", "stable-default", "low")
+
+            try {
+                let _ = client.request()
+                    .method("GET")
+                    .url(url)
+                    .allowExperimentalTransport()
+                    .preferTransportBackend("jinguissl-provider-candidate")
+                    .header("x-ignite-log-case", "sequential-overwrite-failure")
+                    .onRequest({ _ =>
+                        throw Exception("forced sequential overwrite failure")
+                    })
+                    .send()
+                @Fail("expected forced sequential overwrite failure")
+            } catch (e: Exception) {
+                @Assert(e.message.size > 0, true)
+            }
+
+            match (client.lastClientObserveSnapshot()) {
+                case Some(snapshot) =>
+                    @Assert(snapshot.outcome, "error")
+                    @Assert(snapshot.phase, "request_prepare")
+                    @Assert(snapshot.responseStatus, 0)
+                    @Assert(snapshot.backendId, "jinguissl-provider-candidate")
+                    @Assert(snapshot.publicPath, "experimental-only")
+                    @Assert(snapshot.riskLevel, "medium")
+                    @Assert(snapshot.fields, "case=sequential-overwrite-failure")
+                case None => @Fail("expected retained failure snapshot")
+            }
+
+            match (client.lastClientTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "jinguissl-provider-candidate")
+                    @Assert(touchpoint.selectedReason, "preferred_backend_hint")
+                    @Assert(touchpoint.publicPath, "experimental-only")
+                    @Assert(touchpoint.riskLevel, "medium")
+                case None => @Fail("expected retained failure touchpoint")
+            }
+
+            let second = client.request()
+                .method("GET")
+                .url(url)
+                .send()
+
+            @Assert(second.status, 200)
+            @Assert(second.body(), "overwrite-ok")
+            assertRetainedSuccessSnapshot(client, "stdx-http-client", "stable-default", "low")
+        } finally {
+            probeClient.close()
+            client.close()
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
 }
 
 func waitForClientRecoveryAcceptanceReady(client: RestClient, url: String): Unit {
@@ -282,4 +375,31 @@ func chooseClientRecoveryAcceptancePort(offset: Int64): UInt16 {
     let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
     let raw = 56000 + ((nowMs + offset) % 3000)
     UInt16(raw)
+}
+
+func assertRetainedSuccessSnapshot(
+    client: RestClient,
+    expectedBackend: String,
+    expectedPublicPath: String,
+    expectedRiskLevel: String
+): Unit {
+    match (client.lastClientObserveSnapshot()) {
+        case Some(snapshot) =>
+            @Assert(snapshot.outcome, "success")
+            @Assert(snapshot.errorClass, "NONE")
+            @Assert(snapshot.phase, "response")
+            @Assert(snapshot.responseStatus, 200)
+            @Assert(snapshot.backendId, expectedBackend)
+            @Assert(snapshot.publicPath, expectedPublicPath)
+            @Assert(snapshot.riskLevel, expectedRiskLevel)
+        case None => @Fail("expected retained success snapshot")
+    }
+
+    match (client.lastClientTransportTouchpoint()) {
+        case Some(touchpoint) =>
+            @Assert(touchpoint.selectedBackend, expectedBackend)
+            @Assert(touchpoint.publicPath, expectedPublicPath)
+            @Assert(touchpoint.riskLevel, expectedRiskLevel)
+        case None => @Fail("expected retained success touchpoint")
+    }
 }

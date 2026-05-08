@@ -170,14 +170,41 @@ public class RestClient {
         onTransportTouchpoint(hook)
     }
 
+    /// Returns the most recent `ClientTransportTouchpoint` captured by the
+    /// last `send()` call on this `RestClient` instance.
+    ///
+    /// **Latest-send shared slot** — every `send()` call (success or failure)
+    /// overwrites this value. Calling `clearRecoverySnapshots()` resets it
+    /// to `None`.
+    ///
+    /// [!] **Not thread-safe.** If multiple requests are in-flight concurrently
+    /// on the same `RestClient`, the value may be overwritten by a different
+    /// send before you read it. This accessor is intended for sequential
+    /// recovery flows, not concurrent history tracking.
     public func lastClientTransportTouchpoint(): ?ClientTransportTouchpoint {
         _lastClientTransportTouchpoint
     }
 
+    /// Returns the most recent `ClientObserveSnapshot` captured by the
+    /// last `send()` call on this `RestClient` instance.
+    ///
+    /// **Latest-send shared slot** — every `send()` call (success or failure)
+    /// overwrites this value. Calling `clearRecoverySnapshots()` resets it
+    /// to `None`.
+    ///
+    /// [!] **Not thread-safe.** If multiple requests are in-flight concurrently
+    /// on the same `RestClient`, the value may be overwritten by a different
+    /// send before you read it. This accessor is intended for sequential
+    /// recovery flows, not concurrent history tracking.
     public func lastClientObserveSnapshot(): ?ClientObserveSnapshot {
         _lastClientObserveSnapshot
     }
 
+    /// Resets both retained snapshot slots (`lastClientTransportTouchpoint`
+    /// and `lastClientObserveSnapshot`) to `None`.
+    ///
+    /// Returns `this` for chaining. After calling `clearRecoverySnapshots()`,
+    /// the next `send()` call will re-populate both slots with fresh values.
     public func clearRecoverySnapshots(): RestClient {
         _lastClientTransportTouchpoint = None
         _lastClientObserveSnapshot = None
