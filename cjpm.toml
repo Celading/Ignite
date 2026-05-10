@@ -21,7 +21,7 @@
   output-type = "static"
 
 [dependencies]
-  jinguissl = { git = "https://atomgit.com/cinyu/jinguiSSL" }
+  jinguissl = { git = "https://gitcode.com/cinyu/jinguiSSL" }
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"
