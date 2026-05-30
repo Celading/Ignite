@@ -25,7 +25,7 @@
 
 [dependencies]
   jinguissl = { git = "https://gitcode.com/cinyu/jinguiSSL", branch = "jg062" }
-  lisi = { path = "../../lisi/lisi" }
+  lisi = { git = "https://gitcode.com/cinyu/lisi" }
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"
