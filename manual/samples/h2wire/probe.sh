@@ -11,6 +11,34 @@ GUARD_STAGES_RAW="${IGNITE_H2_TLS_GUARD_STAGES:-precheck,cert_decode,mainline_bu
 GUARD_ONLY="${IGNITE_H2_TLS_GUARD_ONLY:-0}"
 READY_MARKER="[sample/h2wire] listening on https://127.0.0.1:18444"
 
+ensure_cangjie_env() {
+  if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
+    local envsetup=""
+    if [[ -n "${IGNITE_CANGJIE_HOME:-}" && -f "${IGNITE_CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${IGNITE_CANGJIE_HOME}/envsetup.sh"
+    elif [[ -n "${CANGJIE_HOME:-}" && -f "${CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${CANGJIE_HOME}/envsetup.sh"
+    elif [[ -f "/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh" ]]; then
+      envsetup="/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh"
+    fi
+
+    if [[ -n "${envsetup}" ]]; then
+      export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+      # shellcheck disable=SC1090
+      source "${envsetup}"
+    fi
+  fi
+
+  if [[ -z "${SDKROOT:-}" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+
+  if [[ -z "${CANGJIE_STDX_PATH:-}" && -d "/Library/Frameworks/Cangjie/stdx_Build" ]]; then
+    export CANGJIE_STDX_PATH="/Library/Frameworks/Cangjie/stdx_Build"
+  fi
+}
+
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
     printf '%s\n' "${IGNITE_STDX_STATIC}"
@@ -80,6 +108,8 @@ if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/../_helper/testdata/tls/ser
   export IGNITE_SAMPLE_TLS_KEY="${ROOT}/../_helper/testdata/tls/server-key-a.pem"
 fi
 
+ensure_cangjie_env
+
 IGNITE_SAMPLE_COMPILE_ONLY=1 "${ROOT}/manual/samples/_shared/run_server_sample.sh" "manual/samples/h2wire/main.cj" "${SERVER_BIN}"
 IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
   "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
@@ -100,10 +130,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 
