@@ -2,6 +2,8 @@ package ignite.tests
 
 import ignite.binary.*
 
+let TEST_AAGUID_HEX = "0011" + "2233" + "4455" + "6677" + "8899" + "aabb" + "ccdd" + "eeff"
+
 @Test
 public class BinaryAttestationObjectTestSuite {
     @TestCase
@@ -11,7 +13,7 @@ public class BinaryAttestationObjectTestSuite {
             "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" +
             "41" +
             "0000002a" +
-            "00112233445566778899aabbccddeeff" +
+            TEST_AAGUID_HEX +
             "0004" +
             "deadbeef" +
             "a50102032620012158200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202258202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40" +

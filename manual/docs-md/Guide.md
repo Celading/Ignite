@@ -113,7 +113,7 @@ curl -i http://127.0.0.1:18808/health
 - 样例脚本在错误目录执行
   处理：回到包含 `cjpm.toml` 的仓库根目录，再执行 `./manual/samples/.../run.sh`
 - TLS 首跑排障困难
-  处理：先保留 `enableTlsPrecheck: true`，用结构化错误定位问题；仅在应急排障时临时回退为 `false`
+  处理：先保留 `enableTlsPrecheck: true`，用结构化错误定位问题；当前主线会通过 raw PEM/DER `PrivateKey` wrapper 避开已知 key-load crash family，仅在应急排障时临时回退为 `false`
 - Swagger 启动行没显示
   处理：确认 `enableSwagger = true`，再检查 `enablePrintSwaggerUrl` 是否被关闭
 

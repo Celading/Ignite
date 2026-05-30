@@ -6,6 +6,7 @@ import std.collection.HashMap
 import std.fs.{Directory, exists, removeIfExists}
 import std.net.{IPSocketAddress, TcpSocket}
 import std.time.DateTime
+import stdx.net.tls.TlsClientConfig
 
 @Test
 public class ProxyTransportAcceptanceTestSuite {
@@ -95,6 +96,125 @@ public class ProxyTransportAcceptanceTestSuite {
             @Assert(resp.proxyRequestBodyMode, "temp-file-buffered-over-limit")
             @Assert(resp.proxyRequestBodyLimitBytes, maxBufferedBodyBytes.toString())
             @Assert(parseProxyAcceptanceDecimalInt64(resp.proxyRequestBodyBytes) > maxBufferedBodyBytes, true)
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownProxyAcceptanceApp(proxy, proxyFuture)
+            _ = removeIfExists(tempRoot, recursive: true)
+        }
+    }
+
+    @TestCase
+    public func testHttpsSeamWithTlsConfigBypassesMissingTlsError(): Unit {
+        // Proves the TlsClientConfig seam is actively attached to ClientBuilder:
+        //   with tlsConfig set, the proxy's HTTP client bypasses the "TLS must be configured"
+        //   gate and attempts to connect.  With no upstream listener, the error
+        //   is a transport-level 502 (connection refused), NOT the old boundary error.
+        let upstreamPort = chooseProxyAcceptancePort(461)
+        let proxyPort = chooseProxyAcceptancePort(465)
+        let tempRoot = "/tmp/ignite_proxy_acceptance_tls_seam_bypass_${proxyPort}"
+        let tempDir = tempRoot + "/https-body"
+        let payload = buildProxyAcceptancePayload()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+
+        // No upstream — port is empty; the proxy HTTP client will attempt
+        // TCP connect and fail with "Connection refused" (NOT "TLS must be configured").
+        let clientTlsConfig = TlsClientConfig()
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "https://127.0.0.1:${upstreamPort}",
+                unknownLengthBodyTempDir: tempDir,
+                tlsConfig: clientTlsConfig
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendProxyAcceptanceChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/https-seam-active",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+
+            @Assert(resp.status, UInt16(502))
+            @Assert(proxyAcceptanceContains(resp.bodyText, "Bad Gateway:"), true)
+            // Critical discriminant: the old "TLS must be configured" MUST NOT appear
+            // because the seam allows the HTTP engine to proceed past the old gate.
+            match (proxyAcceptanceContains(resp.bodyText, "TLS must be configured")) {
+                case true =>
+                    throw Exception("TlsClientConfig seam is NOT attached: client still reports 'TLS must be configured' instead of attempting connection")
+                case false =>
+                    // Expected: a transport-level error (connection refused, timeout, etc.)
+                    ()
+            }
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
+            @Assert(resp.proxyResponseBodyMode, "known-length-stream")
+            @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
+            @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")
+            @Assert(resp.proxyDownstreamBodyBytes, resp.bodyText.size.toString())
+            @Assert(exists(tempDir), true)
+            @Assert(Directory.isEmpty(tempDir), true)
+        } finally {
+            shutdownProxyAcceptanceApp(proxy, proxyFuture)
+            _ = removeIfExists(tempRoot, recursive: true)
+        }
+    }
+
+    @TestCase
+    public func testHttpsWithoutTlsConfigFailsWithOldMissingTlsBoundary(): Unit {
+        // Proves the OLD boundary: without TlsClientConfig, https target
+        // fails with "TLS must be configured when HTTPS requests are sent."
+        // This is the control — it must pass to prove the active-seam test
+        // above is a genuinely different failure mode.
+        let proxyPort = chooseProxyAcceptancePort(475)
+        let tempRoot = "/tmp/ignite_proxy_acceptance_old_missing_tls_boundary_${proxyPort}"
+        let tempDir = tempRoot + "/https-body"
+        let payload = buildProxyAcceptancePayload()
+
+        _ = removeIfExists(tempRoot, recursive: true)
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use(proxyObserveHeaderMiddleware())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "https://127.0.0.1:${chooseProxyAcceptancePort(999)}",
+                unknownLengthBodyTempDir: tempDir
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendProxyAcceptanceChunkedRequestWithRetry(
+                proxyPort,
+                "/proxy/https-no-tls",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+
+            @Assert(resp.status, UInt16(502))
+            @Assert(proxyAcceptanceContains(resp.bodyText, "Bad Gateway:"), true)
+            // Old boundary: no TlsClientConfig → stdx HTTP engine rejects https
+            @Assert(proxyAcceptanceContains(resp.bodyText, "TLS must be configured"), true)
+            @Assert(resp.proxyRequestBodyMode, "temp-file-buffered")
+            @Assert(resp.proxyRequestBodyBytes, payload.size.toString())
+            @Assert(resp.proxyRequestBodyLimitBytes, "")
             @Assert(resp.proxyResponseBodyMode, "known-length-stream")
             @Assert(resp.proxyResponseBodyBytes, resp.bodyText.size.toString())
             @Assert(resp.proxyDownstreamBodyMode, "known-length-stream")

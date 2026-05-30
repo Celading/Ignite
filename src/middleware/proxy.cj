@@ -2,6 +2,7 @@ package ignite.middleware
 
 import ignite.{Handler, Ctx}
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
+import stdx.net.tls.TlsClientConfig
 import std.collection.ArrayList
 import std.env.getVariable
 import std.fs.{Directory, File, OpenMode, Path, exists, removeIfExists}
@@ -30,6 +31,7 @@ public class ProxyConfig {
     public var pathRewrite: Array<(String, String)> = []
     public var timeout: Duration = Duration.second * 30
     public var x509Verify: ?security.X509VerifyOption = None
+    public var tlsConfig: ?TlsClientConfig = None
     public var bufferUnknownLengthBodyToFile: Bool = false
     public var unknownLengthBodyTempDir: String = ""
     public var maxBufferedBodyBytes: Int64 = 0
@@ -37,6 +39,7 @@ public class ProxyConfig {
     public init(target: String, pathRewrite!: Array<(String, String)> = [],
                 timeout!: Duration = Duration.second * 30,
                 x509Verify!: ?security.X509VerifyOption = None,
+                tlsConfig!: ?TlsClientConfig = None,
                 bufferUnknownLengthBodyToFile!: Bool = false,
                 unknownLengthBodyTempDir!: String = "",
                 maxBufferedBodyBytes!: Int64 = 0) {
@@ -46,6 +49,7 @@ public class ProxyConfig {
         if (let Some(option) <- x509Verify) {
             this.x509Verify = Some(option.copy())
         }
+        this.tlsConfig = tlsConfig
         this.bufferUnknownLengthBodyToFile = bufferUnknownLengthBodyToFile
         this.unknownLengthBodyTempDir = normalizeProxyTempDir(unknownLengthBodyTempDir)
         this.maxBufferedBodyBytes = if (maxBufferedBodyBytes > 0) { maxBufferedBodyBytes } else { 0 }
@@ -64,10 +68,13 @@ class ProxyBufferedBodyTooLargeException <: Exception {
 }
 
 public func proxyMiddleware(config: ProxyConfig): Handler {
-    let client = ClientBuilder()
+    let builder = ClientBuilder()
         .readTimeout(config.timeout)
         .writeTimeout(config.timeout)
-        .build()
+    if (let Some(tc) <- config.tlsConfig) {
+        builder.tlsConfig(tc)
+    }
+    let client = builder.build()
 
     { ctx: Ctx =>
         var targetPath = ctx.path
@@ -133,8 +140,9 @@ public func proxyObserveHeaderMiddleware(): Handler {
 }
 
 func buildProxyRequestHeaders(ctx: Ctx): HttpHeaders {
+    let carrier = ctx.currentRequestCarrier()
     let headers = HttpHeaders()
-    let requestHeaders = ctx.httpContext().request.headers
+    let requestHeaders = carrier.requestHeaders()
     let connectionTokens = parseConnectionHeaderTokens(requestHeaders)
     for ((name, values) in requestHeaders) {
         if (shouldSkipProxyRequestHeader(name, connectionTokens)) {
@@ -177,14 +185,14 @@ func attachProxyRequestBody(
         return None
     }
 
-    let request = ctx.httpContext().request
-    match (request.bodySize) {
+    let carrier = ctx.currentRequestCarrier()
+    match (carrier.requestBodySize()) {
         case Some(size) =>
             if (size > 0 || shouldForwardRequestBody(ctx)) {
                 recordProxyRequestBodyMode(ctx, "known-length-stream")
                 recordProxyRequestBodyBytes(ctx, size)
                 headers.add("content-length", size.toString())
-                reqBuilder.body(request.body)
+                reqBuilder.body(carrier.requestBodyStream())
             } else {
                 recordProxyRequestBodyMode(ctx, "skipped")
             }
@@ -200,7 +208,7 @@ func attachProxyRequestBody(
             if (proxyTargetScheme(targetUrl) == "http") {
                 recordProxyRequestBodyMode(ctx, "chunked-stream")
                 headers.add("transfer-encoding", "chunked")
-                reqBuilder.body(request.body)
+                reqBuilder.body(carrier.requestBodyStream())
             } else {
                 let buffered = ctx.bodyBytes()
                 recordProxyRequestBodyMode(ctx, "memory-buffered")
@@ -405,15 +413,15 @@ func detectDefaultProxyTempDir(): String {
 }
 
 func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
+    let carrier = ctx.currentRequestCarrier()
     observeProxyResponseBody(ctx, resp)
     observeProxyDownstreamBody(ctx, resp)
     _ = ctx.status(resp.status)
-    let responseBuilder = ctx.httpContext().responseBuilder
-    responseBuilder.addHeaders(buildProxyResponseHeaders(ctx, resp))
+    carrier.addResponseHeaders(buildProxyResponseHeaders(ctx, resp))
     if (proxyResponseMustBeBodyless(ctx.method, resp.status)) {
         return
     }
-    responseBuilder.body(resp.body)
+    carrier.attachResponseBodyStream(resp.body)
 }
 
 func observeProxyResponseBody(ctx: Ctx, resp: HttpResponse): Unit {

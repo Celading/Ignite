@@ -38,7 +38,8 @@ public class SocketHttp11AcceptOnceExperimentResult {
     }
 
     public func experimentForcedCloseAgainstReusableHelper(): Bool {
-        transportClosedAfterServeOnce && helperAllowsConnectionReuse()
+        let helperReusable = helperAllowsConnectionReuse()
+        transportClosedAfterServeOnce && helperReusable
     }
 
     public func serverObservedRequestText(): String {
@@ -124,9 +125,11 @@ public func runSocketHttp11AcceptOnceExperiment(
 ): SocketHttp11AcceptOnceExperimentResult {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${listenerHost}:0"))
     listener.bind()
-    let listenerPort =
-        (listener.localAddress as IPSocketAddress)?.port ??
-        throw Exception("socket accept-once experiment listener port is unavailable")
+    let listenerPort = match ((listener.localAddress as IPSocketAddress)?.port) {
+        case Some(port) => port
+        case None =>
+            throw Exception("socket accept-once experiment listener port is unavailable")
+    }
 
     let serverFuture = spawn {
         serveSocketHttp11AcceptOnceTurn(listener)

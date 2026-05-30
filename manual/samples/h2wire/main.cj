@@ -8,6 +8,10 @@ let H2_WIRE_FIXTURE = "/tmp/ignite_sample_h2_wire_fixture.txt"
 let H2_WIRE_HOST = "127.0.0.1"
 let H2_WIRE_PORT: UInt16 = 18444
 let H2_STREAM_BODY = "chunk-1\nchunk-2\nchunk-3\n"
+let H2_FIXTURE_LINE = "ignite-h2-wire-file-block-0123456789abcdef\n"
+let H2_FIXTURE_BASE_COUNT: Int64 = 4096
+let H2_FIXTURE_MULTIPLIER_ENV = "IGNITE_H2_FIXTURE_MULTIPLIER"
+let H2_WRITE_TIMEOUT_SECS_ENV = "IGNITE_SAMPLE_WRITE_TIMEOUT_SECS"
 
 main() {
     let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT", H2_WIRE_CERT_FALLBACK)
@@ -17,13 +21,18 @@ main() {
         return
     }
 
-    let fixture = buildLargeFixture()
+    let fixtureMultiplier = parseEnvInt(H2_FIXTURE_MULTIPLIER_ENV, 64)
+    let writeTimeoutSecs = parseEnvInt(H2_WRITE_TIMEOUT_SECS_ENV, 30)
+    let effectiveWriteTimeout = Duration.second * writeTimeoutSecs
+
+    let fixture = buildLargeFixture(fixtureMultiplier)
     writeTextFile(H2_WIRE_FIXTURE, fixture)
 
     let app = App(config: Config(
         appName: "ignite-sample-h2-wire",
         tlsCertFile: certFile,
-        tlsKeyFile: keyFile
+        tlsKeyFile: keyFile,
+        writeTimeout: effectiveWriteTimeout
     ))
 
     app.get("/", { ctx =>
@@ -55,7 +64,8 @@ main() {
     })
 
     println("[sample/h2wire] listening on https://${H2_WIRE_HOST}:${H2_WIRE_PORT}")
-    println("[sample/h2wire] local fixture bytes: ${fixture.size}")
+    println("[sample/h2wire] local fixture bytes: ${fixture.size} (multiplier=${fixtureMultiplier})")
+    println("[sample/h2wire] writeTimeout=${writeTimeoutSecs}s")
     println("[sample/h2wire] try: curl -k --http2 -i https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/")
     println("[sample/h2wire] try: curl -k --http2 -i https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/health")
     println("[sample/h2wire] try: curl -k --http2 -N https://${H2_WIRE_HOST}:${H2_WIRE_PORT}/stream")
@@ -82,13 +92,54 @@ func printTlsHint(): Unit {
     println("[sample/h2wire] local workspace fallback is ${H2_WIRE_CERT_FALLBACK} / ${H2_WIRE_KEY_FALLBACK}")
 }
 
-func buildLargeFixture(): String {
-    let line = "ignite-h2-wire-file-block-0123456789abcdef\n"
+func buildLargeFixture(multiplier: Int64): String {
     var out = ""
-    for (_ in 0..4096) {
-        out += line
+    let total = H2_FIXTURE_BASE_COUNT * multiplier
+    for (_ in 0..total) {
+        out += H2_FIXTURE_LINE
     }
     out
+}
+
+func parseEnvInt(envName: String, defaultVal: Int64): Int64 {
+    if (let Some(raw) <- getVariable(envName)) {
+        let trimmed = raw.trimAscii()
+        if (trimmed.size > 0) {
+            if (let Some(parsed) <- stodInt64(trimmed)) {
+                return parsed
+            }
+        }
+    }
+    defaultVal
+}
+
+/// Minimal parse: ascii digits + optional leading minus, no overflow check.
+func stodInt64(text: String): ?Int64 {
+    let runes = text.toRuneArray()
+    if (runes.size == 0) {
+        return None
+    }
+    var i: Int64 = 0
+    var sign: Int64 = 1
+    if (runes[0] == r'-') {
+        sign = -1
+        i = 1
+    } else if (runes[0] == r'+') {
+        i = 1
+    }
+    if (i >= runes.size) {
+        return None
+    }
+    var value: Int64 = 0
+    for (j in i..runes.size) {
+        let r = runes[j]
+        if (r < r'0' || r > r'9') {
+            return None
+        }
+        let digit = Int64(UInt32(r)) - Int64(UInt32(r'0'))
+        value = value * 10 + digit
+    }
+    Some(value * sign)
 }
 
 func writeTextFile(path: String, body: String): Unit {

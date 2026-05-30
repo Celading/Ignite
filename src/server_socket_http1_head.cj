@@ -164,7 +164,8 @@ public func tryParseSocketHttp11RequestHead(
     let method = requestLineParts[0]
     let target = requestLineParts[1]
     let version = requestLineParts[2]
-    if (method.size == 0 || target.size == 0 || !isSocketHttp11Token(method)) {
+    let validMethod = isSocketHttp11Token(method)
+    if (method.size == 0 || target.size == 0 || !validMethod) {
         throw SocketHttp11HeadException(
             SocketHttp11HeadErrorCode.MalformedRequestLine,
             "HTTP/1.1 request line contains an invalid method or target"

@@ -4,7 +4,6 @@ import ignite.*
 import ignite.middleware.*
 import std.collection.ArrayList
 import stdx.encoding.json.{JsonValue, JsonObject}
-import stdx.net.http.HttpRequestDistributor
 
 @Test
 public class InprocBindLoggerTestSuite {
@@ -236,11 +235,11 @@ struct CreateUserReq {
 class RetryAddressInUseEngine <: ServerEngine {
     let delegate = StdxServerEngine()
     public var listenCalls: Int64 = 0
-    public let attemptedPorts = ArrayList<UInt16>()
+    public let attemptedPorts: ArrayList<UInt16> = ArrayList<UInt16>()
 
     public override func listen(
         option: ServerEngineListenOption,
-        distributor: HttpRequestDistributor,
+        app: App,
         onReady: ?(() -> Unit)
     ): Unit {
         listenCalls += 1
@@ -248,7 +247,7 @@ class RetryAddressInUseEngine <: ServerEngine {
         if (listenCalls == 1) {
             throw Exception("bind failed: address already in use")
         }
-        delegate.listen(option, distributor, onReady)
+        delegate.listen(option, app, onReady)
     }
 
     public override func shutdown(): Unit {

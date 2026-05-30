@@ -1,11 +1,9 @@
 package ignite
 
+import seajson.escapeJsonText as seaJsonEscapeJsonText
+
 public func escapeJsonText(value: String): String {
-    var out = ""
-    for (r in value.toRuneArray()) {
-        out += escapeJsonRune(r)
-    }
-    out
+    seaJsonEscapeJsonText(value)
 }
 
 func escapeJsonRune(r: Rune): String {

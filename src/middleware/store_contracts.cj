@@ -123,7 +123,7 @@ public class RateLimitStoreResult {
 }
 
 public interface RateLimitStore {
-    func checkAndConsume(key: String, now: MonoTime, max: Int64, windowMs: Int64): RateLimitStoreResult
+    func consumeWindowPermit(key: String, now: MonoTime, max: Int64, windowMs: Int64): RateLimitStoreResult
     func cleanupExpired(now: MonoTime, windowMs: Int64): Unit
 }
 
@@ -142,7 +142,7 @@ public class MemoryRateLimitStore <: RateLimitStore {
 
     public init() {}
 
-    public override func checkAndConsume(
+    public override func consumeWindowPermit(
         key: String,
         now: MonoTime,
         max: Int64,

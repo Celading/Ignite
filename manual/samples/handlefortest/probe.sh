@@ -51,10 +51,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# First try shared runner; may fail due to stale link flags in _shared/.
 IGNITE_SAMPLE_COMPILE_ONLY=1 \
   "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
   "manual/samples/handlefortest/main.cj" \
-  "${WORKER_BIN}"
+  "${WORKER_BIN}" 2>/dev/null || true
 
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
@@ -66,6 +67,44 @@ RUNTIME_LIB_DIR="$(detect_runtime_lib_dir || true)"
 if [[ -z "${RUNTIME_LIB_DIR}" ]]; then
   echo "[sample/handlefortest] cannot locate Cangjie runtime lib dir." >&2
   exit 1
+fi
+
+# Note: run_server_sample.sh above may miss some link flags.
+# Probe compilation requires libignite.binary and libjinguissl base.
+# We re-link the worker with the missing libs.
+IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/handlefortest/main.cj" \
+  "${WORKER_BIN}" 2>/dev/null || true
+# If the shared runner succeeded, we're done; if it failed due to missing libs,
+# compile directly with the full link set.
+if [[ ! -x "${WORKER_BIN}" ]]; then
+  echo "[sample/handlefortest] recompiling with full link flags..." >&2
+  cjc "${ROOT}/manual/samples/handlefortest/main.cj" \
+    --import-path "${ROOT}/target/release" \
+    --import-path "${STDX_STATIC}" \
+    -L "${ROOT}/target/release/ignite" \
+    -L "${ROOT}/target/release/lisi" \
+    -L "${ROOT}/target/release/jinguissl" \
+    -L "${STDX_STATIC}/stdx" \
+    -lignite.middleware -lignite.governance -lignite.client -lignite \
+    -lignite.api2 -lignite.security -lignite.api2.GetData -lignite.binary \
+    -llisi.transport -llisi.runtime -llisi.net.TlsTool -llisi.net \
+    -llisi.logger -llisi.term -llisi \
+    -ljinguissl.contract -ljinguissl.crypto.tls -ljinguissl.crypto.x509 \
+    -ljinguissl.crypto.ssh -ljinguissl.crypto.rsa -ljinguissl.crypto.ed25519 \
+    -ljinguissl.crypto.x25519 -ljinguissl.crypto.ecc -ljinguissl.crypto.digest \
+    -ljinguissl.crypto.chacha20 -ljinguissl.crypto.aes -ljinguissl.crypto.utils \
+    -ljinguissl.crypto.compliance -ljinguissl.crypto.bignum -ljinguissl.crypto.error \
+    -ljinguissl \
+    -lstdx.encoding.json -lstdx.serialization.serialization -lstdx.net.http \
+    -lstdx.net.tls -lstdx.net.tls.common -lstdx.logger -lstdx.log \
+    -lstdx.encoding.url -lstdx.encoding.json.stream -lstdx.crypto.x509 \
+    -lstdx.crypto.keys -lstdx.encoding.hex -lstdx.crypto.crypto \
+    -lstdx.crypto.digest -lstdx.crypto.common -lstdx.encoding.base64 \
+    -lstdx.compress.zlib \
+    -Woff unused \
+    -o "${WORKER_BIN}"
 fi
 
 case "$(uname -s)" in

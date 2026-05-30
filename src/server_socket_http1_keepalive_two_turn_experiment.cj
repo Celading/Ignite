@@ -254,9 +254,11 @@ public func runSocketHttp11KeepAliveTwoTurnExperiment(
 ): SocketHttp11KeepAliveTwoTurnExperimentResult {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${listenerHost}:0"))
     listener.bind()
-    let listenerPort =
-        (listener.localAddress as IPSocketAddress)?.port ??
-        throw Exception("socket keepalive two-turn experiment listener port is unavailable")
+    let listenerPort = match ((listener.localAddress as IPSocketAddress)?.port) {
+        case Some(port) => port
+        case None =>
+            throw Exception("socket keepalive two-turn experiment listener port is unavailable")
+    }
 
     let serverFuture = spawn {
         serveSocketHttp11KeepAliveTwoTurn(listener)
@@ -272,12 +274,18 @@ public func runSocketHttp11KeepAliveTwoTurnExperiment(
 
     match (completion.secondCompletedTurn) {
         case Some(secondTurn) =>
+            let firstCompletedTurn = match (completion.firstCompletedTurn) {
+                case Some(firstCompletedTurn) => firstCompletedTurn
+                case None =>
+                    throw Exception(
+                        "socket keepalive two-turn experiment lost first-turn completion"
+                    )
+            }
             SocketHttp11KeepAliveTwoTurnExperimentResult(
                 listenerHost,
                 listenerPort,
                 completion.acceptedRemoteAddress,
-                completion.firstCompletedTurn ??
-                    throw Exception("socket keepalive two-turn experiment lost first-turn completion"),
+                firstCompletedTurn,
                 secondTurn,
                 true,
                 true,

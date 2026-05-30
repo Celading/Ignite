@@ -1,13 +1,11 @@
 package ignite
 
-import stdx.net.http.HttpContext
-
 func prepareCurrentCarrierDispatchContext(
     app: App,
-    httpCtx: HttpContext,
+    currentRequestCarrier: CurrentRequestCarrier,
     plan: AppDispatchPlan
 ): ?Ctx {
-    let ctx = Ctx(httpCtx, app)
+    let ctx = Ctx(currentRequestCarrier, app)
     ctx.setParams(plan.params)
     ctx.setHandlers(plan.handlers)
 
@@ -23,7 +21,7 @@ func prepareCurrentCarrierDispatchContext(
     Some(ctx)
 }
 
-func executePreparedCurrentCarrierDispatch(app: App, httpCtx: HttpContext, ctx: Ctx): Unit {
+func executePreparedCurrentCarrierDispatch(app: App, ctx: Ctx): Unit {
     try {
         ctx.next()
     } catch (e: Exception) {
@@ -37,10 +35,10 @@ func executePreparedCurrentCarrierDispatch(app: App, httpCtx: HttpContext, ctx: 
         if (let Some(errorHandler) <- app._errorHandler) {
             errorHandler(ctx, e)
         } else {
-            httpCtx.responseBuilder
-                .status(500)
-                .header("content-type", "text/plain; charset=utf-8")
-                .body("Internal Server Error")
+            let carrier = ctx.currentRequestCarrier()
+            carrier.setResponseStatus(500)
+            carrier.setResponseHeader("content-type", "text/plain; charset=utf-8")
+            carrier.setResponseString("Internal Server Error")
         }
     }
 }

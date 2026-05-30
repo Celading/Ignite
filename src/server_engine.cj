@@ -2,9 +2,8 @@ package ignite
 
 import std.fs.{File, OpenMode}
 import std.collection.ArrayList
-import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor}
+import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpContext}
 import ignite.api2
-import lisi.transport as lisiTransport
 
 public class ServerTransportTouchpoint {
     public let candidateOrder: String
@@ -118,6 +117,7 @@ public class ServerStartupObserveEvent {
 }
 
 public type ServerStartupObserveHook = (ServerStartupObserveEvent) -> Unit
+public type ServerPreparedTlsMaterialLoader = () -> api2.PreparedHttpServerTlsMaterial
 
 public class ServerEngineListenOption {
     public let addr: String
@@ -129,6 +129,7 @@ public class ServerEngineListenOption {
     public let tlsCertFile: String
     public let tlsKeyFile: String
     public let enableTlsPrecheck: Bool
+    public let preparedTlsMaterialLoader: ?ServerPreparedTlsMaterialLoader
     public let transportTouchpoint: ?ServerTransportTouchpoint
 
     public init(
@@ -141,6 +142,7 @@ public class ServerEngineListenOption {
         tlsCertFile: String,
         tlsKeyFile: String,
         enableTlsPrecheck: Bool,
+        preparedTlsMaterialLoader!: ?ServerPreparedTlsMaterialLoader = None,
         transportTouchpoint!: ?ServerTransportTouchpoint = None
     ) {
         this.addr = addr
@@ -152,14 +154,22 @@ public class ServerEngineListenOption {
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.enableTlsPrecheck = enableTlsPrecheck
+        this.preparedTlsMaterialLoader = preparedTlsMaterialLoader
         this.transportTouchpoint = transportTouchpoint
+    }
+
+    public func loadPreparedTlsMaterial(): api2.PreparedHttpServerTlsMaterial {
+        if (let Some(loader) <- preparedTlsMaterialLoader) {
+            return loader()
+        }
+        throw Exception("prepared TLS material loader is unavailable")
     }
 }
 
 public interface ServerEngine {
     func listen(
         option: ServerEngineListenOption,
-        distributor: HttpRequestDistributor,
+        app: App,
         onReady: ?(() -> Unit)
     ): Unit
 
@@ -199,21 +209,16 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             "opt_in_engine_shell_selected",
             "opt-in-engine-shell",
             "experimental",
-            "runtime_not_implemented"
+            "cleartext_h1_first_runnable"
         )
     }
 
     public override func listen(
         option: ServerEngineListenOption,
-        distributor: HttpRequestDistributor,
+        app: App,
         onReady: ?(() -> Unit)
     ): Unit {
-        let _ = option
-        let _ = distributor
-        let _ = onReady
-        throw SocketServerEngineShellException(
-            "socket server engine shell is not implemented yet; runtime loop, accept loop, and carrier-backed execution remain blocked"
-        )
+        runSocketServerEngineShellListen(option, app, onReady)
     }
 
     public override func shutdown(): Unit {}
@@ -226,9 +231,10 @@ public class StdxServerEngine <: ServerEngine {
 
     public override func listen(
         option: ServerEngineListenOption,
-        distributor: HttpRequestDistributor,
+        app: App,
         onReady: ?(() -> Unit)
     ): Unit {
+        let distributor = StdxServerEngineDistributor(app)
         let builder = ServerBuilder()
             .addr(option.addr)
             .port(option.port)
@@ -240,12 +246,9 @@ public class StdxServerEngine <: ServerEngine {
 
         let hasTls = option.tlsCertFile.size > 0 && option.tlsKeyFile.size > 0
         if (hasTls) {
-            let certPem = readFileStringForEngine(option.tlsCertFile)
-            let keyPem = readFileStringForEngine(option.tlsKeyFile)
-            let tlsCfg = api2.loadTlsServerConfigForHttp2(
-                certPem,
-                keyPem,
-                enablePrecheck: option.enableTlsPrecheck
+            let preparedMaterial = option.loadPreparedTlsMaterial()
+            let tlsCfg = api2.buildStdxTlsServerConfigFromPreparedMaterial(
+                preparedMaterial
             )
             let _ = builder.tlsConfig(tlsCfg)
         }
@@ -270,24 +273,64 @@ public class StdxServerEngine <: ServerEngine {
     }
 }
 
-func readFileStringForEngine(path: String): String {
-    let file = File(path, OpenMode.Read)
-    let buf = ArrayList<UInt8>()
-    let tmp = Array<UInt8>(4096, repeat: 0)
-    while (true) {
-        let n = file.read(tmp)
-        if (n <= 0) { break }
-        for (i in 0..n) {
-            buf.add(tmp[i])
-        }
+class StdxServerEngineLambdaHandler <: HttpRequestHandler {
+    let fn: (HttpContext) -> Unit
+
+    init(fn: (HttpContext) -> Unit) {
+        this.fn = fn
     }
-    file.close()
-    String.fromUtf8(buf.toArray())
+
+    public func handle(ctx: HttpContext): Unit {
+        fn(ctx)
+    }
+}
+
+class StdxServerEngineAppMainHandler <: HttpRequestHandler {
+    let app: App
+
+    init(app: App) {
+        this.app = app
+    }
+
+    public func handle(ctx: HttpContext): Unit {
+        app.handleRequest(wrapCurrentRequestCarrier(ctx))
+    }
+}
+
+class StdxServerEngineDistributor <: HttpRequestDistributor {
+    let mainHandler: StdxServerEngineAppMainHandler
+
+    init(app: App) {
+        this.mainHandler = StdxServerEngineAppMainHandler(app)
+    }
+
+    private func usePathForLint(path: String): Unit {
+        if (path.size >= 0) { }
+    }
+
+    private func useHandlerForLint(handler: HttpRequestHandler): Unit {
+        let _ = handler
+    }
+
+    public func register(path: String, handler: HttpRequestHandler): Unit {
+        usePathForLint(path)
+        useHandlerForLint(handler)
+    }
+
+    public func registerRoute(path: String, handler: (HttpContext) -> Unit): Unit {
+        usePathForLint(path)
+        useHandlerForLint(StdxServerEngineLambdaHandler(handler))
+    }
+
+    public func distribute(path: String): HttpRequestHandler {
+        usePathForLint(path)
+        mainHandler
+    }
 }
 
 func buildServerTransportTouchpoint(addr: String, port: UInt16, tlsEnabled: Bool): ServerTransportTouchpoint {
     let scheme = if (tlsEnabled) { "https" } else { "http" }
-    let request = lisiTransport.BackendSelectionRequest(
+    let request = api2.BackendSelectionRequest(
         "server",
         scheme,
         false,
@@ -298,8 +341,8 @@ func buildServerTransportTouchpoint(addr: String, port: UInt16, tlsEnabled: Bool
         0,
         "sni=" + normalizeServerTouchpointHost(addr, port)
     )
-    let decision = lisiTransport.selectBackend(request)
-    let tlsPlan = lisiTransport.buildTlsAttachPlan(
+    let decision = api2.selectBackend(request)
+    let tlsPlan = api2.buildTlsAttachPlan(
         request,
         decision,
         normalizeServerTouchpointHost(addr, port)

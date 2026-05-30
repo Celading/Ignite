@@ -6,8 +6,7 @@ import std.fs.{Directory, exists, File, FileInfo, OpenMode, Path, removeIfExists
 import std.io.InputStream
 import std.sync.Mutex
 import stdx.net.http.{
-    HttpContext, HttpRequestHandler,
-    HttpRequestDistributor, HttpRequestBuilder,
+    HttpRequestBuilder,
     HttpHeaders, ClientBuilder, Client
 }
 import ignite.api2
@@ -373,10 +372,21 @@ public class App {
             router.printRoutes()
         }
 
-        let distributor = IgniteDistributor(this)
         let hasTls = config.tlsCertFile.size > 0 && config.tlsKeyFile.size > 0
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
+        let preparedTlsMaterialLoader: ?ServerPreparedTlsMaterialLoader = if (hasTls) {
+            Some({
+                =>
+                api2.loadHttpServerTlsMaterialFromFiles(
+                    config.tlsCertFile,
+                    config.tlsKeyFile,
+                    enablePrecheck: config.enableTlsPrecheck
+                )
+            })
+        } else {
+            None
+        }
         let appName = config.appName
         let appVersion = config.appVersion
         let routeCount = router.allRoutes.size
@@ -403,12 +413,13 @@ public class App {
             config.tlsCertFile,
             config.tlsKeyFile,
             config.enableTlsPrecheck,
+            preparedTlsMaterialLoader: preparedTlsMaterialLoader,
             transportTouchpoint: transportTouchpoint
         )
         try {
             _engine.listen(
                 option,
-                distributor,
+                this,
                 {
                     =>
                     let networkSelection = api2.resolveBoundNetworkSelection(
@@ -697,17 +708,17 @@ public class App {
         _swaggerRouteInstalled = true
     }
 
-    func handleRequest(httpCtx: HttpContext): Unit {
-        let requestMethod = httpCtx.request.method
-        let requestPath = httpCtx.request.url.path
+    func handleRequest(currentRequestCarrier: CurrentRequestCarrier): Unit {
+        let requestMethod = currentRequestCarrier.requestMethod()
+        let requestPath = currentRequestCarrier.requestPath()
 
         if (config.serverHeader.size > 0) {
-            httpCtx.responseBuilder.header("server", config.serverHeader)
+            currentRequestCarrier.setResponseHeader("server", config.serverHeader)
         }
 
         let plan = resolveAppDispatchPlan(this, requestMethod, requestPath)
-        if (let Some(ctx) <- prepareCurrentCarrierDispatchContext(this, httpCtx, plan)) {
-            executePreparedCurrentCarrierDispatch(this, httpCtx, ctx)
+        if (let Some(ctx) <- prepareCurrentCarrierDispatchContext(this, currentRequestCarrier, plan)) {
+            executePreparedCurrentCarrierDispatch(this, ctx)
         }
     }
 
@@ -1325,63 +1336,6 @@ func stableInprocTestPortHash(method: String, path: String): Int64 {
         hash = ((hash * 131) + Int64(b)) % 10000
     }
     hash
-}
-
-class LambdaHttpHandler <: HttpRequestHandler {
-    let fn: (HttpContext) -> Unit
-
-    init(fn: (HttpContext) -> Unit) {
-        this.fn = fn
-    }
-
-    public func handle(ctx: HttpContext): Unit {
-        fn(ctx)
-    }
-}
-
-class IgniteDistributor <: HttpRequestDistributor {
-    let app: App
-    let mainHandler: IgniteMainHandler
-
-    init(app: App) {
-        this.app = app
-        this.mainHandler = IgniteMainHandler(app)
-    }
-
-    private func usePathForLint(p: String): Unit {
-        if (p.size >= 0) { }
-    }
-
-    private func useHandlerForLint(h: HttpRequestHandler): Unit {
-        let _ = h
-    }
-
-    public func register(path: String, handler: HttpRequestHandler): Unit {
-        usePathForLint(path)
-        useHandlerForLint(handler)
-    }
-
-    public func registerRoute(path: String, handler: (HttpContext) -> Unit): Unit {
-        usePathForLint(path)
-        useHandlerForLint(LambdaHttpHandler(handler))
-    }
-
-    public func distribute(path: String): HttpRequestHandler {
-        usePathForLint(path)
-        mainHandler
-    }
-}
-
-class IgniteMainHandler <: HttpRequestHandler {
-    let app: App
-
-    init(app: App) {
-        this.app = app
-    }
-
-    public func handle(ctx: HttpContext): Unit {
-        app.handleRequest(ctx)
-    }
 }
 
 func defaultSwaggerUICssUrl(): String {

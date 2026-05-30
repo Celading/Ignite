@@ -79,6 +79,87 @@ public class FileDownloadAndRestfulTestSuite {
     }
 
     @TestCase
+    public func testLargeFileDownloadAndRangeOverRealHttpKeepKnownLengthWire(): Unit {
+        let fixturePath = "/tmp/ignite_streaming_download_wire_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+        let start: Int64 = 4096
+        let end: Int64 = 4351
+        let port = chooseUploadTestPort(1897)
+
+        let app = App(config: Config())
+        app.get("/large-file-wire", { ctx =>
+            _ = ctx.sendFile(fixturePath)
+        })
+        app.get("/large-range-wire", { ctx =>
+            _ = ctx.sendFileRange(fixturePath)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let fileResp = sendRawDownloadWithRetry(port, "GET", "/large-file-wire")
+            @Assert(fileResp.status, UInt16(200))
+            @Assert(fileResp.header("content-length") ?? "", payload.size.toString())
+            @Assert(fileResp.header("transfer-encoding") ?? "", "")
+            @Assert(fileResp.header("accept-ranges") ?? "", "bytes")
+            @Assert(fileResp.body, payload)
+
+            let rangeResp = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/large-range-wire",
+                headers: [("range", "bytes=${start}-${end}")]
+            )
+            @Assert(rangeResp.status, UInt16(206))
+            @Assert(rangeResp.header("content-length") ?? "", "${end - start + 1}")
+            @Assert(rangeResp.header("transfer-encoding") ?? "", "")
+            @Assert(rangeResp.header("content-range") ?? "", "bytes ${start}-${end}/${payload.size}")
+            @Assert(rangeResp.body, sliceText(payload, start, end + 1))
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testPublicFileSegmentInputStreamSupportsKnownLengthSubrangeMigrationOverRealHttp(): Unit {
+        let fixturePath = "/tmp/ignite_public_file_segment_stream_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+        let start: Int64 = 8192
+        let length: Int64 = 512
+        let end = start + length
+        let port = chooseUploadTestPort(1903)
+
+        let app = App(config: Config())
+        app.get("/segment-stream-wire", { ctx =>
+            let stream = FileSegmentInputStream(fixturePath, start: start, length: length)
+            let _ = ctx
+                .setHeader("content-disposition", "attachment; filename=\"segment.txt\"")
+                .sendStream(
+                    stream,
+                    contentType: "text/plain; charset=utf-8",
+                    contentLength: Some(length)
+                )
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendRawDownloadWithRetry(port, "GET", "/segment-stream-wire")
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-length") ?? "", length.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.header("content-disposition") ?? "", "attachment; filename=\"segment.txt\"")
+            @Assert(resp.body, sliceText(payload, start, end))
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testSaveBodyToFileStreamsLargeUploadPayload(): Unit {
         let fixturePath = "/tmp/ignite_push_upload_fixture.txt"
         let payload = buildLargeAsciiPayload() + buildLargeAsciiPayload()
@@ -422,6 +503,50 @@ public class FileDownloadAndRestfulTestSuite {
             }
         }
         throw Exception("failed to connect chunked upload test server: ${port} ${target}")
+    }
+
+    func sendRawDownloadWithRetry(
+        port: UInt16,
+        method: String,
+        target: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        var attempt: Int64 = 0
+        while (attempt < 20) {
+            try {
+                return sendRawDownload(port, method, target, headers: headers)
+            } catch (_: Exception) {
+                if (attempt == 19) {
+                    throw Exception("failed to connect download test server: ${port} ${target}")
+                }
+                sleep(Duration.millisecond * 50)
+                attempt += 1
+            }
+        }
+        throw Exception("failed to connect download test server: ${port} ${target}")
+    }
+
+    func sendRawDownload(
+        port: UInt16,
+        method: String,
+        target: String,
+        headers!: Array<(String, String)> = []
+    ): UploadRawHttpResponse {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            var request = "${method} ${target} HTTP/1.1\r\n"
+            request += "host: 127.0.0.1:${port}\r\n"
+            request += "connection: close\r\n"
+            for ((key, value) in headers) {
+                request += "${key}: ${value}\r\n"
+            }
+            request += "\r\n"
+            socket.write(request.toArray())
+            readRawUploadResponse(socket)
+        } finally {
+            socket.close()
+        }
     }
 
     func sendChunkedUpload(
