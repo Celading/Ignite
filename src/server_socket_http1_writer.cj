@@ -367,8 +367,10 @@ public func buildSocketHttp11ResponseWritePlan(
     let knownLength = resolveSocketHttp11KnownLength(bodyMode, declaredBodyBytes)
     let suppressesBodyForHead = request.head.method.trimAscii().toAsciiUpper() == "HEAD"
     let suppressesBodyForStatus = isSocketHttp11ResponseBodyForbiddenStatus(statusCode)
+    let unknownLengthBody = bodyMode == SocketHttp11ResponseBodyMode.UnknownLength
+    let knownLengthBody = bodyMode == SocketHttp11ResponseBodyMode.KnownLength
 
-    if (suppressesBodyForStatus && bodyMode == SocketHttp11ResponseBodyMode.UnknownLength) {
+    if (suppressesBodyForStatus && unknownLengthBody) {
         throw SocketHttp11WriterException(
             SocketHttp11WriterErrorCode.BodyForbiddenByStatus,
             "socket HTTP/1.1 response status forbids unknown-length payload bodies"
@@ -376,7 +378,7 @@ public func buildSocketHttp11ResponseWritePlan(
     }
     if (
         suppressesBodyForStatus &&
-        bodyMode == SocketHttp11ResponseBodyMode.KnownLength &&
+        knownLengthBody &&
         knownLength > 0
     ) {
         throw SocketHttp11WriterException(
@@ -387,7 +389,6 @@ public func buildSocketHttp11ResponseWritePlan(
 
     let headerFraming = decideSocketHttp11ResponseHeaderFraming(
         bodyMode,
-        knownLength,
         suppressesBodyForHead,
         suppressesBodyForStatus
     )
@@ -459,7 +460,6 @@ func resolveSocketHttp11KnownLength(bodyMode: SocketHttp11ResponseBodyMode, decl
 
 func decideSocketHttp11ResponseHeaderFraming(
     bodyMode: SocketHttp11ResponseBodyMode,
-    knownLength: Int64,
     suppressesBodyForHead: Bool,
     suppressesBodyForStatus: Bool
 ): SocketHttp11ResponseHeaderFraming {

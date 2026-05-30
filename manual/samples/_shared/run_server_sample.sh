@@ -67,41 +67,42 @@ fi
 
 COMMON_IMPORTS=(
   --import-path "${ROOT}/target/release"
+  --import-path "${ROOT}/target/release/seajson"
   --import-path "${STDX_STATIC}"
 )
 COMMON_LINKS=(
+  -L "${ROOT}/target/release/seajson"
+  -lseajson
   -L "${ROOT}/target/release/ignite"
-  -L "${ROOT}/target/release/lisi"
   -lignite.middleware
   -lignite.governance
   -lignite.client
   -lignite
   -lignite.api2
+  -lignite.binary
   -lignite.security
-  -lignite.api2.GetData
-  -llisi.transport
-  -llisi.runtime
-  -llisi.net.TlsTool
-  -llisi.net
-  -llisi.logger
-  -llisi.term
-  -llisi
-  -L "${ROOT}/target/release/jinguissl"
-  -ljinguissl.contract
-  -ljinguissl.crypto.tls
-  -ljinguissl.crypto.x509
-  -ljinguissl.crypto.ssh
-  -ljinguissl.crypto.rsa
-  -ljinguissl.crypto.ed25519
-  -ljinguissl.crypto.x25519
-  -ljinguissl.crypto.ecc
-  -ljinguissl.crypto.digest
-  -ljinguissl.crypto.chacha20
-  -ljinguissl.crypto.aes
-  -ljinguissl.crypto.utils
-  -ljinguissl.crypto.compliance
-  -ljinguissl.crypto.bignum
-  -ljinguissl.crypto.error
+  -L "${ROOT}/target/release/jinguissl_contract"
+  -ljinguissl_contract.jinguissl.contract
+  -ljinguissl_contract.jinguissl.live
+  -ljinguissl_contract.jinguissl.runtime
+  -L "${ROOT}/target/release/jinguissl_core"
+  -ljinguissl_core.jinguissl.crypto.tls
+  -ljinguissl_core.jinguissl.crypto.x509
+  -ljinguissl_core.jinguissl.crypto.ssh
+  -ljinguissl_core.jinguissl.crypto.kem
+  -ljinguissl_core.jinguissl.crypto.rsa
+  -ljinguissl_core.jinguissl.crypto.ed25519
+  -ljinguissl_core.jinguissl.crypto.ecc
+  -ljinguissl_core.jinguissl.crypto.x25519
+  -ljinguissl_core.jinguissl.crypto.digest
+  -ljinguissl_core.jinguissl.crypto.chacha20
+  -ljinguissl_core.jinguissl.crypto.aes
+  -ljinguissl_core.jinguissl.crypto.utils
+  -ljinguissl_core.jinguissl.crypto.compliance
+  -ljinguissl_core.jinguissl.crypto.bignum
+  -ljinguissl_core.jinguissl.crypto.sm4
+  -ljinguissl_core.jinguissl.crypto.sm3
+  -ljinguissl_core.jinguissl.crypto.error
   -L "${STDX_STATIC}/stdx"
   -lstdx.encoding.json
   -lstdx.serialization.serialization
@@ -143,10 +144,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

@@ -44,12 +44,12 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
         })
 
         let request = openSocketHttp11DispatchSeedTestRequest(
-            "GET http://api.example.com:8080/health/live?probe=1 HTTP/1.1\r\nHost: ignored.example.com\r\n\r\n"
+            "GET http://127.0.0.1:8080/health/live?probe=1 HTTP/1.1\r\nHost: ignored.example.com\r\n\r\n"
         )
         let seed = buildSocketHttp11DispatchSeed(request)
 
         @Assert(seed.targetFormName(), "absolute-form")
-        @Assert(seed.authority, "api.example.com:8080")
+        @Assert(seed.authority, "127.0.0.1:8080")
         @Assert(seed.scheme, "http")
         @Assert(seed.queryString, "probe=1")
         @Assert(seed.normalizedDispatchTarget(), "/health/live?probe=1")

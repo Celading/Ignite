@@ -33,7 +33,8 @@ public class SocketHttp11CountLimitedAcceptLoopExperimentConnection {
     }
 
     public func experimentForcedCloseAgainstReusableHelper(): Bool {
-        transportClosedAfterResponse && helperAllowsConnectionReuse()
+        let helperReusable = helperAllowsConnectionReuse()
+        transportClosedAfterResponse && helperReusable
     }
 
     public func serverObservedRequestText(): String {
@@ -297,11 +298,13 @@ public func runSocketHttp11CountLimitedAcceptLoopExperiment(
     let acceptedConnectionLimit: Int64 = 2
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${listenerHost}:0"))
     listener.bind()
-    let listenerPort =
-        (listener.localAddress as IPSocketAddress)?.port ??
-        throw Exception(
-            "socket count-limited accept-loop experiment listener port is unavailable"
-        )
+    let listenerPort = match ((listener.localAddress as IPSocketAddress)?.port) {
+        case Some(port) => port
+        case None =>
+            throw Exception(
+                "socket count-limited accept-loop experiment listener port is unavailable"
+            )
+    }
 
     let serverFuture = spawn {
         serveSocketHttp11CountLimitedAcceptLoopExperiment(
@@ -320,11 +323,13 @@ public func runSocketHttp11CountLimitedAcceptLoopExperiment(
 
     match (completion.secondCompletedConnection) {
         case Some(secondCompletedConnection) =>
-            let firstCompletedConnection =
-                completion.firstCompletedConnection ??
-                throw Exception(
-                    "socket count-limited accept-loop experiment lost first-connection completion"
-                )
+            let firstCompletedConnection = match (completion.firstCompletedConnection) {
+                case Some(firstCompletedConnection) => firstCompletedConnection
+                case None =>
+                    throw Exception(
+                        "socket count-limited accept-loop experiment lost first-connection completion"
+                    )
+            }
             SocketHttp11CountLimitedAcceptLoopExperimentResult(
                 listenerHost,
                 listenerPort,
@@ -386,15 +391,19 @@ func buildSocketHttp11CountLimitedAcceptLoopExperimentConnection(
     clientObservedResponseWireBytes: Array<UInt8>,
     transportClosedAfterResponse: Bool
 ): SocketHttp11CountLimitedAcceptLoopExperimentConnection {
+    let runtime = match (completedConnection.runtime) {
+        case Some(runtime) => runtime
+        case None =>
+            throw Exception(
+                "socket count-limited accept-loop experiment lost runtime completion"
+            )
+    }
     SocketHttp11CountLimitedAcceptLoopExperimentConnection(
         connectionIndex,
         completedConnection.acceptedRemoteAddress,
         completedConnection.serverObservedRequestWireBytes,
         clientObservedResponseWireBytes,
-        completedConnection.runtime ??
-            throw Exception(
-                "socket count-limited accept-loop experiment lost runtime completion"
-            ),
+        runtime,
         transportClosedAfterResponse
     )
 }
@@ -468,17 +477,26 @@ func serveSocketHttp11CountLimitedAcceptLoopExperiment(
             }
         }
 
-        SocketHttp11CountLimitedAcceptLoopServerCompletion(
-            acceptedConnectionLimit,
-            acceptedConnectionCount,
-            firstCompletedConnection ??
+        let requiredFirstCompletedConnection = match (firstCompletedConnection) {
+            case Some(firstCompletedConnection) => firstCompletedConnection
+            case None =>
                 throw Exception(
                     "socket count-limited accept-loop experiment lost first connection in loop"
-                ),
-            secondCompletedConnection ??
+                )
+        }
+        let requiredSecondCompletedConnection = match (secondCompletedConnection) {
+            case Some(secondCompletedConnection) => secondCompletedConnection
+            case None =>
                 throw Exception(
                     "socket count-limited accept-loop experiment lost second connection in loop"
                 )
+        }
+
+        SocketHttp11CountLimitedAcceptLoopServerCompletion(
+            acceptedConnectionLimit,
+            acceptedConnectionCount,
+            requiredFirstCompletedConnection,
+            requiredSecondCompletedConnection
         )
     } finally {
         if (!listener.isClosed()) {

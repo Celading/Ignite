@@ -1,7 +1,6 @@
 package ignite.tests
 
 import ignite.*
-import stdx.net.http.HttpRequestDistributor
 
 let DUAL_TLS_CERT_A = "_helper/testdata/tls/server-cert-a.pem"
 let DUAL_TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
@@ -58,6 +57,10 @@ public class DeploymentDualListenerPatternTestSuite {
         @Assert(httpEngine.lastTlsKeyFile, "")
         @Assert(httpsEngine.lastTlsCertFile, DUAL_TLS_CERT_A)
         @Assert(httpsEngine.lastTlsKeyFile, DUAL_TLS_KEY_A)
+        @Assert(httpEngine.loadedPreparedTlsMaterial, false)
+        @Assert(httpsEngine.loadedPreparedTlsMaterial, true)
+        @Assert(httpsEngine.lastPreparedTlsAlpnCount >= 2, true)
+        @Assert(httpsEngine.lastPreparedTlsCertPemSize > 0, true)
         @Assert(httpEngine.readyCalled, true)
         @Assert(httpsEngine.readyCalled, true)
         match (httpEngine.lastTransportTouchpoint) {
@@ -127,18 +130,27 @@ class DeploymentSpyServerEngine <: ServerEngine {
     var lastPort: UInt16 = 0
     var lastTlsCertFile: String = ""
     var lastTlsKeyFile: String = ""
+    var loadedPreparedTlsMaterial: Bool = false
+    var lastPreparedTlsAlpnCount: Int64 = 0
+    var lastPreparedTlsCertPemSize: Int64 = 0
     var lastTransportTouchpoint: ?ServerTransportTouchpoint = None
 
     public override func listen(
         option: ServerEngineListenOption,
-        distributor: HttpRequestDistributor,
+        app: App,
         onReady: ?(() -> Unit)
     ): Unit {
-        let _ = distributor
+        let _ = app
         listenCalled = true
         lastPort = option.port
         lastTlsCertFile = option.tlsCertFile
         lastTlsKeyFile = option.tlsKeyFile
+        if (option.tlsCertFile.size > 0 && option.tlsKeyFile.size > 0) {
+            let material = option.loadPreparedTlsMaterial()
+            loadedPreparedTlsMaterial = true
+            lastPreparedTlsAlpnCount = material.normalizedAlpnProtocols.size
+            lastPreparedTlsCertPemSize = material.certPem.size
+        }
         lastTransportTouchpoint = option.transportTouchpoint
         if (let Some(cb) <- onReady) {
             cb()

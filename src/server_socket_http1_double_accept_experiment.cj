@@ -33,7 +33,8 @@ public class SocketHttp11DoubleAcceptExperimentConnection {
     }
 
     public func experimentForcedCloseAgainstReusableHelper(): Bool {
-        transportClosedAfterResponse && helperAllowsConnectionReuse()
+        let helperReusable = helperAllowsConnectionReuse()
+        transportClosedAfterResponse && helperReusable
     }
 
     public func serverObservedRequestText(): String {
@@ -257,9 +258,11 @@ public func runSocketHttp11DoubleAcceptExperiment(
 ): SocketHttp11DoubleAcceptExperimentResult {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${listenerHost}:0"))
     listener.bind()
-    let listenerPort =
-        (listener.localAddress as IPSocketAddress)?.port ??
-        throw Exception("socket double-accept experiment listener port is unavailable")
+    let listenerPort = match ((listener.localAddress as IPSocketAddress)?.port) {
+        case Some(port) => port
+        case None =>
+            throw Exception("socket double-accept experiment listener port is unavailable")
+    }
 
     let serverFuture = spawn {
         serveSocketHttp11DoubleAcceptExperiment(listener)
@@ -275,11 +278,13 @@ public func runSocketHttp11DoubleAcceptExperiment(
 
     match (completion.secondCompletedConnection) {
         case Some(secondCompletedConnection) =>
-            let firstCompletedConnection =
-                completion.firstCompletedConnection ??
-                throw Exception(
-                    "socket double-accept experiment lost first-connection completion"
-                )
+            let firstCompletedConnection = match (completion.firstCompletedConnection) {
+                case Some(firstCompletedConnection) => firstCompletedConnection
+                case None =>
+                    throw Exception(
+                        "socket double-accept experiment lost first-connection completion"
+                    )
+            }
             SocketHttp11DoubleAcceptExperimentResult(
                 listenerHost,
                 listenerPort,
@@ -332,13 +337,17 @@ func buildSocketHttp11DoubleAcceptExperimentConnection(
     clientObservedResponseWireBytes: Array<UInt8>,
     transportClosedAfterResponse: Bool
 ): SocketHttp11DoubleAcceptExperimentConnection {
+    let runtime = match (completedConnection.runtime) {
+        case Some(runtime) => runtime
+        case None =>
+            throw Exception("socket double-accept experiment lost runtime completion")
+    }
     SocketHttp11DoubleAcceptExperimentConnection(
         connectionIndex,
         completedConnection.acceptedRemoteAddress,
         completedConnection.serverObservedRequestWireBytes,
         clientObservedResponseWireBytes,
-        completedConnection.runtime ??
-            throw Exception("socket double-accept experiment lost runtime completion"),
+        runtime,
         transportClosedAfterResponse
     )
 }

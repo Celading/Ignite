@@ -1,50 +1,56 @@
 package ignite.tests
 
-/// Hostname-sensitive TLS proof — TEST BLOCKER RETURNED
+/// Hostname-sensitive TLS proof — exact blocker note after HQ-0050 / OD-0047 probe
 ///
-/// Preferred proof: start a local TLS listener (CN=localhost, no SAN) and
-/// connect via RestClient using "https://localhost:{port}" vs
-/// "https://127.0.0.1:{port}" to demonstrate wire-level hostname sensitivity.
+/// Preferred proof remains:
+///   start a local TLS listener (CN=localhost, no SAN) and connect with one
+///   host-matched HTTPS client plus one host-mismatched HTTPS client to prove
+///   real wire-level hostname sensitivity.
 ///
-/// BLOCKER: GeneralPrivateKey.decodeFromPem() (stdx) crashes with SIGABRT
-/// on ALL PKCS#8 private key formats (RSA and EC) during the describe()
-/// call at stdx/crypto/keys/keys.cj:240. The crash is caused by an unsafe
-/// libcrypto loading in Cangjie 1.1.0-nightly runtime.
+/// What is now confirmed in earlier packets:
+///   1. the server-side helper seam has moved: `api2/tls.cj` no longer depends
+///      on `GeneralPrivateKey.decodeFromPem() -> describe()` for the current
+///      main listener path
+///   2. a real Ignite TLS listener can reach `ready` with the current fixture
+///      paths when the config uses resolved cert/key file locations
 ///
-/// Call chain:
-///   Config(tlsCertFile, tlsKeyFile) → App.listen()
-///     → StdxServerEngine → api2.loadTlsServerConfigForHttp2()
-///       → GeneralPrivateKey.decodeFromPem() → decodeFromDer() → describe()
-///         → SIGABRT (unhandled signal 6)
+/// What HQ-0050 / OD-0047 proved that was not known before:
+///   3. the stdx TLS handshake crash in `TlsContext.createContext()` is NOT
+///      limited to same-process client-side use; it also prevents server-side
+///      TLS handshake in a separate-process sample
+///   4. the dualport sample now compiles cleanly (sample-runner link surface
+///      repaired: missing `-lignite.binary` and `-ljinguissl` added) BUT
+///   5. any TLS client connection triggers SIGABRT on the server side at
+///      `stdx/net/tls/context.cj:99` before the handshake completes
 ///
-/// This prevents starting ANY TLS listener through IgniteNEXT's Config path
-/// in the current runtime, making a wire-level hostname proof impossible.
+/// Key evidence from the OD-0047 probe:
+///   - openssl s_client connected to port 18443, sent ClientHello (1522 bytes)
+///   - the server process crashed at `TlsContext.createContext()` before sending
+///     ServerHello
+///   - openssl reported "SSL handshake has read 0 bytes and written 1522 bytes"
+///     confirming the server never responded
+///   - stderr warning before crash: "loading libcrypto in an unsafe way"
 ///
-/// Impact: the hostname-sensitive proof cannot be landed. The outbound HTTPS
-/// hostname-sensitive pattern is structurally valid (the code path exists),
-/// but the runtime/stdx seam prevents execution.
+/// Conclusion:
+///   - The separate-process escape hatch does NOT bypass this blocker.
+///   - The blocker is a stdx-native TLS initialization issue on this macOS /
+///     Apple Silicon host, not fixable within Ignite's `manual/samples/dualport`
+///     or `manual/docs-md/` writable scope.
+///   - Proof-level L2 (one real separate-process TLS transaction) cannot be
+///     landed until the stdx `TlsContext.createContext()` crash is resolved
+///     or a different TLS backend is used.
+///   - Per HQ-0050 contract: returning exact blocker, not reopening
+///     `api2/client/security` by inertia.
 ///
-/// Per OD-0015 Rule 51: pre-send X509VerifyOption policy-layer proofs are NOT
-/// substitutes for wire-level hostname SNR. Status: blocker-returned.
+/// Per OD-0015 Rule 51: pre-send `X509VerifyOption` policy checks are still not
+/// substitutes for wire-level hostname sensitivity, so this suite stays as a
+/// blocker holder until either a stdx TLS fix or a runtime-safe TLS backend
+/// reaches this host.
 @Test
 public class ClientHostnameSensitiveTlsProofTestSuite {
 
     @TestCase
     public func testHostnameSensitiveProofBlocker(): Unit {
-    // This test documents the blocker only — no TLS listener is attempted.
-    // The blocker is reproducible by running this test suite (will NOT crash
-    // since no TLS is started).
-
-    // The attempted proof pattern would have been:
-    //   Config(tlsCertFile, tlsKeyFile) → App.listen("127.0.0.1", port)
-    //   RestClient.get("https://localhost:{port}") vs "https://127.0.0.1:{port}"
-    //
-    // Blocked at: GeneralPrivateKey.decodeFromPem() → describe() SIGABRT
-    //
-    // Evidence: cjpm test with any PKCS#8 key produces:
-    //   Thread "schd-worker" caught unhandled SIGABRT from native frame
-    //   GeneralPrivateKey::describe at keys.cj:240
-
-    @Assert(true)  // blocker documented
+        @Assert(true)  // blocker documented
     }
 }

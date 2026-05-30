@@ -1,15 +1,13 @@
 package ignite
 
-import stdx.net.http.{HttpContext, HttpResponseWriter}
-
 public class ResponseWriter {
-    let _writer: HttpResponseWriter
+    let _writer: ResponseTransportWriter
 
-    public init(httpCtx: HttpContext) {
-        if (shouldEmitChunkedTransferHeader(httpCtx.request.version.toString())) {
-            httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+    public init(currentRequestCarrier: CurrentRequestCarrier) {
+        if (shouldEmitChunkedTransferHeader(currentRequestCarrier.requestVersionString())) {
+            currentRequestCarrier.setResponseHeader("transfer-encoding", "chunked")
         }
-        _writer = HttpResponseWriter(httpCtx)
+        _writer = openResponseTransportWriter(currentRequestCarrier)
     }
 
     public func write(data: Array<UInt8>): Unit {
@@ -22,30 +20,29 @@ public class ResponseWriter {
 }
 
 public class SseWriter {
-    let _httpCtx: HttpContext
-    var _writer: ?HttpResponseWriter = None
+    let _currentRequestCarrier: CurrentRequestCarrier
+    var _writer: ?ResponseTransportWriter = None
 
-    public init(httpCtx: HttpContext) {
-        _httpCtx = httpCtx
-        httpCtx.responseBuilder
-            .status(200)
-            .header("content-type", "text/event-stream")
-            .header("cache-control", "no-cache")
-            .header("x-accel-buffering", "no")
-        let protocol = httpCtx.request.version.toString()
+    public init(currentRequestCarrier: CurrentRequestCarrier) {
+        _currentRequestCarrier = currentRequestCarrier
+        currentRequestCarrier.setResponseStatus(200)
+        currentRequestCarrier.setResponseHeader("content-type", "text/event-stream")
+        currentRequestCarrier.setResponseHeader("cache-control", "no-cache")
+        currentRequestCarrier.setResponseHeader("x-accel-buffering", "no")
+        let protocol = currentRequestCarrier.requestVersionString()
         if (shouldEmitConnectionKeepAliveHeader(protocol)) {
-            httpCtx.responseBuilder.header("connection", "keep-alive")
+            currentRequestCarrier.setResponseHeader("connection", "keep-alive")
         }
         if (shouldEmitChunkedTransferHeader(protocol)) {
-            httpCtx.responseBuilder.header("transfer-encoding", "chunked")
+            currentRequestCarrier.setResponseHeader("transfer-encoding", "chunked")
         }
     }
 
-    func ensureWriter(): HttpResponseWriter {
+    func ensureWriter(): ResponseTransportWriter {
         match (_writer) {
             case Some(w) => w
             case None =>
-                let w = HttpResponseWriter(_httpCtx)
+                let w = openResponseTransportWriter(_currentRequestCarrier)
                 _writer = w
                 w
         }
@@ -79,7 +76,7 @@ public class SseWriter {
     }
 
     /// Minimal heartbeat helper for SSE keepalive comments.
-    /// Public close/flush controls are still limited by stdx HttpResponseWriter surface.
+    /// Public close/flush controls are still limited by the current stdx-backed transport surface.
     public func sendHeartbeat(comment!: String = "ping"): Unit {
         sendComment(comment)
     }
@@ -101,7 +98,11 @@ func isHttp2Protocol(protocol: String): Bool {
     if (text == "h2" || text == "h2c") {
         return true
     }
-    containsText(text, "http/2") || containsText(text, "http2")
+    let containsSlashForm = containsText(text, "http/2")
+    if (containsSlashForm) {
+        return true
+    }
+    containsText(text, "http2")
 }
 
 func containsText(text: String, pattern: String): Bool {

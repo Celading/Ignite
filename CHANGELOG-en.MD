@@ -7,9 +7,11 @@
 > official client full-consumer-surface wave
 
 - `+Feature` the client full consumer story is now one coherent public path: `manual/samples/client/**` walks through setup, quick GET, JSON POST, builder path, hooks, body access, retained recovery, retry override, encrypted request, and cleanup
+- `+Feature` `Ctx.jsonEncodeStream(obj, contentLength?)` is now the explicit streamed twin for the `JsonEncodable` family; `ctx.jsonEncode(...)` remains full-buffered and continues to be the only path that uses `Config.jsonEncoder`
 - `+Tests` `ClientHookTestSuite`, `ClientRetryTestSuite`, `ClientStreamingTestSuite`, and `ClientResponseRecoveryAcceptanceTestSuite` now carry the focused regressions for that wave and still pass on the accepted serial `294/294` lane
+- `+Tests` `JsonEncodeStreamCtxSugarTestSuite`, `JsonEncodeStreamMiddlewareCompatTestSuite`, and `CompressMiddlewareTestSuite` cover `jsonEncodeStream(...)` known-length / unknown-length / HEAD behavior, the current middleware boundary, and the real-HTTP streamed-compress subset
 - `+Tests` add `ClientHostnameSensitiveTlsProofTestSuite` as the runtime-owned hostname/SNI blocker-anchor suite, keeping the public truth honestly at `not currently proven`
-- `=Docs` sync the multilingual `README`, the client sample README, `manual/docs-md/client.md`, and source-local guidance to the latest client consumer-surface wording
+- `=Docs` sync the multilingual `README`, the client sample README, `manual/docs-md/client.md`, `manual/docs-md/api.md`, and source-local guidance to the latest client / JSON response wording
 - `=Chore` sync the package version, framework version constant, and banner render fixtures to `0.7.2`
 
 ### v0.7.1 `Ignite Now`
