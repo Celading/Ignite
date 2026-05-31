@@ -54,19 +54,25 @@ func resolveAppDispatchPlan(app: App, requestMethod: String, requestPath: String
             requestMethod,
             requestPath,
             AppDispatchPlanKind.Matched,
-            params: copyDispatchPlanParams(result.params),
-            handlers: copyDispatchPlanHandlers(result.handlers),
+            params: result.params,
+            handlers: result.handlers,
             route: result.route,
-            allowedMethods: copyDispatchPlanMethods(result.allowedMethods)
+            allowedMethods: result.allowedMethods
         )
     }
 
-    let kind = if (result.allowedMethods.size > 0) {
+    let allowMethodsPresent = result.allowedMethods.size > 0
+    let kind = if (allowMethodsPresent) {
         AppDispatchPlanKind.MethodNotAllowed
     } else {
         AppDispatchPlanKind.NotFound
     }
-    let fallback = app.methodSemanticsHandler(requestMethod, requestPath, result.allowedMethods)
+    let allowHeader = if (allowMethodsPresent) {
+        app.joinAllowHeader(result.allowedMethods)
+    } else {
+        ""
+    }
+    let fallback = app.methodSemanticsHandler(requestMethod, requestPath, allowMethodsPresent, allowHeader)
     return AppDispatchPlan(
         requestMethod,
         requestPath,
@@ -74,32 +80,8 @@ func resolveAppDispatchPlan(app: App, requestMethod: String, requestPath: String
         params: HashMap<String, String>(),
         handlers: app.router.buildGlobalMiddlewareChain(fallback),
         route: None,
-        allowedMethods: copyDispatchPlanMethods(result.allowedMethods)
+        allowedMethods: result.allowedMethods
     )
-}
-
-func copyDispatchPlanParams(params: HashMap<String, String>): HashMap<String, String> {
-    let copied = HashMap<String, String>()
-    for ((key, value) in params) {
-        copied.add(key, value)
-    }
-    copied
-}
-
-func copyDispatchPlanHandlers(handlers: ArrayList<Handler>): ArrayList<Handler> {
-    let copied = ArrayList<Handler>()
-    for (handler in handlers) {
-        copied.add(handler)
-    }
-    copied
-}
-
-func copyDispatchPlanMethods(methods: ArrayList<String>): ArrayList<String> {
-    let copied = ArrayList<String>()
-    for (method in methods) {
-        copied.add(method)
-    }
-    copied
 }
 
 func dispatchPlanKindName(kind: AppDispatchPlanKind): String {
