@@ -70,17 +70,6 @@ detect_runtime_lib_dir() {
   return 1
 }
 
-collect_package_archives() {
-  local dir="$1"
-  if [[ ! -d "${dir}" ]]; then
-    return 0
-  fi
-
-  find "${dir}" -maxdepth 1 -type f -name "lib*.a" \
-    ! -name "lib*.tests.a" \
-    | sort
-}
-
 cleanup() {
   if [[ -n "${SERVER_PID:-}" ]]; then
     kill "${SERVER_PID}" >/dev/null 2>&1 || true
@@ -105,67 +94,24 @@ if [[ -z "${RUNTIME_LIB_DIR}" ]]; then
   exit 1
 fi
 
-COMMON_IMPORTS=(
-  --import-path "${ROOT}/target/release"
-  --import-path "${ROOT}/target/release/ignite"
-  --import-path "${ROOT}/target/release/lisi"
-  --import-path "${ROOT}/target/release/jinguissl"
-  --import-path "${STDX_STATIC}"
-)
-
-IGNITE_ARCHIVES=()
-while IFS= read -r path; do
-  IGNITE_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/ignite")
-
-LISI_ARCHIVES=()
-while IFS= read -r path; do
-  LISI_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/lisi")
-
-JINGUISSL_ARCHIVES=()
-while IFS= read -r path; do
-  JINGUISSL_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
-
-STDX_ARCHIVES=()
-while IFS= read -r path; do
-  STDX_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${STDX_STATIC}/stdx")
-
-COMMON_LINKS=(
-  "${IGNITE_ARCHIVES[@]}"
-  "${LISI_ARCHIVES[@]}"
-  "${JINGUISSL_ARCHIVES[@]}"
-  "${STDX_ARCHIVES[@]}"
-  "${LISI_ARCHIVES[@]}"
-  "${JINGUISSL_ARCHIVES[@]}"
-  "${STDX_ARCHIVES[@]}"
-)
-
-echo "[client-demo] building ignite package..."
-(cd "${ROOT}" && cjpm build)
-
 echo "[client-demo] compiling demo server..."
-cjc "${ROOT}/manual/samples/client/demo_server.cj" \
-  "${COMMON_IMPORTS[@]}" \
-  "${COMMON_LINKS[@]}" \
-  -Woff unused \
-  -o "${SERVER_BIN}"
+IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/client/demo_server.cj" \
+  "${SERVER_BIN}"
 
 echo "[client-demo] compiling demo client..."
-cjc "${ROOT}/manual/samples/client/demo_client.cj" \
-  "${COMMON_IMPORTS[@]}" \
-  "${COMMON_LINKS[@]}" \
-  -Woff unused \
-  -o "${CLIENT_BIN}"
+IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/client/demo_client.cj" \
+  "${CLIENT_BIN}"
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 
