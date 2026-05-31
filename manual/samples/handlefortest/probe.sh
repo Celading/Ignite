@@ -8,6 +8,34 @@ WORKERS="${IGNITE_HANDLE_FOR_TEST_PROBE_WORKERS:-6}"
 ITERATIONS="${IGNITE_HANDLE_FOR_TEST_PROBE_ITERATIONS:-24}"
 LEASE_ROOT="${IGNITE_HANDLE_FOR_TEST_PROBE_LEASE_DIR:-/tmp/ignite_handle_for_test_probe_lease_${$}}"
 
+ensure_cangjie_env() {
+  if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
+    local envsetup=""
+    if [[ -n "${IGNITE_CANGJIE_HOME:-}" && -f "${IGNITE_CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${IGNITE_CANGJIE_HOME}/envsetup.sh"
+    elif [[ -n "${CANGJIE_HOME:-}" && -f "${CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${CANGJIE_HOME}/envsetup.sh"
+    elif [[ -f "/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh" ]]; then
+      envsetup="/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh"
+    fi
+
+    if [[ -n "${envsetup}" ]]; then
+      export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+      # shellcheck disable=SC1090
+      source "${envsetup}"
+    fi
+  fi
+
+  if [[ -z "${SDKROOT:-}" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+
+  if [[ -z "${CANGJIE_STDX_PATH:-}" && -d "/Library/Frameworks/Cangjie/stdx_Build" ]]; then
+    export CANGJIE_STDX_PATH="/Library/Frameworks/Cangjie/stdx_Build"
+  fi
+}
+
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
     printf '%s\n' "${IGNITE_STDX_STATIC}"
@@ -51,11 +79,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# First try shared runner; may fail due to stale link flags in _shared/.
+ensure_cangjie_env
+
 IGNITE_SAMPLE_COMPILE_ONLY=1 \
   "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
   "manual/samples/handlefortest/main.cj" \
-  "${WORKER_BIN}" 2>/dev/null || true
+  "${WORKER_BIN}"
 
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
@@ -69,50 +98,12 @@ if [[ -z "${RUNTIME_LIB_DIR}" ]]; then
   exit 1
 fi
 
-# Note: run_server_sample.sh above may miss some link flags.
-# Probe compilation requires libignite.binary and libjinguissl base.
-# We re-link the worker with the missing libs.
-IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
-  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
-  "manual/samples/handlefortest/main.cj" \
-  "${WORKER_BIN}" 2>/dev/null || true
-# If the shared runner succeeded, we're done; if it failed due to missing libs,
-# compile directly with the full link set.
-if [[ ! -x "${WORKER_BIN}" ]]; then
-  echo "[sample/handlefortest] recompiling with full link flags..." >&2
-  cjc "${ROOT}/manual/samples/handlefortest/main.cj" \
-    --import-path "${ROOT}/target/release" \
-    --import-path "${STDX_STATIC}" \
-    -L "${ROOT}/target/release/ignite" \
-    -L "${ROOT}/target/release/lisi" \
-    -L "${ROOT}/target/release/jinguissl" \
-    -L "${STDX_STATIC}/stdx" \
-    -lignite.middleware -lignite.governance -lignite.client -lignite \
-    -lignite.api2 -lignite.security -lignite.api2.GetData -lignite.binary \
-    -llisi.transport -llisi.runtime -llisi.net.TlsTool -llisi.net \
-    -llisi.logger -llisi.term -llisi \
-    -ljinguissl.contract -ljinguissl.crypto.tls -ljinguissl.crypto.x509 \
-    -ljinguissl.crypto.ssh -ljinguissl.crypto.rsa -ljinguissl.crypto.ed25519 \
-    -ljinguissl.crypto.x25519 -ljinguissl.crypto.ecc -ljinguissl.crypto.digest \
-    -ljinguissl.crypto.chacha20 -ljinguissl.crypto.aes -ljinguissl.crypto.utils \
-    -ljinguissl.crypto.compliance -ljinguissl.crypto.bignum -ljinguissl.crypto.error \
-    -ljinguissl \
-    -lstdx.encoding.json -lstdx.serialization.serialization -lstdx.net.http \
-    -lstdx.net.tls -lstdx.net.tls.common -lstdx.logger -lstdx.log \
-    -lstdx.encoding.url -lstdx.encoding.json.stream -lstdx.crypto.x509 \
-    -lstdx.crypto.keys -lstdx.encoding.hex -lstdx.crypto.crypto \
-    -lstdx.crypto.digest -lstdx.crypto.common -lstdx.encoding.base64 \
-    -lstdx.compress.zlib \
-    -Woff unused \
-    -o "${WORKER_BIN}"
-fi
-
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

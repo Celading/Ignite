@@ -778,12 +778,14 @@ public class App {
     func methodSemanticsHandler(
         requestMethod: String,
         requestPath: String,
-        allowedMethods: ArrayList<String>
+        allowMethodsPresent: Bool,
+        allowHeader: String
     ): Handler {
         { ctx: Ctx =>
-            if (allowedMethods.size > 0) {
-                let allowHeader = joinAllowHeader(allowedMethods)
-                ctx.setHeader("allow", allowHeader)
+            if (allowMethodsPresent) {
+                if (allowHeader.size > 0) {
+                    ctx.setHeader("allow", allowHeader)
+                }
                 if (requestMethod == "OPTIONS") {
                     let _ = ctx.noContent()
                 } else if (let Some(handler) <- _methodNotAllowedHandler) {
