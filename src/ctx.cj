@@ -11,6 +11,17 @@ import stdx.encoding.json.stream.{
     JsonWriter as StdxJsonWriter
 }
 
+public class BufferedRequestBodyTooLargeException <: Exception {
+    public let limitBytes: Int64
+    public let attemptedBytes: Int64
+
+    public init(limitBytes: Int64, attemptedBytes: Int64, message: String) {
+        super(message)
+        this.limitBytes = limitBytes
+        this.attemptedBytes = attemptedBytes
+    }
+}
+
 public class Ctx {
     let _currentRequestCarrier: CurrentRequestCarrier
     let _app: App
@@ -117,9 +128,20 @@ public class Ctx {
         let stream = _currentRequestCarrier.requestBodyStream()
         let buf = ArrayList<UInt8>()
         let tmp = Array<UInt8>(4096, repeat: 0)
+        let limitBytes = _app.config.bodyLimit
         while (true) {
             let n = stream.read(tmp)
             if (n <= 0) { break }
+            if (limitBytes > 0) {
+                let attemptedBytes = buf.size + n
+                if (attemptedBytes > limitBytes) {
+                    throw BufferedRequestBodyTooLargeException(
+                        limitBytes,
+                        attemptedBytes,
+                        "request body buffered ${attemptedBytes} bytes which exceeds limit ${limitBytes}"
+                    )
+                }
+            }
             for (i in 0..n) {
                 buf.add(tmp[i])
             }
