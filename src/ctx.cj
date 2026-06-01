@@ -669,6 +669,20 @@ public class Ctx {
         None
     }
 
+    /// Streamed `JsonDeserializable<T>` request bind sugar.
+    ///
+    /// This helper stays one layer above `bindJsonReaderOr400(...)` and only
+    /// removes the repeated `{ reader => T.fromJson(reader) }` wrapper for
+    /// typed callers. It therefore inherits the same current body-limit,
+    /// malformed-json, and validation behavior as the lower-level helper.
+    public func bindJsonDeserializeOr400<T>(
+        validate!: ?(T) -> ?String = None
+    ): ?T where T <: JsonDeserializable<T> {
+        bindJsonReaderOr400<T>({ reader =>
+            T.fromJson(reader)
+        }, validate: validate)
+    }
+
     // ── File serving ──
 
     public func sendFile(filePath: String): Ctx {

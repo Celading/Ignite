@@ -223,6 +223,89 @@ public class RequestJsonStreamIntakeTestSuite {
         @Assert(resp.status, UInt16(413))
         @Assert(containsRequestJsonStr(resp.body.toAsciiLower(), "large"), true)
     }
+
+    @TestCase
+    public func testBindJsonDeserializeOr400Success(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-typed", { ctx =>
+            if (let Some(req) <- ctx.bindJsonDeserializeOr400<RequestJsonStreamTestReq>()) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let okResp = app.handleForTest(
+            "POST",
+            "/bind-stream-typed",
+            body: #"{"name":"typed","val":12}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(okResp.status, UInt16(201))
+        @Assert(okResp.body, "created:typed:12")
+    }
+
+    @TestCase
+    public func testBindJsonDeserializeOr400InvalidJsonReturnsReadable400(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-typed", { ctx =>
+            if (let Some(req) <- ctx.bindJsonDeserializeOr400<RequestJsonStreamTestReq>()) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream-typed",
+            body: #"{"name":"broken","val":"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_json""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonDeserializeOr400ValidationFailureReturnsReadable400(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-typed-validate", { ctx =>
+            if (let Some(req) <- ctx.bindJsonDeserializeOr400<RequestJsonStreamTestReq>(
+                validate: { req =>
+                    if (req.val <= 0) {
+                        return Some("val must be positive")
+                    }
+                    None
+                }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badValidation = app.handleForTest(
+            "POST",
+            "/bind-stream-typed-validate",
+            body: #"{"name":"typed","val":0}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badValidation.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badValidation.body, #""reason":"validation_failed""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonDeserializeOr400InheritsBodyLimitOverflow(): Unit {
+        let app = App(config: Config(bodyLimit: 20))
+        app.post("/bind-stream-typed-limit", { ctx =>
+            if (let Some(req) <- ctx.bindJsonDeserializeOr400<RequestJsonStreamTestReq>()) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let resp = app.handleForTest(
+            "POST",
+            "/bind-stream-typed-limit",
+            body: #"{"name":"this is a very long streamed request body","val":1}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(resp.status, UInt16(413))
+        @Assert(containsRequestJsonStr(resp.body.toAsciiLower(), "large"), true)
+    }
 }
 
 func decodeRequestJsonStreamTestReq(jsonValue: JsonValue): RequestJsonStreamTestReq {
@@ -268,7 +351,7 @@ func containsRequestJsonStr(text: String, sub: String): Bool {
     false
 }
 
-struct RequestJsonStreamTestReq {
+struct RequestJsonStreamTestReq <: JsonDeserializable<RequestJsonStreamTestReq> {
     let name: String
     let val: Int64
 
