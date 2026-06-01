@@ -2,7 +2,7 @@ package ignite
 
 import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
-import std.fs.{exists, File, FileInfo, OpenMode}
+import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
 import ignite.security
 import stdx.net.http.HttpContext
@@ -22,6 +22,54 @@ public class BufferedRequestBodyTooLargeException <: Exception {
     }
 }
 
+class LimitedRequestBodyInputStream <: InputStream & Resource {
+    let _upstream: InputStream
+    let _limitBytes: Int64
+    var _consumedBytes: Int64 = 0
+    var _closed: Bool = false
+
+    init(upstream: InputStream, limitBytes: Int64) {
+        this._upstream = upstream
+        this._limitBytes = limitBytes
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (_closed || outBuf.size == 0) {
+            return 0
+        }
+        let readLen = _upstream.read(outBuf)
+        if (readLen <= 0) {
+            close()
+            return readLen
+        }
+        if (_limitBytes > 0) {
+            let attemptedBytes = _consumedBytes + readLen
+            if (attemptedBytes > _limitBytes) {
+                close()
+                throw BufferedRequestBodyTooLargeException(
+                    _limitBytes,
+                    attemptedBytes,
+                    "request body read ${attemptedBytes} bytes which exceeds limit ${_limitBytes}"
+                )
+            }
+        }
+        _consumedBytes += readLen
+        readLen
+    }
+
+    public func close(): Unit {
+        if (_closed) {
+            return
+        }
+        _closed = true
+        closeStreamIfResource(_upstream)
+    }
+
+    public func isClosed(): Bool {
+        _closed
+    }
+}
+
 public class Ctx {
     let _currentRequestCarrier: CurrentRequestCarrier
     let _app: App
@@ -35,6 +83,7 @@ public class Ctx {
     var _responded: Bool = false
     var _statusCode: UInt16 = 200
     var _bodyBytesCache: ?Array<UInt8> = None
+    var _requestBodyStreamCache: ?InputStream = None
     var _multipartForm: ?MultipartForm = None
     var _responseBody: ?String = None
     var _pathOverride: ?String = None
@@ -106,7 +155,15 @@ public class Ctx {
     }
 
     public func requestBody(): InputStream {
-        _currentRequestCarrier.requestBodyStream()
+        if (let Some(stream) <- _requestBodyStreamCache) {
+            return stream
+        }
+        let stream = LimitedRequestBodyInputStream(
+            _currentRequestCarrier.requestBodyStream(),
+            _app.config.bodyLimit
+        )
+        _requestBodyStreamCache = Some(stream)
+        stream
     }
 
     public func saveBodyToFile(destPath: String): Int64 {
@@ -114,7 +171,7 @@ public class Ctx {
             writeBytesToFile(destPath, cached)
             return cached.size
         }
-        streamRequestBodyToFile(_currentRequestCarrier.requestBodyStream(), destPath)
+        streamRequestBodyToFile(requestBody(), destPath)
     }
 
     public func cachedBodyBytes(): ?Array<UInt8> {
@@ -125,26 +182,23 @@ public class Ctx {
         if (let Some(cached) <- _bodyBytesCache) {
             return cached
         }
-        let stream = _currentRequestCarrier.requestBodyStream()
+        let stream = requestBody()
         let buf = ArrayList<UInt8>()
         let tmp = Array<UInt8>(4096, repeat: 0)
-        let limitBytes = _app.config.bodyLimit
-        while (true) {
-            let n = stream.read(tmp)
-            if (n <= 0) { break }
-            if (limitBytes > 0) {
-                let attemptedBytes = buf.size + n
-                if (attemptedBytes > limitBytes) {
-                    throw BufferedRequestBodyTooLargeException(
-                        limitBytes,
-                        attemptedBytes,
-                        "request body buffered ${attemptedBytes} bytes which exceeds limit ${limitBytes}"
-                    )
+        try {
+            while (true) {
+                let n = stream.read(tmp)
+                if (n <= 0) { break }
+                for (i in 0..n) {
+                    buf.add(tmp[i])
                 }
             }
-            for (i in 0..n) {
-                buf.add(tmp[i])
-            }
+        } catch (e: BufferedRequestBodyTooLargeException) {
+            throw BufferedRequestBodyTooLargeException(
+                e.limitBytes,
+                e.attemptedBytes,
+                "request body buffered ${e.attemptedBytes} bytes which exceeds limit ${e.limitBytes}"
+            )
         }
         let bytes = buf.toArray()
         _bodyBytesCache = bytes
@@ -945,10 +999,12 @@ func streamRequestBodyToFile(stream: InputStream, destPath: String): Int64 {
     let file = File(destPath, OpenMode.Write)
     let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
     var total: Int64 = 0
+    var completed = false
     try {
         while (true) {
             let readLen = stream.read(buffer)
             if (readLen <= 0) {
+                completed = true
                 break
             }
             let chunk = Array<UInt8>(readLen, repeat: 0)
@@ -961,7 +1017,14 @@ func streamRequestBodyToFile(stream: InputStream, destPath: String): Int64 {
             total += readLen
         }
     } finally {
-        file.close()
+        try {
+            file.close()
+        } catch (_: Exception) { }
+        if (!completed) {
+            try {
+                removeIfExists(destPath)
+            } catch (_: Exception) { }
+        }
     }
     total
 }

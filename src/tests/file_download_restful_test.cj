@@ -2,7 +2,7 @@ package ignite.tests
 
 import ignite.*
 import std.collection.{ArrayList, HashMap}
-import std.fs.{File, OpenMode}
+import std.fs.{exists, File, OpenMode}
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
 
@@ -252,6 +252,37 @@ public class FileDownloadAndRestfulTestSuite {
             @Assert(resp.header("x-body-cache-after") ?? "", "miss")
             @Assert(contains(resp.body, #""saved":"# + payload.size.toString()), true)
             @Assert(readTextFile(fixturePath), payload)
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testSaveBodyToFileRejectsOversizeChunkedUploadOverRealHttpAndRemovesPartialFile(): Unit {
+        let fixturePath = "/tmp/ignite_push_upload_wire_chunked_overflow.txt"
+        let payload = "123456789"
+        let port = chooseUploadTestPort(1911)
+
+        let app = App(config: Config(bodyLimit: 8))
+        app.post("/push-upload-wire-chunked-overflow", { ctx =>
+            let saved = ctx.saveBodyToFile(fixturePath)
+            _ = ctx.status(201).json(#"{"saved":"# + saved.toString() + #"}"#)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendChunkedUploadWithRetry(
+                port,
+                "/push-upload-wire-chunked-overflow",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            @Assert(resp.status, UInt16(413))
+            @Assert(resp.header("content-type") ?? "", "text/plain; charset=utf-8")
+            @Assert(resp.body, "Payload Too Large")
+            @Assert(exists(fixturePath), false)
         } finally {
             shutdownUploadTestApp(app, serverFuture)
         }
