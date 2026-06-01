@@ -66,6 +66,45 @@ public class RequestJsonStreamIntakeTestSuite {
     }
 
     @TestCase
+    public func testBodyBytesThenRequestJsonReaderReplaysFromCache(): Unit {
+        let jsonBody = #"{"name":"ignite","count":42}"#
+        let carrier = RequestJsonStreamTestCarrier("POST", "/json-replay", jsonBody)
+        let ctx = Ctx(carrier, App(config: Config(bodyLimit: 128)))
+
+        let cached = ctx.bodyBytes()
+        @Assert(String.fromUtf8(cached), jsonBody)
+
+        let reader = ctx.requestJsonReader()
+        reader.startObject()
+        @Assert(reader.readName(), "name")
+        @Assert(reader.readValue<String>(), "ignite")
+        @Assert(reader.readName(), "count")
+        @Assert(reader.readValue<Int64>(), Int64(42))
+        reader.endObject()
+    }
+
+    @TestCase
+    public func testRequestJsonReaderThenBodyBytesStaysOnePassAfterFullConsume(): Unit {
+        let carrier = RequestJsonStreamTestCarrier(
+            "POST", "/json-one-pass",
+            #"{"status":"ok","code":200}"#
+        )
+        let ctx = Ctx(carrier, App(config: Config(bodyLimit: 128)))
+
+        let reader = ctx.requestJsonReader()
+        reader.startObject()
+        @Assert(reader.readName(), "status")
+        @Assert(reader.readValue<String>(), "ok")
+        @Assert(reader.readName(), "code")
+        @Assert(reader.readValue<Int64>(), Int64(200))
+        reader.endObject()
+
+        let after = ctx.bodyBytes()
+        @Assert(after.size, Int64(0))
+        @Assert(String.fromUtf8(after), "")
+    }
+
+    @TestCase
     public func testBindJsonOr400RemainsUnchangedAfterRequestJsonReader(): Unit {
         let app = App(config: Config())
         app.post("/bind", { ctx =>

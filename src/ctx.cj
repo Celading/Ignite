@@ -71,6 +71,39 @@ class LimitedRequestBodyInputStream <: InputStream & Resource {
     }
 }
 
+class CachedRequestBodyReplayInputStream <: InputStream & Resource {
+    let _bytes: Array<Byte>
+    var _cursor: Int64 = 0
+    var _closed: Bool = false
+
+    init(bytes: Array<Byte>) {
+        this._bytes = bytes
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (_closed || outBuf.size == 0 || _cursor >= _bytes.size) {
+            return 0
+        }
+        let remaining = _bytes.size - _cursor
+        let readLen = if (remaining < outBuf.size) { remaining } else { outBuf.size }
+        var i: Int64 = 0
+        while (i < readLen) {
+            outBuf[i] = _bytes[_cursor + i]
+            i += 1
+        }
+        _cursor += readLen
+        readLen
+    }
+
+    public func close(): Unit {
+        _closed = true
+    }
+
+    public func isClosed(): Bool {
+        _closed
+    }
+}
+
 public class Ctx {
     let _currentRequestCarrier: CurrentRequestCarrier
     let _app: App
@@ -156,6 +189,9 @@ public class Ctx {
     }
 
     public func requestBody(): InputStream {
+        if (let Some(cached) <- _bodyBytesCache) {
+            return CachedRequestBodyReplayInputStream(toRequestBodyReplayByteArray(cached))
+        }
         if (let Some(stream) <- _requestBodyStreamCache) {
             return stream
         }
@@ -174,6 +210,11 @@ public class Ctx {
     /// from the underlying `InputStream`. Because the backing stream is
     /// `requestBody()`, the current `config.bodyLimit` contract applies: reading
     /// beyond `bodyLimit` bytes throws `BufferedRequestBodyTooLargeException`.
+    ///
+    /// If the body was already buffered through `bodyBytes()/bodyString()`,
+    /// the reader replays from that cached full body. If the request has
+    /// already been consumed through the stream path first, later buffered
+    /// reads only see the unread remainder and no broader replay is promised.
     ///
     /// The returned reader reads the first top-level JSON value from the stream.
     /// For typed deserialization via `JsonDeserializable`, callers may use:
@@ -1060,6 +1101,16 @@ func writeBytesToFile(destPath: String, bytes: Array<UInt8>): Unit {
     } finally {
         file.close()
     }
+}
+
+func toRequestBodyReplayByteArray(input: Array<UInt8>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
 }
 
 func closeStreamIfResource(stream: InputStream): Unit {
