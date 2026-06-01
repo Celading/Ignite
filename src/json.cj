@@ -18,6 +18,7 @@ public type JsonEncodable = SeaJsonEncodable
 public type JsonWriterEncodable = SeaJsonWriterEncodable
 public type JsonSerializable = StdxJsonSerializable
 public type JsonDeserializable<T> = StdxJsonDeserializable<T>
+public type JsonReader = StdxJsonReader
 public type JsonEncoder = (JsonEncodable) -> String
 
 func defaultJsonEncoder(obj: JsonEncodable): String {

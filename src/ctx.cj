@@ -8,7 +8,8 @@ import ignite.security
 import stdx.net.http.HttpContext
 import stdx.encoding.json.JsonValue
 import stdx.encoding.json.stream.{
-    JsonWriter as StdxJsonWriter
+    JsonWriter as StdxJsonWriter,
+    JsonReader as StdxJsonReader
 }
 
 public class BufferedRequestBodyTooLargeException <: Exception {
@@ -164,6 +165,29 @@ public class Ctx {
         )
         _requestBodyStreamCache = Some(stream)
         stream
+    }
+
+    /// Returns a `JsonReader` backed by `requestBody()`.
+    ///
+    /// This is a streamed intake seam: unlike `bodyString()/JsonValue`, it does
+    /// not full-buffer the request body. The caller reads JSON tokens directly
+    /// from the underlying `InputStream`. Because the backing stream is
+    /// `requestBody()`, the current `config.bodyLimit` contract applies: reading
+    /// beyond `bodyLimit` bytes throws `BufferedRequestBodyTooLargeException`.
+    ///
+    /// The returned reader reads the first top-level JSON value from the stream.
+    /// For typed deserialization via `JsonDeserializable`, callers may use:
+    ///
+    /// ```text
+    /// let reader = ctx.requestJsonReader()
+    /// let value = SomeType.fromJson(reader)
+    /// ```
+    ///
+    /// This is deliberately a low-level seam. It does not replace
+    /// `bindJsonOr400(...)` - that method continues to use the full-buffer
+    /// `bodyString()/JsonValue` path.
+    public func requestJsonReader(): JsonReader {
+        StdxJsonReader(requestBody())
     }
 
     public func saveBodyToFile(destPath: String): Int64 {
