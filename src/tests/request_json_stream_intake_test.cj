@@ -133,6 +133,96 @@ public class RequestJsonStreamIntakeTestSuite {
         @Assert(badResp.status, UInt16(400))
         @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_json""#), true)
     }
+
+    @TestCase
+    public func testBindJsonReaderOr400Success(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream", { ctx =>
+            if (let Some(req) <- ctx.bindJsonReaderOr400<RequestJsonStreamTestReq>(
+                { reader => RequestJsonStreamTestReq.fromJson(reader) }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let okResp = app.handleForTest(
+            "POST",
+            "/bind-stream",
+            body: #"{"name":"streamed","val":9}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(okResp.status, UInt16(201))
+        @Assert(okResp.body, "created:streamed:9")
+    }
+
+    @TestCase
+    public func testBindJsonReaderOr400InvalidJsonReturnsReadable400(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream", { ctx =>
+            if (let Some(req) <- ctx.bindJsonReaderOr400<RequestJsonStreamTestReq>(
+                { reader => RequestJsonStreamTestReq.fromJson(reader) }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream",
+            body: #"{"name":"broken","val":"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_json""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonReaderOr400ValidationFailureReturnsReadable400(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-validate", { ctx =>
+            if (let Some(req) <- ctx.bindJsonReaderOr400<RequestJsonStreamTestReq>(
+                { reader => RequestJsonStreamTestReq.fromJson(reader) },
+                validate: { req =>
+                    if (req.val <= 0) {
+                        return Some("val must be positive")
+                    }
+                    None
+                }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badValidation = app.handleForTest(
+            "POST",
+            "/bind-stream-validate",
+            body: #"{"name":"streamed","val":0}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badValidation.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badValidation.body, #""reason":"validation_failed""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonReaderOr400InheritsBodyLimitOverflow(): Unit {
+        let app = App(config: Config(bodyLimit: 20))
+        app.post("/bind-stream-limit", { ctx =>
+            if (let Some(req) <- ctx.bindJsonReaderOr400<RequestJsonStreamTestReq>(
+                { reader => RequestJsonStreamTestReq.fromJson(reader) }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let resp = app.handleForTest(
+            "POST",
+            "/bind-stream-limit",
+            body: #"{"name":"this is a very long streamed request body","val":1}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(resp.status, UInt16(413))
+        @Assert(containsRequestJsonStr(resp.body.toAsciiLower(), "large"), true)
+    }
 }
 
 func decodeRequestJsonStreamTestReq(jsonValue: JsonValue): RequestJsonStreamTestReq {
@@ -185,6 +275,16 @@ struct RequestJsonStreamTestReq {
     init(name: String, val: Int64) {
         this.name = name
         this.val = val
+    }
+
+    public static func fromJson(reader: JsonReader): RequestJsonStreamTestReq {
+        reader.startObject()
+        @Assert(reader.readName(), "name")
+        let name = reader.readValue<String>()
+        @Assert(reader.readName(), "val")
+        let val = reader.readValue<Int64>()
+        reader.endObject()
+        RequestJsonStreamTestReq(name, val)
     }
 }
 

@@ -632,6 +632,43 @@ public class Ctx {
         None
     }
 
+    /// Streamed typed request JSON bind helper.
+    ///
+    /// This helper stays parallel to `bindJsonOr400(...)` instead of replacing it.
+    /// It decodes directly from `requestJsonReader()` and therefore avoids the
+    /// old full-buffer `JsonValue` path. Validation still maps to
+    /// `validation_failed` after a successful decode.
+    ///
+    /// Current narrow contract:
+    ///
+    /// - `BufferedRequestBodyTooLargeException` still propagates through the
+    ///   accepted `bodyLimit` path
+    /// - other reader / decoder exceptions currently map together to
+    ///   `invalid_json`
+    ///
+    /// This intentionally avoids overclaiming a broader parse-vs-decode
+    /// taxonomy redesign on the streamed path.
+    public func bindJsonReaderOr400<T>(
+        decoder: (JsonReader) -> T,
+        validate!: ?(T) -> ?String = None
+    ): ?T {
+        let decoded = tryDecodeJsonReader<T>(decoder)
+        if (let None <- decoded) {
+            return None
+        }
+        if (let Some(value) <- decoded) {
+            if (let Some(validateFn) <- validate) {
+                let validation = tryValidateJson<T>(value, validateFn)
+                if (let Some(msg) <- validation) {
+                    jsonBadRequest("validation_failed", msg)
+                    return None
+                }
+            }
+            return Some(value)
+        }
+        None
+    }
+
     // ── File serving ──
 
     public func sendFile(filePath: String): Ctx {
@@ -962,6 +999,23 @@ public class Ctx {
                 "failed to decode payload"
             }
             jsonBadRequest("invalid_payload", msg)
+            None
+        }
+    }
+
+    func tryDecodeJsonReader<T>(decoder: (JsonReader) -> T): ?T {
+        let reader = requestJsonReader()
+        try {
+            Some(decoder(reader))
+        } catch (e: BufferedRequestBodyTooLargeException) {
+            throw e
+        } catch (e: Exception) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "request body is not valid json: ${e.message}"
+            } else {
+                "request body is not valid json"
+            }
+            jsonBadRequest("invalid_json", msg)
             None
         }
     }
