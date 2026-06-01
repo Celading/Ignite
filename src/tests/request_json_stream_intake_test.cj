@@ -177,6 +177,48 @@ public class RequestJsonStreamIntakeTestSuite {
     }
 
     @TestCase
+    public func testBindJsonReaderOr400DecoderFailureReturnsInvalidPayload(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-invalid-payload", { ctx =>
+            if (let Some(req) <- ctx.bindJsonReaderOr400<RequestJsonStreamTestReq>(
+                { reader => decodeRequestJsonStreamMissingVal(reader) }
+            )) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream-invalid-payload",
+            body: #"{"name":"only","other":1}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_payload""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonReaderOr400OverflowReturnsInvalidPayload(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-overflow", { ctx =>
+            if (let Some(value) <- ctx.bindJsonReaderOr400<Int8>(
+                { reader => reader.readValue<Int8>() }
+            )) {
+                _ = ctx.status(201).sendString("${value}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream-overflow",
+            body: "128",
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_payload""#), true)
+    }
+
+    @TestCase
     public func testBindJsonReaderOr400ValidationFailureReturnsReadable400(): Unit {
         let app = App(config: Config())
         app.post("/bind-stream-validate", { ctx =>
@@ -263,6 +305,44 @@ public class RequestJsonStreamIntakeTestSuite {
     }
 
     @TestCase
+    public func testBindJsonDeserializeOr400DecoderFailureReturnsInvalidPayload(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-typed-invalid-payload", { ctx =>
+            if (let Some(req) <- ctx.bindJsonDeserializeOr400<RequestJsonStreamTestReq>()) {
+                _ = ctx.status(201).sendString("created:${req.name}:${req.val}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream-typed-invalid-payload",
+            body: #"{"name":"typed","other":1}"#,
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_payload""#), true)
+    }
+
+    @TestCase
+    public func testBindJsonDeserializeOr400OverflowReturnsInvalidPayload(): Unit {
+        let app = App(config: Config())
+        app.post("/bind-stream-typed-overflow", { ctx =>
+            if (let Some(value) <- ctx.bindJsonDeserializeOr400<Int8>()) {
+                _ = ctx.status(201).sendString("${value}")
+            }
+        })
+
+        let badResp = app.handleForTest(
+            "POST",
+            "/bind-stream-typed-overflow",
+            body: "128",
+            headers: [("content-type", "application/json")]
+        )
+        @Assert(badResp.status, UInt16(400))
+        @Assert(containsRequestJsonStr(badResp.body, #""reason":"invalid_payload""#), true)
+    }
+
+    @TestCase
     public func testBindJsonDeserializeOr400ValidationFailureReturnsReadable400(): Unit {
         let app = App(config: Config())
         app.post("/bind-stream-typed-validate", { ctx =>
@@ -315,6 +395,22 @@ func decodeRequestJsonStreamTestReq(jsonValue: JsonValue): RequestJsonStreamTest
     RequestJsonStreamTestReq(name, val)
 }
 
+func decodeRequestJsonStreamMissingVal(reader: JsonReader): RequestJsonStreamTestReq {
+    reader.startObject()
+    let firstField = reader.readName()
+    if (firstField != "name") {
+        throw Exception("missing field: name")
+    }
+    let name = reader.readValue<String>()
+    let secondField = reader.readName()
+    if (secondField != "val") {
+        throw Exception("missing field: val")
+    }
+    let val = reader.readValue<Int64>()
+    reader.endObject()
+    RequestJsonStreamTestReq(name, val)
+}
+
 func requireRequestJsonStreamTestStringField(obj: JsonObject, key: String): String {
     if (let Some(v) <- obj.get(key)) {
         return v.asString().getValue()
@@ -362,9 +458,15 @@ struct RequestJsonStreamTestReq <: JsonDeserializable<RequestJsonStreamTestReq> 
 
     public static func fromJson(reader: JsonReader): RequestJsonStreamTestReq {
         reader.startObject()
-        @Assert(reader.readName(), "name")
+        let firstField = reader.readName()
+        if (firstField != "name") {
+            throw Exception("missing field: name")
+        }
         let name = reader.readValue<String>()
-        @Assert(reader.readName(), "val")
+        let secondField = reader.readName()
+        if (secondField != "val") {
+            throw Exception("missing field: val")
+        }
         let val = reader.readValue<Int64>()
         reader.endObject()
         RequestJsonStreamTestReq(name, val)

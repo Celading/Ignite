@@ -643,8 +643,10 @@ public class Ctx {
     ///
     /// - `BufferedRequestBodyTooLargeException` still propagates through the
     ///   accepted `bodyLimit` path
-    /// - other reader / decoder exceptions currently map together to
+    /// - malformed `JsonReader` state / token failures currently map to
     ///   `invalid_json`
+    /// - numeric overflow and decoder/domain failures currently map to
+    ///   `invalid_payload`
     ///
     /// This intentionally avoids overclaiming a broader parse-vs-decode
     /// taxonomy redesign on the streamed path.
@@ -674,7 +676,8 @@ public class Ctx {
     /// This helper stays one layer above `bindJsonReaderOr400(...)` and only
     /// removes the repeated `{ reader => T.fromJson(reader) }` wrapper for
     /// typed callers. It therefore inherits the same current body-limit,
-    /// malformed-json, and validation behavior as the lower-level helper.
+    /// malformed-json, invalid-payload, and validation behavior as the
+    /// lower-level helper.
     public func bindJsonDeserializeOr400<T>(
         validate!: ?(T) -> ?String = None
     ): ?T where T <: JsonDeserializable<T> {
@@ -1023,13 +1026,29 @@ public class Ctx {
             Some(decoder(reader))
         } catch (e: BufferedRequestBodyTooLargeException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: IllegalStateException) {
             let msg = if (e.message.trimAscii().size > 0) {
                 "request body is not valid json: ${e.message}"
             } else {
                 "request body is not valid json"
             }
             jsonBadRequest("invalid_json", msg)
+            None
+        } catch (e: OverflowException) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "failed to decode payload: ${e.message}"
+            } else {
+                "failed to decode payload"
+            }
+            jsonBadRequest("invalid_payload", msg)
+            None
+        } catch (e: Exception) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "failed to decode payload: ${e.message}"
+            } else {
+                "failed to decode payload"
+            }
+            jsonBadRequest("invalid_payload", msg)
             None
         }
     }
