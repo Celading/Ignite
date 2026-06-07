@@ -39,11 +39,16 @@ public class App {
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
     var _startupObserveHooks: ArrayList<ServerStartupObserveHook> = ArrayList<ServerStartupObserveHook>()
+    var _jinguiAcceptedTransportSessionHooks:
+        ArrayList<ServerJinguiAcceptedTransportSessionHook> =
+            ArrayList<ServerJinguiAcceptedTransportSessionHook>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
     var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
     var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
+    var _lastJinguiAcceptedTransportSessionSnapshot:
+        ?ServerJinguiAcceptedTransportSessionSnapshot = None
     var _notFoundHandler: ?Handler = None
     var _methodNotAllowedHandler: ?Handler = None
     var _networkMonitorStopSignal: ?NetworkMonitorStopSignal = None
@@ -344,6 +349,13 @@ public class App {
         this
     }
 
+    public func onJinguiAcceptedTransportSession(
+        hook: ServerJinguiAcceptedTransportSessionHook
+    ): App {
+        _jinguiAcceptedTransportSessionHooks.add(hook)
+        this
+    }
+
     public func serverEngine(engine: ServerEngine): App {
         _engine = engine
         this
@@ -359,6 +371,11 @@ public class App {
 
     public func lastServerStartupObserveEvent(): ?ServerStartupObserveEvent {
         _lastServerStartupObserveEvent
+    }
+
+    public func lastJinguiAcceptedTransportSessionSnapshot():
+        ?ServerJinguiAcceptedTransportSessionSnapshot {
+        _lastJinguiAcceptedTransportSessionSnapshot
     }
 
     // ── Server lifecycle ──
@@ -395,11 +412,23 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
+        let transportRoutingBundle = buildServerTransportRoutingBundle(
+            addr,
+            port,
+            hasTls,
+            preferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimental: config.allowExperimentalServerBackend
+        )
         let transportTouchpoint = resolveServerTransportTouchpoint(
             _engine,
             addr,
             port,
-            hasTls
+            buildServerTransportTouchpoint(transportRoutingBundle)
+        )
+        let tlsIngressContext = ServerTlsIngressContext(
+            transportRoutingBundle,
+            transportTouchpoint,
+            preparedTlsMaterialLoader: preparedTlsMaterialLoader
         )
         _lastServerTransportTouchpoint = Some(transportTouchpoint)
 
@@ -413,15 +442,22 @@ public class App {
             config.tlsCertFile,
             config.tlsKeyFile,
             config.enableTlsPrecheck,
+            serverPreferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimentalServerBackend: config.allowExperimentalServerBackend,
             preparedTlsMaterialLoader: preparedTlsMaterialLoader,
-            transportTouchpoint: transportTouchpoint
+            transportRoutingBundle: Some(transportRoutingBundle),
+            transportTouchpoint: transportTouchpoint,
+            tlsIngressContext: Some(tlsIngressContext),
+            jinguiAcceptedTransportSessionHook: Some({ snapshot =>
+                notifyJinguiAcceptedTransportSessionSnapshot(snapshot)
+            })
         )
         try {
             _engine.listen(
                 option,
                 this,
                 {
-                    =>
+                    readySignal =>
                     let networkSelection = api2.resolveBoundNetworkSelection(
                         addr,
                         mode: config.startupNetworkMode,
@@ -455,7 +491,8 @@ public class App {
                             port,
                             scheme,
                             tlsEnabled,
-                            transportTouchpoint: Some(transportTouchpoint)
+                            transportTouchpoint: Some(transportTouchpoint),
+                            jinguiAttachResultSnapshot: readySignal.jinguiAttachResultSnapshot
                         )
                     )
                 }
@@ -653,8 +690,18 @@ public class App {
         }
     }
 
+    func notifyJinguiAcceptedTransportSessionSnapshot(
+        snapshot: ServerJinguiAcceptedTransportSessionSnapshot
+    ): Unit {
+        _lastJinguiAcceptedTransportSessionSnapshot = Some(snapshot)
+        for (hook in _jinguiAcceptedTransportSessionHooks) {
+            hook(snapshot)
+        }
+    }
+
     func resetStartupObserveState(): Unit {
         _lastServerStartupObserveEvent = None
+        _lastJinguiAcceptedTransportSessionSnapshot = None
     }
 
     func setupSwaggerRoute(): Unit {

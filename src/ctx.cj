@@ -2,13 +2,106 @@ package ignite
 
 import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
-import std.fs.{exists, File, FileInfo, OpenMode}
+import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
 import ignite.security
 import stdx.net.http.HttpContext
 import stdx.encoding.json.JsonValue
 import stdx.encoding.json.stream.{
-    JsonWriter as StdxJsonWriter
+    JsonWriter as StdxJsonWriter,
+    JsonReader as StdxJsonReader
+}
+
+public class BufferedRequestBodyTooLargeException <: Exception {
+    public let limitBytes: Int64
+    public let attemptedBytes: Int64
+
+    public init(limitBytes: Int64, attemptedBytes: Int64, message: String) {
+        super(message)
+        this.limitBytes = limitBytes
+        this.attemptedBytes = attemptedBytes
+    }
+}
+
+class LimitedRequestBodyInputStream <: InputStream & Resource {
+    let _upstream: InputStream
+    let _limitBytes: Int64
+    var _consumedBytes: Int64 = 0
+    var _closed: Bool = false
+
+    init(upstream: InputStream, limitBytes: Int64) {
+        this._upstream = upstream
+        this._limitBytes = limitBytes
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (_closed || outBuf.size == 0) {
+            return 0
+        }
+        let readLen = _upstream.read(outBuf)
+        if (readLen <= 0) {
+            close()
+            return readLen
+        }
+        if (_limitBytes > 0) {
+            let attemptedBytes = _consumedBytes + readLen
+            if (attemptedBytes > _limitBytes) {
+                close()
+                throw BufferedRequestBodyTooLargeException(
+                    _limitBytes,
+                    attemptedBytes,
+                    "request body read ${attemptedBytes} bytes which exceeds limit ${_limitBytes}"
+                )
+            }
+        }
+        _consumedBytes += readLen
+        readLen
+    }
+
+    public func close(): Unit {
+        if (_closed) {
+            return
+        }
+        _closed = true
+        closeStreamIfResource(_upstream)
+    }
+
+    public func isClosed(): Bool {
+        _closed
+    }
+}
+
+class CachedRequestBodyReplayInputStream <: InputStream & Resource {
+    let _bytes: Array<Byte>
+    var _cursor: Int64 = 0
+    var _closed: Bool = false
+
+    init(bytes: Array<Byte>) {
+        this._bytes = bytes
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (_closed || outBuf.size == 0 || _cursor >= _bytes.size) {
+            return 0
+        }
+        let remaining = _bytes.size - _cursor
+        let readLen = if (remaining < outBuf.size) { remaining } else { outBuf.size }
+        var i: Int64 = 0
+        while (i < readLen) {
+            outBuf[i] = _bytes[_cursor + i]
+            i += 1
+        }
+        _cursor += readLen
+        readLen
+    }
+
+    public func close(): Unit {
+        _closed = true
+    }
+
+    public func isClosed(): Bool {
+        _closed
+    }
 }
 
 public class Ctx {
@@ -24,6 +117,7 @@ public class Ctx {
     var _responded: Bool = false
     var _statusCode: UInt16 = 200
     var _bodyBytesCache: ?Array<UInt8> = None
+    var _requestBodyStreamCache: ?InputStream = None
     var _multipartForm: ?MultipartForm = None
     var _responseBody: ?String = None
     var _pathOverride: ?String = None
@@ -95,7 +189,46 @@ public class Ctx {
     }
 
     public func requestBody(): InputStream {
-        _currentRequestCarrier.requestBodyStream()
+        if (let Some(cached) <- _bodyBytesCache) {
+            return CachedRequestBodyReplayInputStream(toRequestBodyReplayByteArray(cached))
+        }
+        if (let Some(stream) <- _requestBodyStreamCache) {
+            return stream
+        }
+        let stream = LimitedRequestBodyInputStream(
+            _currentRequestCarrier.requestBodyStream(),
+            _app.config.bodyLimit
+        )
+        _requestBodyStreamCache = Some(stream)
+        stream
+    }
+
+    /// Returns a `JsonReader` backed by `requestBody()`.
+    ///
+    /// This is a streamed intake seam: unlike `bodyString()/JsonValue`, it does
+    /// not full-buffer the request body. The caller reads JSON tokens directly
+    /// from the underlying `InputStream`. Because the backing stream is
+    /// `requestBody()`, the current `config.bodyLimit` contract applies: reading
+    /// beyond `bodyLimit` bytes throws `BufferedRequestBodyTooLargeException`.
+    ///
+    /// If the body was already buffered through `bodyBytes()/bodyString()`,
+    /// the reader replays from that cached full body. If the request has
+    /// already been consumed through the stream path first, later buffered
+    /// reads only see the unread remainder and no broader replay is promised.
+    ///
+    /// The returned reader reads the first top-level JSON value from the stream.
+    /// For typed deserialization via `JsonDeserializable`, callers may use:
+    ///
+    /// ```text
+    /// let reader = ctx.requestJsonReader()
+    /// let value = SomeType.fromJson(reader)
+    /// ```
+    ///
+    /// This is deliberately a low-level seam. It does not replace
+    /// `bindJsonOr400(...)` - that method continues to use the full-buffer
+    /// `bodyString()/JsonValue` path.
+    public func requestJsonReader(): JsonReader {
+        StdxJsonReader(requestBody())
     }
 
     public func saveBodyToFile(destPath: String): Int64 {
@@ -103,7 +236,7 @@ public class Ctx {
             writeBytesToFile(destPath, cached)
             return cached.size
         }
-        streamRequestBodyToFile(_currentRequestCarrier.requestBodyStream(), destPath)
+        streamRequestBodyToFile(requestBody(), destPath)
     }
 
     public func cachedBodyBytes(): ?Array<UInt8> {
@@ -114,15 +247,23 @@ public class Ctx {
         if (let Some(cached) <- _bodyBytesCache) {
             return cached
         }
-        let stream = _currentRequestCarrier.requestBodyStream()
+        let stream = requestBody()
         let buf = ArrayList<UInt8>()
         let tmp = Array<UInt8>(4096, repeat: 0)
-        while (true) {
-            let n = stream.read(tmp)
-            if (n <= 0) { break }
-            for (i in 0..n) {
-                buf.add(tmp[i])
+        try {
+            while (true) {
+                let n = stream.read(tmp)
+                if (n <= 0) { break }
+                for (i in 0..n) {
+                    buf.add(tmp[i])
+                }
             }
+        } catch (e: BufferedRequestBodyTooLargeException) {
+            throw BufferedRequestBodyTooLargeException(
+                e.limitBytes,
+                e.attemptedBytes,
+                "request body buffered ${e.attemptedBytes} bytes which exceeds limit ${e.limitBytes}"
+            )
         }
         let bytes = buf.toArray()
         _bodyBytesCache = bytes
@@ -491,6 +632,60 @@ public class Ctx {
         None
     }
 
+    /// Streamed typed request JSON bind helper.
+    ///
+    /// This helper stays parallel to `bindJsonOr400(...)` instead of replacing it.
+    /// It decodes directly from `requestJsonReader()` and therefore avoids the
+    /// old full-buffer `JsonValue` path. Validation still maps to
+    /// `validation_failed` after a successful decode.
+    ///
+    /// Current narrow contract:
+    ///
+    /// - `BufferedRequestBodyTooLargeException` still propagates through the
+    ///   accepted `bodyLimit` path
+    /// - malformed `JsonReader` state / token failures currently map to
+    ///   `invalid_json`
+    /// - numeric overflow and decoder/domain failures currently map to
+    ///   `invalid_payload`
+    ///
+    /// This intentionally avoids overclaiming a broader parse-vs-decode
+    /// taxonomy redesign on the streamed path.
+    public func bindJsonReaderOr400<T>(
+        decoder: (JsonReader) -> T,
+        validate!: ?(T) -> ?String = None
+    ): ?T {
+        let decoded = tryDecodeJsonReader<T>(decoder)
+        if (let None <- decoded) {
+            return None
+        }
+        if (let Some(value) <- decoded) {
+            if (let Some(validateFn) <- validate) {
+                let validation = tryValidateJson<T>(value, validateFn)
+                if (let Some(msg) <- validation) {
+                    jsonBadRequest("validation_failed", msg)
+                    return None
+                }
+            }
+            return Some(value)
+        }
+        None
+    }
+
+    /// Streamed `JsonDeserializable<T>` request bind sugar.
+    ///
+    /// This helper stays one layer above `bindJsonReaderOr400(...)` and only
+    /// removes the repeated `{ reader => T.fromJson(reader) }` wrapper for
+    /// typed callers. It therefore inherits the same current body-limit,
+    /// malformed-json, invalid-payload, and validation behavior as the
+    /// lower-level helper.
+    public func bindJsonDeserializeOr400<T>(
+        validate!: ?(T) -> ?String = None
+    ): ?T where T <: JsonDeserializable<T> {
+        bindJsonReaderOr400<T>({ reader =>
+            T.fromJson(reader)
+        }, validate: validate)
+    }
+
     // ── File serving ──
 
     public func sendFile(filePath: String): Ctx {
@@ -825,6 +1020,39 @@ public class Ctx {
         }
     }
 
+    func tryDecodeJsonReader<T>(decoder: (JsonReader) -> T): ?T {
+        let reader = requestJsonReader()
+        try {
+            Some(decoder(reader))
+        } catch (e: BufferedRequestBodyTooLargeException) {
+            throw e
+        } catch (e: IllegalStateException) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "request body is not valid json: ${e.message}"
+            } else {
+                "request body is not valid json"
+            }
+            jsonBadRequest("invalid_json", msg)
+            None
+        } catch (e: OverflowException) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "failed to decode payload: ${e.message}"
+            } else {
+                "failed to decode payload"
+            }
+            jsonBadRequest("invalid_payload", msg)
+            None
+        } catch (e: Exception) {
+            let msg = if (e.message.trimAscii().size > 0) {
+                "failed to decode payload: ${e.message}"
+            } else {
+                "failed to decode payload"
+            }
+            jsonBadRequest("invalid_payload", msg)
+            None
+        }
+    }
+
     func tryValidateJson<T>(value: T, validateFn: (T) -> ?String): ?String {
         try {
             validateFn(value)
@@ -923,10 +1151,12 @@ func streamRequestBodyToFile(stream: InputStream, destPath: String): Int64 {
     let file = File(destPath, OpenMode.Write)
     let buffer = Array<UInt8>(FILE_STREAM_BUFFER_SIZE, repeat: 0)
     var total: Int64 = 0
+    var completed = false
     try {
         while (true) {
             let readLen = stream.read(buffer)
             if (readLen <= 0) {
+                completed = true
                 break
             }
             let chunk = Array<UInt8>(readLen, repeat: 0)
@@ -939,7 +1169,14 @@ func streamRequestBodyToFile(stream: InputStream, destPath: String): Int64 {
             total += readLen
         }
     } finally {
-        file.close()
+        try {
+            file.close()
+        } catch (_: Exception) { }
+        if (!completed) {
+            try {
+                removeIfExists(destPath)
+            } catch (_: Exception) { }
+        }
     }
     total
 }
@@ -951,6 +1188,16 @@ func writeBytesToFile(destPath: String, bytes: Array<UInt8>): Unit {
     } finally {
         file.close()
     }
+}
+
+func toRequestBodyReplayByteArray(input: Array<UInt8>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
 }
 
 func closeStreamIfResource(stream: InputStream): Unit {

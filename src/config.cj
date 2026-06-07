@@ -110,6 +110,10 @@ public struct Config {
     public var tlsKeyFile: String = ""
     /// 为 true 时启用 jinguiSSL TLS precheck；为 false 时仅使用 stdx TLS 构造路径（保留回退能力）。
     public var enableTlsPrecheck: Bool = true
+    /// 服务器端传输后端偏好；默认留空，保持稳定默认路径。
+    public var serverPreferredBackendHint: String = ""
+    /// 服务器端是否允许实验性后端参与选路；默认 false。
+    public var allowExperimentalServerBackend: Bool = false
 
     public var allowRouteOverwrite: Bool = false
 
@@ -148,7 +152,9 @@ public struct Config {
         enableTlsPrecheck!: Bool = true,
         allowRouteOverwrite!: Bool = false,
         enableSwaggerCache!: Bool = true,
-        jsonEncoder!: ?JsonEncoder = None
+        jsonEncoder!: ?JsonEncoder = None,
+        serverPreferredBackendHint!: String = "",
+        allowExperimentalServerBackend!: Bool = false
     ) {
         this.appName = appName
         this.appVersion = appVersion
@@ -178,6 +184,8 @@ public struct Config {
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.enableTlsPrecheck = enableTlsPrecheck
+        this.serverPreferredBackendHint = serverPreferredBackendHint
+        this.allowExperimentalServerBackend = allowExperimentalServerBackend
         this.allowRouteOverwrite = allowRouteOverwrite
         this.enableSwaggerCache = enableSwaggerCache
         this.jsonEncoder = jsonEncoder
