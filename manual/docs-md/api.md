@@ -163,6 +163,7 @@ app.get("/me", { ctx =>
 - `ctx.json(body)`：直接回 JSON 字符串
 - `ctx.jsonSerialize(obj)`：类型实现序列化能力时回 JSON
 - `ctx.jsonEncode(obj)`：走 `JsonEncodable` 或自定义 `Config.jsonEncoder`
+- `ctx.jsonEncodeStream(obj, contentLength?)`：对象实现 `JsonWriterEncodable` 时走流式 JSON；这条路径不使用 `Config.jsonEncoder`
 - `ctx.sendString(body)`：纯文本响应
 - `ctx.html(body)`：HTML 响应
 - `ctx.send(bytes)`：原始字节
@@ -200,6 +201,7 @@ app.post("/upload-large", { ctx =>
 
 - RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
 - `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
+- `ctx.jsonEncodeStream(...)` 是 `JsonEncodable` family 的显式流式 twin：`ctx.jsonEncode(...)` 继续保持 full-buffer，并继续只在这条 full-buffer 路上使用 `Config.jsonEncoder`
 - `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
 - 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
 - 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
@@ -208,8 +210,17 @@ app.post("/upload-large", { ctx =>
 
 - `resp.observeSnapshot()`：把响应头里的 observe 字段回放成 `ClientObserveSnapshot`
 - `resp.transportTouchpoint()`：把已选 backend / reason / fallbackChain 等字段回放成 `ClientTransportTouchpoint`
+- `client.lastClientObserveSnapshot()`：读取最近一次请求在 client 侧保留的 observe 快照，成功/失败都可用
+- `client.lastClientTransportTouchpoint()`：读取最近一次请求在 client 侧保留的 transport 选择留痕，失败于响应前也能保留
+- `client.clearRecoverySnapshots()`：在下一轮 probe / retry / 诊断前显式清空 retained recovery，避免把上一轮结果误读成当前窗口
 
 这样做的好处是，联调排障时不必只盯日志文本，也不用手工一个个去读 `x-ignite-observe-*` 头。
+
+这三条 client-side retained API 和 response-side replay 不是互相替代的关系：
+
+- response-side replay 更适合“我已经拿到了响应对象，想从响应头里回放结构化信息”
+- client-side retained recovery 更适合“请求在更早阶段失败了，或者我想在一次长生命周期 client 上保留最后一跳诊断”
+- 如果你希望把 retained recovery 严格切成“这一轮请求只看这一轮”，就在开始下一轮前先调一次 `clearRecoverySnapshots()`
 
 ## `ignite.binary`
 

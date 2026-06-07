@@ -119,7 +119,7 @@ app.use(compressMiddleware())
 
 它当前有两种公开用法：
 
-- `kmodeMiddleware(Bool)`：兼容旧模式，适合快速开关
+- `kmodeMiddleware(Bool)`：兼容旧模式，但默认只对 loopback IP 开启 `legacyOpen`，并会打印 warning，适合本机快速开关
 - `kmodeMiddleware(policy)`：策略模式，基于 `KModePolicy` 控制 Header Key、IP 白名单与 capability
 
 在公开语义里，`kmode` 主要用于：
@@ -129,6 +129,8 @@ app.use(compressMiddleware())
 - 维护者验证路径
 
 它不等于生产期开着的“超级开关”。
+
+如果你需要非本机来源也进入 `kmode`，请改用显式 `KModePolicy(...)`，而不是继续假设 `kmodeMiddleware(Bool)` 会默认对所有来源放开。
 
 ### 安全可观测与日志等级
 
@@ -210,6 +212,8 @@ app.use(compressMiddleware())
 
 反向代理入口。当前公开语义里，它还支持可选的 X509 校验入口，适合在服务内做受控的代理转发。
 
+`ProxyConfig` 新增可选的 `tlsConfig: ?TlsClientConfig` 入参，当上游目标为 `https` 时，通过 `ClientBuilder.tlsConfig(tc)` 将 TLS 配置注入出站连接。如果不设置，当前主线仍会保留旧的 missing-TLS boundary；在要求显式 TLS 配置的运行时上，会直接停在 `TLS must be configured` 这一层。设置后可通过 `TlsClientConfig.verifyMode` 控制证书校验策略，并让 proxy 继续越过这道旧边界。
+
 在 `ig0600` 当前实现里，`proxyMiddleware` 已经补上几条更实用的 payload-path 行为：
 
 - 透传并保留原始 query string
@@ -221,6 +225,7 @@ app.use(compressMiddleware())
 
 - 如果上游目标是 `https`，并且当前请求体长度未知，框架会默认先落临时文件、补 `content-length` 后再转发，避免错误地发送 `Transfer-Encoding` 到潜在 HTTP/2 链路
 - 这条 `https unknown-length -> temp-file fallback` 回退现在已由回归测试锁住；即使上游连接最终失败，也不会悄悄退回到错误的分块转发语义
+- 如果你想跑一条更聚焦的 maintainer probe，当前也可以直接执行 `./manual/samples/proxy_transport_acceptance/probe.sh`
 
 ## 组合建议
 

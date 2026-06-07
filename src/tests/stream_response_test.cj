@@ -84,6 +84,33 @@ public class StreamResponseTestSuite {
     }
 
     @TestCase
+    public func testTransportWriterChunkedOverRealHttpPreservesChunkedWireBody(): Unit {
+        let payload = "ignite-transport-known-wire"
+        let port = chooseStreamTestPort(1847)
+        let app = App(config: Config())
+        app.get("/transport-known-wire", { ctx =>
+            let _ = ctx.setHeader("content-type", "text/plain; charset=utf-8")
+            let _ = ctx.setHeader("transfer-encoding", "chunked")
+            let writer = ctx.transportWriter()
+            writeTransportChunks(writer, payload.toArray(), 4096)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let resp = sendRawStreamHttpWithRetry(port, "GET", "/transport-known-wire", [])
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("content-type") ?? "", "text/plain; charset=utf-8")
+            @Assert(resp.header("content-length") ?? "", "")
+            @Assert(resp.header("transfer-encoding") ?? "", "chunked")
+            @Assert(decodeStreamChunkedBody(resp.body), payload)
+        } finally {
+            shutdownStreamTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testHeadSendStreamKeepsHeadersWithoutSendingBody(): Unit {
         let tracked = SendStreamTrackingInput(toSendStreamByteArray("ignite-head-stream".toArray()))
         let app = App(config: Config())
@@ -208,6 +235,15 @@ func toSendStreamByteArray(input: Array<UInt8>): Array<Byte> {
         i += 1
     }
     out
+}
+
+func writeTransportChunks(writer: ResponseTransportWriter, data: Array<UInt8>, chunkSize: Int64): Unit {
+    var cursor: Int64 = 0
+    while (cursor < data.size) {
+        let end = if (cursor + chunkSize < data.size) { cursor + chunkSize } else { data.size }
+        writer.write(data[cursor..end])
+        cursor = end
+    }
 }
 
 class StreamRawHttpResponse {

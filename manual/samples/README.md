@@ -31,6 +31,15 @@ Run commands from the repository root that contains `cjpm.toml`.
    - Multi-process stress probe for `App.handleForTest(...)`
    - Reuses one shared lease root so cross-process port planning can be exercised from files alone
 
+## H1 / H2 first route
+
+- If your immediate need is `H1`, prefer:
+  - `hello -> api -> client -> files`
+- If your immediate need is `H2`, prefer:
+  - `h2wire` as a guarded smoke path
+  - treat guard logs and blocker wording as truth
+  - do not treat the current H2 sample as full green conformance
+
 ## Additional samples
 
 - `manual/samples/dualport`

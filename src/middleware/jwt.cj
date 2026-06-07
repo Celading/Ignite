@@ -5,7 +5,7 @@ import ignite.binary.base64UrlDecode
 import std.collection.ArrayList
 import std.time.DateTime
 import stdx.encoding.json.{JsonValue, JsonObject}
-import jinguissl.crypto.digest.{HashAlgorithm, hmac}
+import JinguiSSL.jinguissl.contract.{HashAlgorithm, contractHmac}
 
 public class JwtConfig {
     public var secret: String
@@ -76,7 +76,7 @@ public func jwtMiddleware(config: JwtConfig): Handler {
                 rejectJwt(ctx, config.realm, "invalid_token", "Unauthorized")
                 return
             }
-            let expectedSig = hmac(HashAlgorithm.SHA256, secretBytes, signingInput.toArray())
+            let expectedSig = contractHmac(HashAlgorithm.SHA256, secretBytes, signingInput.toArray())
             if (!constantTimeBytesEqual(expectedSig, receivedSig)) {
                 rejectJwt(ctx, config.realm, "invalid_token", "Unauthorized")
                 return

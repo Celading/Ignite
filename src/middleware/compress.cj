@@ -1,6 +1,6 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
+import ignite.{Handler, Ctx, StreamCompressionPlan, registerStreamCompressionPlan}
 import std.collection.ArrayList
 import std.io.InputStream
 import stdx.compress.zlib.{
@@ -53,6 +53,21 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
     let bufferSize = normalizeBufferSize(config.bufferSize)
 
     { ctx: Ctx =>
+        let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
+        if (encoding.size > 0) {
+            registerStreamCompressionPlan(
+                ctx,
+                StreamCompressionPlan(
+                    encoding,
+                    minBytes,
+                    config.setVaryHeader,
+                    config.skipIfNoGain,
+                    config.level,
+                    bufferSize
+                )
+            )
+        }
+
         ctx.next()
 
         if (ctx.method == "HEAD") { return }
@@ -60,7 +75,6 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
         if ((ctx.header("range") ?? "").size > 0) { return }
         if ((ctx.getLocal("__ignite_response_kind") ?? "") == "sse") { return }
 
-        let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
         if (encoding.size == 0) { return }
 
         if (let Some(textBody) <- ctx.responseBody) {

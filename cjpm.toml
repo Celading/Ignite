@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.6.41"
+  version = "0.7.3"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -24,8 +24,17 @@
   output-type = "static"
 
 [dependencies]
-  jinguissl = { git = "https://atomgit.com/cinyu/jinguiSSL" }
-  lisi = { git = "https://atomgit.com/cinyu/lisi" }
+  # ignite-cjpm-projection:start
+  # Current dependency block is materialized from `_helper/config/cjpm-dependency-projection/`.
+  # Supported profile: `local-sibling`.
+  # Hosted profiles remain blocked until sibling hosted truth is separately proven.
+  # Local workspace truth stays on the split sibling line.
+  # Do not reintroduce the legacy single-repo jg062 / monolith pointer here.
+  # If a future hosted projection is prepared, it must target the split contract/core/runtime family.
+  JinguiSSL = { path = "../../Cangku/JinguiSSL-contract" }
+  jinguissl_core = { path = "../../Cangku/JinguiSSL-core" }
+  seajson = { path = "../../SeaJson/SeaJson" }
+  # ignite-cjpm-projection:end
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"

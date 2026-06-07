@@ -237,6 +237,155 @@ public class ClientHookTestSuite {
             }
         }
     }
+
+    @TestCase
+    public func testBaseUrlAndDefaultHeaderChain(): Unit {
+        let app = App(config: Config())
+        let receivedHeaders = ArrayList<String>()
+        app.get("/ready", { ctx =>
+            ctx.sendString("ready")
+        })
+        app.get("/chain", { ctx =>
+            if (let Some(v) <- ctx.header("x-test-auth")) {
+                receivedHeaders.add(v)
+            } else {
+                receivedHeaders.add("none")
+            }
+            ctx.sendString("ok")
+        })
+
+        let port = choosePort(723)
+        let url = "http://127.0.0.1:${port}/chain"
+        let readyUrl = "http://127.0.0.1:${port}/ready"
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        let probeClient = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 2
+        )
+            .baseUrl("http://127.0.0.1:${port}")
+            .defaultHeader("x-test-auth", "bearer-chain")
+
+        try {
+            waitForSuccessfulGet(probeClient, readyUrl)
+
+            let resp = client.request()
+                .method("GET")
+                .url("/chain")
+                .send()
+
+            @Assert(resp.status, 200)
+            @Assert(resp.body(), "ok")
+            @Assert(receivedHeaders.size, 1)
+            @Assert(receivedHeaders[0], "bearer-chain")
+        } finally {
+            probeClient.close()
+            client.close()
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testPostJsonConvenienceMethod(): Unit {
+        let app = App(config: Config())
+        app.get("/ready", { ctx =>
+            ctx.sendString("ready")
+        })
+        app.post("/json", { ctx =>
+            let body = ctx.bodyString()
+            ctx.sendString(body)
+        })
+
+        let port = choosePort(724)
+        let url = "http://127.0.0.1:${port}/json"
+        let readyUrl = "http://127.0.0.1:${port}/ready"
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        let probeClient = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 1
+        )
+
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 2
+        )
+
+        try {
+            waitForSuccessfulGet(probeClient, readyUrl)
+
+            let resp = client.postJson(url, "{\"hello\":\"world\"}")
+            @Assert(resp.status, 200)
+            let body = resp.body()
+            @Assert(containsClientHookText(body, "\"hello\""), true)
+            @Assert(containsClientHookText(body, "\"world\""), true)
+        } finally {
+            probeClient.close()
+            client.close()
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testPostEncryptedJsonConvenienceMethod(): Unit {
+        let cfg = buildCryptoConfig()
+        let marks = ArrayList<String>()
+
+        let client = RestClient(
+            readTimeout: Duration.second * 1,
+            writeTimeout: Duration.second * 1,
+            poolSize: 10
+        )
+            .useCrypto(cfg)
+            .onRequest({ _ =>
+                marks.add("request")
+                throw api2.ClientCryptoException(
+                    api2.ClientCryptoErrorCode.CryptoUnavailable,
+                    "stop before network"
+                )
+            })
+            .onError({ _ =>
+                marks.add("error")
+            })
+
+        try {
+            let _ = client.postEncryptedJson(
+                "http://127.0.0.1:1/secure-postEncrypted",
+                "{\"data\":\"secret\"}",
+                aad: "route:/secure-postEncrypted"
+            )
+            @Fail("encrypted request should fail via convenience method")
+        } catch (e: api2.ClientCryptoException) {
+            @Assert(e.code, api2.ClientCryptoErrorCode.CryptoUnavailable)
+        }
+
+        @Assert(marks.size, 2)
+        @Assert(marks[0], "request")
+        @Assert(marks[1], "error")
+    }
 }
 
 func containsClientHookText(text: String, target: String): Bool {

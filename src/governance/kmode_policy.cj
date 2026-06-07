@@ -35,7 +35,7 @@ public class KModePolicy {
 
     public func authorize(ctx: Ctx): Bool {
         if (!enabled) { return false }
-        if (legacyOpen) { return true }
+        if (legacyOpen) { return ipAllowed(ctx.ip) }
         let headerVal = ctx.header(headerName) ?? ""
         if (headerKey.size == 0 || headerVal.size == 0) { return false }
         if (headerVal != headerKey) { return false }
@@ -63,12 +63,76 @@ public class KModePolicy {
     }
 
     public func ipAllowed(ip: String): Bool {
+        let normalizedIp = normalizePeerIp(ip)
         if (allowIPs.size == 0) { return true }
         for (allowed in allowIPs) {
             if (allowed == "*") { return true }
             if (allowed == ip) { return true }
+            if (allowed == normalizedIp) { return true }
         }
         false
+    }
+
+    public func allowsAnyIp(): Bool {
+        for (allowed in allowIPs) {
+            if (allowed == "*") { return true }
+        }
+        false
+    }
+
+    public func legacyOpenWarning(): ?String {
+        if (!enabled || !legacyOpen) {
+            return None
+        }
+        let scope = if (allowsAnyIp()) {
+            "allowIPs=* wildcard compatibility lane"
+        } else if (isLoopbackOnlyAllowList()) {
+            "loopback-only compatibility lane"
+        } else {
+            "custom allowlist compatibility lane"
+        }
+        let caps = capabilitiesString()
+        let capSummary = if (caps.size == 0) { "none" } else { caps }
+        Some(
+            "[Ignite][KMode] Warning: legacyOpen compatibility lane is enabled (" +
+            scope +
+            ", capabilities=" + capSummary +
+            "). Prefer explicit headerKey + scoped allowIPs for non-local traffic."
+        )
+    }
+
+    func isLoopbackOnlyAllowList(): Bool {
+        if (allowIPs.size == 0) { return false }
+        for (allowed in allowIPs) {
+            if (allowed != "127.0.0.1" && allowed != "::1") {
+                return false
+            }
+        }
+        true
+    }
+
+    func normalizePeerIp(ip: String): String {
+        let trimmed = ip.trimAscii()
+        if (trimmed.size == 0) {
+            return trimmed
+        }
+        let runes = trimmed.toRuneArray()
+        if (runes[0] == r'[') {
+            if (let Some(rightBracket) <- trimmed.indexOf("]")) {
+                if (rightBracket > 1) {
+                    return trimmed[1..rightBracket]
+                }
+            }
+            return trimmed
+        }
+        let hostPort = trimmed.split(":", 2)
+        if (hostPort.size == 2) {
+            let host = hostPort[0].trimAscii()
+            if (host.split(".").size == 4) {
+                return host
+            }
+        }
+        trimmed
     }
 }
 

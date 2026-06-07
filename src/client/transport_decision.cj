@@ -2,7 +2,6 @@ package ignite.client
 
 import ignite.api2 as api2
 import ignite.security as security
-import lisi.transport as lisiTransport
 
 class TransportSelectionDecision {
     let candidateOrder: String
@@ -85,7 +84,7 @@ func buildClientTransportSelectionDecision(
 ): TransportSelectionDecision {
     let scheme = detectTransportScheme(targetUrl)
     let cryptoProviderId = describeCryptoProvider(requestCryptoConfig)
-    let contractRequest = lisiTransport.BackendSelectionRequest(
+    let contractRequest = api2.BackendSelectionRequest(
         "client",
         scheme,
         false,
@@ -96,8 +95,8 @@ func buildClientTransportSelectionDecision(
         0,
         "sni=" + extractTransportHost(targetUrl)
     )
-    let contractDecision = lisiTransport.selectBackend(contractRequest)
-    let tlsPlan = lisiTransport.buildTlsAttachPlan(contractRequest, contractDecision)
+    let contractDecision = api2.selectBackend(contractRequest)
+    let tlsPlan = api2.buildTlsAttachPlan(contractRequest, contractDecision)
 
     TransportSelectionDecision(
         joinStringArray(contractDecision.candidateOrder),
@@ -142,12 +141,12 @@ func buildSuggestedFallbackDecisionRecord(
         )
     }
 
-    let triggerFamily = mapEnvelopeToLisiFallbackFamily(envelope)
+    let triggerFamily = mapEnvelopeToTransportFallbackFamily(envelope)
     if (triggerFamily.size == 0) {
         return None
     }
 
-    let contractRecord = lisiTransport.decideFallback(
+    let contractRecord = api2.decideFallback(
         if (selection.contractSelectedBackend.size > 0) {
             selection.contractSelectedBackend
         } else {
@@ -321,7 +320,7 @@ func extractTransportHost(targetUrl: String): String {
     parts[0].trimAscii()
 }
 
-func mapEnvelopeToLisiFallbackFamily(envelope: TransportErrorEnvelope): String {
+func mapEnvelopeToTransportFallbackFamily(envelope: TransportErrorEnvelope): String {
     if (envelope.causeCode == "provider_unavailable") {
         return "PROVIDER_UNAVAILABLE"
     }
@@ -339,7 +338,7 @@ func mapEnvelopeToLisiFallbackFamily(envelope: TransportErrorEnvelope): String {
 
 func adaptContractFallbackRecord(
     selection: TransportSelectionDecision,
-    contractRecord: lisiTransport.FallbackDecisionRecord
+    contractRecord: api2.FallbackDecisionRecord
 ): ?TransportFallbackDecisionRecord {
     let fromBackend = normalizeFallbackBackendValue(contractRecord.fromBackend)
     let toBackend = normalizeFallbackBackendValue(contractRecord.toBackend)

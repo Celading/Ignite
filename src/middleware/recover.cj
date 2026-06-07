@@ -1,6 +1,6 @@
 package ignite.middleware
 
-import ignite.{App, Handler, Ctx}
+import ignite.{App, BufferedRequestBodyTooLargeException, Handler, Ctx}
 import ignite.governance.{
     KModeFailoverOption,
     KModeFailoverDecision,
@@ -44,6 +44,12 @@ public func recoverMiddleware(config!: RecoverConfig = RecoverConfig()): Handler
     { ctx: Ctx =>
         try {
             ctx.next()
+        } catch (e: BufferedRequestBodyTooLargeException) {
+            if (let Some(handler) <- config.customHandler) {
+                handler(ctx, e)
+            } else {
+                let _ = ctx.status(413).sendString("Payload Too Large")
+            }
         } catch (e: Exception) {
             if (let Some(result) <- runFailoverIfNeeded(ctx, e, config)) {
                 if (shouldHandleGuardActive(result)) {

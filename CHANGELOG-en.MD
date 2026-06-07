@@ -1,5 +1,38 @@
 # Ignite Changelog
 
+## Ignite `0700`
+> Asset compression, collaboration governance, and H1/H2 truth closeout
+
+### v0.7.2 `Ignite Now`
+> official client full-consumer-surface wave
+
+- `+Feature` the client full consumer story is now one coherent public path: `manual/samples/client/**` walks through setup, quick GET, JSON POST, builder path, hooks, body access, retained recovery, retry override, encrypted request, and cleanup
+- `+Feature` `Ctx.jsonEncodeStream(obj, contentLength?)` is now the explicit streamed twin for the `JsonEncodable` family; `ctx.jsonEncode(...)` remains full-buffered and continues to be the only path that uses `Config.jsonEncoder`
+- `+Tests` `ClientHookTestSuite`, `ClientRetryTestSuite`, `ClientStreamingTestSuite`, and `ClientResponseRecoveryAcceptanceTestSuite` now carry the focused regressions for that wave and still pass on the accepted serial `294/294` lane
+- `+Tests` `JsonEncodeStreamCtxSugarTestSuite`, `JsonEncodeStreamMiddlewareCompatTestSuite`, and `CompressMiddlewareTestSuite` cover `jsonEncodeStream(...)` known-length / unknown-length / HEAD behavior, the current middleware boundary, and the real-HTTP streamed-compress subset
+- `+Tests` add `ClientHostnameSensitiveTlsProofTestSuite` as the runtime-owned hostname/SNI blocker-anchor suite, keeping the public truth honestly at `not currently proven`
+- `=Docs` sync the multilingual `README`, the client sample README, `manual/docs-md/client.md`, `manual/docs-md/api.md`, and source-local guidance to the latest client / JSON response wording
+- `=Chore` sync the package version, framework version constant, and banner render fixtures to `0.7.2`
+
+### v0.7.1 `Ignite Now`
+> retained client recovery reset and failure-path freshness refresh
+
+- `+Feature` `RestClient` now exposes `clearRecoverySnapshots()` so long-lived clients can explicitly reset retained client-side recovery before the next probe / retry / diagnosis wave
+- `+Feature` The current `client` recovery surface is now documented in two layers: response-side replay via `observeSnapshot()/transportTouchpoint()`, and retained client-side recovery via `lastClientObserveSnapshot()/lastClientTransportTouchpoint()`
+- `+Tests` `ClientResponseRecoveryAcceptanceTestSuite` now proves reset + fresh failure-path recovery, showing that an experimental failure still returns the current-round observe / touchpoint after old retained state is cleared
+- `=Docs` README surfaces, the client sample, and `manual/docs-md/api.md` are now aligned with the retained-recovery and reset wording
+- `=Chore` Sync the package version, framework version constant, and banner render fixtures to `0.7.1`
+
+### v0.7.0 `Ignite Now`
+> Public baseline refresh for the `0700` line
+
+- `=Docs` Raise the current public baseline from `0.6.41` to `0.7.0`
+- `=Docs` Realign `README.md`, `README-en.md`, and `README-ru.md` version surfaces, status wording, and the current `H1 ready-now / H2 guarded intake` truth
+- `=Docs` Refresh `manual/docs-md/README.md` and `manual/samples/README.md` so the public entry lane now reflects the current `0700` and `H1/H2` first-read path
+- `+Feature` The current line now keeps the `transport` accepted-answer proof and the `client` public recovery proof in a more handoff-friendly executor-facing truth form
+- `+Feature` The self-hosted `server-socket` lane now has a longer parser/session/body/writer/runtime-experiment proof ladder, while still remaining an experiment/runway truth rather than a default public engine switch
+- `=Chore` Sync the package version and framework version constant to `0.7.0`
+
 ## Ignite `0600`
 > Transport decoupling begins, observability keeps tightening
 

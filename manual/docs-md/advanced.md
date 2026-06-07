@@ -73,7 +73,7 @@ app.get("/stream", { ctx =>
 - HTTP/1.1 下，这条路径可以继续表现为 chunked 语义。
 - HTTP/2 下，不能再发 `Transfer-Encoding`；Ignite 现在只在非 H2 路径补这个头。
 - 当前底层 `stdx.net.http.HttpResponseWriter` 的本地 contract 写明：HTTP/2 下每次 `write(...)` 会把数据封装并发出。但这仍应和真实 H2 on-wire 验证分开表述，不要把“协议上成立”直接写成“本仓所有集成路径都已完全验透”。
-- 当前工作区的本地 H2 on-wire closeout 仍受 `stdx.crypto.keys.GeneralPrivateKey.decodeFromPem(...)` 所在 `key_decode` 路线阻塞；`manual/samples/h2wire/` 的价值在于把这个 blocker 收成可复验样例，而不是提前宣称 H2 已 fully closed。
+- 当前工作区已经把旧的 `GeneralPrivateKey.decodeFromPem(...)` key-load crash seam 从 `api2/tls.cj` 主路径上移开，但本地 H2 on-wire closeout 仍未在这张包里重证；`manual/samples/h2wire/` 的价值仍然是把后续 proof holder 收成可复验样例，而不是提前宣称 H2 已 fully closed。
 
 ## 静态文件
 
@@ -166,7 +166,7 @@ app.listen("0.0.0.0", 443)
 当前公开主线是：
 
 - 默认 HTTPS 路径仍以 `stdx` TLS 构造为准
-- `enableTlsPrecheck` 默认开启，会先做 `jinguissl` 预检，再进入当前默认 TLS 构造路径
+- `enableTlsPrecheck` 默认开启，会先做 `jinguissl` 预检，再进入当前 TLS 构造路径；当前主线会把原始 PEM/DER key 包在一个轻量 `PrivateKey` wrapper 里交给 TLS native 层，避免在已知 runtime lane 上直接落回 `GeneralPrivateKey.describe()` 崩溃点
 - `jinguissl` 当前不是默认 HTTPS 监听替代方案
 - 如果你要更稳妥的生产接入，仍可优先考虑现有默认路径或在反向代理层完成 TLS 终结
 
