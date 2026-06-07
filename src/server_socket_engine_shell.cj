@@ -11,7 +11,7 @@ let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_S
 func runSocketServerEngineShellListen(
     option: ServerEngineListenOption,
     app: App,
-    onReady: ?(() -> Unit)
+    onReady: ?((ServerEngineReadySignal) -> Unit)
 ): Unit {
     if (option.tlsCertFile.size > 0 || option.tlsKeyFile.size > 0) {
         throw SocketServerEngineShellException(
@@ -22,7 +22,7 @@ func runSocketServerEngineShellListen(
     listener.bind()
     try {
         if (let Some(cb) <- onReady) {
-            cb()
+            cb(ServerEngineReadySignal())
         }
         serveSocketServerEngineShellTurns(
             listener,

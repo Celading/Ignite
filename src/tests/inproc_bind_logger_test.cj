@@ -240,7 +240,7 @@ class RetryAddressInUseEngine <: ServerEngine {
     public override func listen(
         option: ServerEngineListenOption,
         app: App,
-        onReady: ?(() -> Unit)
+        onReady: ?((ServerEngineReadySignal) -> Unit)
     ): Unit {
         listenCalls += 1
         attemptedPorts.add(option.port)

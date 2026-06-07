@@ -118,6 +118,168 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 }
 
+type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
+
+let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
+
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier {
+    let _downstream: CurrentRequestCarrier
+    let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
+    var _responseWriter: ?ResponseTransportWriter = None
+
+    init(
+        downstream: CurrentRequestCarrier,
+        responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
+    ) {
+        _downstream = downstream
+        _responseWriterFactory = responseWriterFactory
+    }
+
+    func ensureResponseWriter(): ResponseTransportWriter {
+        match (_responseWriter) {
+            case Some(writer) => writer
+            case None =>
+                let writer = _responseWriterFactory()
+                _responseWriter = Some(writer)
+                writer
+        }
+    }
+
+    public override func rawHttpContext(): HttpContext {
+        _downstream.rawHttpContext()
+    }
+
+    public override func upgradeWebSocketRaw(): WebSocket {
+        _downstream.upgradeWebSocketRaw()
+    }
+
+    public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
+        ensureResponseWriter()
+    }
+
+    public override func requestMethod(): String {
+        _downstream.requestMethod()
+    }
+
+    public override func requestPath(): String {
+        _downstream.requestPath()
+    }
+
+    public override func requestUrlString(): String {
+        _downstream.requestUrlString()
+    }
+
+    public override func requestVersionString(): String {
+        _downstream.requestVersionString()
+    }
+
+    public override func requestRemoteAddr(): String {
+        _downstream.requestRemoteAddr()
+    }
+
+    public override func requestQueryValue(key: String): ?String {
+        _downstream.requestQueryValue(key)
+    }
+
+    public override func requestFormValue(key: String): ?String {
+        _downstream.requestFormValue(key)
+    }
+
+    public override func requestHeaderValue(key: String): ?String {
+        _downstream.requestHeaderValue(key)
+    }
+
+    public override func requestHeaders(): HttpHeaders {
+        _downstream.requestHeaders()
+    }
+
+    public override func requestBodyStream(): InputStream {
+        _downstream.requestBodyStream()
+    }
+
+    public override func requestBodySize(): ?Int64 {
+        _downstream.requestBodySize()
+    }
+
+    public override func setResponseStatus(code: UInt16): Unit {
+        _downstream.setResponseStatus(code)
+    }
+
+    public override func setResponseHeader(key: String, value: String): Unit {
+        _downstream.setResponseHeader(key, value)
+    }
+
+    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+        _downstream.addResponseHeaders(headers)
+    }
+
+    public override func setResponseString(body: String): Unit {
+        let bytes = body.toArray()
+        if (bytes.size == 0) {
+            return
+        }
+        ensureResponseWriter().write(bytes)
+    }
+
+    public override func setResponseBytes(data: Array<UInt8>): Unit {
+        if (data.size == 0) {
+            return
+        }
+        ensureResponseWriter().write(cloneResponseTransportBytes(data))
+    }
+
+    public override func attachResponseBodyStream(stream: InputStream): Unit {
+        let writer = ensureResponseWriter()
+        let buffer = Array<Byte>(
+            CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE,
+            repeat: 0
+        )
+        try {
+            while (true) {
+                let readLen = stream.read(buffer)
+                if (readLen <= 0) {
+                    break
+                }
+                writer.write(
+                    currentRequestCarrierByteWindowToUInt8(buffer, readLen)
+                )
+            }
+        } finally {
+            closeCurrentRequestCarrierStreamIfResource(stream)
+        }
+    }
+}
+
 func wrapCurrentRequestCarrier(httpCtx: HttpContext): CurrentRequestCarrier {
     StdxHttpContextCurrentRequestCarrier(httpCtx)
+}
+
+func wrapCurrentRequestCarrierResponseWriter(
+    currentRequestCarrier: CurrentRequestCarrier,
+    responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
+): CurrentRequestCarrier {
+    ResponseTransportWriterBackedCurrentRequestCarrier(
+        currentRequestCarrier,
+        responseWriterFactory
+    )
+}
+
+func currentRequestCarrierByteWindowToUInt8(
+    input: Array<Byte>,
+    size: Int64
+): Array<UInt8> {
+    let out = Array<UInt8>(size, repeat: 0)
+    var i: Int64 = 0
+    while (i < size) {
+        out[i] = UInt8(input[i])
+        i += 1
+    }
+    out
+}
+
+func closeCurrentRequestCarrierStreamIfResource(stream: InputStream): Unit {
+    match (stream) {
+        case closable: Resource => closable.close()
+        case _ => ()
+    }
 }
