@@ -29,9 +29,10 @@ func writeJsonWriterEncodableThroughSeaJsonBridge(
     out: OutputStream,
     obj: JsonWriterEncodable
 ): Unit {
-    let writer = SeaJsonNativeWriter(out: out)
+    let writer = SeaJsonNativeWriter()
     obj.writeJson(writer)
-    writer.finish()
+    let json = writer.close()
+    out.write(json.toArray())
 }
 
 func serializeJsonThroughSeaJsonBridge<T>(obj: T): String where T <: JsonSerializable {

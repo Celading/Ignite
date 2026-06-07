@@ -3,7 +3,7 @@ package ignite
 import std.io.ByteBuffer
 import seajson.{
     JsonEncodable as SeaJsonEncodable,
-    JsonWriterEncodable as SeaJsonWriterEncodable,
+    JsonWriter as SeaJsonNativeWriter,
     defaultJsonEncoder as seaJsonDefaultJsonEncoder
 }
 import stdx.encoding.json.stream.{
@@ -15,11 +15,19 @@ import stdx.encoding.json.stream.{
 
 public type JsonWriter = StdxJsonWriter
 public type JsonEncodable = SeaJsonEncodable
-public type JsonWriterEncodable = SeaJsonWriterEncodable
 public type JsonSerializable = StdxJsonSerializable
 public type JsonDeserializable<T> = StdxJsonDeserializable<T>
 public type JsonReader = StdxJsonReader
 public type JsonEncoder = (JsonEncodable) -> String
+
+/// Ignite-owned writer-facing JSON contract.
+///
+/// GitCode SeaJson truth currently lags the newer `JsonWriterEncodable`
+/// interface/export surface, so Ignite keeps this narrow writer-facing seam
+/// locally while still consuming SeaJson's native writer type directly.
+public interface JsonWriterEncodable {
+    func writeJson(writer: SeaJsonNativeWriter): Unit
+}
 
 func defaultJsonEncoder(obj: JsonEncodable): String {
     seaJsonDefaultJsonEncoder(obj)

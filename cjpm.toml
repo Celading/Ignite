@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.7.3"
+  version = "0.7.7"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -26,14 +26,12 @@
 [dependencies]
   # ignite-cjpm-projection:start
   # Current dependency block is materialized from `_helper/config/cjpm-dependency-projection/`.
-  # Supported profile: `local-sibling`.
-  # Hosted profiles remain blocked until sibling hosted truth is separately proven.
-  # Local workspace truth stays on the split sibling line.
-  # Do not reintroduce the legacy single-repo jg062 / monolith pointer here.
-  # If a future hosted projection is prepared, it must target the split contract/core/runtime family.
-  JinguiSSL = { path = "../../Cangku/JinguiSSL-contract" }
-  jinguissl_core = { path = "../../Cangku/JinguiSSL-core" }
-  seajson = { path = "../../SeaJson/SeaJson" }
+  # Supported profile: `hosted-gitcode`.
+  # The current ig0700 release-tag lane uses the operator-approved GitCode-hosted truth.
+  # Keep dependency keys aligned with the source package names exposed by each repo.
+  JinguiSSL = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
+  jinguissl_core = { git = "https://gitcode.com/CjKu/JinguiCore.git" }
+  seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
   # ignite-cjpm-projection:end
 
 [target.x86_64-w64-mingw32]

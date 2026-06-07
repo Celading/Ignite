@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.7.3-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.7.7-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.7.3</span>                      │
+│                   <span style="color:#88C0D0;">Ignite v0.7.7</span>                      │
 │   <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>    │
 │                                                       │
 │   Touchpoints .......... 16   Processes .......... 1  │
 │   Prefork ......... Disabled   PID .......... 67271   │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.7.3</i></span>  │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.7.7</i></span>  │
 └───────────────────────────────────────────────────────┘
 </pre>
 <span style="font-weight:300;font-size:38px">Ignite / 叶燧</span><br/>
@@ -38,7 +38,7 @@
 我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
 因此我们取 **“叶”** 之灵动，取 **“燧”** 之开创，命名它为 **叶燧 (Ignite)**。
 
-## 当前状态（0.7.3）
+## 当前状态（0.7.7）
 
 - `0700` 现在是当前公开/治理主线，重点不再只是“继续堆能力”，而是把现有能力压成更容易交接、验收和云端恢复的 truth lane。
 - `H1` 是当前最成熟的 intake 方向：`hello / api / client / files` 这几条公开样例路径已经足够支撑 first-run 与常见 payload/stream/client 联调。
