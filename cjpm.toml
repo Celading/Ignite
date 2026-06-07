@@ -31,7 +31,7 @@
   # Local workspace truth stays on the split sibling line.
   # Do not reintroduce the legacy single-repo jg062 / monolith pointer here.
   # If a future hosted projection is prepared, it must target the split contract/core/runtime family.
-  jinguissl_contract = { path = "../../Cangku/JinguiSSL-contract" }
+  JinguiSSL = { path = "../../Cangku/JinguiSSL-contract" }
   jinguissl_core = { path = "../../Cangku/JinguiSSL-core" }
   seajson = { path = "../../SeaJson/SeaJson" }
   # ignite-cjpm-projection:end

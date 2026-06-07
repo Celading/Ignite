@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import ignite.binary.base64UrlEncode
 import ignite.middleware.{JwtConfig, jwtMiddleware}
-import jinguissl_contract.jinguissl.contract.{HashAlgorithm, contractHmac}
+import JinguiSSL.jinguissl.contract.{HashAlgorithm, contractHmac}
 import std.time.DateTime
 
 @Test

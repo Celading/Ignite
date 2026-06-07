@@ -5,7 +5,7 @@ import ignite.binary.base64UrlDecode
 import std.collection.ArrayList
 import std.time.DateTime
 import stdx.encoding.json.{JsonValue, JsonObject}
-import jinguissl_contract.jinguissl.contract.{HashAlgorithm, contractHmac}
+import JinguiSSL.jinguissl.contract.{HashAlgorithm, contractHmac}
 
 public class JwtConfig {
     public var secret: String

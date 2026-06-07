@@ -5,7 +5,7 @@ import std.fs.{exists, File, OpenMode}
 import stdx.crypto.common.{Pem, PemEntry, DerBlob, PrivateKey}
 import stdx.net.tls.TlsServerConfig
 import stdx.crypto.x509.X509Certificate
-import jinguissl_contract.jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
+import JinguiSSL.jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
 import jinguissl_core.jinguissl.crypto.tls.TlsSessionCache
 
 public enum TlsConfigLoadErrorCode <: Equatable<TlsConfigLoadErrorCode> & ToString {
