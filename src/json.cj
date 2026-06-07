@@ -2,8 +2,8 @@ package ignite
 
 import std.io.ByteBuffer
 import seajson.{
+    JsonWriter as SeaJsonNativeWriter,
     JsonEncodable as SeaJsonEncodable,
-    JsonWriterEncodable as SeaJsonWriterEncodable,
     defaultJsonEncoder as seaJsonDefaultJsonEncoder
 }
 import stdx.encoding.json.stream.{
@@ -15,11 +15,16 @@ import stdx.encoding.json.stream.{
 
 public type JsonWriter = StdxJsonWriter
 public type JsonEncodable = SeaJsonEncodable
-public type JsonWriterEncodable = SeaJsonWriterEncodable
 public type JsonSerializable = StdxJsonSerializable
 public type JsonDeserializable<T> = StdxJsonDeserializable<T>
 public type JsonReader = StdxJsonReader
 public type JsonEncoder = (JsonEncodable) -> String
+
+// Keep the writer-facing contract in Ignite so the hosted SeaJson baseline
+// does not need to expose this symbol before Ignite can consume it remotely.
+public interface JsonWriterEncodable {
+    func writeJson(writer: SeaJsonNativeWriter): Unit
+}
 
 func defaultJsonEncoder(obj: JsonEncodable): String {
     seaJsonDefaultJsonEncoder(obj)
