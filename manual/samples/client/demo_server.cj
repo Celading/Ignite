@@ -1,6 +1,7 @@
 import ignite.*
+import ignite.client.*
 import ignite.api2
-import std.collection.HashMap
+import std.collection.{ArrayList, HashMap}
 
 func buildCryptoConfig(): api2.ClientCryptoConfig {
     let ring = HashMap<String, Array<UInt8>>()
@@ -42,12 +43,16 @@ main() {
                 envelope,
                 aadText: "route:/secure-echo"
             )
-            ctx.json("{\"ok\":true,\"secureEcho\":${plain}}")
-        } catch (e: api2.ClientCryptoException) {
-            ctx.status(400).json(jsonError(e.code))
-        } catch (_: Exception) {
-            ctx.status(400).json("{\"ok\":false,\"error\":\"bad request\"}")
+            ctx.json("{\"ok\":true,\"decrypted\":${plain}}")
+        } catch (e: Exception) {
+            ctx.status(400).json("{\"ok\":false,\"error\":\"decrypt failed: ${e.message}\"}")
         }
+    })
+
+    app.get("/stream-response", { ctx =>
+        // Returns enough content to demonstrate bodyStream() vs bodyBytes()
+        // The client can choose to read this as a stream or cache it.
+        ctx.json("{\"ok\":true,\"data\":\"this is a longer response body for stream vs cached body demonstration - Ignite client supports both one-pass streaming via bodyStream() and cached repeatable access via bodyBytes()\",\"size\":\"large\"}")
     })
 
     app.post("/upload-multipart", { ctx =>
@@ -62,6 +67,6 @@ main() {
     })
 
     println("[demo_server] listening on http://127.0.0.1:18080")
-    println("[demo_server] routes: GET /ping, POST /echo-json, POST /secure-echo, POST /upload-multipart")
+    println("[demo_server] routes: GET /ping, POST /echo-json, POST /secure-echo, GET /stream-response, POST /upload-multipart")
     app.listen("127.0.0.1", 18080)
 }

@@ -6,6 +6,34 @@ SERVER_BIN="/tmp/ignite_client_demo_server"
 CLIENT_BIN="/tmp/ignite_client_demo_client"
 SERVER_LOG="/tmp/ignite_client_demo_server.log"
 
+ensure_cangjie_env() {
+  if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
+    local envsetup=""
+    if [[ -n "${IGNITE_CANGJIE_HOME:-}" && -f "${IGNITE_CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${IGNITE_CANGJIE_HOME}/envsetup.sh"
+    elif [[ -n "${CANGJIE_HOME:-}" && -f "${CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${CANGJIE_HOME}/envsetup.sh"
+    elif [[ -f "/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh" ]]; then
+      envsetup="/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh"
+    fi
+
+    if [[ -n "${envsetup}" ]]; then
+      export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+      # shellcheck disable=SC1090
+      source "${envsetup}"
+    fi
+  fi
+
+  if [[ -z "${SDKROOT:-}" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+
+  if [[ -z "${CANGJIE_STDX_PATH:-}" && -d "/Library/Frameworks/Cangjie/stdx_Build" ]]; then
+    export CANGJIE_STDX_PATH="/Library/Frameworks/Cangjie/stdx_Build"
+  fi
+}
+
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
     printf '%s\n' "${IGNITE_STDX_STATIC}"
@@ -50,6 +78,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+ensure_cangjie_env
+
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
   echo "[client-demo] cannot locate stdx static path." >&2
@@ -64,57 +94,24 @@ if [[ -z "${RUNTIME_LIB_DIR}" ]]; then
   exit 1
 fi
 
-COMMON_IMPORTS=(
-  --import-path "${ROOT}/target/release"
-  --import-path "${STDX_STATIC}"
-)
-COMMON_LINKS=(
-  -L "${ROOT}/target/release/ignite"
-  -lignite.client
-  -lignite
-  -lignite.api2
-  -lignite.security
-  -lignite.api2.GetData
-  -L "${STDX_STATIC}/stdx"
-  -lstdx.net.http
-  -lstdx.net.tls
-  -lstdx.net.tls.common
-  -lstdx.logger
-  -lstdx.log
-  -lstdx.encoding.url
-  -lstdx.encoding.json.stream
-  -lstdx.crypto.x509
-  -lstdx.crypto.keys
-  -lstdx.encoding.hex
-  -lstdx.crypto.crypto
-  -lstdx.crypto.digest
-  -lstdx.crypto.common
-  -lstdx.encoding.base64
-)
-
-echo "[client-demo] building ignite package..."
-(cd "${ROOT}" && cjpm build)
-
 echo "[client-demo] compiling demo server..."
-cjc "${ROOT}/manual/samples/client/demo_server.cj" \
-  "${COMMON_IMPORTS[@]}" \
-  "${COMMON_LINKS[@]}" \
-  -Woff unused \
-  -o "${SERVER_BIN}"
+IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/client/demo_server.cj" \
+  "${SERVER_BIN}"
 
 echo "[client-demo] compiling demo client..."
-cjc "${ROOT}/manual/samples/client/demo_client.cj" \
-  "${COMMON_IMPORTS[@]}" \
-  "${COMMON_LINKS[@]}" \
-  -Woff unused \
-  -o "${CLIENT_BIN}"
+IGNITE_SAMPLE_SKIP_BUILD=1 IGNITE_SAMPLE_COMPILE_ONLY=1 \
+  "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
+  "manual/samples/client/demo_client.cj" \
+  "${CLIENT_BIN}"
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

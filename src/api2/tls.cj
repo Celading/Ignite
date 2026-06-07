@@ -1,11 +1,12 @@
 package ignite.api2
 
 import std.collection.ArrayList
+import std.fs.{exists, File, OpenMode}
+import stdx.crypto.common.{Pem, PemEntry, DerBlob, PrivateKey}
 import stdx.net.tls.TlsServerConfig
 import stdx.crypto.x509.X509Certificate
-import stdx.crypto.keys.GeneralPrivateKey
-import jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
-import jinguissl.crypto.tls.TlsSessionCache
+import JinguiSSL.jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
+import jinguissl_core.jinguissl.crypto.tls.TlsSessionCache
 
 public enum TlsConfigLoadErrorCode <: Equatable<TlsConfigLoadErrorCode> & ToString {
     | BadInput
@@ -82,6 +83,80 @@ public class TlsStartupFailureSnapshot {
     }
 }
 
+public class PreparedHttpServerTlsMaterial {
+    public let certPem: String
+    public let keyPem: String
+    public let normalizedAlpnProtocols: Array<String>
+
+    public init(
+        certPem: String,
+        keyPem: String,
+        normalizedAlpnProtocols: Array<String>
+    ) {
+        this.certPem = certPem
+        this.keyPem = keyPem
+        this.normalizedAlpnProtocols = normalizedAlpnProtocols
+    }
+}
+
+class RawPemPrivateKey <: PrivateKey {
+    private let pemLabel: String
+    private let derBody: DerBlob
+
+    init(pemLabel: String, derBody: DerBlob) {
+        this.pemLabel = pemLabel
+        this.derBody = derBody
+    }
+
+    public func encodeToDer(): DerBlob {
+        derBody
+    }
+
+    public func encodeToDer(password!: ?String): DerBlob {
+        if (password.isSome()) {
+            throw Exception("raw PEM private-key wrapper does not support encrypted re-encode")
+        }
+        derBody
+    }
+
+    public func encodeToPem(): PemEntry {
+        PemEntry(pemLabel, derBody)
+    }
+
+    public func encodeToPem(password!: ?String): PemEntry {
+        if (password.isSome()) {
+            throw Exception("raw PEM private-key wrapper does not support encrypted re-encode")
+        }
+        encodeToPem()
+    }
+
+    public override func toString(): String {
+        "RawPemPrivateKey(${pemLabel}, ${derBody.size} bytes)"
+    }
+
+    public static func decodeDer(encoded: DerBlob): PrivateKey {
+        let _ = encoded
+        throw Exception("RawPemPrivateKey.decodeDer is unsupported")
+    }
+
+    public static func decodeDer(encoded: DerBlob, password!: ?String): PrivateKey {
+        let _ = encoded
+        let _ = password
+        throw Exception("RawPemPrivateKey.decodeDer with encrypted input is unsupported")
+    }
+
+    public static func decodeFromPem(text: String): PrivateKey {
+        let _ = text
+        throw Exception("RawPemPrivateKey.decodeFromPem is unsupported")
+    }
+
+    public static func decodeFromPem(text: String, password!: ?String): PrivateKey {
+        let _ = text
+        let _ = password
+        throw Exception("RawPemPrivateKey.decodeFromPem with encrypted input is unsupported")
+    }
+}
+
 public func tlsToIgniteErrorCode(code: TlsConfigLoadErrorCode): String {
     "TLS_${code.toString()}"
 }
@@ -139,9 +214,72 @@ public func precheckHttpServerTlsConfigInput(
     precheck.normalizedAlpnProtocols
 }
 
+public func prepareHttpServerTlsMaterial(
+    certPem: String,
+    keyPem: String,
+    alpnProtocols!: Array<String> = ["h2", "http/1.1"],
+    requireHttp2Alpn!: Bool = true,
+    enablePrecheck!: Bool = true
+): PreparedHttpServerTlsMaterial {
+    let normalizedAlpn = if (enablePrecheck) {
+        precheckHttpServerTlsConfigInput(
+            certPem,
+            keyPem,
+            alpnProtocols: alpnProtocols,
+            requireHttp2Alpn: requireHttp2Alpn
+        )
+    } else {
+        normalizeAlpnProtocolsFallback(alpnProtocols)
+    }
+
+    PreparedHttpServerTlsMaterial(
+        certPem,
+        keyPem,
+        normalizedAlpn
+    )
+}
+
+public func loadHttpServerTlsMaterialFromFiles(
+    certFile: String,
+    keyFile: String,
+    alpnProtocols!: Array<String> = ["h2", "http/1.1"],
+    requireHttp2Alpn!: Bool = true,
+    enablePrecheck!: Bool = true
+): PreparedHttpServerTlsMaterial {
+    let certPem = readTextFileForTls(certFile)
+    let keyPem = readTextFileForTls(keyFile)
+    prepareHttpServerTlsMaterial(
+        certPem,
+        keyPem,
+        alpnProtocols: alpnProtocols,
+        requireHttp2Alpn: requireHttp2Alpn,
+        enablePrecheck: enablePrecheck
+    )
+}
+
+public func buildStdxTlsServerConfigFromPreparedMaterial(
+    material: PreparedHttpServerTlsMaterial
+): TlsServerConfig {
+    try {
+        let certChain = X509Certificate.decodeFromPem(material.certPem)
+        let certKey = decodePrivateKeyWithoutDescribeOrThrow(material.keyPem)
+        var tlsConfig = TlsServerConfig(certChain, certKey)
+        tlsConfig.supportedAlpnProtocols = material.normalizedAlpnProtocols
+        tlsConfig
+    } catch (e: TlsConfigLoadException) {
+        throw e
+    } catch (e: Exception) {
+        throw TlsConfigLoadException(
+            TlsConfigLoadErrorCode.InternalError,
+            "STDX_TLS_CONFIG_BUILD",
+            "stdx TLS config build failed: ${e.message}"
+        )
+    }
+}
+
 /// Load TLS server config from PEM strings, enable HTTP/2 + HTTP/1.1 ALPN.
-/// Certificate chain and private key use stdx official recommended API (X509Certificate.decodeFromPem, GeneralPrivateKey.decodeFromPem),
-/// avoid business layer directly depending on the specific types of stdx.crypto.x509 / stdx.crypto.keys.
+/// Certificate chain still uses stdx X509 decode, while private key loading keeps the original DER payload
+/// behind a lightweight PrivateKey wrapper so listener setup can bypass GeneralPrivateKey.describe().
 ///
 /// - certPem: Certificate PEM content (can contain multiple certificates, decodeFromPem returns Array)
 /// - keyPem: Private key PEM content
@@ -155,30 +293,60 @@ public func loadTlsServerConfigForHttp2(
     requireHttp2Alpn!: Bool = true,
     enablePrecheck!: Bool = true
 ): TlsServerConfig {
-    let normalizedAlpn = if (enablePrecheck) {
-        precheckHttpServerTlsConfigInput(
+    buildStdxTlsServerConfigFromPreparedMaterial(
+        prepareHttpServerTlsMaterial(
             certPem,
             keyPem,
             alpnProtocols: alpnProtocols,
-            requireHttp2Alpn: requireHttp2Alpn
+            requireHttp2Alpn: requireHttp2Alpn,
+            enablePrecheck: enablePrecheck
         )
-    } else {
-        normalizeAlpnProtocolsFallback(alpnProtocols)
+    )
+}
+
+func decodePrivateKeyWithoutDescribeOrThrow(
+    keyPem: String
+): PrivateKey {
+    var sawPrivateKeyEntry = false
+
+    for (entry in Pem.decode(keyPem)) {
+        if (entry.body.isNone()) {
+            continue
+        }
+        let body = entry.body.getOrThrow()
+        if (supportsRawPemPrivateKeyLabel(entry.label)) {
+            sawPrivateKeyEntry = true
+            return RawPemPrivateKey(entry.label, body)
+        }
+        if (entry.label == PemEntry.LABEL_ENCRYPTED_PRIVATE_KEY) {
+            throw TlsConfigLoadException(
+                TlsConfigLoadErrorCode.Unsupported,
+                "STDX_RAW_KEY_ENCRYPTED_UNSUPPORTED",
+                "raw PEM private-key wrapper does not support encrypted PEM without password input"
+            )
+        }
     }
 
-    try {
-        let certChain = X509Certificate.decodeFromPem(certPem)
-        let certKey = GeneralPrivateKey.decodeFromPem(keyPem)
-        var tlsConfig = TlsServerConfig(certChain, certKey)
-        tlsConfig.supportedAlpnProtocols = normalizedAlpn
-        tlsConfig
-    } catch (e: Exception) {
+    if (!sawPrivateKeyEntry) {
         throw TlsConfigLoadException(
-            TlsConfigLoadErrorCode.InternalError,
-            "STDX_TLS_CONFIG_BUILD",
-            "stdx TLS config build failed: ${e.message}"
+            TlsConfigLoadErrorCode.KeyNotFound,
+            "STDX_RAW_KEY_NOT_FOUND",
+            "No supported private key entry found in PEM."
         )
     }
+
+    throw TlsConfigLoadException(
+        TlsConfigLoadErrorCode.InternalError,
+        "STDX_RAW_KEY_LOAD_BLOCKED",
+        "raw PEM private-key wrapper could not find a supported unencrypted key entry"
+    )
+}
+
+func supportsRawPemPrivateKeyLabel(label: String): Bool {
+    label == PemEntry.LABEL_RSA_PRIVATE_KEY ||
+    label == PemEntry.LABEL_EC_PRIVATE_KEY ||
+    label == PemEntry.LABEL_SM2_PRIVATE_KEY ||
+    label == PemEntry.LABEL_PRIVATE_KEY
 }
 
 func normalizeAlpnProtocolsFallback(alpnProtocols: Array<String>): Array<String> {
@@ -203,6 +371,35 @@ func normalizeAlpnProtocolsFallback(alpnProtocols: Array<String>): Array<String>
         return ["h2", "http/1.1"]
     }
     out.toArray()
+}
+
+func readTextFileForTls(path: String): String {
+    let resolvedPath = resolveTlsReadPath(path)
+    let file = File(resolvedPath, OpenMode.Read)
+    let out = ArrayList<UInt8>()
+    let tmp = Array<UInt8>(4096, repeat: 0)
+    while (true) {
+        let n = file.read(tmp)
+        if (n <= 0) {
+            break
+        }
+        for (i in 0..n) {
+            out.add(tmp[i])
+        }
+    }
+    file.close()
+    String.fromUtf8(out.toArray())
+}
+
+func resolveTlsReadPath(path: String): String {
+    if (exists(path)) {
+        return path
+    }
+    let workspacePath = "../" + path
+    if (exists(workspacePath)) {
+        return workspacePath
+    }
+    path
 }
 
 func tlsStageFromSourceCode(sourceCode: String): String {

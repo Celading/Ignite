@@ -93,6 +93,44 @@ public class TlsPrecheckIntegrationTestSuite {
         @Assert(contains(normalizedAlpn, "http/1.1"), true)
     }
 
+    @TestCase
+    public func testPrepareHttpServerTlsMaterialPreservesPemAndNormalizedAlpn(): Unit {
+        let certPem = readTextFile(TLS_CERT_A)
+        let keyPem = readTextFile(TLS_KEY_A)
+
+        let material = api2.prepareHttpServerTlsMaterial(
+            certPem,
+            keyPem,
+            alpnProtocols: ["h2", "http/1.1"],
+            requireHttp2Alpn: true,
+            enablePrecheck: true
+        )
+
+        @Assert(material.certPem, certPem)
+        @Assert(material.keyPem, keyPem)
+        @Assert(contains(material.normalizedAlpnProtocols, "h2"), true)
+        @Assert(contains(material.normalizedAlpnProtocols, "http/1.1"), true)
+    }
+
+    @TestCase
+    public func testPreparedHttpServerTlsMaterialBuildsStdxTlsConfigForValidPem(): Unit {
+        let material = api2.loadHttpServerTlsMaterialFromFiles(
+            resolveFixturePath(TLS_CERT_A),
+            resolveFixturePath(TLS_KEY_A),
+            alpnProtocols: ["h2", "http/1.1"],
+            requireHttp2Alpn: true,
+            enablePrecheck: true
+        )
+
+        let tlsConfig = api2.buildStdxTlsServerConfigFromPreparedMaterial(
+            material
+        )
+
+        @Assert(contains(tlsConfig.supportedAlpnProtocols, "h2"), true)
+        @Assert(contains(tlsConfig.supportedAlpnProtocols, "http/1.1"), true)
+        @Assert(tlsConfig.supportedAlpnProtocols.size >= 2, true)
+    }
+
     func contains(items: Array<String>, target: String): Bool {
         for (item in items) {
             if (item == target) {

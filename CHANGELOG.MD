@@ -1,5 +1,38 @@
 # Ignite Changelog
 
+## Ignite `0700`
+> 资产压缩、协同治理、H1/H2 truth 收口
+
+### v0.7.2 `Ignite Now`
+> client full consumer surface 官包版
+
+- `+特性` client full consumer story 现在形成一条完整公开路径：`manual/samples/client/**` 可从 setup / quick GET / JSON POST / builder path / hooks / body access / retained recovery / retry override 一路走到 encrypted request 与 cleanup
+- `+特性` `Ctx.jsonEncodeStream(obj, contentLength?)` 现在作为 `JsonEncodable` family 的显式流式 twin 进入公开面；`ctx.jsonEncode(...)` 继续保持 full-buffer，并继续只在 full-buffer 路径使用 `Config.jsonEncoder`
+- `+测试` `ClientHookTestSuite`、`ClientRetryTestSuite`、`ClientStreamingTestSuite` 与 `ClientResponseRecoveryAcceptanceTestSuite` 继续补齐 focused regressions，并通过当前 accepted serial lane 的 full `294/294`
+- `+测试` `JsonEncodeStreamCtxSugarTestSuite`、`JsonEncodeStreamMiddlewareCompatTestSuite` 与 `CompressMiddlewareTestSuite` 已覆盖 `jsonEncodeStream(...)` 的 known-length / unknown-length / HEAD、当前 middleware 边界与 real-HTTP streamed-compress subset
+- `+测试` 新增 `ClientHostnameSensitiveTlsProofTestSuite` 作为 runtime-owned hostname/SNI blocker-anchor suite，继续诚实保留 `not currently proven`
+- `=文档` `README` 多语言、client sample README、`manual/docs-md/client.md`、`manual/docs-md/api.md` 与 source-local guidance 统一到最新 client / JSON response 口径
+- `=杂项` 包版本、框架版本常量与 banner render version fixtures 同步到 `0.7.2`
+
+### v0.7.1 `Ignite Now`
+> client retained recovery reset 与 failure-path freshness 刷新版
+
+- `+特性` `RestClient` 新增 `clearRecoverySnapshots()`，允许长生命周期 client 在下一轮 probe / retry / 诊断前显式清空 retained client-side recovery
+- `+特性` 当前 `client` recovery 公开面现在明确分成两层：response-side `observeSnapshot()/transportTouchpoint()` 回放，以及 client-side `lastClientObserveSnapshot()/lastClientTransportTouchpoint()` retained 留痕
+- `+测试` `ClientResponseRecoveryAcceptanceTestSuite` 新增 reset + fresh failure-path acceptance，证明清空旧状态后，新的 experimental failure 仍能回收当前轮的 observe / touchpoint
+- `=文档` README、多语言 README、client sample 与 `manual/docs-md/api.md` 回归到 retained recovery / reset 的最新公开口径
+- `=杂项` 包版本、框架版本常量与 banner render version fixtures 同步到 `0.7.1`
+
+### v0.7.0 `Ignite Now`
+> `0700` 公开基线版
+
+- `=文档` 将当前公开版本基线从 `0.6.41` 提升到 `0.7.0`
+- `=文档` README / README-en / README-ru 的版本展示、状态说明与当前 `H1 ready-now / H2 guarded intake` 口径重新对齐
+- `=文档` `manual/docs-md/README.md` 与 `manual/samples/README.md` 回归到当前 `0700` 公开入口，补齐 `H1/H2` 首读路径
+- `+特性` 当前 line 已明确把 `transport` accepted-answer proof 与 `client` public recovery proof 收成更易 handoff 的 intake-facing truth
+- `+特性` 自研 `server-socket` 已形成更长的 parser/session/body/writer/runtime-experiment proof ladder，但当前仍保持 experiment/runway 口径，不冒充 default public engine
+- `=杂项` 包版本与框架版本常量同步到 `0.7.0`
+
 ## Ignite `0600`
 > 传输解耦起步、观测留痕加固
 

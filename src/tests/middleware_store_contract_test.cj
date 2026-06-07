@@ -236,14 +236,14 @@ class RecordingRateLimitStore <: RateLimitStore {
     let inner = MemoryRateLimitStore()
     var checkCalls: Int64 = 0
 
-    public override func checkAndConsume(
+    public override func consumeWindowPermit(
         key: String,
         now: MonoTime,
         max: Int64,
         windowMs: Int64
     ): RateLimitStoreResult {
         checkCalls += 1
-        inner.checkAndConsume(key, now, max, windowMs)
+        inner.consumeWindowPermit(key, now, max, windowMs)
     }
 
     public override func cleanupExpired(now: MonoTime, windowMs: Int64): Unit {

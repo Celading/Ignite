@@ -248,17 +248,41 @@ client.useX509Verify(X509VerifyOption(
 
 `ClientResponse` 提供这些常见能力：
 
-- `status`
-- `body()`
-- `bodyBytes()`
-- `bodyStream()`
-- `json()`
-- `header(name)`
-- `headerValues(name)`
-- `isOk()` / `isSuccess()`
-- `discard()`
+- `status` — HTTP 状态码
+- `body()` — 等价于 `bodyBytes()`，返回缓存的响应体字节（可重复读取）
+- `bodyBytes()` — 首次读取时缓存响应体到内存，之后可重复读取；若先调用了 `discard()` 再调用，返回空数组
+- `bodyStream()` — 原始一次性流式读取（one-pass），不参与 `bodyBytes()` 缓存；只能消费一次，不可重放
+- `json()` — 把 `bodyBytes()` 的结果解析为 JSON
+- `header(name)` / `headerValues(name)` — 响应头访问，不受 body 读取影响
+- `isOk()` / `isSuccess()` — 状态码快捷判断
+- `discard()` — 排空响应体但不填充缓存；如需保留 body 内容，必须在 `discard()` 之前调用 `bodyBytes()` 或 `body()`
 
-处理大响应时，记得及时 `discard()` 或走流式读取，不要把所有请求都当成小 JSON。
+此外，响应对象还提供基于头部重放的结构化诊断（不依赖 body 读取）：
+
+- `observeSnapshot()` — 从响应头回放出 `ClientObserveSnapshot`
+- `transportTouchpoint()` — 从响应头回放出 `ClientTransportTouchpoint`
+
+这些诊断方法仅解析响应头，不受 body 是否已读、是否 discard 的影响。
+
+处理大响应时，建议走 `bodyStream()` 流式读取或用 `discard()` 及时排空，不要把所有请求都当成小 JSON 用 `bodyBytes()` 读完。
+
+## 客户端 retained recovery 快照
+
+`RestClient` 在以下字段保留最近一次发送请求的诊断快照（latest-send shared slot，非线程安全）：
+
+- `lastClientObserveSnapshot()` — 最近一次请求在 client 侧保留的 observe 快照，成功/失败都可用
+- `lastClientTransportTouchpoint()` — 最近一次请求在 client 侧保留的 transport 选择留痕，失败于响应前也能保留
+- `clearRecoverySnapshots()` — 在下一轮 probe / retry / 诊断前显式清空 retained recovery，避免把上一轮结果误读成当前窗口
+
+这三个方法的使用要点：
+
+- 它们是 **latest-send shared slot**，不是每轮请求自动隔离的队列
+- 同一 `RestClient` 实例不保证并发隔离：多线程发送时最近一次胜出
+- 如果希望严格隔离每一轮诊断，在开始下一轮前先调一次 `clearRecoverySnapshots()`
+- 响应侧的 `observeSnapshot()` / `transportTouchpoint()` 和 client 侧的 retained 字段不是互相替代的关系：
+
+  - 响应侧 replay 适合「已经拿到了响应对象，从响应头回放结构化信息」
+  - client 侧 retained 适合「请求在更早阶段失败了，或需要在一次长生命周期 client 上保留最后一跳诊断」
 
 ## 与服务端一体化演进的公开口径
 

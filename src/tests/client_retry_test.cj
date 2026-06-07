@@ -74,4 +74,23 @@ public class ClientRetryTestSuite {
         let elapsed = elapsedMs(start)
         @Assert(elapsed >= 180, true)
     }
+
+    @TestCase
+    public func testDisableRetrySkipsBackoff(): Unit {
+        let client = buildClient().useRetry(retryProfile(true))
+        let start = MonoTime.now()
+        try {
+            let _ = client.request()
+                .method("GET")
+                .url("http://127.0.0.1:1/retry-disable")
+                .body("x")
+                .disableRetry()
+                .send()
+            @Fail("request should fail on closed local port")
+        } catch (_: Exception) {
+            @Assert(true)
+        }
+        let elapsed = elapsedMs(start)
+        @Assert(elapsed < 160, true)
+    }
 }

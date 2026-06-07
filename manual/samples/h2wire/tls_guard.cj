@@ -4,11 +4,12 @@ import std.fs.{exists, File, OpenMode}
 import std.collection.ArrayList
 import stdx.crypto.x509.X509Certificate
 import stdx.crypto.keys.GeneralPrivateKey
-import stdx.net.tls.TlsServerConfig
 
 let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
 let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
 let H2_GUARD_DEFAULT_STAGE = "full"
+let H2_GUARD_STAGE_MAINLINE_BUILD = "mainline_build"
+let H2_GUARD_STAGE_LEGACY_KEY_DECODE = "legacy_key_decode"
 
 main() {
     let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT", H2_WIRE_CERT_FALLBACK)
@@ -31,7 +32,9 @@ func resolveGuardStage(): String {
         if (
             normalized == "precheck" ||
             normalized == "cert_decode" ||
+            normalized == H2_GUARD_STAGE_LEGACY_KEY_DECODE ||
             normalized == "key_decode" ||
+            normalized == H2_GUARD_STAGE_MAINLINE_BUILD ||
             normalized == "stdx_build" ||
             normalized == "full"
         ) {
@@ -45,11 +48,14 @@ func runGuardStage(stage: String, certPem: String, keyPem: String): Unit {
     match (stage) {
         case "precheck" => runPrecheck(certPem, keyPem)
         case "cert_decode" => runCertDecode(certPem)
-        case "key_decode" => runKeyDecode(keyPem)
-        case "stdx_build" => runStdxBuild(certPem, keyPem)
+        case "legacy_key_decode" => runLegacyKeyDecode(keyPem)
+        case "key_decode" => runLegacyKeyDecode(keyPem)
+        case "mainline_build" => runMainlineBuild(certPem, keyPem)
+        case "stdx_build" => runMainlineBuild(certPem, keyPem)
         case "full" =>
             runPrecheck(certPem, keyPem)
-            runStdxBuild(certPem, keyPem)
+            runCertDecode(certPem)
+            runMainlineBuild(certPem, keyPem)
         case _ => throw Exception("unsupported guard stage=${stage}")
     }
 }
@@ -69,17 +75,20 @@ func runCertDecode(certPem: String): Unit {
     println("[sample/h2wire] tls guard cert decode ok: chain=${certChain.size}")
 }
 
-func runKeyDecode(keyPem: String): Unit {
+func runLegacyKeyDecode(keyPem: String): Unit {
     let _ = GeneralPrivateKey.decodeFromPem(keyPem)
-    println("[sample/h2wire] tls guard key decode ok")
+    println("[sample/h2wire] tls guard legacy key decode ok")
 }
 
-func runStdxBuild(certPem: String, keyPem: String): Unit {
-    let certChain = X509Certificate.decodeFromPem(certPem)
-    let certKey = GeneralPrivateKey.decodeFromPem(keyPem)
-    var tlsConfig = TlsServerConfig(certChain, certKey)
-    tlsConfig.supportedAlpnProtocols = ["h2", "http/1.1"]
-    println("[sample/h2wire] tls guard stdx build ok")
+func runMainlineBuild(certPem: String, keyPem: String): Unit {
+    let tlsConfig = api2.loadTlsServerConfigForHttp2(
+        certPem,
+        keyPem,
+        alpnProtocols: ["h2", "http/1.1"],
+        requireHttp2Alpn: true,
+        enablePrecheck: false
+    )
+    println("[sample/h2wire] tls guard mainline build ok: " + joinText(tlsConfig.supportedAlpnProtocols, ","))
 }
 
 func resolveTlsPath(envName: String, fallback: String): String {

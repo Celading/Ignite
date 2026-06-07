@@ -219,7 +219,11 @@ public func resolveBoundNetworkSelection(
     interfaceName!: String = "",
     info!: ?NetworkInfo = None
 ): StartupNetworkSelection {
-    let snapshot = info ?? getNetworkInfo()
+    let snapshot = if (let Some(existing) <- info) {
+        existing
+    } else {
+        getNetworkInfo()
+    }
     if (isWildcardBindAddress(bindAddr)) {
         return selectStartupNetwork(snapshot, mode: mode, interfaceName: interfaceName)
     }

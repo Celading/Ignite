@@ -15,6 +15,34 @@ if [[ ! -f "${ROOT}/${SAMPLE_SOURCE}" ]]; then
   exit 1
 fi
 
+ensure_cangjie_env() {
+  if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
+    local envsetup=""
+    if [[ -n "${IGNITE_CANGJIE_HOME:-}" && -f "${IGNITE_CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${IGNITE_CANGJIE_HOME}/envsetup.sh"
+    elif [[ -n "${CANGJIE_HOME:-}" && -f "${CANGJIE_HOME}/envsetup.sh" ]]; then
+      envsetup="${CANGJIE_HOME}/envsetup.sh"
+    elif [[ -f "/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh" ]]; then
+      envsetup="/Library/Frameworks/Cangjie/1.1.0-nightly/envsetup.sh"
+    fi
+
+    if [[ -n "${envsetup}" ]]; then
+      export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+      # shellcheck disable=SC1090
+      source "${envsetup}"
+    fi
+  fi
+
+  if [[ -z "${SDKROOT:-}" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+  fi
+
+  if [[ -z "${CANGJIE_STDX_PATH:-}" && -d "/Library/Frameworks/Cangjie/stdx_Build" ]]; then
+    export CANGJIE_STDX_PATH="/Library/Frameworks/Cangjie/stdx_Build"
+  fi
+}
+
 detect_stdx_static() {
   if [[ -n "${IGNITE_STDX_STATIC:-}" && -d "${IGNITE_STDX_STATIC}" ]]; then
     printf '%s\n' "${IGNITE_STDX_STATIC}"
@@ -51,6 +79,19 @@ detect_runtime_lib_dir() {
   return 1
 }
 
+collect_package_archives() {
+  local dir="$1"
+  if [[ ! -d "${dir}" ]]; then
+    return 0
+  fi
+
+  find "${dir}" -maxdepth 1 -type f -name "lib*.a" \
+    ! -name "lib*.tests.a" \
+    | sort
+}
+
+ensure_cangjie_env
+
 STDX_STATIC="$(detect_stdx_static || true)"
 if [[ -z "${STDX_STATIC}" ]]; then
   echo "[sample-runner] cannot locate stdx static path." >&2
@@ -67,60 +108,44 @@ fi
 
 COMMON_IMPORTS=(
   --import-path "${ROOT}/target/release"
+  --import-path "${ROOT}/target/release/seajson"
   --import-path "${STDX_STATIC}"
 )
-COMMON_LINKS=(
-  -L "${ROOT}/target/release/ignite"
-  -L "${ROOT}/target/release/lisi"
-  -lignite.middleware
-  -lignite.governance
-  -lignite.client
-  -lignite
-  -lignite.api2
-  -lignite.security
-  -lignite.api2.GetData
-  -llisi.transport
-  -llisi.runtime
-  -llisi.net.TlsTool
-  -llisi.net
-  -llisi.logger
-  -llisi.term
-  -llisi
-  -L "${ROOT}/target/release/jinguissl"
-  -ljinguissl.contract
-  -ljinguissl.crypto.tls
-  -ljinguissl.crypto.x509
-  -ljinguissl.crypto.ssh
-  -ljinguissl.crypto.rsa
-  -ljinguissl.crypto.ed25519
-  -ljinguissl.crypto.x25519
-  -ljinguissl.crypto.ecc
-  -ljinguissl.crypto.digest
-  -ljinguissl.crypto.chacha20
-  -ljinguissl.crypto.aes
-  -ljinguissl.crypto.utils
-  -ljinguissl.crypto.compliance
-  -ljinguissl.crypto.bignum
-  -ljinguissl.crypto.error
-  -L "${STDX_STATIC}/stdx"
-  -lstdx.encoding.json
-  -lstdx.serialization.serialization
-  -lstdx.net.http
-  -lstdx.net.tls
-  -lstdx.net.tls.common
-  -lstdx.logger
-  -lstdx.log
-  -lstdx.encoding.url
-  -lstdx.encoding.json.stream
-  -lstdx.crypto.x509
-  -lstdx.crypto.keys
-  -lstdx.encoding.hex
-  -lstdx.crypto.crypto
-  -lstdx.crypto.digest
-  -lstdx.crypto.common
-  -lstdx.encoding.base64
-  -lstdx.compress.zlib
-)
+
+declare -a IGNITE_ARCHIVES=()
+while IFS= read -r path; do
+  IGNITE_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/ignite")
+
+declare -a JINGUISSL_CONTRACT_ARCHIVES=()
+while IFS= read -r path; do
+  JINGUISSL_CONTRACT_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
+
+declare -a JINGUISSL_CORE_ARCHIVES=()
+while IFS= read -r path; do
+  JINGUISSL_CORE_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/jinguissl_core")
+
+declare -a STDX_ARCHIVES=()
+while IFS= read -r path; do
+  STDX_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${STDX_STATIC}/stdx")
+
+declare -a COMMON_LINKS=()
+COMMON_LINKS+=(-L "${ROOT}/target/release/seajson" -lseajson)
+if [[ "${#IGNITE_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${IGNITE_ARCHIVES[@]}")
+fi
+if [[ "${#JINGUISSL_CONTRACT_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${JINGUISSL_CONTRACT_ARCHIVES[@]}")
+fi
+if [[ "${#JINGUISSL_CORE_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${JINGUISSL_CORE_ARCHIVES[@]}")
+fi
+if [[ "${#STDX_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${STDX_ARCHIVES[@]}")
+fi
 
 if [[ "${IGNITE_SAMPLE_SKIP_BUILD:-0}" == "1" ]]; then
   echo "[sample-runner] skipping ignite package build (IGNITE_SAMPLE_SKIP_BUILD=1)"
@@ -143,10 +168,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/ignite:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

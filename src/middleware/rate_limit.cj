@@ -53,7 +53,7 @@ public func rateLimitMiddleware(
             rateLimitStore.cleanupExpired(now, config.windowMs)
             sweepState.cleanupTicks = 0
         }
-        let result = rateLimitStore.checkAndConsume(key, now, config.max, config.windowMs)
+        let result = rateLimitStore.consumeWindowPermit(key, now, config.max, config.windowMs)
         remaining = config.max - result.count
         if (remaining < 0) { remaining = 0 }
         allowed = result.allowed

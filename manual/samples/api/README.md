@@ -5,6 +5,7 @@
 - 路由参数：`/todos/:id`
 - 查询参数：`?done=true|false`、`?title=...`
 - `ctx.jsonEncode(...)` 输出 JSON
+- `ctx.jsonEncodeStream(...)` 可用于实现 `JsonWriterEncodable` 的对象，避免先构造完整 JSON 字符串；当前 sample 保持 `ctx.jsonEncode(...)` 以展示普通 CRUD 路径
 
 ## 路由
 

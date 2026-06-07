@@ -21,7 +21,7 @@ run_case() {
   set +e
   output="$(
     IGNITE_SAMPLE_SKIP_BUILD=1 \
-    IGNITE_H2_TLS_GUARD_STAGES=key_decode \
+    IGNITE_H2_TLS_GUARD_STAGES=legacy_key_decode \
     IGNITE_H2_TLS_GUARD_ONLY=1 \
     IGNITE_SAMPLE_TLS_CERT="${CERT_PATH}" \
     IGNITE_SAMPLE_TLS_KEY="${key_path}" \
@@ -36,8 +36,8 @@ run_case() {
   fi
 
   local diagnosis="failed"
-  if printf '%s' "${output}" | rg -q 'GeneralPrivateKey\.decodeFromPem|stdx\.crypto\.keys'; then
-    diagnosis="abort:GeneralPrivateKey.decodeFromPem"
+  if printf '%s' "${output}" | rg -q 'GeneralPrivateKey\.decodeFromPem|stdx\.crypto\.keys|legacy key decode'; then
+    diagnosis="legacy-abort:GeneralPrivateKey.decodeFromPem"
   fi
   printf '[sample/h2wire] case=%s result=fail diagnosis=%s\n' "${case_id}" "${diagnosis}"
   return 0
