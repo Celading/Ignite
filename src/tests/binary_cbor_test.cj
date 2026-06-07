@@ -47,7 +47,7 @@ public class BinaryCborTestSuite {
 
     @TestCase
     public func testDecodeIntegerKeyedMapForCoseLikeShape(): Unit {
-        let mapValue = decodeCborMap(hexToBytes("a3010203262043010203"))
+        let mapValue = decodeCborMap(hexToBytes("a3010203" + "262043010203"))
         @Assert((mapValue.getIntKey(1) ?? CborValue.unsignedInt(0)).asUnsignedInt() ?? -1, 2)
         @Assert((mapValue.getIntKey(3) ?? CborValue.negativeInt(-1)).asNegativeInt() ?? 0, -7)
         @Assert(

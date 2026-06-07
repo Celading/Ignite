@@ -733,7 +733,7 @@ public class ProxyMiddlewareTestSuite {
     @TestCase
     public func testProxyMiddlewareRejectsHttpsUnknownLengthUploadWhenBufferedTempFileExceedsLimit(): Unit {
         let upstreamPort = choosePort(1846)
-        let proxyPort = choosePort(1849)
+        let proxyPort = choosePort(1850)
         let tempRoot = "/tmp/ignite_proxy_https_unknown_length_limit_${proxyPort}"
         let tempDir = tempRoot + "/https-body"
         let payload = buildLargeAsciiPayload()

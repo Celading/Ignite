@@ -2,6 +2,8 @@ package ignite.tests
 
 import ignite.binary.*
 
+let TEST_AUTH_AAGUID_HEX = "0011" + "2233" + "4455" + "6677" + "8899" + "aabb" + "ccdd" + "eeff"
+
 @Test
 public class BinaryAuthenticatorDataTestSuite {
     @TestCase
@@ -66,7 +68,7 @@ public class BinaryAttestedCredentialDataTestSuite {
     public func testDecodeAttestedCredentialDataSlicesStableFields(): Unit {
         let wire = buildAuthDataWire(
             "c1",
-            "00112233445566778899aabbccddeeff" +
+            TEST_AUTH_AAGUID_HEX +
             "0004" +
             "deadbeef" +
             "a50102032620012158200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202258202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40" +
@@ -77,7 +79,7 @@ public class BinaryAttestedCredentialDataTestSuite {
         let attested = decodeAttestedCredentialData(authData)
         let coseKey = decodeCoseEc2PublicKey(attested.credentialPublicKeyBytes)
 
-        @Assert(authBytesToHex(attested.aaguid), "00112233445566778899aabbccddeeff")
+        @Assert(authBytesToHex(attested.aaguid), TEST_AUTH_AAGUID_HEX)
         @Assert(authBytesToHex(attested.credentialId), "deadbeef")
         @Assert(authBytesToHex(attested.remainingBytes), "a0")
         @Assert(coseKey.algorithm, CoseAlgorithm.Es256)
@@ -88,7 +90,7 @@ public class BinaryAttestedCredentialDataTestSuite {
     public func testDecodeAttestedCredentialDataRejectsMissingAtFlag(): Unit {
         let wire = buildAuthDataWire(
             "01",
-            "00112233445566778899aabbccddeeff" +
+            TEST_AUTH_AAGUID_HEX +
             "0002" +
             "cafe" +
             "a0"
@@ -105,7 +107,7 @@ public class BinaryAttestedCredentialDataTestSuite {
     public func testDecodeAttestedCredentialDataRejectsTruncatedCredentialId(): Unit {
         let wire = buildAuthDataWire(
             "41",
-            "00112233445566778899aabbccddeeff" +
+            TEST_AUTH_AAGUID_HEX +
             "0004" +
             "dead"
         )
@@ -121,7 +123,7 @@ public class BinaryAttestedCredentialDataTestSuite {
     public func testDecodeAttestedCredentialDataRejectsMalformedCredentialPublicKey(): Unit {
         let wire = buildAuthDataWire(
             "41",
-            "00112233445566778899aabbccddeeff" +
+            TEST_AUTH_AAGUID_HEX +
             "0004" +
             "deadbeef" +
             "83010203"

@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.6.41"
+  version = "0.7.7"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -24,8 +24,13 @@
   output-type = "static"
 
 [dependencies]
-  jinguissl = { git = "https://atomgit.com/cinyu/jinguiSSL" }
-  lisi = { git = "https://atomgit.com/cinyu/lisi" }
+  # ignite-cjpm-projection:start
+  # Merge-ready mainline branch uses the current Gitcode-hosted dependency truth.
+  # Keep dependency keys aligned with the source package names exposed by each repo.
+  JinguiSSL = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
+  jinguissl_core = { git = "https://gitcode.com/CjKu/JinguiCore.git" }
+  seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
+  # ignite-cjpm-projection:end
 
 [target.x86_64-w64-mingw32]
   link-option = "-lcrypt32"

@@ -6,8 +6,7 @@ import std.fs.{Directory, exists, File, FileInfo, OpenMode, Path, removeIfExists
 import std.io.InputStream
 import std.sync.Mutex
 import stdx.net.http.{
-    HttpContext, HttpRequestHandler,
-    HttpRequestDistributor, HttpRequestBuilder,
+    HttpRequestBuilder,
     HttpHeaders, ClientBuilder, Client
 }
 import ignite.api2
@@ -40,11 +39,16 @@ public class App {
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
     var _startupObserveHooks: ArrayList<ServerStartupObserveHook> = ArrayList<ServerStartupObserveHook>()
+    var _jinguiAcceptedTransportSessionHooks:
+        ArrayList<ServerJinguiAcceptedTransportSessionHook> =
+            ArrayList<ServerJinguiAcceptedTransportSessionHook>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
     var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
     var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
+    var _lastJinguiAcceptedTransportSessionSnapshot:
+        ?ServerJinguiAcceptedTransportSessionSnapshot = None
     var _notFoundHandler: ?Handler = None
     var _methodNotAllowedHandler: ?Handler = None
     var _networkMonitorStopSignal: ?NetworkMonitorStopSignal = None
@@ -345,6 +349,13 @@ public class App {
         this
     }
 
+    public func onJinguiAcceptedTransportSession(
+        hook: ServerJinguiAcceptedTransportSessionHook
+    ): App {
+        _jinguiAcceptedTransportSessionHooks.add(hook)
+        this
+    }
+
     public func serverEngine(engine: ServerEngine): App {
         _engine = engine
         this
@@ -362,6 +373,11 @@ public class App {
         _lastServerStartupObserveEvent
     }
 
+    public func lastJinguiAcceptedTransportSessionSnapshot():
+        ?ServerJinguiAcceptedTransportSessionSnapshot {
+        _lastJinguiAcceptedTransportSessionSnapshot
+    }
+
     // ── Server lifecycle ──
 
     public func listen(addr: String, port: UInt16): Unit {
@@ -373,10 +389,21 @@ public class App {
             router.printRoutes()
         }
 
-        let distributor = IgniteDistributor(this)
         let hasTls = config.tlsCertFile.size > 0 && config.tlsKeyFile.size > 0
         let scheme = if (hasTls) { "https" } else { "http" }
         let tlsEnabled = hasTls
+        let preparedTlsMaterialLoader: ?ServerPreparedTlsMaterialLoader = if (hasTls) {
+            Some({
+                =>
+                api2.loadHttpServerTlsMaterialFromFiles(
+                    config.tlsCertFile,
+                    config.tlsKeyFile,
+                    enablePrecheck: config.enableTlsPrecheck
+                )
+            })
+        } else {
+            None
+        }
         let appName = config.appName
         let appVersion = config.appVersion
         let routeCount = router.allRoutes.size
@@ -385,7 +412,24 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
-        let transportTouchpoint = buildServerTransportTouchpoint(addr, port, hasTls)
+        let transportRoutingBundle = buildServerTransportRoutingBundle(
+            addr,
+            port,
+            hasTls,
+            preferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimental: config.allowExperimentalServerBackend
+        )
+        let transportTouchpoint = resolveServerTransportTouchpoint(
+            _engine,
+            addr,
+            port,
+            buildServerTransportTouchpoint(transportRoutingBundle)
+        )
+        let tlsIngressContext = ServerTlsIngressContext(
+            transportRoutingBundle,
+            transportTouchpoint,
+            preparedTlsMaterialLoader: preparedTlsMaterialLoader
+        )
         _lastServerTransportTouchpoint = Some(transportTouchpoint)
 
         let option = ServerEngineListenOption(
@@ -398,14 +442,22 @@ public class App {
             config.tlsCertFile,
             config.tlsKeyFile,
             config.enableTlsPrecheck,
-            transportTouchpoint: transportTouchpoint
+            serverPreferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimentalServerBackend: config.allowExperimentalServerBackend,
+            preparedTlsMaterialLoader: preparedTlsMaterialLoader,
+            transportRoutingBundle: Some(transportRoutingBundle),
+            transportTouchpoint: transportTouchpoint,
+            tlsIngressContext: Some(tlsIngressContext),
+            jinguiAcceptedTransportSessionHook: Some({ snapshot =>
+                notifyJinguiAcceptedTransportSessionSnapshot(snapshot)
+            })
         )
         try {
             _engine.listen(
                 option,
-                distributor,
+                this,
                 {
-                    =>
+                    readySignal =>
                     let networkSelection = api2.resolveBoundNetworkSelection(
                         addr,
                         mode: config.startupNetworkMode,
@@ -425,7 +477,11 @@ public class App {
                         config.enablePrintSwaggerUrl,
                         config.kmode,
                         config.enableBannerSignature,
-                        networkSelection
+                        networkSelection,
+                        config.bannerStyle,
+                        config.bannerColorMode,
+                        config.bannerExtraTags,
+                        config.bannerMaxTagLines
                     )
                     maybeStartNetworkMonitor(addr, networkSelection)
                     notifyStartupObserve(
@@ -435,7 +491,8 @@ public class App {
                             port,
                             scheme,
                             tlsEnabled,
-                            transportTouchpoint: Some(transportTouchpoint)
+                            transportTouchpoint: Some(transportTouchpoint),
+                            jinguiAttachResultSnapshot: readySignal.jinguiAttachResultSnapshot
                         )
                     )
                 }
@@ -633,8 +690,18 @@ public class App {
         }
     }
 
+    func notifyJinguiAcceptedTransportSessionSnapshot(
+        snapshot: ServerJinguiAcceptedTransportSessionSnapshot
+    ): Unit {
+        _lastJinguiAcceptedTransportSessionSnapshot = Some(snapshot)
+        for (hook in _jinguiAcceptedTransportSessionHooks) {
+            hook(snapshot)
+        }
+    }
+
     func resetStartupObserveState(): Unit {
         _lastServerStartupObserveEvent = None
+        _lastJinguiAcceptedTransportSessionSnapshot = None
     }
 
     func setupSwaggerRoute(): Unit {
@@ -688,53 +755,17 @@ public class App {
         _swaggerRouteInstalled = true
     }
 
-    func handleRequest(httpCtx: HttpContext): Unit {
-        let ctx = Ctx(httpCtx, this)
-        let requestMethod = httpCtx.request.method
-        let requestPath = httpCtx.request.url.path
+    func handleRequest(currentRequestCarrier: CurrentRequestCarrier): Unit {
+        let requestMethod = currentRequestCarrier.requestMethod()
+        let requestPath = currentRequestCarrier.requestPath()
 
         if (config.serverHeader.size > 0) {
-            httpCtx.responseBuilder.header("server", config.serverHeader)
+            currentRequestCarrier.setResponseHeader("server", config.serverHeader)
         }
 
-        let result = router.matchRoute(requestMethod, requestPath)
-
-        if (result.matched) {
-            ctx.setParams(result.params)
-            ctx.setHandlers(result.handlers)
-            if (let Some(route) <- result.route) {
-                ctx.setRoute(route)
-            }
-            if (maybeHandleTestOption(ctx)) {
-                return
-            }
-        } else {
-            let fallback = methodSemanticsHandler(
-                requestMethod,
-                requestPath,
-                result.allowedMethods
-            )
-            ctx.setHandlers(router.buildGlobalMiddlewareChain(fallback))
-        }
-
-        try {
-            ctx.next()
-        } catch (e: Exception) {
-            if (config.kmode) {
-                if (let Some(kmodePanicHandler) <- config.kmodePanicHandler) {
-                    if (kmodePanicHandler(ctx, e)) {
-                        return
-                    }
-                }
-            }
-            if (let Some(errorHandler) <- _errorHandler) {
-                errorHandler(ctx, e)
-            } else {
-                httpCtx.responseBuilder
-                    .status(500)
-                    .header("content-type", "text/plain; charset=utf-8")
-                    .body("Internal Server Error")
-            }
+        let plan = resolveAppDispatchPlan(this, requestMethod, requestPath)
+        if (let Some(ctx) <- prepareCurrentCarrierDispatchContext(this, currentRequestCarrier, plan)) {
+            executePreparedCurrentCarrierDispatch(this, ctx)
         }
     }
 
@@ -794,12 +825,14 @@ public class App {
     func methodSemanticsHandler(
         requestMethod: String,
         requestPath: String,
-        allowedMethods: ArrayList<String>
+        allowMethodsPresent: Bool,
+        allowHeader: String
     ): Handler {
         { ctx: Ctx =>
-            if (allowedMethods.size > 0) {
-                let allowHeader = joinAllowHeader(allowedMethods)
-                ctx.setHeader("allow", allowHeader)
+            if (allowMethodsPresent) {
+                if (allowHeader.size > 0) {
+                    ctx.setHeader("allow", allowHeader)
+                }
                 if (requestMethod == "OPTIONS") {
                     let _ = ctx.noContent()
                 } else if (let Some(handler) <- _methodNotAllowedHandler) {
@@ -1354,63 +1387,6 @@ func stableInprocTestPortHash(method: String, path: String): Int64 {
     hash
 }
 
-class LambdaHttpHandler <: HttpRequestHandler {
-    let fn: (HttpContext) -> Unit
-
-    init(fn: (HttpContext) -> Unit) {
-        this.fn = fn
-    }
-
-    public func handle(ctx: HttpContext): Unit {
-        fn(ctx)
-    }
-}
-
-class IgniteDistributor <: HttpRequestDistributor {
-    let app: App
-    let mainHandler: IgniteMainHandler
-
-    init(app: App) {
-        this.app = app
-        this.mainHandler = IgniteMainHandler(app)
-    }
-
-    private func usePathForLint(p: String): Unit {
-        if (p.size >= 0) { }
-    }
-
-    private func useHandlerForLint(h: HttpRequestHandler): Unit {
-        let _ = h
-    }
-
-    public func register(path: String, handler: HttpRequestHandler): Unit {
-        usePathForLint(path)
-        useHandlerForLint(handler)
-    }
-
-    public func registerRoute(path: String, handler: (HttpContext) -> Unit): Unit {
-        usePathForLint(path)
-        useHandlerForLint(LambdaHttpHandler(handler))
-    }
-
-    public func distribute(path: String): HttpRequestHandler {
-        usePathForLint(path)
-        mainHandler
-    }
-}
-
-class IgniteMainHandler <: HttpRequestHandler {
-    let app: App
-
-    init(app: App) {
-        this.app = app
-    }
-
-    public func handle(ctx: HttpContext): Unit {
-        app.handleRequest(ctx)
-    }
-}
-
 func defaultSwaggerUICssUrl(): String {
     "https" + "://unpkg.com/" + "swagger-ui-dist@5/" + "swagger-ui.css"
 }
@@ -1536,46 +1512,150 @@ func printBanner(
     enablePrintSwaggerUrl: Bool,
     kmode: Bool,
     enableBannerSignature: Bool,
-    networkSelection: api2.StartupNetworkSelection
+    networkSelection: api2.StartupNetworkSelection,
+    bannerStyle: BannerStyle,
+    bannerColorMode: BannerColorMode,
+    bannerExtraTags: Array<String>,
+    bannerMaxTagLines: Int64
 ): Unit {
+    println("")
+    let lines = renderBannerLines(
+        appName,
+        appVersion,
+        scheme,
+        addr,
+        port,
+        touchpointCount,
+        pid,
+        tlsEnabled,
+        enableSwagger,
+        swaggerPath,
+        enablePrintSwaggerUrl,
+        kmode,
+        enableBannerSignature,
+        networkSelection,
+        bannerStyle,
+        bannerColorMode,
+        bannerExtraTags,
+        bannerMaxTagLines
+    )
+    for (line in lines) {
+        println(line)
+    }
+    println("")
+}
+
+func renderBannerLines(
+    appName: String,
+    appVersion: String,
+    scheme: String,
+    addr: String,
+    port: UInt16,
+    touchpointCount: Int64,
+    pid: String,
+    tlsEnabled: Bool,
+    enableSwagger: Bool,
+    swaggerPath: String,
+    enablePrintSwaggerUrl: Bool,
+    kmode: Bool,
+    enableBannerSignature: Bool,
+    networkSelection: api2.StartupNetworkSelection,
+    bannerStyle: BannerStyle,
+    bannerColorMode: BannerColorMode,
+    bannerExtraTags: Array<String>,
+    bannerMaxTagLines: Int64
+): Array<String> {
+    let palette = buildBannerPalette(bannerColorMode)
     let frameworkVersion = IGNITE_FRAMEWORK_VERSION
     let versionDisplay = if (appVersion.size > 0) { appVersion } else { frameworkVersion }
-    let innerWidth: Int64 = 53
-
-    let esc = "\u{1B}"
-    let R = esc + "[0m"
-    let BORDER = esc + "[38;5;240m"
-    let TITLE = esc + "[1;36m"
-    let URL = esc + "[92m"
-    let MUTED = esc + "[38;5;246m"
-    let BODY = esc + "[38;5;252m"
-    let DOT = esc + "[38;5;240m"
-    let ITALIC = esc + "[3m"
-
-    let displayAddr = networkSelection.primaryIP
-    let bannerWarn: ?String = if (networkSelection.warning.size > 0) {
-        Some(networkSelection.warning)
-    } else {
-        None
-    }
     let title = "${appName} v${versionDisplay}"
+    let displayAddr = networkSelection.primaryIP
     let url = "${scheme}://${displayAddr}:${port}"
+    let endpointBound = "(bound on ${addr}:${port})"
+    let tags = buildBannerTags(
+        tlsEnabled,
+        enableSwagger,
+        kmode,
+        networkSelection,
+        bannerExtraTags
+    )
+    let tagLines = buildBannerTagLines(tags, bannerMaxTagLines, 53, palette)
+    let warning = networkSelection.warning
+    match (bannerStyle) {
+        case BannerStyle.Renaissance =>
+            renderRenaissanceBannerLines(
+                title,
+                url,
+                endpointBound,
+                port,
+                touchpointCount,
+                pid,
+                frameworkVersion,
+                enableBannerSignature,
+                enableSwagger,
+                swaggerPath,
+                enablePrintSwaggerUrl,
+                scheme,
+                displayAddr,
+                warning,
+                tagLines,
+                palette,
+                networkSelection
+            )
+        case _ =>
+            renderClassicBannerLines(
+                title,
+                url,
+                endpointBound,
+                addr,
+                port,
+                touchpointCount,
+                pid,
+                frameworkVersion,
+                enableBannerSignature,
+                enableSwagger,
+                swaggerPath,
+                enablePrintSwaggerUrl,
+                scheme,
+                displayAddr,
+                warning,
+                tagLines,
+                palette,
+                networkSelection
+            )
+    }
+}
+
+func renderClassicBannerLines(
+    title: String,
+    url: String,
+    endpointBound: String,
+    addr: String,
+    port: UInt16,
+    touchpointCount: Int64,
+    pid: String,
+    frameworkVersion: String,
+    enableBannerSignature: Bool,
+    enableSwagger: Bool,
+    swaggerPath: String,
+    enablePrintSwaggerUrl: Bool,
+    scheme: String,
+    displayAddr: String,
+    warning: String,
+    tagLines: Array<String>,
+    palette: BannerPalette,
+    networkSelection: api2.StartupNetworkSelection
+): Array<String> {
+    let innerWidth: Int64 = 53
     let endpointLine = bannerComposeEndpointLine(url, addr, port)
     let networkLine = buildBannerNetworkSelectionLine(networkSelection)
-
     let colW: Int64 = 24
-    let col1Line1 = bannerDotFill("Touchpoints", "${touchpointCount}", colW)
-    let col2Line1 = bannerDotFill("Processes", "1", colW)
-    let statsLine1 = bannerPadRight(" " + col1Line1 + "  " + col2Line1, innerWidth)
-
-    let left2 = if (tlsEnabled) {
-        bannerDotFill("TLS", "Enabled", colW)
-    } else {
-        bannerDotFill("Prefork", "Disabled", colW)
-    }
-    let col2Line2 = bannerDotFill("PID", pid, colW)
-    let statsLine2 = bannerPadRight(" " + left2 + "  " + col2Line2, innerWidth)
-
+    let statsLine = bannerPadRight(
+        " " + bannerDotFill("Touchpoints", "${touchpointCount}", colW) + "  " +
+            bannerDotFill("PID", pid, colW),
+        innerWidth
+    )
+    let styledStatsLine = bannerTintDots(statsLine, palette.dot, palette.body)
     var border = ""
     var i: Int64 = 0
     while (i < innerWidth) {
@@ -1583,55 +1663,202 @@ func printBanner(
         i += 1
     }
 
-    let emptyInner = bannerCenter("", innerWidth)
-    let endpointBound = "(bound on ${addr}:${port})"
-    let endpointSep = " || "
-    let splitUrlLine = bannerCenter(url, innerWidth)
-    let splitBoundLine = bannerCenter(endpointBound, innerWidth)
-    let statsLine1Styled = bannerTintDots(statsLine1, DOT, BODY)
-    let statsLine2Styled = bannerTintDots(statsLine2, DOT, BODY)
-    let networkLineStyled: ?String = if (networkLine.size > 0) {
-        Some(bannerCenter(networkLine, innerWidth))
-    } else {
-        None
-    }
-
-    println("")
-    println(" ${BORDER}┌${border}┐${R}")
-    println(" ${BORDER}│${R}${TITLE}${bannerCenter(title, innerWidth)}${R}${BORDER}│${R}")
+    let lines = ArrayList<String>()
+    lines.add(" ${palette.border}┌${border}┐${palette.reset}")
+    lines.add(" ${palette.border}│${palette.reset}${palette.title}${bannerCenter(title, innerWidth)}${palette.reset}${palette.border}│${palette.reset}")
     if (endpointLine.size <= innerWidth) {
         let endpointPad = innerWidth - endpointLine.size
         let endpointPadLeft = endpointPad / 2
         let endpointPadRight = endpointPad - endpointPadLeft
         let endpointInner = bannerSpaces(endpointPadLeft) +
-            "${URL}${url}${R}${MUTED}${endpointSep}${endpointBound}${R}" +
+            "${palette.url}${url}${palette.reset}${palette.muted} || ${endpointBound}${palette.reset}" +
             bannerSpaces(endpointPadRight)
-        println(" ${BORDER}│${R}${endpointInner}${BORDER}│${R}")
+        lines.add(" ${palette.border}│${palette.reset}${endpointInner}${palette.border}│${palette.reset}")
     } else {
-        println(" ${BORDER}│${R}${URL}${splitUrlLine}${R}${BORDER}│${R}")
-        println(" ${BORDER}│${R}${MUTED}${splitBoundLine}${R}${BORDER}│${R}")
+        lines.add(" ${palette.border}│${palette.reset}${palette.url}${bannerCenter(url, innerWidth)}${palette.reset}${palette.border}│${palette.reset}")
+        lines.add(" ${palette.border}│${palette.reset}${palette.muted}${bannerCenter(endpointBound, innerWidth)}${palette.reset}${palette.border}│${palette.reset}")
     }
-    if (let Some(networkInner) <- networkLineStyled) {
-        println(" ${BORDER}│${R}${MUTED}${networkInner}${R}${BORDER}│${R}")
+    if (networkLine.size > 0) {
+        lines.add(" ${palette.border}│${palette.reset}${palette.muted}${bannerCenter(networkLine, innerWidth)}${palette.reset}${palette.border}│${palette.reset}")
     }
-    println(" ${BORDER}│${R}${emptyInner}${BORDER}│${R}")
-    println(" ${BORDER}│${R}${statsLine1Styled}${R}${BORDER}│${R}")
-    println(" ${BORDER}│${R}${statsLine2Styled}${R}${BORDER}│${R}")
+    lines.add(" ${palette.border}│${palette.reset}${bannerCenter("", innerWidth)}${palette.border}│${palette.reset}")
+    lines.add(" ${palette.border}│${palette.reset}${styledStatsLine}${palette.reset}${palette.border}│${palette.reset}")
+    for (tagLine in tagLines) {
+        lines.add(" ${palette.border}│${palette.reset}${bannerCenter(tagLine, innerWidth)}${palette.border}│${palette.reset}")
+    }
     if (enableBannerSignature) {
         let signatureLine = bannerPadLeft("_Ignite ${frameworkVersion}", innerWidth)
-        println(" ${BORDER}│${R}${ITALIC}${MUTED}${signatureLine}${R}${BORDER}│${R}")
+        lines.add(" ${palette.border}│${palette.reset}${palette.italic}${palette.muted}${signatureLine}${palette.reset}${palette.border}│${palette.reset}")
     }
-    println(" ${BORDER}└${border}┘${R}")
-    if (kmode) {
-        println(" ${TITLE}Ignite v${frameworkVersion} (kmode)${R}")
+    lines.add(" ${palette.border}└${border}┘${palette.reset}")
+    if (enableSwagger && enablePrintSwaggerUrl) {
+        lines.add(" ${palette.url}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${palette.reset}")
+    }
+    if (warning.size > 0) {
+        lines.add(" [Ignite][Net] ${warning}")
+    }
+    lines.toArray()
+}
+
+func renderRenaissanceBannerLines(
+    title: String,
+    url: String,
+    endpointBound: String,
+    port: UInt16,
+    touchpointCount: Int64,
+    pid: String,
+    frameworkVersion: String,
+    enableBannerSignature: Bool,
+    enableSwagger: Bool,
+    swaggerPath: String,
+    enablePrintSwaggerUrl: Bool,
+    scheme: String,
+    displayAddr: String,
+    warning: String,
+    tagLines: Array<String>,
+    palette: BannerPalette,
+    networkSelection: api2.StartupNetworkSelection
+): Array<String> {
+    let lines = ArrayList<String>()
+    let divider = "──────────────────────────────────────────────────────"
+    let networkLine = buildBannerNetworkSelectionLine(networkSelection)
+    lines.add("${palette.title}${title}${palette.reset}")
+    lines.add("${palette.border}${divider}${palette.reset}")
+    lines.add("${palette.url}${url}${palette.reset}")
+    lines.add("${palette.muted}${endpointBound}${palette.reset}")
+    if (networkLine.size > 0) {
+        lines.add("${palette.muted}${networkLine}${palette.reset}")
+    }
+    lines.add("")
+    lines.add("${palette.body}touchpoints: ${touchpointCount}   pid: ${pid}${palette.reset}")
+    for (tagLine in tagLines) {
+        lines.add(tagLine)
+    }
+    if (enableBannerSignature) {
+        lines.add("${palette.italic}${palette.muted}_Ignite ${frameworkVersion}${palette.reset}")
     }
     if (enableSwagger && enablePrintSwaggerUrl) {
-        println(" ${URL}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${R}")
+        lines.add("${palette.url}Swagger UI: ${scheme}://${displayAddr}:${port}${swaggerPath}${palette.reset}")
     }
-    if (let Some(message) <- bannerWarn) {
-        println(" [Ignite][Net] ${message}")
+    if (warning.size > 0) {
+        lines.add(" [Ignite][Net] ${warning}")
     }
-    println("")
+    lines.toArray()
+}
+
+func buildBannerPalette(mode: BannerColorMode): BannerPalette {
+    let esc = "\u{1B}"
+    match (mode) {
+        case BannerColorMode.Gray =>
+            BannerPalette(
+                esc + "[0m",
+                esc + "[38;5;240m",
+                esc + "[1;37m",
+                esc + "[38;5;252m",
+                esc + "[38;5;245m",
+                esc + "[38;5;252m",
+                esc + "[38;5;240m",
+                esc + "[38;5;252m",
+                esc + "[38;5;249m",
+                esc + "[38;5;245m",
+                esc + "[3m"
+            )
+        case BannerColorMode.Plain =>
+            BannerPalette("", "", "", "", "", "", "", "", "", "", "")
+        case _ =>
+            BannerPalette(
+                esc + "[0m",
+                esc + "[38;5;240m",
+                esc + "[1;38;5;81m",
+                esc + "[38;5;114m",
+                esc + "[38;5;246m",
+                esc + "[38;5;252m",
+                esc + "[38;5;240m",
+                esc + "[38;5;252m",
+                esc + "[38;5;42m",
+                esc + "[38;5;174m",
+                esc + "[3m"
+            )
+    }
+}
+
+func buildBannerTags(
+    tlsEnabled: Bool,
+    enableSwagger: Bool,
+    kmode: Bool,
+    networkSelection: api2.StartupNetworkSelection,
+    extraTags: Array<String>
+): Array<BannerTag> {
+    let tags = ArrayList<BannerTag>()
+    tags.add(BannerTag("TLS", if (tlsEnabled) { "active" } else { "muted" }))
+    tags.add(BannerTag("Swagger", if (enableSwagger) { "active" } else { "muted" }))
+    if (kmode) {
+        tags.add(BannerTag("kMode.Debug", "accent"))
+    }
+    if (networkSelection.mode == "multi" && networkSelection.displayInterfacePairs.size > 1) {
+        tags.add(BannerTag("Multi-NIC", "active"))
+    } else if (networkSelection.mode == "named" && networkSelection.matchedInterface.size > 0) {
+        tags.add(BannerTag("NIC:" + networkSelection.matchedInterface, "active"))
+    } else if (networkSelection.mode == "direct" && networkSelection.matchedInterface.size > 0) {
+        tags.add(BannerTag("Bind:" + networkSelection.matchedInterface, "muted"))
+    }
+    if (networkSelection.warning.size > 0) {
+        tags.add(BannerTag("Net.Warn", "warning"))
+    }
+    for (raw in extraTags) {
+        let trimmed = raw.trimAscii()
+        if (trimmed.size > 0) {
+            tags.add(BannerTag(trimmed, "active"))
+        }
+    }
+    tags.toArray()
+}
+
+func buildBannerTagLines(
+    tags: Array<BannerTag>,
+    maxLines: Int64,
+    maxWidth: Int64,
+    palette: BannerPalette
+): Array<String> {
+    if (tags.size == 0 || maxLines <= 0) {
+        return Array<String>(0, repeat: "")
+    }
+    let lines = ArrayList<String>()
+    var line = ""
+    var rawLen: Int64 = 0
+    var lineCount: Int64 = 0
+    for (tag in tags) {
+        let nextRawLen = if (rawLen == 0) {
+            tag.text.size
+        } else {
+            rawLen + 3 + tag.text.size
+        }
+        if (rawLen > 0 && nextRawLen > maxWidth && lineCount + 1 < maxLines) {
+            lines.add(line)
+            lineCount += 1
+            line = ""
+            rawLen = 0
+        }
+        if (rawLen > 0) {
+            line += "   "
+        }
+        line += renderBannerTag(tag, palette)
+        rawLen = if (rawLen == 0) { tag.text.size } else { rawLen + 3 + tag.text.size }
+    }
+    if (line.size > 0) {
+        lines.add(line)
+    }
+    lines.toArray()
+}
+
+func renderBannerTag(tag: BannerTag, palette: BannerPalette): String {
+    let color = match (tag.style) {
+        case "accent" => palette.accent
+        case "warning" => palette.warning
+        case "muted" => palette.muted
+        case _ => palette.active
+    }
+    color + tag.text + palette.reset
 }
 
 func buildBannerNetworkSelectionLine(selection: api2.StartupNetworkSelection): String {
@@ -1681,6 +1908,56 @@ func joinBannerValues(values: Array<String>, sep: String): String {
         out += value
     }
     out
+}
+
+class BannerPalette {
+    let reset: String
+    let border: String
+    let title: String
+    let url: String
+    let muted: String
+    let body: String
+    let dot: String
+    let active: String
+    let accent: String
+    let warning: String
+    let italic: String
+
+    init(
+        reset: String,
+        border: String,
+        title: String,
+        url: String,
+        muted: String,
+        body: String,
+        dot: String,
+        active: String,
+        accent: String,
+        warning: String,
+        italic: String
+    ) {
+        this.reset = reset
+        this.border = border
+        this.title = title
+        this.url = url
+        this.muted = muted
+        this.body = body
+        this.dot = dot
+        this.active = active
+        this.accent = accent
+        this.warning = warning
+        this.italic = italic
+    }
+}
+
+class BannerTag {
+    let text: String
+    let style: String
+
+    init(text: String, style: String) {
+        this.text = text
+        this.style = style
+    }
 }
 
 class NetworkMonitorStopSignal {

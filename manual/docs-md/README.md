@@ -1,6 +1,6 @@
 # Ignite Docs MD
 
-这里是 Ignite `0500` 的中文正文主入口。
+这里是 Ignite `0700` 的中文正文主入口。
 
 根 `README.md` 负责项目门面，这个目录负责把公开能力讲清楚，后续 `docs-web` 也会直接以这里为内容源稿，而不是再重新发明一套章节结构。
 
@@ -28,7 +28,7 @@
 ## 与其他入口的边界
 
 - 根 [`../../README.md`](../../README.md)：项目首页门面，只负责讲方向、竞争力与入口分流。
-- [`../samples/README.md`](../samples/README.md)：可运行路径，重点是怎么最快验证能力，而不是解释全部语义。
+- [`../samples/README.md`](../samples/README.md)：可运行路径，重点是怎么最快验证能力，而不是解释全部语义；当前 `H1` 推荐路径与 `H2 guarded intake` 路径都优先从这里进入。
 - [`../../CHANGELOG.MD`](../../CHANGELOG.MD)：版本时间线与阶段收口，不替代手册正文。
 - [`../docs-web/README.md`](../docs-web/README.md)：网站文档占位，后续消费本目录内容。
 

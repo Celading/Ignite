@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import ignite.binary.base64UrlEncode
 import ignite.middleware.{JwtConfig, jwtMiddleware}
-import jinguissl.crypto.digest.{HashAlgorithm, hmac}
+import JinguiSSL.jinguissl.contract.{HashAlgorithm, contractHmac}
 import std.time.DateTime
 
 @Test
@@ -91,7 +91,7 @@ public class JwtMiddlewareTestSuite {
         let header = base64UrlEncode(headerJson.toArray())
         let payload = base64UrlEncode(payloadJson.toArray())
         let signingInput = header + "." + payload
-        let signature = base64UrlEncode(hmac(HashAlgorithm.SHA256, secret.toArray(), signingInput.toArray()))
+        let signature = base64UrlEncode(contractHmac(HashAlgorithm.SHA256, secret.toArray(), signingInput.toArray()))
         signingInput + "." + signature
     }
 
