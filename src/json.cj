@@ -20,8 +20,11 @@ public type JsonDeserializable<T> = StdxJsonDeserializable<T>
 public type JsonReader = StdxJsonReader
 public type JsonEncoder = (JsonEncodable) -> String
 
-// Keep the writer-facing contract in Ignite so the hosted SeaJson baseline
-// does not need to expose this symbol before Ignite can consume it remotely.
+/// Ignite-owned writer-facing JSON contract.
+///
+/// GitCode SeaJson truth currently lags the newer `JsonWriterEncodable`
+/// interface/export surface, so Ignite keeps this narrow writer-facing seam
+/// locally while still consuming SeaJson's native writer type directly.
 public interface JsonWriterEncodable {
     func writeJson(writer: SeaJsonNativeWriter): Unit
 }

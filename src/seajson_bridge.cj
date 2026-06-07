@@ -35,7 +35,8 @@ func writeJsonWriterEncodableThroughSeaJsonBridge(
     // the bridge until the sibling hosted truth catches up.
     let writer = SeaJsonNativeWriter()
     obj.writeJson(writer)
-    out.write(writer.close().toArray())
+    let json = writer.close()
+    out.write(json.toArray())
     out.flush()
 }
 

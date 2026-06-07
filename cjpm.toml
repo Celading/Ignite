@@ -25,7 +25,9 @@
 
 [dependencies]
   # ignite-cjpm-projection:start
-  # Merge-ready mainline branch uses the current Gitcode-hosted dependency truth.
+  # Current dependency block is materialized from `_helper/config/cjpm-dependency-projection/`.
+  # Supported profile: `hosted-gitcode`.
+  # The merge-ready mainline branch uses the current operator-approved GitCode-hosted truth.
   # Keep dependency keys aligned with the source package names exposed by each repo.
   JinguiSSL = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
   jinguissl_core = { git = "https://gitcode.com/CjKu/JinguiCore.git" }
