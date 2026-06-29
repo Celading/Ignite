@@ -6,7 +6,7 @@ import std.io.InputStream
 import std.net.TcpSocket
 import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpContext, HttpHeaders, WebSocket}
 import ignite.api2
-import JinguiSSL.jinguissl.live.{
+import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
     ContractHttpServerAttachPlan,
     ContractHttpServerAttachResult,

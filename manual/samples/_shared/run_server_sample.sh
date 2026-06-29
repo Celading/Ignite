@@ -117,10 +117,16 @@ while IFS= read -r path; do
   IGNITE_ARCHIVES+=("${path}")
 done < <(collect_package_archives "${ROOT}/target/release/ignite")
 
-declare -a JINGUISSL_CONTRACT_ARCHIVES=()
-while IFS= read -r path; do
-  JINGUISSL_CONTRACT_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
+declare -a JINGUISSL_ARCHIVES=()
+if [[ -d "${ROOT}/target/release/jinguissl" ]]; then
+  while IFS= read -r path; do
+    JINGUISSL_ARCHIVES+=("${path}")
+  done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
+else
+  while IFS= read -r path; do
+    JINGUISSL_ARCHIVES+=("${path}")
+  done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
+fi
 
 declare -a JINGUISSL_CORE_ARCHIVES=()
 while IFS= read -r path; do
@@ -137,8 +143,8 @@ COMMON_LINKS+=(-L "${ROOT}/target/release/seajson" -lseajson)
 if [[ "${#IGNITE_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${IGNITE_ARCHIVES[@]}")
 fi
-if [[ "${#JINGUISSL_CONTRACT_ARCHIVES[@]}" -gt 0 ]]; then
-  COMMON_LINKS+=("${JINGUISSL_CONTRACT_ARCHIVES[@]}")
+if [[ "${#JINGUISSL_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${JINGUISSL_ARCHIVES[@]}")
 fi
 if [[ "${#JINGUISSL_CORE_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${JINGUISSL_CORE_ARCHIVES[@]}")
@@ -168,10 +174,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

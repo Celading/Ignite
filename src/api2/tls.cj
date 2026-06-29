@@ -5,8 +5,11 @@ import std.fs.{exists, File, OpenMode}
 import stdx.crypto.common.{Pem, PemEntry, DerBlob, PrivateKey}
 import stdx.net.tls.TlsServerConfig
 import stdx.crypto.x509.X509Certificate
-import JinguiSSL.jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
-import jinguissl_core.jinguissl.crypto.tls.TlsSessionCache
+import jinguissl.contract.{
+    ContractException,
+    ContractTlsSessionCache,
+    contractValidateHttpServerTlsConfigInput
+}
 
 public enum TlsConfigLoadErrorCode <: Equatable<TlsConfigLoadErrorCode> & ToString {
     | BadInput
@@ -438,7 +441,7 @@ func _useContractExceptionType(value!: ?ContractException = None): Bool {
     false
 }
 
-func _useTlsSessionCacheType(value!: ?TlsSessionCache = None): Bool {
+func _useTlsSessionCacheType(value!: ?ContractTlsSessionCache = None): Bool {
     if (let Some(_cache) <- value) {
         return true
     }
