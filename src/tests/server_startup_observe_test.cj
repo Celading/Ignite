@@ -2,7 +2,7 @@ package ignite.tests
 
 import ignite.*
 import ignite.api2
-import JinguiSSL.jinguissl.live.{
+import jinguissl.live.{
     ContractHttpServerAttachResult,
     ContractTls13HttpServerFlight
 }

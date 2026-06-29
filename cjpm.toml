@@ -1,6 +1,6 @@
 [package]
   cjc-version = "1.0.0"
-  version = "0.7.7"
+  version = "0.7.8"
   name = "ignite"
   output-type = "static"
   src-dir = "src"
@@ -29,8 +29,7 @@
   # Supported profile: `hosted-gitcode`.
   # The merge-ready mainline branch uses the current operator-approved GitCode-hosted truth.
   # Keep dependency keys aligned with the source package names exposed by each repo.
-  JinguiSSL = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
-  jinguissl_core = { git = "https://gitcode.com/CjKu/JinguiCore.git" }
+  jinguissl = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
   seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
   # ignite-cjpm-projection:end
 

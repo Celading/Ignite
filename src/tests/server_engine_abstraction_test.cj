@@ -8,8 +8,8 @@ import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
-import JinguiSSL.jinguissl.contract.ContractErrorCode
-import JinguiSSL.jinguissl.live.{
+import jinguissl.contract.ContractErrorCode
+import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
     ContractTlsRecordChannel,
     ContractTlsRecordContentType,
