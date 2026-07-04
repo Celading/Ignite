@@ -9,6 +9,12 @@ import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 @Test
 public class RequestBodyBufferCeilingContractTestSuite {
     @TestCase
+    public func testMaxRequestBodySizeAliasMapsToBodyLimit(): Unit {
+        let config = Config(maxRequestBodySize: 8)
+        @Assert(config.bodyLimit, Int64(8))
+    }
+
+    @TestCase
     public func testBodyBytesThrowsBufferedOverflowExceptionWithLimitMetadata(): Unit {
         let carrier = RequestBodyOverflowTestCarrier("POST", "/overflow", "123456789")
         let ctx = Ctx(carrier, App(config: Config(bodyLimit: 8)))

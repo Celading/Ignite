@@ -1,7 +1,7 @@
 package ignite.tests
 
 import ignite.*
-import std.collection.HashMap
+import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
@@ -26,6 +26,39 @@ public class StreamResponseTestSuite {
         @Assert(resp.header("content-type") ?? "", "text/plain; charset=utf-8")
         @Assert(resp.header("content-length") ?? "", payload.size.toString())
         @Assert(resp.header("transfer-encoding") ?? "", "")
+        @Assert(resp.body, payload)
+    }
+
+    @TestCase
+    public func testSendStreamRecordsIoDriverStreamSeamDecisionInLocals(): Unit {
+        let payload = "ignite-stream-iodriver"
+        let app = App(config: Config())
+        app.get("/stream-iodriver", { ctx =>
+            let stream = SendStreamBytesInput(toSendStreamByteArray(payload.toArray()))
+            let _ = ctx.sendStream(
+                stream,
+                contentType: "text/plain; charset=utf-8",
+                contentLength: Some(payload.size)
+            )
+            exposeIoDriverLocalsAsTestHeaders(ctx)
+        })
+
+        let resp = app.handleForTest("GET", "/stream-iodriver")
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-stream-seam")
+        @Assert(resp.header("x-test-iodriver-public-path") ?? "", "stable-stream-seam")
+        @Assert(resp.header("x-test-iodriver-zero-copy") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-benchmark") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-shape") ?? "", "http-response")
+        @Assert(
+            resp.header("x-test-iodriver-events") ?? "",
+            "shape=http-response,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.header("x-test-iodriver-event-count") ?? "", "1")
+        @Assert(
+            resp.header("x-test-iodriver-event-first") ?? "",
+            "shape=http-response,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
         @Assert(resp.body, payload)
     }
 
@@ -243,6 +276,36 @@ func writeTransportChunks(writer: ResponseTransportWriter, data: Array<UInt8>, c
         let end = if (cursor + chunkSize < data.size) { cursor + chunkSize } else { data.size }
         writer.write(data[cursor..end])
         cursor = end
+    }
+}
+
+func exposeIoDriverLocalsAsTestHeaders(ctx: Ctx): Unit {
+    let _ = ctx
+        .setHeader("x-test-iodriver-selected", ctx.getLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-public-path", ctx.getLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-zero-copy", ctx.getLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-benchmark", ctx.getLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-shape", ctx.getLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-events", ctx.getLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY) ?? "")
+        .setHeader("x-test-iodriver-event-count", ioDriverTypedEventCountLabel(ctx))
+        .setHeader("x-test-iodriver-event-first", ioDriverTypedEventAt(ctx, 0))
+}
+
+func ioDriverTypedEventCountLabel(ctx: Ctx): String {
+    match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+        case Some(events) => events.size.toString()
+        case None => "0"
+    }
+}
+
+func ioDriverTypedEventAt(ctx: Ctx, index: Int64): String {
+    match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+        case Some(events) =>
+            if (index >= 0 && index < events.size) {
+                return events[index]
+            }
+            ""
+        case None => ""
     }
 }
 

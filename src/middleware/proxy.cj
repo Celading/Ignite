@@ -1,6 +1,19 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
+import ignite.{
+    Handler,
+    Ctx,
+    IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY,
+    IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY,
+    IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY,
+    IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY,
+    IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY,
+    IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
+    IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY,
+    IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY,
+    IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY
+}
+import ignite.api2
 import stdx.net.http.{ClientBuilder, HttpHeaders, HttpRequestBuilder, HttpResponse}
 import stdx.net.tls.TlsClientConfig
 import std.collection.ArrayList
@@ -177,6 +190,7 @@ func attachProxyRequestBody(
         if (cached.size > 0 || shouldForwardRequestBody(ctx)) {
             recordProxyRequestBodyMode(ctx, "cached-body")
             recordProxyRequestBodyBytes(ctx, cached.size)
+            recordProxyRequestUploadIoDriverProbe(ctx)
             headers.add("content-length", cached.size.toString())
             reqBuilder.body(cached)
         } else {
@@ -191,6 +205,7 @@ func attachProxyRequestBody(
             if (size > 0 || shouldForwardRequestBody(ctx)) {
                 recordProxyRequestBodyMode(ctx, "known-length-stream")
                 recordProxyRequestBodyBytes(ctx, size)
+                recordProxyRequestUploadIoDriverProbe(ctx)
                 headers.add("content-length", size.toString())
                 reqBuilder.body(carrier.requestBodyStream())
             } else {
@@ -207,12 +222,14 @@ func attachProxyRequestBody(
             }
             if (proxyTargetScheme(targetUrl) == "http") {
                 recordProxyRequestBodyMode(ctx, "chunked-stream")
+                recordProxyRequestUploadIoDriverProbe(ctx)
                 headers.add("transfer-encoding", "chunked")
                 reqBuilder.body(carrier.requestBodyStream())
             } else {
                 let buffered = ctx.bodyBytes()
                 recordProxyRequestBodyMode(ctx, "memory-buffered")
                 recordProxyRequestBodyBytes(ctx, buffered.size)
+                recordProxyRequestUploadIoDriverProbe(ctx)
                 headers.add("content-length", buffered.size.toString())
                 reqBuilder.body(buffered)
             }
@@ -244,6 +261,7 @@ func attachBufferedProxyRequestBody(
     )
     recordProxyRequestBodyMode(ctx, "temp-file-buffered")
     recordProxyRequestBodyBytes(ctx, saved)
+    recordProxyRequestUploadIoDriverProbe(ctx)
     headers.add("content-length", saved.toString())
     let replayFile = File(tempPath, OpenMode.Read)
     reqBuilder.body(replayFile)
@@ -339,6 +357,7 @@ func sendObservedProxyStringResponse(ctx: Ctx, status: UInt16, body: String): Un
     recordProxyResponseBodyBytes(ctx, size)
     recordProxyDownstreamBodyMode(ctx, "known-length-stream")
     recordProxyDownstreamBodyBytes(ctx, size)
+    recordProxyLocalErrorResponseIoDriverProbe(ctx)
     ctx.status(status).sendString(body)
 }
 
@@ -421,7 +440,119 @@ func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
     if (proxyResponseMustBeBodyless(ctx.method, resp.status)) {
         return
     }
+    recordProxyIoDriverProbe(ctx, "proxy-downstream")
     carrier.attachResponseBodyStream(resp.body)
+}
+
+func recordProxyIoDriverProbe(ctx: Ctx, transferShape: String): Unit {
+    let report = api2.buildIoDriverProbeReport(
+        api2.IoDriverPolicyRequest(
+            "http-proxy",
+            "sequential",
+            transferShape,
+            true,
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            1,
+            "protocol=${ctx.protocol};method=${ctx.method}"
+        )
+    )
+    ctx.setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
+    ctx.setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+    ctx.setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
+    ctx.setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
+    ctx.setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
+    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
+    ctx.setLocal(
+        IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
+        joinProxyIoDriverLocalValues(report.runtimeLimitations)
+    )
+    appendProxyIoDriverEvent(ctx, transferShape, report)
+}
+
+func recordProxyRequestUploadIoDriverProbe(ctx: Ctx): Unit {
+    recordProxyIoDriverProbe(ctx, "proxy-request-upload")
+}
+
+func recordProxyLocalErrorResponseIoDriverProbe(ctx: Ctx): Unit {
+    let report = api2.buildIoDriverProbeReport(
+        api2.IoDriverPolicyRequest(
+            "http-proxy",
+            "sequential",
+            "proxy-local-error-response",
+            false,
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            1,
+            "protocol=${ctx.protocol};method=${ctx.method}"
+        )
+    )
+    ctx.setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
+    ctx.setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+    ctx.setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
+    ctx.setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
+    ctx.setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
+    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, "proxy-local-error-response")
+    ctx.setLocal(
+        IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
+        joinProxyIoDriverLocalValues(report.runtimeLimitations)
+    )
+    appendProxyIoDriverEvent(ctx, "proxy-local-error-response", report)
+}
+
+func appendProxyIoDriverEvent(ctx: Ctx, transferShape: String, report: api2.IoDriverProbeReport): Unit {
+    let event = buildProxyIoDriverEvent(transferShape, report)
+    appendProxyIoDriverEventLogText(ctx, event)
+    appendProxyIoDriverEventListValue(ctx, event)
+}
+
+func appendProxyIoDriverEventLogText(ctx: Ctx, event: String): Unit {
+    let existing = ctx.getLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY) ?? ""
+    if (existing.trimAscii().size == 0) {
+        ctx.setLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY, event)
+        return
+    }
+    ctx.setLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY, "${existing}||${event}")
+}
+
+func appendProxyIoDriverEventListValue(ctx: Ctx, event: String): Unit {
+    match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+        case Some(events) =>
+            events.add(event)
+            ctx.setLocalValue(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY, events)
+        case None =>
+            let events = ArrayList<String>()
+            events.add(event)
+            ctx.setLocalValue(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY, events)
+    }
+}
+
+func buildProxyIoDriverEvent(transferShape: String, report: api2.IoDriverProbeReport): String {
+    "shape=${transferShape},driver=${report.decision.selectedDriver},path=${report.decision.publicPath},zeroCopy=${report.canClaimZeroCopy},benchmark=${report.benchmarkRequired}"
+}
+
+func joinProxyIoDriverLocalValues(values: Array<String>): String {
+    if (values.size == 0) {
+        return ""
+    }
+    var out = ""
+    var first = true
+    for (value in values) {
+        if (!first) {
+            out += ","
+        }
+        first = false
+        out += value
+    }
+    out
 }
 
 func observeProxyResponseBody(ctx: Ctx, resp: HttpResponse): Unit {

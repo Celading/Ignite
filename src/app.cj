@@ -31,19 +31,130 @@ public class AppTestResponse {
     }
 }
 
+public class AppServerEngineSelectionPolicyDecision {
+    public let selectedEngineId: String
+    public let selectionLabel: String
+    public let selectedReason: String
+    public let tlsConfigured: Bool
+    public let nativeSocketShellSelected: Bool
+    public let stdxRollbackSelected: Bool
+    public let cleartextDefaultSelected: Bool
+    public let tlsDefaultSelected: Bool
+    public let configOptInSelected: Bool
+
+    public init(
+        selectedEngineId: String,
+        selectionLabel: String,
+        selectedReason: String,
+        tlsConfigured: Bool,
+        nativeSocketShellSelected: Bool,
+        stdxRollbackSelected: Bool,
+        cleartextDefaultSelected: Bool,
+        tlsDefaultSelected: Bool,
+        configOptInSelected: Bool
+    ) {
+        this.selectedEngineId = selectedEngineId
+        this.selectionLabel = selectionLabel
+        this.selectedReason = selectedReason
+        this.tlsConfigured = tlsConfigured
+        this.nativeSocketShellSelected = nativeSocketShellSelected
+        this.stdxRollbackSelected = stdxRollbackSelected
+        this.cleartextDefaultSelected = cleartextDefaultSelected
+        this.tlsDefaultSelected = tlsDefaultSelected
+        this.configOptInSelected = configOptInSelected
+    }
+}
+
+public func buildAppServerEngineSelectionPolicyDecision(
+    config: Config
+): AppServerEngineSelectionPolicyDecision {
+    let tlsConfigured = config.tlsCertFile.size > 0 || config.tlsKeyFile.size > 0
+    let hint = normalizeAppServerBackendHint(config.serverPreferredBackendHint)
+    if (isAppStdxServerBackendHint(hint)) {
+        return AppServerEngineSelectionPolicyDecision(
+            "stdx-http-server",
+            "stdx-rollback",
+            "explicit-stdx-backend-hint",
+            tlsConfigured,
+            false,
+            true,
+            false,
+            false,
+            false
+        )
+    }
+    if (tlsConfigured) {
+        return AppServerEngineSelectionPolicyDecision(
+            "ignite-native-h1",
+            "default-tls",
+            "tls-config-default-native",
+            true,
+            true,
+            false,
+            false,
+            true,
+            false
+        )
+    }
+    if (
+        config.allowExperimentalServerBackend &&
+        isAppNativeH1ServerBackendHint(hint)
+    ) {
+        return AppServerEngineSelectionPolicyDecision(
+            "ignite-native-h1",
+            "config-opt-in",
+            "explicit-native-h1-backend-hint",
+            false,
+            true,
+            false,
+            false,
+            false,
+            true
+        )
+    }
+    AppServerEngineSelectionPolicyDecision(
+        "ignite-native-h1",
+        "default-cleartext",
+        "cleartext-default-native",
+        false,
+        true,
+        false,
+        true,
+        false,
+        false
+    )
+}
+
+func normalizeAppServerBackendHint(raw: String): String {
+    raw.trimAscii().toAsciiLower()
+}
+
+func isAppNativeH1ServerBackendHint(hint: String): Bool {
+    hint == "native-h1" || hint == "ignite-native-h1"
+}
+
+func isAppStdxServerBackendHint(hint: String): Bool {
+    hint == "stdx" || hint == "stdx-default" || hint == "stdx-http-server"
+}
+
 public class App {
     public let config: Config
     public let router: Router
-    var _engine: ServerEngine = StdxServerEngine()
+    var _engine: ServerEngine = SocketServerEngineShell(selectionLabel: "default-cleartext")
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
     var _startupObserveHooks: ArrayList<ServerStartupObserveHook> = ArrayList<ServerStartupObserveHook>()
+    var _jinguiAcceptedTransportSessionHooks:
+        ArrayList<ServerJinguiAcceptedTransportSessionHook> =
+            ArrayList<ServerJinguiAcceptedTransportSessionHook>()
     var _swaggerJsonCache: ?String = None
     var _swaggerHtmlCache: ?String = None
     var _swaggerRouteInstalled: Bool = false
     var _lastServerTransportTouchpoint: ?ServerTransportTouchpoint = None
     var _lastServerStartupObserveEvent: ?ServerStartupObserveEvent = None
+    var _lastJinguiAcceptedTransportSessionSnapshot:
+        ?ServerJinguiAcceptedTransportSessionSnapshot = None
     var _notFoundHandler: ?Handler = None
     var _methodNotAllowedHandler: ?Handler = None
     var _networkMonitorStopSignal: ?NetworkMonitorStopSignal = None
@@ -51,6 +162,7 @@ public class App {
     public init(config!: Config = Config()) {
         this.config = config
         this.router = Router(config)
+        applyConfiguredServerEnginePolicy()
     }
 
     public static func create(config!: Config = Config()): App {
@@ -344,6 +456,13 @@ public class App {
         this
     }
 
+    public func onJinguiAcceptedTransportSession(
+        hook: ServerJinguiAcceptedTransportSessionHook
+    ): App {
+        _jinguiAcceptedTransportSessionHooks.add(hook)
+        this
+    }
+
     public func serverEngine(engine: ServerEngine): App {
         _engine = engine
         this
@@ -351,6 +470,10 @@ public class App {
 
     public func withServerEngine(engine: ServerEngine): App {
         serverEngine(engine)
+    }
+
+    public func useExperimentalNativeH1ServerEngine(): App {
+        serverEngine(SocketServerEngineShell(selectionLabel: "manual-opt-in"))
     }
 
     public func lastServerTransportTouchpoint(): ?ServerTransportTouchpoint {
@@ -361,7 +484,67 @@ public class App {
         _lastServerStartupObserveEvent
     }
 
+    public func lastJinguiAcceptedTransportSessionSnapshot():
+        ?ServerJinguiAcceptedTransportSessionSnapshot {
+        _lastJinguiAcceptedTransportSessionSnapshot
+    }
+
+    public func appTlsDefaultMutationDryRunGate(
+        evidence: AppTlsDefaultMutationDryRunEvidence
+    ): AppTlsDefaultMutationDryRunGate {
+        buildAppTlsDefaultMutationDryRunGate(evidence)
+    }
+
+    public func appTlsDefaultMutationApplyGate(
+        evidence: AppTlsDefaultMutationApplyGateEvidence
+    ): AppTlsDefaultMutationApplyGate {
+        buildAppTlsDefaultMutationApplyGate(evidence)
+    }
+
+    public func appTlsLiveIngressConsumptionGate(
+        evidence: AppTlsLiveIngressConsumptionEvidence
+    ): AppTlsLiveIngressConsumptionGate {
+        buildAppTlsLiveIngressConsumptionGate(evidence)
+    }
+
+    public func appTlsDefaultSelectionMutationGate(
+        evidence: AppTlsDefaultSelectionMutationEvidence
+    ): AppTlsDefaultSelectionMutationGate {
+        buildAppTlsDefaultSelectionMutationGate(evidence)
+    }
+
     // ── Server lifecycle ──
+
+    func applyConfiguredServerEnginePolicy(): Unit {
+        let decision = buildAppServerEngineSelectionPolicyDecision(config)
+        if (decision.stdxRollbackSelected) {
+            _engine = StdxServerEngine()
+            return
+        }
+        _engine = SocketServerEngineShell(selectionLabel: decision.selectionLabel)
+    }
+
+    func shouldUseConfiguredStdxServerEngineFallback(): Bool {
+        isStdxServerBackendHint(config.serverPreferredBackendHint)
+    }
+
+    func shouldUseConfiguredNativeH1ServerEngine(): Bool {
+        if (!config.allowExperimentalServerBackend) {
+            return false
+        }
+        if (config.tlsCertFile.size > 0 || config.tlsKeyFile.size > 0) {
+            return false
+        }
+        isNativeH1ServerBackendHint(config.serverPreferredBackendHint)
+    }
+
+    func isNativeH1ServerBackendHint(raw: String): Bool {
+        isAppNativeH1ServerBackendHint(normalizeAppServerBackendHint(raw))
+    }
+
+    func isStdxServerBackendHint(raw: String): Bool {
+        isAppStdxServerBackendHint(normalizeAppServerBackendHint(raw))
+    }
 
     public func listen(addr: String, port: UInt16): Unit {
         setupSwaggerRoute()
@@ -395,11 +578,23 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
+        let transportRoutingBundle = buildServerTransportRoutingBundle(
+            addr,
+            port,
+            hasTls,
+            preferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimental: config.allowExperimentalServerBackend
+        )
         let transportTouchpoint = resolveServerTransportTouchpoint(
             _engine,
             addr,
             port,
-            hasTls
+            buildServerTransportTouchpoint(transportRoutingBundle)
+        )
+        let tlsIngressContext = ServerTlsIngressContext(
+            transportRoutingBundle,
+            transportTouchpoint,
+            preparedTlsMaterialLoader: preparedTlsMaterialLoader
         )
         _lastServerTransportTouchpoint = Some(transportTouchpoint)
 
@@ -413,15 +608,22 @@ public class App {
             config.tlsCertFile,
             config.tlsKeyFile,
             config.enableTlsPrecheck,
+            serverPreferredBackendHint: config.serverPreferredBackendHint,
+            allowExperimentalServerBackend: config.allowExperimentalServerBackend,
             preparedTlsMaterialLoader: preparedTlsMaterialLoader,
-            transportTouchpoint: transportTouchpoint
+            transportRoutingBundle: Some(transportRoutingBundle),
+            transportTouchpoint: transportTouchpoint,
+            tlsIngressContext: Some(tlsIngressContext),
+            jinguiAcceptedTransportSessionHook: Some({ snapshot =>
+                notifyJinguiAcceptedTransportSessionSnapshot(snapshot)
+            })
         )
         try {
             _engine.listen(
                 option,
                 this,
                 {
-                    =>
+                    readySignal =>
                     let networkSelection = api2.resolveBoundNetworkSelection(
                         addr,
                         mode: config.startupNetworkMode,
@@ -455,7 +657,8 @@ public class App {
                             port,
                             scheme,
                             tlsEnabled,
-                            transportTouchpoint: Some(transportTouchpoint)
+                            transportTouchpoint: Some(transportTouchpoint),
+                            jinguiAttachResultSnapshot: readySignal.jinguiAttachResultSnapshot
                         )
                     )
                 }
@@ -653,8 +856,18 @@ public class App {
         }
     }
 
+    func notifyJinguiAcceptedTransportSessionSnapshot(
+        snapshot: ServerJinguiAcceptedTransportSessionSnapshot
+    ): Unit {
+        _lastJinguiAcceptedTransportSessionSnapshot = Some(snapshot)
+        for (hook in _jinguiAcceptedTransportSessionHooks) {
+            hook(snapshot)
+        }
+    }
+
     func resetStartupObserveState(): Unit {
         _lastServerStartupObserveEvent = None
+        _lastJinguiAcceptedTransportSessionSnapshot = None
     }
 
     func setupSwaggerRoute(): Unit {

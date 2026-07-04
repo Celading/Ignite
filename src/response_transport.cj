@@ -12,6 +12,9 @@ public interface ResponseTransportWriter {
     func write(data: Array<UInt8>): Unit
 }
 
+public type ResponseTransportWriteSink = (Array<UInt8>) -> Unit
+type ResponseTransportWriteTransform = (Array<UInt8>) -> Array<Array<UInt8>>
+
 class StdxResponseTransportWriter <: ResponseTransportWriter {
     let _writer: HttpResponseWriter
 
@@ -24,8 +27,65 @@ class StdxResponseTransportWriter <: ResponseTransportWriter {
     }
 }
 
+class TransformingResponseTransportWriter <: ResponseTransportWriter {
+    let _downstream: ResponseTransportWriter
+    let _transform: ResponseTransportWriteTransform
+
+    init(
+        downstream: ResponseTransportWriter,
+        transform: ResponseTransportWriteTransform
+    ) {
+        _downstream = downstream
+        _transform = transform
+    }
+
+    public override func write(data: Array<UInt8>): Unit {
+        if (data.size == 0) {
+            return
+        }
+        let transformed = _transform(cloneResponseTransportBytes(data))
+        for (chunk in transformed) {
+            if (chunk.size > 0) {
+                _downstream.write(chunk)
+            }
+        }
+    }
+}
+
+class SinkBackedResponseTransportWriter <: ResponseTransportWriter {
+    let _sink: ResponseTransportWriteSink
+
+    init(sink: ResponseTransportWriteSink) {
+        _sink = sink
+    }
+
+    public override func write(data: Array<UInt8>): Unit {
+        if (data.size == 0) {
+            return
+        }
+        _sink(cloneResponseTransportBytes(data))
+    }
+}
+
 func openResponseTransportWriter(currentRequestCarrier: CurrentRequestCarrier): ResponseTransportWriter {
     currentRequestCarrier.openResponseTransportWriterRaw()
+}
+
+/// Opens a transport writer that forwards each write into an arbitrary sink.
+///
+/// This keeps product-local sinks such as `TcpSocket.write(...)` behind the
+/// same `ResponseTransportWriter` seam without re-exposing `HttpResponseWriter`.
+public func openSinkBackedResponseTransportWriter(
+    sink: ResponseTransportWriteSink
+): ResponseTransportWriter {
+    SinkBackedResponseTransportWriter(sink)
+}
+
+func wrapResponseTransportWriter(
+    writer: ResponseTransportWriter,
+    transform: ResponseTransportWriteTransform
+): ResponseTransportWriter {
+    TransformingResponseTransportWriter(writer, transform)
 }
 
 /// Presents a response transport writer as an `std.io.OutputStream`.
@@ -50,4 +110,14 @@ public class ResponseTransportOutputStream <: OutputStream {
         // The current stdx-backed transport emits per write;
         // there is no stronger flush contract here yet.
     }
+}
+
+func cloneResponseTransportBytes(input: Array<UInt8>): Array<UInt8> {
+    let out = Array<UInt8>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
 }

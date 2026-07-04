@@ -4,47 +4,219 @@ import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
+import std.random.Random
+import std.sync.Mutex
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
 
+public class SocketServerEngineShellRuntimeControl {
+    let _mtx = Mutex()
+    var _shutdownRequested: Bool = false
+    var _listener: ?TcpServerSocket = None
+
+    public init() {}
+
+    public func attachListener(listener: TcpServerSocket): Unit {
+        synchronized(_mtx) {
+            _shutdownRequested = false
+            _listener = Some(listener)
+        }
+    }
+
+    public func detachListener(): Unit {
+        synchronized(_mtx) {
+            _listener = None
+        }
+    }
+
+    public func requestShutdown(): Unit {
+        var listenerToClose: ?TcpServerSocket = None
+        synchronized(_mtx) {
+            _shutdownRequested = true
+            listenerToClose = _listener
+        }
+        if (let Some(listener) <- listenerToClose) {
+            if (!listener.isClosed()) {
+                listener.close()
+            }
+        }
+    }
+
+    public func shutdownRequested(): Bool {
+        synchronized(_mtx) {
+            _shutdownRequested
+        }
+    }
+}
+
 func runSocketServerEngineShellListen(
     option: ServerEngineListenOption,
     app: App,
-    onReady: ?(() -> Unit)
+    onReady: ?((ServerEngineReadySignal) -> Unit),
+    control: SocketServerEngineShellRuntimeControl,
+    tlsAcceptedSessionReadyHook!:
+        ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
 ): Unit {
-    if (option.tlsCertFile.size > 0 || option.tlsKeyFile.size > 0) {
-        throw SocketServerEngineShellException(
-            "socket server engine shell cleartext first-runnable path does not support TLS"
+    if (socketServerEngineShellTlsIngressEnabled(option)) {
+        runSocketServerEngineShellTlsListen(
+            option,
+            app,
+            onReady,
+            control,
+            tlsAcceptedSessionReadyHook
         )
+        return
     }
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${option.addr}:${option.port}"))
     listener.bind()
+    control.attachListener(listener)
     try {
         if (let Some(cb) <- onReady) {
-            cb()
+            cb(ServerEngineReadySignal())
         }
         serveSocketServerEngineShellTurns(
             listener,
             app,
-            socketServerEngineShellAcceptedConnectionLimit()
+            socketServerEngineShellAcceptedConnectionLimit(),
+            control
         )
     } finally {
         if (!listener.isClosed()) {
             listener.close()
         }
+        control.detachListener()
     }
+}
+
+func socketServerEngineShellTlsIngressEnabled(
+    option: ServerEngineListenOption
+): Bool {
+    try {
+        option.loadTlsIngressContext().hasPreparedTlsMaterial()
+    } catch (_: Exception) {
+        false
+    }
+}
+
+func runSocketServerEngineShellTlsListen(
+    option: ServerEngineListenOption,
+    app: App,
+    onReady: ?((ServerEngineReadySignal) -> Unit),
+    control: SocketServerEngineShellRuntimeControl,
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+): Unit {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${option.addr}:${option.port}"))
+    listener.bind()
+    control.attachListener(listener)
+    try {
+        let _ = option.loadTlsIngressContext().loadPreparedTlsMaterial()
+        if (let Some(cb) <- onReady) {
+            cb(ServerEngineReadySignal())
+        }
+        serveSocketServerEngineShellTlsTurns(
+            listener,
+            option,
+            app,
+            socketServerEngineShellAcceptedConnectionLimit(),
+            control,
+            tlsAcceptedSessionReadyHook
+        )
+    } finally {
+        if (!listener.isClosed()) {
+            listener.close()
+        }
+        control.detachListener()
+    }
+}
+
+func serveSocketServerEngineShellTlsTurns(
+    listener: TcpServerSocket,
+    option: ServerEngineListenOption,
+    app: App,
+    acceptedConnectionLimit: Int64,
+    control: SocketServerEngineShellRuntimeControl,
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+): Unit {
+    var acceptedConnectionCount: Int64 = 0
+    while (
+        acceptedConnectionCount < acceptedConnectionLimit &&
+        !control.shutdownRequested()
+    ) {
+        try {
+            serveSocketServerEngineShellTlsTurn(
+                listener,
+                option,
+                app,
+                tlsAcceptedSessionReadyHook
+            )
+            acceptedConnectionCount += 1
+        } catch (e: Exception) {
+            if (control.shutdownRequested()) {
+                break
+            }
+            throw e
+        }
+    }
+}
+
+func serveSocketServerEngineShellTlsTurn(
+    listener: TcpServerSocket,
+    option: ServerEngineListenOption,
+    app: App,
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+): Unit {
+    let accepted = listener.accept()
+    try {
+        let _ =
+            option.serveJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
+                accepted,
+                app,
+                socketServerEngineShellExperimentalServerKeyExchangePrivate(),
+                transportId: "socket-server-engine-shell-native-tls-live-ingress",
+                readChunkSize: 4096,
+                maxFragmentLen: 16384,
+                closeSocketAfterTurn: true,
+                attachedSessionReadyHook: tlsAcceptedSessionReadyHook
+            )
+    } finally {
+        if (!accepted.isClosed()) {
+            accepted.close()
+        }
+    }
+}
+
+func socketServerEngineShellExperimentalServerKeyExchangePrivate(): Array<Byte> {
+    let rng = Random()
+    let out = Array<Byte>(32, repeat: 0)
+    var i: Int64 = 0
+    while (i < out.size) {
+        out[i] = UInt8(rng.nextUInt64() & 0xff)
+        i += 1
+    }
+    out
 }
 
 func serveSocketServerEngineShellTurns(
     listener: TcpServerSocket,
     app: App,
-    acceptedConnectionLimit: Int64
+    acceptedConnectionLimit: Int64,
+    control: SocketServerEngineShellRuntimeControl
 ): Unit {
     var acceptedConnectionCount: Int64 = 0
-    while (acceptedConnectionCount < acceptedConnectionLimit) {
-        serveSocketServerEngineShellTurn(listener, app)
-        acceptedConnectionCount += 1
+    while (
+        acceptedConnectionCount < acceptedConnectionLimit &&
+        !control.shutdownRequested()
+    ) {
+        try {
+            serveSocketServerEngineShellTurn(listener, app)
+            acceptedConnectionCount += 1
+        } catch (e: Exception) {
+            if (control.shutdownRequested()) {
+                break
+            }
+            throw e
+        }
     }
 }
 

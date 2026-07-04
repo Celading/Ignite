@@ -1,7 +1,7 @@
 package ignite.tests
 
-import jinguissl_contract.jinguissl.contract.*
-import jinguissl_core.jinguissl.crypto.tls.TlsSessionCache
+import jinguissl.contract.*
+import jinguissl_core.crypto.tls.TlsSessionCache
 
 @Test
 public class JinguiSslContractLinkTestSuite {

@@ -2,6 +2,10 @@ package ignite.tests
 
 import ignite.*
 import ignite.api2
+import jinguissl.live.{
+    ContractHttpServerAttachResult,
+    ContractTls13HttpServerFlight
+}
 import std.collection.ArrayList
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 
@@ -112,6 +116,53 @@ public class ServerStartupObserveTestSuite {
     }
 
     @TestCase
+    public func testStartupObserveReadyEventCanCarryJinguiAttachMetadata(): Unit {
+        let app = App(config: Config(enableTlsPrecheck: false))
+        let engine = StartupObserveReadyWithAttachMetadataEngine()
+        let alpns = ArrayList<String>()
+        let ciphers = ArrayList<String>()
+        app.serverEngine(engine)
+        app.onStartupObserve({ event =>
+            match (event.jinguiAttachResultSnapshot) {
+                case Some(snapshot) =>
+                    alpns.add(snapshot.negotiatedAlpn)
+                    ciphers.add(snapshot.cipherSuite)
+                case None =>
+                    alpns.add("-")
+                    ciphers.add("-")
+            }
+        })
+
+        app.listen("127.0.0.1", UInt16(38130))
+
+        @Assert(alpns.size, 1)
+        @Assert(alpns[0], "h2")
+        @Assert(ciphers[0], "TLS_AES_128_GCM_SHA256")
+        match (app.lastServerStartupObserveEvent()) {
+            case Some(event) =>
+                match (event.jinguiAttachResultSnapshot) {
+                    case Some(snapshot) =>
+                        @Assert(snapshot.tlsVersion, "TLS1.3")
+                        @Assert(snapshot.cipherSuite, "TLS_AES_128_GCM_SHA256")
+                        @Assert(snapshot.negotiatedAlpn, "h2")
+                        @Assert(snapshot.requestedServerName, "www.example.com")
+                        @Assert(snapshot.acknowledgedServerName, true)
+                        @Assert(snapshot.secureSessionReady, false)
+                        @Assert(snapshot.attachSurface, "accepted-socket-flight")
+                    case None => @Fail("expected Jingui attach metadata snapshot")
+                }
+                let json = event.toJson()
+                @Assert(contains(json, "\"jinguiAttachResultSnapshot\":"), true)
+                @Assert(contains(json, "\"negotiatedAlpn\":\"h2\""), true)
+                @Assert(
+                    contains(json, "\"cipherSuite\":\"TLS_AES_128_GCM_SHA256\""),
+                    true
+                )
+            case None => @Fail("expected startup observe event")
+        }
+    }
+
+    @TestCase
     public func testStartupObserveEmitsSocketServerEngineShellReadyEvent(): Unit {
         let app = App(config: Config(enableTlsPrecheck: false))
         let port = reserveLoopbackPort()
@@ -121,7 +172,7 @@ public class ServerStartupObserveTestSuite {
         app.get("/shell-startup-observe", { ctx =>
             let _ = ctx.sendString("shell-startup-observe")
         })
-        app.serverEngine(SocketServerEngineShell())
+        app.useExperimentalNativeH1ServerEngine()
         app.onStartupObserve({ event =>
             phases.add(event.phase)
             codes.add(event.failureCode)
@@ -265,12 +316,33 @@ class StartupObserveReadyEngine <: ServerEngine {
     public override func listen(
         option: ServerEngineListenOption,
         app: App,
-        onReady: ?(() -> Unit)
+        onReady: ?((ServerEngineReadySignal) -> Unit)
     ): Unit {
         let _ = option
         let _ = app
         if (let Some(cb) <- onReady) {
-            cb()
+            cb(ServerEngineReadySignal())
+        }
+    }
+
+    public override func shutdown(): Unit {}
+}
+
+class StartupObserveReadyWithAttachMetadataEngine <: ServerEngine {
+    public override func listen(
+        option: ServerEngineListenOption,
+        app: App,
+        onReady: ?((ServerEngineReadySignal) -> Unit)
+    ): Unit {
+        let _ = app
+        let attachResult = buildStartupObserveAttachResult()
+        let snapshot = option.buildJinguiHttpServerAttachResultSnapshot(
+            attachResult
+        )
+        if (let Some(cb) <- onReady) {
+            cb(ServerEngineReadySignal(
+                jinguiAttachResultSnapshot: Some(snapshot)
+            ))
         }
     }
 
@@ -281,7 +353,7 @@ class StartupObserveListenFailureEngine <: ServerEngine {
     public override func listen(
         option: ServerEngineListenOption,
         app: App,
-        onReady: ?(() -> Unit)
+        onReady: ?((ServerEngineReadySignal) -> Unit)
     ): Unit {
         let _ = option
         let _ = app
@@ -296,7 +368,7 @@ class StartupObserveTlsFailureEngine <: ServerEngine {
     public override func listen(
         option: ServerEngineListenOption,
         app: App,
-        onReady: ?(() -> Unit)
+        onReady: ?((ServerEngineReadySignal) -> Unit)
     ): Unit {
         let _ = option
         let _ = app
@@ -309,4 +381,27 @@ class StartupObserveTlsFailureEngine <: ServerEngine {
     }
 
     public override func shutdown(): Unit {}
+}
+
+func buildStartupObserveAttachResult(): ContractHttpServerAttachResult {
+    let serverFlight = ContractTls13HttpServerFlight(
+        Array<UInt8>(1, repeat: 1),
+        Array<UInt8>(1, repeat: 2),
+        Array<UInt8>(1, repeat: 3),
+        Array<UInt8>(1, repeat: 4),
+        Array<UInt8>(1, repeat: 5),
+        Array<UInt8>(32, repeat: 0),
+        selectedAlpn: "h2",
+        requestedServerName: "www.example.com",
+        acknowledgedServerName: true
+    )
+    ContractHttpServerAttachResult(
+        serverFlight,
+        cipherSuite: "TLS_AES_128_GCM_SHA256",
+        negotiatedAlpn: "h2",
+        requestedServerName: "www.example.com",
+        acknowledgedServerName: true,
+        secureSessionReady: false,
+        attachSurface: "accepted-socket-flight"
+    )
 }

@@ -79,6 +79,98 @@ public class FileDownloadAndRestfulTestSuite {
     }
 
     @TestCase
+    public func testDownloadWrapperRecordsIoDriverDownloadEventInLocals(): Unit {
+        let fixturePath = "/tmp/ignite_download_wrapper_iodriver_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+
+        let app = App(config: Config())
+        app.get("/download-wrapper-iodriver", { ctx =>
+            let _ = ctx.download(fixturePath, filename: "wrapped.txt")
+            exposeDownloadIoDriverLocalsAsTestHeaders(ctx)
+        })
+
+        let resp = app.handleForTest("GET", "/download-wrapper-iodriver")
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.header("content-disposition") ?? "", "attachment; filename=\"wrapped.txt\"")
+        @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-stream-seam")
+        @Assert(resp.header("x-test-iodriver-shape") ?? "", "http-download")
+        @Assert(resp.header("x-test-iodriver-event-count") ?? "", "1")
+        @Assert(
+            resp.header("x-test-iodriver-event-first") ?? "",
+            "shape=http-download,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.body, payload)
+    }
+
+    @TestCase
+    public func testSendFileRecordsIoDriverDownloadEventInLocals(): Unit {
+        let fixturePath = "/tmp/ignite_file_iodriver_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+
+        let app = App(config: Config())
+        app.get("/file-iodriver", { ctx =>
+            let _ = ctx.sendFile(fixturePath)
+            exposeDownloadIoDriverLocalsAsTestHeaders(ctx)
+        })
+
+        let resp = app.handleForTest("GET", "/file-iodriver")
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-stream-seam")
+        @Assert(resp.header("x-test-iodriver-public-path") ?? "", "stable-stream-seam")
+        @Assert(resp.header("x-test-iodriver-zero-copy") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-benchmark") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-shape") ?? "", "http-download")
+        @Assert(
+            resp.header("x-test-iodriver-events") ?? "",
+            "shape=http-download,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.header("x-test-iodriver-event-count") ?? "", "1")
+        @Assert(
+            resp.header("x-test-iodriver-event-first") ?? "",
+            "shape=http-download,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.body, payload)
+    }
+
+    @TestCase
+    public func testSendFileRangeRecordsIoDriverRangeDownloadDecisionInLocals(): Unit {
+        let fixturePath = "/tmp/ignite_range_iodriver_fixture.txt"
+        let payload = buildLargeAsciiPayload()
+        writeTextFile(fixturePath, payload)
+
+        let app = App(config: Config())
+        app.get("/range-iodriver", { ctx =>
+            let _ = ctx.sendFileRange(fixturePath)
+            exposeDownloadIoDriverLocalsAsTestHeaders(ctx)
+        })
+
+        let resp = app.handleForTest(
+            "GET",
+            "/range-iodriver",
+            headers: [("range", "bytes=10-31")]
+        )
+        @Assert(resp.status, UInt16(206))
+        @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-stream-seam")
+        @Assert(resp.header("x-test-iodriver-public-path") ?? "", "stable-stream-seam")
+        @Assert(resp.header("x-test-iodriver-zero-copy") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-benchmark") ?? "", "false")
+        @Assert(resp.header("x-test-iodriver-shape") ?? "", "range-download")
+        @Assert(
+            resp.header("x-test-iodriver-events") ?? "",
+            "shape=range-download,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.header("x-test-iodriver-event-count") ?? "", "1")
+        @Assert(
+            resp.header("x-test-iodriver-event-first") ?? "",
+            "shape=range-download,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+        )
+        @Assert(resp.header("content-range") ?? "", "bytes 10-31/${payload.size}")
+        @Assert(resp.body, payload[10..32])
+    }
+
+    @TestCase
     public func testLargeFileDownloadAndRangeOverRealHttpKeepKnownLengthWire(): Unit {
         let fixturePath = "/tmp/ignite_streaming_download_wire_fixture.txt"
         let payload = buildLargeAsciiPayload()
@@ -450,6 +542,36 @@ public class FileDownloadAndRestfulTestSuite {
         match (bytes) {
             case Some(_) => "hit"
             case None => "miss"
+        }
+    }
+
+    func exposeDownloadIoDriverLocalsAsTestHeaders(ctx: Ctx): Unit {
+        let _ = ctx
+            .setHeader("x-test-iodriver-selected", ctx.getLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-public-path", ctx.getLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-zero-copy", ctx.getLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-benchmark", ctx.getLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-shape", ctx.getLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-events", ctx.getLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-event-count", downloadIoDriverTypedEventCountLabel(ctx))
+            .setHeader("x-test-iodriver-event-first", downloadIoDriverTypedEventAt(ctx, 0))
+    }
+
+    func downloadIoDriverTypedEventCountLabel(ctx: Ctx): String {
+        match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+            case Some(events) => events.size.toString()
+            case None => "0"
+        }
+    }
+
+    func downloadIoDriverTypedEventAt(ctx: Ctx, index: Int64): String {
+        match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+            case Some(events) =>
+                if (index >= 0 && index < events.size) {
+                    return events[index]
+                }
+                ""
+            case None => ""
         }
     }
 

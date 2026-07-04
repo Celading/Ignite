@@ -127,6 +127,110 @@ public class ProxyMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testProxyMiddlewareRecordsIoDriverProxyLocalErrorResponseDecisionInLocals(): Unit {
+        let upstreamPort = choosePort(1855)
+        let proxyPort = choosePort(1856)
+
+        let proxy = App(config: Config())
+        proxy.use({ ctx =>
+            ctx.next()
+            exposeProxyIoDriverLocalsAsTestHeaders(ctx)
+        })
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithRetry(proxyPort, "GET", "/proxy/proxy-iodriver-local-error", [])
+            @Assert(resp.status, UInt16(502))
+            @Assert(contains(resp.bodyText, "Bad Gateway:"), true)
+            @Assert(resp.header("content-length") ?? "", resp.bodyText.size.toString())
+            @Assert(resp.header("transfer-encoding") ?? "", "")
+            @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-buffered-response-seam")
+            @Assert(resp.header("x-test-iodriver-public-path") ?? "", "stable-buffered-response-seam")
+            @Assert(resp.header("x-test-iodriver-zero-copy") ?? "", "false")
+            @Assert(resp.header("x-test-iodriver-benchmark") ?? "", "false")
+            @Assert(resp.header("x-test-iodriver-shape") ?? "", "proxy-local-error-response")
+            @Assert(resp.header("x-test-iodriver-event-count") ?? "", "1")
+            @Assert(
+                resp.header("x-test-iodriver-event-first") ?? "",
+                "shape=proxy-local-error-response,driver=ignite-buffered-response-seam,path=stable-buffered-response-seam,zeroCopy=false,benchmark=false"
+            )
+        } finally {
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
+    public func testProxyMiddlewareRecordsIoDriverProxyUploadAndDownstreamEventsInSameRequest(): Unit {
+        let upstreamPort = choosePort(1857)
+        let proxyPort = choosePort(1858)
+        let payload = buildLargeAsciiPayload()
+
+        let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        upstream.post("/up/proxy-iodriver-phase-events", { ctx =>
+            let saved = ctx.bodyBytes().size
+            _ = ctx.setHeader("x-upstream-saved", saved.toString())
+            _ = ctx.sendString("saved=${saved}")
+        })
+
+        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        proxy.use({ ctx =>
+            ctx.next()
+            exposeProxyIoDriverLocalsAsTestHeaders(ctx)
+        })
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let resp = sendRawProxyHttpWithBodyWithRetry(
+                proxyPort,
+                "POST",
+                "/proxy/proxy-iodriver-phase-events",
+                payload,
+                headers: [("content-type", "text/plain; charset=utf-8")]
+            )
+            let events = resp.header("x-test-iodriver-events") ?? ""
+            @Assert(resp.status, UInt16(200))
+            @Assert(resp.header("x-upstream-saved") ?? "", payload.size.toString())
+            @Assert(resp.header("x-test-iodriver-shape") ?? "", "proxy-downstream")
+            @Assert(contains(events, "shape=proxy-request-upload"), true)
+            @Assert(contains(events, "shape=proxy-downstream"), true)
+            @Assert(contains(events, "driver=ignite-stream-seam"), true)
+            @Assert(resp.header("x-test-iodriver-event-count") ?? "", "2")
+            @Assert(
+                resp.header("x-test-iodriver-event-first") ?? "",
+                "shape=proxy-request-upload,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+            )
+            @Assert(
+                resp.header("x-test-iodriver-event-second") ?? "",
+                "shape=proxy-downstream,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
+            )
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareRelaysKnownLengthResponseWithoutChunkedOnHttp11Wire(): Unit {
         let upstreamPort = choosePort(1814)
         let proxyPort = choosePort(1815)
@@ -979,6 +1083,28 @@ public class ProxyMiddlewareTestSuite {
         throw Exception("failed to connect raw proxy test server: ${port} ${target}")
     }
 
+    func sendRawProxyHttpWithBodyWithRetry(
+        port: UInt16,
+        method: String,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): ProxyRawHttpResponse {
+        var attempt: Int64 = 0
+        while (attempt < 20) {
+            try {
+                return sendRawProxyHttpWithBody(port, method, target, body, headers: headers)
+            } catch (_: Exception) {
+                if (attempt == 19) {
+                    throw Exception("failed to connect raw proxy test server: ${port} ${target}")
+                }
+                sleep(Duration.millisecond * 50)
+                attempt += 1
+            }
+        }
+        throw Exception("failed to connect raw proxy test server: ${port} ${target}")
+    }
+
     func sendRawProxyHttp(
         port: UInt16,
         method: String,
@@ -1011,12 +1137,78 @@ public class ProxyMiddlewareTestSuite {
         }
     }
 
+    func sendRawProxyHttpWithBody(
+        port: UInt16,
+        method: String,
+        target: String,
+        body: String,
+        headers!: Array<(String, String)> = []
+    ): ProxyRawHttpResponse {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            var request = "${method} ${target} HTTP/1.1\r\n"
+            request += "host: 127.0.0.1:${port}\r\n"
+            request += "content-length: ${body.toArray().size}\r\n"
+            for ((key, value) in headers) {
+                request += "${key}: ${value}\r\n"
+            }
+            request += "connection: close\r\n\r\n"
+            request += body
+            socket.write(request.toArray())
+
+            let buf = Array<UInt8>(4096, repeat: 0)
+            var raw = ""
+            while (true) {
+                let n = socket.read(buf)
+                if (n <= 0) {
+                    break
+                }
+                raw += String.fromUtf8(buf[..n])
+            }
+            parseRawProxyWireResponse(raw)
+        } finally {
+            socket.close()
+        }
+    }
+
     func shutdownApp(app: App, future: Future<Unit>): Unit {
         app.shutdown()
         try {
             let _ = future.get(Duration.second * 1)
         } catch (_: Exception) {
             future.cancel()
+        }
+    }
+
+    func exposeProxyIoDriverLocalsAsTestHeaders(ctx: Ctx): Unit {
+        let _ = ctx
+            .setHeader("x-test-iodriver-selected", ctx.getLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-public-path", ctx.getLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-zero-copy", ctx.getLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-benchmark", ctx.getLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-shape", ctx.getLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-events", ctx.getLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY) ?? "")
+            .setHeader("x-test-iodriver-event-count", proxyIoDriverTypedEventCountLabel(ctx))
+            .setHeader("x-test-iodriver-event-first", proxyIoDriverTypedEventAt(ctx, 0))
+            .setHeader("x-test-iodriver-event-second", proxyIoDriverTypedEventAt(ctx, 1))
+    }
+
+    func proxyIoDriverTypedEventCountLabel(ctx: Ctx): String {
+        match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+            case Some(events) => events.size.toString()
+            case None => "0"
+        }
+    }
+
+    func proxyIoDriverTypedEventAt(ctx: Ctx, index: Int64): String {
+        match (ctx.getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+            case Some(events) =>
+                if (index >= 0 && index < events.size) {
+                    return events[index]
+                }
+                ""
+            case None => ""
         }
     }
 

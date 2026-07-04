@@ -289,6 +289,8 @@ admin.get("/stats", statsHandler)
 - TLS：`tlsCertFile`、`tlsKeyFile`、`enableTlsPrecheck`
 - JSON：`jsonEncoder`
 
+`bodyLimit` 是 Ignite 对请求体字节上限的 canonical 配置名；如果你在 `stdx` 或其他 Web 框架里习惯搜索 `maxRequestBodySize`，在 Ignite 里可以按 `bodyLimit == maxRequestBodySize` 理解。当前构造入口也保留 `Config(maxRequestBodySize: ...)` 作为同义写法，但内部只落到 `bodyLimit`，不维护第二份可漂移字段。
+
 ```cangjie
 let config = Config(
     appName: "MyService",
@@ -302,6 +304,12 @@ let config = Config(
 )
 
 let app = App(config: config)
+```
+
+等价的请求体上限写法：
+
+```cangjie
+let config = Config(maxRequestBodySize: 10 * 1024 * 1024)
 ```
 
 ## 请求绑定与校验 `bindJsonOr400`

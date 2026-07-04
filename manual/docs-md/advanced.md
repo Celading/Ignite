@@ -17,6 +17,25 @@ app.use(loggerMiddleware(config: loggerConfig))
 
 如果你需要结构化日志，也可以启用 JSON 行输出，把数据继续送到外部日志系统。
 
+### `Socket is closed` 警告分类
+
+如果日志里出现类似下面的 stdx 输出：
+
+```text
+WARN [HttpEngineConn1#readRequest] exception: ConnectionException: Socket is closed.
+```
+
+先不要直接把它当成 Ignite handler 失败。`HttpEngineConn1#readRequest` 不是 Ignite 源码符号，这类日志通常来自底层 `stdx.net.http` 读请求阶段。
+
+| 场景 | 判断 | 建议 |
+|------|------|------|
+| 浏览器刷新、关闭标签页、keep-alive 连接被客户端回收 | 多数是良性噪声 | 只观察是否伴随业务失败 |
+| 服务 reload / shutdown 时仍有连接在读 | 可预期竞态 | 和启动/停机时间线一起看 |
+| 压测客户端主动 abort 或超时 | 压测侧行为 | 同步看客户端错误率和服务端成功响应数 |
+| 同时出现请求丢失、响应中断、固定接口必现 | 可行动传输问题 | 保留完整请求、响应、协议、并发数、超时配置再开复现单 |
+
+这份分类不是 stdx 日志级别修复；IgniteNEXT 当前只提供诊断口径和后续自研传输门禁，不会在框架层静默吞掉未知传输异常。
+
 ## WebSocket
 
 Ignite 提供直接的 WebSocket 入口：

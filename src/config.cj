@@ -110,12 +110,86 @@ public struct Config {
     public var tlsKeyFile: String = ""
     /// 为 true 时启用 jinguiSSL TLS precheck；为 false 时仅使用 stdx TLS 构造路径（保留回退能力）。
     public var enableTlsPrecheck: Bool = true
+    /// 服务器端传输后端偏好；默认留空，保持稳定默认路径。
+    public var serverPreferredBackendHint: String = ""
+    /// 服务器端是否允许实验性后端参与选路；默认 false。
+    public var allowExperimentalServerBackend: Bool = false
 
     public var allowRouteOverwrite: Bool = false
 
     public var enableSwaggerCache: Bool = true
 
     public var jsonEncoder: ?JsonEncoder = None
+
+    public init(
+        maxRequestBodySize!: Int64,
+        appName!: String = "Ignite",
+        appVersion!: String = "",
+        serverHeader!: String = "Ignite",
+        strictRouting!: Bool = false,
+        caseSensitive!: Bool = false,
+        readTimeout!: Duration = Duration.second * 30,
+        writeTimeout!: Duration = Duration.second * 30,
+        concurrency!: Int64 = 256 * 1024,
+        enableSwagger!: Bool = false,
+        swaggerPath!: String = "/swagger",
+        swaggerUICssUrl!: String = "",
+        swaggerUIJsUrl!: String = "",
+        enablePrintSwaggerUrl!: Bool = true,
+        enablePrintRoutes!: Bool = false,
+        enableBannerSignature!: Bool = true,
+        startupNetworkMode!: api2.StartupNetworkMode = api2.StartupNetworkMode.AutoSingle,
+        startupNetworkInterface!: String = "",
+        enableNetworkChangeNotice!: Bool = true,
+        bannerStyle!: BannerStyle = BannerStyle.Classic,
+        bannerColorMode!: BannerColorMode = BannerColorMode.Color,
+        bannerExtraTags!: Array<String> = [],
+        bannerMaxTagLines!: Int64 = 2,
+        kmode!: Bool = false,
+        kmodePanicHandler!: ?KModePanicHandler = None,
+        tlsCertFile!: String = "",
+        tlsKeyFile!: String = "",
+        enableTlsPrecheck!: Bool = true,
+        allowRouteOverwrite!: Bool = false,
+        enableSwaggerCache!: Bool = true,
+        jsonEncoder!: ?JsonEncoder = None,
+        serverPreferredBackendHint!: String = "",
+        allowExperimentalServerBackend!: Bool = false
+    ) {
+        this.appName = appName
+        this.appVersion = appVersion
+        this.serverHeader = serverHeader
+        this.strictRouting = strictRouting
+        this.caseSensitive = caseSensitive
+        this.bodyLimit = maxRequestBodySize
+        this.readTimeout = readTimeout
+        this.writeTimeout = writeTimeout
+        this.concurrency = concurrency
+        this.enableSwagger = enableSwagger
+        this.swaggerPath = swaggerPath
+        this.swaggerUICssUrl = swaggerUICssUrl
+        this.swaggerUIJsUrl = swaggerUIJsUrl
+        this.enablePrintSwaggerUrl = enablePrintSwaggerUrl
+        this.enablePrintRoutes = enablePrintRoutes
+        this.enableBannerSignature = enableBannerSignature
+        this.startupNetworkMode = startupNetworkMode
+        this.startupNetworkInterface = startupNetworkInterface
+        this.enableNetworkChangeNotice = enableNetworkChangeNotice
+        this.bannerStyle = bannerStyle
+        this.bannerColorMode = bannerColorMode
+        this.bannerExtraTags = bannerExtraTags
+        this.bannerMaxTagLines = bannerMaxTagLines
+        this.kmode = kmode
+        this.kmodePanicHandler = kmodePanicHandler
+        this.tlsCertFile = tlsCertFile
+        this.tlsKeyFile = tlsKeyFile
+        this.enableTlsPrecheck = enableTlsPrecheck
+        this.serverPreferredBackendHint = serverPreferredBackendHint
+        this.allowExperimentalServerBackend = allowExperimentalServerBackend
+        this.allowRouteOverwrite = allowRouteOverwrite
+        this.enableSwaggerCache = enableSwaggerCache
+        this.jsonEncoder = jsonEncoder
+    }
 
     public init(
         appName!: String = "Ignite",
@@ -148,7 +222,9 @@ public struct Config {
         enableTlsPrecheck!: Bool = true,
         allowRouteOverwrite!: Bool = false,
         enableSwaggerCache!: Bool = true,
-        jsonEncoder!: ?JsonEncoder = None
+        jsonEncoder!: ?JsonEncoder = None,
+        serverPreferredBackendHint!: String = "",
+        allowExperimentalServerBackend!: Bool = false
     ) {
         this.appName = appName
         this.appVersion = appVersion
@@ -178,6 +254,8 @@ public struct Config {
         this.tlsCertFile = tlsCertFile
         this.tlsKeyFile = tlsKeyFile
         this.enableTlsPrecheck = enableTlsPrecheck
+        this.serverPreferredBackendHint = serverPreferredBackendHint
+        this.allowExperimentalServerBackend = allowExperimentalServerBackend
         this.allowRouteOverwrite = allowRouteOverwrite
         this.enableSwaggerCache = enableSwaggerCache
         this.jsonEncoder = jsonEncoder

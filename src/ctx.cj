@@ -4,6 +4,7 @@ import std.collection.{ArrayList, HashMap}
 import std.io.{InputStream}
 import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
+import ignite.api2
 import ignite.security
 import stdx.net.http.HttpContext
 import stdx.encoding.json.JsonValue
@@ -22,6 +23,16 @@ public class BufferedRequestBodyTooLargeException <: Exception {
         this.attemptedBytes = attemptedBytes
     }
 }
+
+public let IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY: String = "__ignite_io_driver_selected"
+public let IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY: String = "__ignite_io_driver_public_path"
+public let IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY: String = "__ignite_io_driver_risk_level"
+public let IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY: String = "__ignite_io_driver_benchmark_required"
+public let IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY: String = "__ignite_io_driver_zero_copy_claim"
+public let IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY: String = "__ignite_io_driver_transfer_shape"
+public let IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY: String = "__ignite_io_driver_runtime_limitations"
+public let IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY: String = "__ignite_io_driver_event_log"
+public let IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY: String = "__ignite_io_driver_event_list"
 
 class LimitedRequestBodyInputStream <: InputStream & Resource {
     let _upstream: InputStream
@@ -382,6 +393,7 @@ public class Ctx {
         contentType!: String = "application/octet-stream",
         contentLength!: ?Int64 = None
     ): Ctx {
+        recordIoDriverProbeForHttpStream("http-response", false)
         var effectiveStream = stream
         var effectiveContentLength = contentLength
         let headRequest = isHeadRequest(method)
@@ -690,6 +702,7 @@ public class Ctx {
 
     public func sendFile(filePath: String): Ctx {
         if (let Some((resolvedPath, totalSize)) <- resolveExistingFile(filePath)) {
+            recordIoDriverProbeForHttpStream("http-download", true)
             let contentType = detectMimeType(resolvedPath)
             setResponseHeaderTracked("content-type", contentType)
             setResponseHeaderTracked("content-length", "${totalSize}")
@@ -730,6 +743,7 @@ public class Ctx {
             if (let Some(rangeVal) <- rangeHeader) {
                 let parsed = parseRangeHeader(rangeVal, totalSize)
                 if (let Some((start, end)) <- parsed) {
+                    recordIoDriverProbeForHttpStream("range-download", true)
                     let length = end - start + 1
                     _currentRequestCarrier.setResponseStatus(206)
                     setResponseHeaderTracked("content-type", contentType)
@@ -859,6 +873,70 @@ public class Ctx {
             case text: String => _locals.add(key, text)
             case _ => let _ = _locals.remove(key)
         }
+    }
+
+    func recordIoDriverProbeForHttpStream(
+        transferShape: String,
+        positionedRead: Bool
+    ): Unit {
+        let report = api2.buildIoDriverProbeReport(
+            api2.IoDriverPolicyRequest(
+                "http",
+                "sequential",
+                transferShape,
+                true,
+                positionedRead,
+                false,
+                false,
+                false,
+                "",
+                false,
+                1,
+                "protocol=${protocol};method=${method}"
+            )
+        )
+        setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
+        setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+        setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
+        setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
+        setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
+        setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
+        setLocal(
+            IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
+            joinIoDriverLocalValues(report.runtimeLimitations)
+        )
+        appendIoDriverProbeEvent(transferShape, report)
+    }
+
+    func appendIoDriverProbeEvent(transferShape: String, report: api2.IoDriverProbeReport): Unit {
+        let event = buildIoDriverProbeEvent(transferShape, report)
+        appendIoDriverEventLogText(event)
+        appendIoDriverEventListValue(event)
+    }
+
+    func appendIoDriverEventLogText(event: String): Unit {
+        let existing = getLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY) ?? ""
+        if (existing.trimAscii().size == 0) {
+            setLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY, event)
+            return
+        }
+        setLocal(IGNITE_IO_DRIVER_EVENT_LOG_LOCAL_KEY, "${existing}||${event}")
+    }
+
+    func appendIoDriverEventListValue(event: String): Unit {
+        match (getLocalValue<ArrayList<String>>(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY)) {
+            case Some(events) =>
+                events.add(event)
+                setLocalValue(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY, events)
+            case None =>
+                let events = ArrayList<String>()
+                events.add(event)
+                setLocalValue(IGNITE_IO_DRIVER_EVENT_LIST_LOCAL_KEY, events)
+        }
+    }
+
+    func buildIoDriverProbeEvent(transferShape: String, report: api2.IoDriverProbeReport): String {
+        "shape=${transferShape},driver=${report.decision.selectedDriver},path=${report.decision.publicPath},zeroCopy=${report.canClaimZeroCopy},benchmark=${report.benchmarkRequired}"
     }
 
     // ── App reference ──
@@ -1205,6 +1283,22 @@ func closeStreamIfResource(stream: InputStream): Unit {
         case closable: Resource => closable.close()
         case _ => ()
     }
+}
+
+func joinIoDriverLocalValues(values: Array<String>): String {
+    if (values.size == 0) {
+        return ""
+    }
+    var out = ""
+    var first = true
+    for (value in values) {
+        if (!first) {
+            out += ","
+        }
+        first = false
+        out += value
+    }
+    out
 }
 
 /// Public file-backed segment stream for known-length and range-style response migration.
