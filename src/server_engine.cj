@@ -379,6 +379,7 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
     public let headers: HttpHeaders
     public let bodyBytes: Array<UInt8>
     public let queryString: String
+    public let streamId: Int64
 
     public init(
         method: String,
@@ -386,8 +387,14 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
         urlString!: String = "",
         versionString!: String = "h2",
         headers!: ?HttpHeaders = None,
-        bodyBytes!: Array<UInt8> = []
+        bodyBytes!: Array<UInt8> = [],
+        streamId!: Int64 = 1
     ) {
+        if (streamId <= 0) {
+            throw Exception(
+                "accepted transport logical request requires positive H2 streamId, got ${streamId}"
+            )
+        }
         let resolvedUrlString = if (urlString.size > 0) {
             urlString
         } else {
@@ -419,13 +426,15 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
             serverJinguiAcceptedTransportLogicalRequestQueryString(
                 resolvedUrlString
             )
+        this.streamId = streamId
     }
 }
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
     pseudoHeaders: ServerJinguiAcceptedTransportH2PseudoHeaders,
     headers!: ?HttpHeaders = None,
-    bodyBytes!: Array<UInt8> = []
+    bodyBytes!: Array<UInt8> = [],
+    streamId!: Int64 = 1
 ): ServerJinguiAcceptedTransportLogicalRequest {
     let projectedHeaders =
         buildServerJinguiAcceptedTransportLogicalRequestHeadersWithAuthority(
@@ -438,7 +447,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         urlString: pseudoHeaders.path,
         versionString: "h2",
         headers: Some(projectedHeaders),
-        bodyBytes: bodyBytes
+        bodyBytes: bodyBytes,
+        streamId: streamId
     )
 }
 
@@ -494,7 +504,8 @@ public func buildServerJinguiAcceptedTransportH2PseudoHeadersFromDecodedHeaderFi
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
     headerFields: Array<JinguiAcceptedTransportH2DecodedHeaderField>,
-    bodyBytes!: Array<UInt8> = []
+    bodyBytes!: Array<UInt8> = [],
+    streamId!: Int64 = 1
 ): ServerJinguiAcceptedTransportLogicalRequest {
     let pseudoHeaders =
         buildServerJinguiAcceptedTransportH2PseudoHeadersFromDecodedHeaderFields(
@@ -520,7 +531,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
     buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         pseudoHeaders,
         headers: Some(headers),
-        bodyBytes: bodyBytes
+        bodyBytes: bodyBytes,
+        streamId: streamId
     )
 }
 
@@ -538,7 +550,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
 ): ServerJinguiAcceptedTransportLogicalRequest {
     buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
         parseJinguiAcceptedTransportH2HeaderFields(headerBlock),
-        bodyBytes: bodyBytes
+        bodyBytes: bodyBytes,
+        streamId: headerBlock.streamId
     )
 }
 
@@ -549,7 +562,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWit
 ): ServerJinguiAcceptedTransportLogicalRequest {
     buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
         hpackDecoderState.parseHeaderFields(headerBlock),
-        bodyBytes: bodyBytes
+        bodyBytes: bodyBytes,
+        streamId: headerBlock.streamId
     )
 }
 
@@ -57968,6 +57982,121 @@ public class ServerEngineListenOption {
         }
     }
 
+    func serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurnCore(
+        session: ContractHttpServerAcceptedTransportSession,
+        acceptedSocket: TcpSocket,
+        app: App,
+        request: ServerJinguiAcceptedTransportLogicalRequest,
+        maxFragmentLen!: Int64 = 16384,
+        closeSocketAfterTurn!: Bool = true
+    ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
+        let readySnapshot = notifyJinguiAcceptedTransportSession(session)
+        let carrier = ServerJinguiAcceptedTransportSocketResponseCarrier(
+            request,
+            acceptedSocket
+        )
+        let capturedBodyWrites = ArrayList<Array<UInt8>>()
+        let captureCarrier =
+            wrapCurrentRequestCarrierResponseWriter(carrier, { =>
+                openSinkBackedResponseTransportWriter({ bytes =>
+                    capturedBodyWrites.add(cloneServerEngineUInt8Array(bytes))
+                })
+            })
+        let wrappedCarrier =
+            wrapCurrentRequestCarrierWithJinguiAcceptedTransportApplicationDataResponse(
+                session,
+                carrier,
+                maxFragmentLen: maxFragmentLen
+            )
+        try {
+            app.handleRequest(captureCarrier)
+            commitJinguiAcceptedTransportCapturedH2DataResponseBody(
+                session,
+                request,
+                wrappedCarrier,
+                capturedBodyWrites
+            )
+            ServerJinguiAcceptedTransportSocketResponseTurnResult(
+                session,
+                readySnapshot,
+                carrier.responseStatus,
+                cloneServerEngineHeaders(carrier.responseHeaders),
+                carrier.responseWriterLifecycle.socketWriteCount,
+                carrier.responseWriterLifecycle.totalEncodedSocketBytes
+            )
+        } finally {
+            if (closeSocketAfterTurn && !acceptedSocket.isClosed()) {
+                acceptedSocket.close()
+            }
+        }
+    }
+
+    func commitJinguiAcceptedTransportCapturedH2DataResponseBody(
+        session: ContractHttpServerAcceptedTransportSession,
+        request: ServerJinguiAcceptedTransportLogicalRequest,
+        wrappedCarrier: CurrentRequestCarrier,
+        capturedBodyWrites: ArrayList<Array<UInt8>>
+    ): Unit {
+        var totalCapturedBytes: Int64 = 0
+        for (bodyWrite in capturedBodyWrites) {
+            totalCapturedBytes += bodyWrite.size
+        }
+        if (totalCapturedBytes <= 0) {
+            throw Exception(
+                "accepted-socket H2 data response turn requires captured response body bytes in this bounded seam"
+            )
+        }
+        let responseBudget = totalCapturedBytes + 16384
+        let model =
+            JinguiAcceptedTransportH2FlowBudgetModel(
+                responseBudget,
+                responseBudget
+            )
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                request.streamId,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                serverEngineUInt8ToByteArray(request.path.toArray())
+            )
+        )
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                buildServerJinguiAcceptedTransportDescriptorSnapshot(
+                    session.transport
+                ),
+                wrappedCarrier
+            )
+        var i: Int64 = 0
+        while (i < capturedBodyWrites.size) {
+            let bodyWrite = capturedBodyWrites[i]
+            if (bodyWrite.size > 0) {
+                let endStream = i + 1 == capturedBodyWrites.size
+                let payload = serverEngineUInt8ToByteArray(bodyWrite)
+                let _ =
+                    queue.enqueueDataLengthWithEndStream(
+                        request.streamId,
+                        payload.size,
+                        endStream
+                    )
+                let drain = queue.tryDrainHeadChunk(payload.size)
+                let _ =
+                    handoff.commitDataFrame(
+                        "accepted-socket-application-data-response-writer-turn",
+                        drain,
+                        payload
+                    )
+            }
+            i += 1
+        }
+    }
+
     func serveJinguiAcceptedTransportSessionApplicationDataLogicalRequestTurnBuildAndServeCore(
         session: ContractHttpServerAcceptedTransportSession,
         acceptedSocket: TcpSocket,
@@ -58236,6 +58365,37 @@ public class ServerEngineListenOption {
             policy: policy
         )
         serveJinguiAcceptedTransportSessionLogicalRequestTurnCore(
+            session,
+            acceptedSocket,
+            app,
+            request,
+            maxFragmentLen: maxFragmentLen,
+            closeSocketAfterTurn: closeSocketAfterTurn
+        )
+    }
+
+    public func serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
+        acceptedSocket: TcpSocket,
+        app: App,
+        request: ServerJinguiAcceptedTransportLogicalRequest,
+        encodedClientHello: Array<Byte>,
+        serverKeyExchangePrivate: Array<Byte>,
+        transportId!: String = "accepted-transport",
+        maxFragmentLen!: Int64 = 16384,
+        closeSocketAfterTurn!: Bool = true,
+        policy!: ContractTlsHttpNegotiationPolicy = ContractTlsHttpNegotiationPolicy()
+    ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
+        let transport = buildServerAcceptedTransportDescriptorFromSocket(
+            acceptedSocket,
+            transportId
+        )
+        let session = attachJinguiAcceptedTransportTls13X25519(
+            transport,
+            encodedClientHello,
+            serverKeyExchangePrivate,
+            policy: policy
+        )
+        serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurnCore(
             session,
             acceptedSocket,
             app,
