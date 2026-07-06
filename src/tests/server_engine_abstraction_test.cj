@@ -1410,7 +1410,13 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnContentType, "text/plain; charset=utf-8")
         @Assert(engine.turnCustomHeader, "sr108")
         @Assert(engine.turnSocketWriteCount >= 1, true)
-        @Assert(engine.turnDecodedFrameCount, 1)
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 83)
+        @Assert(engine.turnHeadersStatus, "203")
+        @Assert(engine.turnHeadersCustomHeader, "sr108")
         @Assert(engine.turnFrameType, UInt8(0x0))
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 83)
@@ -1429,6 +1435,60 @@ public class ServerEngineAbstractionTestSuite {
                 @Assert(event.scheme, "https")
             case None => @Fail("expected startup observe ready event")
         }
+    }
+
+    @TestCase
+    public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-appdata-response-turn", { ctx =>
+            let mode = ctx.queryFromUrl("mode") ?? ""
+            let _ = ctx
+                .status(207)
+                .setHeader("x-h2-turn", "sr109")
+                .sendString("sr109:${ctx.method}:${ctx.path}:${mode}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine()
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(207))
+        @Assert(engine.turnContentType, "text/plain; charset=utf-8")
+        @Assert(engine.turnCustomHeader, "sr109")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 83)
+        @Assert(engine.turnHeadersStatus, "207")
+        @Assert(engine.turnHeadersCustomHeader, "sr109")
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 83)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes(
+                    "sr109:GET:/h2-appdata-response-turn:data"
+                )
+            ),
+            true
+        )
     }
 
     @TestCase
@@ -14949,6 +15009,12 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnCustomHeader: String = ""
     public var turnSocketWriteCount: Int64 = 0
     public var turnDecodedFrameCount: Int64 = 0
+    public var turnHeadersFrameType: UInt8 = 0
+    public var turnHeadersEndHeaders: Bool = false
+    public var turnHeadersEndStream: Bool = false
+    public var turnHeadersFrameStreamId: Int64 = 0
+    public var turnHeadersStatus: String = ""
+    public var turnHeadersCustomHeader: String = ""
     public var turnFrameType: UInt8 = 0
     public var turnFrameEndStream: Bool = false
     public var turnFrameStreamId: Int64 = 0
@@ -14966,7 +15032,38 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     )
                 let frames = splitJinguiAcceptedTransportH2FrameWire(decodedWire)
                 turnDecodedFrameCount = frames.size
-                let frame = parseJinguiAcceptedTransportH2FrameWire(frames[0])
+                let headersFrame =
+                    parseJinguiAcceptedTransportH2FrameWire(frames[0])
+                let headersFragment =
+                    parseJinguiAcceptedTransportH2HeaderBlockFragment(
+                        headersFrame
+                    )
+                let headerBlock =
+                    JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                        headersFrame.streamId,
+                        headersFragment.endStream,
+                        headersFragment.padded,
+                        headersFragment.priorityPresented,
+                        headersFragment.exclusiveDependency,
+                        headersFragment.streamDependency,
+                        headersFragment.weight,
+                        headersFragment.headerBlockFragment
+                    )
+                let headerFields =
+                    parseJinguiAcceptedTransportH2HeaderFields(headerBlock)
+                for (field in headerFields) {
+                    if (field.name == ":status") {
+                        turnHeadersStatus = field.value
+                    }
+                    if (field.name == "x-h2-turn") {
+                        turnHeadersCustomHeader = field.value
+                    }
+                }
+                turnHeadersFrameType = headersFrame.frameType
+                turnHeadersEndHeaders = headersFragment.endHeaders
+                turnHeadersEndStream = headersFragment.endStream
+                turnHeadersFrameStreamId = headersFrame.streamId
+                let frame = parseJinguiAcceptedTransportH2FrameWire(frames[1])
                 let dataFrame = parseJinguiAcceptedTransportH2DataFrame(frame)
                 turnFrameType = frame.frameType
                 turnFrameEndStream = dataFrame.endStream

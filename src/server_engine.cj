@@ -2915,14 +2915,25 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
             "H2 DATA frame encoder requires non-zero streamId, got ${frame.streamId}"
         )
     }
+    encodeJinguiAcceptedTransportH2FrameWireSnapshot(frame)
+}
+
+public func encodeJinguiAcceptedTransportH2FrameWireSnapshot(
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot
+): Array<Byte> {
+    if (frame.streamId <= 0) {
+        throw Exception(
+            "H2 frame encoder requires non-zero streamId, got ${frame.streamId}"
+        )
+    }
     if (frame.payloadLength != frame.payload.size) {
         throw Exception(
-            "H2 DATA frame encoder payload length mismatch, expected=${frame.payloadLength}, actual=${frame.payload.size}, streamId=${frame.streamId}"
+            "H2 frame encoder payload length mismatch, expected=${frame.payloadLength}, actual=${frame.payload.size}, streamId=${frame.streamId}"
         )
     }
     if (frame.payloadLength < 0 || frame.payloadLength > 0xffffff) {
         throw Exception(
-            "H2 DATA frame encoder payload length exceeds 24-bit frame header, got ${frame.payloadLength}"
+            "H2 frame encoder payload length exceeds 24-bit frame header, got ${frame.payloadLength}"
         )
     }
     let out = ArrayList<Byte>()
@@ -2940,6 +2951,110 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
         out.add(b)
     }
     out.toArray()
+}
+
+public func buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
+    streamId: Int64,
+    status: UInt16,
+    headers: HttpHeaders,
+    endStream!: Bool = false
+): JinguiAcceptedTransportH2FrameWireSnapshot {
+    if (streamId <= 0) {
+        throw Exception(
+            "H2 response HEADERS frame snapshot requires non-zero streamId, got ${streamId}"
+        )
+    }
+    let payload = buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
+        status,
+        headers
+    )
+    let flags = if (endStream) {
+        UInt8(0x5)
+    } else {
+        UInt8(0x4)
+    }
+    JinguiAcceptedTransportH2FrameWireSnapshot(
+        payload.size,
+        UInt8(0x1),
+        flags,
+        streamId,
+        payload
+    )
+}
+
+func buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
+    status: UInt16,
+    headers: HttpHeaders
+): Array<Byte> {
+    let out = ArrayList<Byte>()
+    appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
+        out,
+        8,
+        "${status}"
+    )
+    for ((name, values) in headers) {
+        let normalizedName = name.trimAscii().toAsciiLower()
+        if (shouldSkipJinguiAcceptedTransportH2ResponseHeader(normalizedName)) {
+            continue
+        }
+        for (value in values) {
+            appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
+                out,
+                normalizedName,
+                value
+            )
+        }
+    }
+    out.toArray()
+}
+
+func shouldSkipJinguiAcceptedTransportH2ResponseHeader(name: String): Bool {
+    name == "" ||
+    name == "connection" ||
+    name == "keep-alive" ||
+    name == "proxy-connection" ||
+    name == "transfer-encoding" ||
+    name == "upgrade"
+}
+
+func appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
+    out: ArrayList<Byte>,
+    nameStaticIndex: Int64,
+    value: String
+): Unit {
+    if (nameStaticIndex <= 0 || nameStaticIndex > 14) {
+        throw Exception(
+            "bounded H2 response HPACK indexed-name literal only supports 4-bit static indices in SR109, got ${nameStaticIndex}"
+        )
+    }
+    out.add(UInt8(nameStaticIndex & 0x0f))
+    appendJinguiAcceptedTransportH2HpackBoundedAsciiString(out, value)
+}
+
+func appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
+    out: ArrayList<Byte>,
+    name: String,
+    value: String
+): Unit {
+    out.add(UInt8(0))
+    appendJinguiAcceptedTransportH2HpackBoundedAsciiString(out, name)
+    appendJinguiAcceptedTransportH2HpackBoundedAsciiString(out, value)
+}
+
+func appendJinguiAcceptedTransportH2HpackBoundedAsciiString(
+    out: ArrayList<Byte>,
+    text: String
+): Unit {
+    let bytes = serverEngineUInt8ToByteArray(text.toArray())
+    if (bytes.size > 127) {
+        throw Exception(
+            "bounded H2 response HPACK string exceeds one-octet non-Huffman length, size=${bytes.size}"
+        )
+    }
+    out.add(UInt8(bytes.size & 0x7f))
+    for (b in bytes) {
+        out.add(b)
+    }
 }
 
 public interface JinguiAcceptedTransportH2FrameWireWriterSink {
@@ -3521,6 +3636,37 @@ public class JinguiAcceptedTransportH2LiveResponseWriterLeaseGate {
             commit.failureReason
         )
     }
+
+    public func commitFrameWireSnapshot(
+        responseWriterSurface: String,
+        transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+        frame: JinguiAcceptedTransportH2FrameWireSnapshot
+    ): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+        let acquisitionStatusName = match (_writer) {
+            case Some(_) => "response-transport-writer-reused"
+            case None => "response-transport-writer-acquired"
+        }
+        let writer = ensureWriter()
+        let frameWire = encodeJinguiAcceptedTransportH2FrameWireSnapshot(frame)
+        let responseBytes =
+            cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(frameWire)
+        writer.write(responseBytes)
+        JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult(
+            responseWriterSurface,
+            transport.transportId,
+            transport.transportKind,
+            acquisitionStatusName,
+            "native-response-frame-commit-complete",
+            "live-response-writer-lease-gate-complete",
+            true,
+            true,
+            frame.streamId,
+            serverJinguiAcceptedTransportH2HasFlag(frame.flags, UInt8(0x1)),
+            frameWire.size,
+            1,
+            ""
+        )
+    }
 }
 
 public class JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate {
@@ -3560,6 +3706,17 @@ public class JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate {
             _transport,
             drain,
             payload
+        )
+    }
+
+    public func commitFrameWireSnapshot(
+        responseWriterSurface: String,
+        frame: JinguiAcceptedTransportH2FrameWireSnapshot
+    ): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+        _leaseGate.commitFrameWireSnapshot(
+            responseWriterSurface,
+            _transport,
+            frame
         )
     }
 }
@@ -58014,6 +58171,8 @@ public class ServerEngineListenOption {
                 session,
                 request,
                 wrappedCarrier,
+                carrier.responseStatus,
+                carrier.responseHeaders,
                 capturedBodyWrites
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
@@ -58035,6 +58194,8 @@ public class ServerEngineListenOption {
         session: ContractHttpServerAcceptedTransportSession,
         request: ServerJinguiAcceptedTransportLogicalRequest,
         wrappedCarrier: CurrentRequestCarrier,
+        responseStatus: UInt16,
+        responseHeaders: HttpHeaders,
         capturedBodyWrites: ArrayList<Array<UInt8>>
     ): Unit {
         var totalCapturedBytes: Int64 = 0
@@ -58072,6 +58233,15 @@ public class ServerEngineListenOption {
                     session.transport
                 ),
                 wrappedCarrier
+            )
+        let _ =
+            handoff.commitFrameWireSnapshot(
+                "accepted-socket-application-data-response-headers-turn",
+                buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
+                    request.streamId,
+                    responseStatus,
+                    responseHeaders
+                )
             )
         var i: Int64 = 0
         while (i < capturedBodyWrites.size) {
