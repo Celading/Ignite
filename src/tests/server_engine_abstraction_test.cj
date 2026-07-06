@@ -546,6 +546,159 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellDirectTlsListenKeepsMalformedSecondH2TurnLoud(): Unit {
+        let clientChannelProbe = NativeTlsLiveIngressClientChannelProbe()
+        let routeProbe = NativeTlsLiveIngressSequentialRouteProbe()
+        let app = App(config: Config(
+            enableNetworkChangeNotice: false,
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/native-tls-live-ingress-one", { ctx =>
+            routeProbe.firstInvoked = true
+            routeProbe.firstDynHeader = ctx.header("x-dyn") ?? ""
+            let _ = ctx.sendString("first:${routeProbe.firstDynHeader}")
+        })
+        app.serverEngine(SocketServerEngineShell(
+            selectionLabel: "manual-opt-in",
+            tlsAcceptedSessionReadyHook: { session =>
+                clientChannelProbe.channel = Some(
+                    contractTls13CreateClientRecordChannel(
+                        session.keyMaterial,
+                        algorithm: session.recordChannel.algorithm
+                    )
+                )
+            }
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 3360))
+        )
+        let clientHelloWire =
+            buildServerEngineAbstractionTestTlsRecordWire(
+                clientHello.encodedClientHello
+            )
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var firstDecoded = ""
+        var observedServerError = ""
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                [
+                    cloneServerEngineByteWindow(clientHelloWire, 0, 6),
+                    cloneServerEngineByteWindow(
+                        clientHelloWire,
+                        6,
+                        clientHelloWire.size - 6
+                    )
+                ],
+                writePauseMillis: 20
+            )
+            let channel =
+                waitForNativeTlsLiveIngressClientChannel(
+                    "native shell TLS live ingress malformed second H2 channel",
+                    clientChannelProbe
+                )
+            let firstHeaderBlock =
+                concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                    serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x1c)]),
+                    serverEngineAbstractionTestByteArray(
+                        "/native-tls-live-ingress-one".toArray()
+                    ),
+                    serverEngineAbstractionTestByteArray([UInt8(0x40), UInt8(0x05)]),
+                    serverEngineAbstractionTestByteArray("x-dyn".toArray()),
+                    serverEngineAbstractionTestByteArray([UInt8(0x03)]),
+                    serverEngineAbstractionTestByteArray("one".toArray())
+                ])
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                buildAcceptedTransportTlsH2HeadersPlusDataRequestRecords(
+                    channel,
+                    firstHeaderBlock,
+                    121,
+                    "first-body"
+                ),
+                writePauseMillis: 20
+            )
+            let firstRecord =
+                readAcceptedTransportResponseSocketFirstCompleteRecord(
+                    socket,
+                    readChunkSize: 3
+                )
+            firstDecoded =
+                String.fromUtf8(channel.openAndReassemble([firstRecord]))
+
+            let malformedSecondHeaderBlock =
+                concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                    serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x1c)]),
+                    serverEngineAbstractionTestByteArray(
+                        "/native-tls-live-ingress-two".toArray()
+                    )
+                ])
+            let malformedSecondRecords = channel.sealFragments(
+                ContractTlsRecordContentType.ApplicationData,
+                concatServerEngineAbstractionTestByteArrays([
+                    buildServerEngineAbstractionTestH2FrameWire(
+                        buildServerEngineAbstractionTestH2HeadersPayload(
+                            malformedSecondHeaderBlock
+                        ),
+                        frameType: UInt8(0x1),
+                        flags: UInt8(0x4),
+                        streamId: 123
+                    ),
+                    buildServerEngineAbstractionTestH2FrameWire(
+                        serverEngineAbstractionTestByteArray(
+                            "blocked".toArray()
+                        ),
+                        frameType: UInt8(0x0),
+                        flags: UInt8(0x1),
+                        streamId: 125
+                    )
+                ]),
+                maxFragmentLen: 7
+            )
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                malformedSecondRecords,
+                writePauseMillis: 20
+            )
+            try {
+                let _ = serverFuture.get(Duration.second * 5)
+            } catch (e: Exception) {
+                observedServerError = e.message
+            }
+            if (observedServerError == "") {
+                match (app.lastServerStartupObserveEvent()) {
+                    case Some(event) =>
+                        observedServerError = event.message
+                    case None => ()
+                }
+            }
+        } finally {
+            if (!socket.isClosed()) {
+                socket.close()
+            }
+        }
+
+        @Assert(routeProbe.firstInvoked, true)
+        @Assert(routeProbe.firstDynHeader, "one")
+        @Assert(firstDecoded, "first:one")
+        @Assert(contains(observedServerError, "requires same-stream DATA"), true)
+    }
+
+    @TestCase
     public func testInjectedServerEngineReceivesListenAndShutdown(): Unit {
         let app = App(config: Config(enableTlsPrecheck: false))
         let engine = SpyServerEngine()
