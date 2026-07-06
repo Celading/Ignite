@@ -1597,6 +1597,68 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitStaticNameLiteralForH2ResponseContentTypeFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-static-name-turn", { ctx =>
+            let mode = ctx.queryFromUrl("mode") ?? ""
+            let _ = ctx
+                .status(209)
+                .setHeader("x-h2-turn", "sr112")
+                .setHeader("x-h2-extra", "new-name")
+                .sendString("sr112:${ctx.method}:${ctx.path}:${mode}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-response-static-name-turn?mode=static",
+                streamId: 95
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(209))
+        @Assert(engine.turnContentType, "text/plain; charset=utf-8")
+        @Assert(engine.turnCustomHeader, "sr112")
+        @Assert(engine.turnExtraHeader, "new-name")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 95)
+        @Assert(engine.turnHeadersStatus, "209")
+        @Assert(engine.turnHeadersContentType, "text/plain; charset=utf-8")
+        @Assert(engine.turnHeadersContentTypeNameStaticIndex, 31)
+        @Assert(engine.turnHeadersExtraHeader, "new-name")
+        @Assert(engine.turnHeadersExtraHeaderNameStaticIndex, 0)
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 95)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes(
+                    "sr112:GET:/h2-response-static-name-turn:static"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15121,8 +15183,11 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersEndStream: Bool = false
     public var turnHeadersFrameStreamId: Int64 = 0
     public var turnHeadersStatus: String = ""
+    public var turnHeadersContentType: String = ""
+    public var turnHeadersContentTypeNameStaticIndex: Int64 = 0
     public var turnHeadersCustomHeader: String = ""
     public var turnHeadersExtraHeader: String = ""
+    public var turnHeadersExtraHeaderNameStaticIndex: Int64 = 0
     public var turnHeadersConnectionHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
@@ -15174,11 +15239,18 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     if (field.name == ":status") {
                         turnHeadersStatus = field.value
                     }
+                    if (field.name == "content-type") {
+                        turnHeadersContentType = field.value
+                        turnHeadersContentTypeNameStaticIndex =
+                            field.nameStaticIndex
+                    }
                     if (field.name == "x-h2-turn") {
                         turnHeadersCustomHeader = field.value
                     }
                     if (field.name == "x-h2-extra") {
                         turnHeadersExtraHeader = field.value
+                        turnHeadersExtraHeaderNameStaticIndex =
+                            field.nameStaticIndex
                     }
                     if (field.name == "connection") {
                         turnHeadersConnectionHeaderSeen = true

@@ -3039,11 +3039,32 @@ func appendJinguiAcceptedTransportH2ResponseHeaderField(
     if (shouldSkipJinguiAcceptedTransportH2ResponseHeader(normalizedName)) {
         return
     }
+    let staticNameIndex =
+        serverJinguiAcceptedTransportH2ResponseHeaderStaticNameIndex(
+            normalizedName
+        )
+    if (staticNameIndex > 0) {
+        appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
+            out,
+            staticNameIndex,
+            value
+        )
+        return
+    }
     appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
         out,
         normalizedName,
         value
     )
+}
+
+func serverJinguiAcceptedTransportH2ResponseHeaderStaticNameIndex(
+    name: String
+): Int64 {
+    if (name == "content-type") {
+        return 31
+    }
+    0
 }
 
 func shouldSkipJinguiAcceptedTransportH2ResponseHeader(name: String): Bool {
@@ -3061,13 +3082,39 @@ func appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
     nameStaticIndex: Int64,
     value: String
 ): Unit {
-    if (nameStaticIndex <= 0 || nameStaticIndex > 14) {
+    if (nameStaticIndex <= 0) {
         throw Exception(
-            "bounded H2 response HPACK indexed-name literal only supports 4-bit static indices in SR109, got ${nameStaticIndex}"
+            "bounded H2 response HPACK indexed-name literal requires positive static index, got ${nameStaticIndex}"
         )
     }
-    out.add(UInt8(nameStaticIndex & 0x0f))
+    appendJinguiAcceptedTransportH2HpackIntegerWithPrefix(
+        out,
+        4,
+        UInt8(0),
+        nameStaticIndex
+    )
     appendJinguiAcceptedTransportH2HpackBoundedAsciiString(out, value)
+}
+
+func appendJinguiAcceptedTransportH2HpackIntegerWithPrefix(
+    out: ArrayList<Byte>,
+    prefixBits: Int64,
+    prefixBase: UInt8,
+    value: Int64
+): Unit {
+    let prefixMask =
+        serverJinguiAcceptedTransportH2HpackPrefixMask(prefixBits)
+    if (value < prefixMask) {
+        out.add(prefixBase | UInt8(value & prefixMask))
+        return
+    }
+    out.add(prefixBase | UInt8(prefixMask))
+    var rest = value - prefixMask
+    while (rest >= 128) {
+        out.add(UInt8((rest & 0x7f) | 0x80))
+        rest = rest >> 7
+    }
+    out.add(UInt8(rest & 0x7f))
 }
 
 func appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
