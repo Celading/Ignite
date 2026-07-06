@@ -1659,6 +1659,67 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanPreserveDuplicateH2ResponseHeadersFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-duplicate-header-turn", { ctx =>
+            let mode = ctx.queryFromUrl("mode") ?? ""
+            let _ = ctx
+                .status(210)
+                .setHeader("x-h2-turn", "sr113")
+                .setHeader("x-h2-repeat", "one")
+                .setHeader("x-h2-repeat", "two")
+                .sendString("sr113:${ctx.method}:${ctx.path}:${mode}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-response-duplicate-header-turn?mode=repeat",
+                streamId: 97
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(210))
+        @Assert(engine.turnCustomHeader, "sr113")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 97)
+        @Assert(engine.turnHeadersStatus, "210")
+        @Assert(engine.turnHeadersCustomHeader, "sr113")
+        @Assert(engine.turnHeadersRepeatHeaderCount, 2)
+        @Assert(engine.turnHeadersRepeatHeaderFirst, "one")
+        @Assert(engine.turnHeadersRepeatHeaderSecond, "two")
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 97)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes(
+                    "sr113:GET:/h2-response-duplicate-header-turn:repeat"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15188,6 +15249,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersCustomHeader: String = ""
     public var turnHeadersExtraHeader: String = ""
     public var turnHeadersExtraHeaderNameStaticIndex: Int64 = 0
+    public var turnHeadersRepeatHeaderCount: Int64 = 0
+    public var turnHeadersRepeatHeaderFirst: String = ""
+    public var turnHeadersRepeatHeaderSecond: String = ""
     public var turnHeadersConnectionHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
@@ -15251,6 +15315,14 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         turnHeadersExtraHeader = field.value
                         turnHeadersExtraHeaderNameStaticIndex =
                             field.nameStaticIndex
+                    }
+                    if (field.name == "x-h2-repeat") {
+                        turnHeadersRepeatHeaderCount += 1
+                        if (turnHeadersRepeatHeaderCount == 1) {
+                            turnHeadersRepeatHeaderFirst = field.value
+                        } else if (turnHeadersRepeatHeaderCount == 2) {
+                            turnHeadersRepeatHeaderSecond = field.value
+                        }
                     }
                     if (field.name == "connection") {
                         turnHeadersConnectionHeaderSeen = true
