@@ -2,6 +2,8 @@ package ignite.tests
 
 import ignite.*
 import std.collection.ArrayList
+import std.io.InputStream
+import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
 @Test
 public class H2FlowBudgetNonLossGuardTestSuite {
@@ -1238,6 +1240,309 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(rejected, true)
         @Assert(capture.writeCalls, 0)
         @Assert(capture.totalBytes, 0)
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterAcquisitionGateWritesEncodedDataFrame(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let result =
+            dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
+                "live-response-writer-acquisition-gate",
+                h2FlowBudgetNonLossGuardTransport(),
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("live"),
+                carrier
+            )
+
+        @Assert(result.responseWriterSurface, "live-response-writer-acquisition-gate")
+        @Assert(result.transportId, "h2-flow-budget-transport")
+        @Assert(result.transportKind, "accepted-socket")
+        @Assert(result.acquisitionStatusName, "response-transport-writer-acquired")
+        @Assert(result.commitStatusName, "native-response-commit-adapter-complete")
+        @Assert(result.statusName, "live-response-writer-acquisition-gate-complete")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, true)
+        @Assert(result.streamId, 1)
+        @Assert(result.endStream, true)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writeCalls, 1)
+        @Assert(carrier.openCalls, 1)
+        @Assert(capture.writeCalls, 1)
+        @Assert(capture.totalBytes, 13)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(capture.lastWire())
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("live"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterAcquisitionGatePropagatesAcquireFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, true)
+        var propagated = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
+                    "live-response-writer-acquisition-gate",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    chunk,
+                    h2FlowBudgetNonLossGuardBytes("fail"),
+                    carrier
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterAcquisitionGatePropagatesWriterFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let writer = H2FlowBudgetNonLossGuardFailingResponseTransportWriter()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        var propagated = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
+                    "live-response-writer-acquisition-gate",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    chunk,
+                    h2FlowBudgetNonLossGuardBytes("fail"),
+                    carrier
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(writer.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterAcquisitionGateRejectsBlockedDrainBeforeAcquire(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let blocked = queue.tryDrainHeadChunk(4)
+        @Assert(blocked.drained, false)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        var rejected = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
+                    "live-response-writer-acquisition-gate",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    blocked,
+                    h2FlowBudgetNonLossGuardBytes("wait"),
+                    carrier
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(carrier.openCalls, 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
+}
+
+class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
+    let writer: ResponseTransportWriter
+    let failOnOpen: Bool
+    let body = H2FlowBudgetNonLossGuardEmptyInputStream()
+    public var openCalls: Int64 = 0
+
+    init(writer: ResponseTransportWriter, failOnOpen: Bool) {
+        this.writer = writer
+        this.failOnOpen = failOnOpen
+    }
+
+    public override func rawHttpContext(): HttpContext {
+        throw Exception("raw HttpContext should not be required for H2 live response writer acquisition gate")
+    }
+
+    public override func upgradeWebSocketRaw(): WebSocket {
+        throw Exception("websocket upgrade should not run in H2 live response writer acquisition gate")
+    }
+
+    public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
+        openCalls += 1
+        if (failOnOpen) {
+            throw Exception("response transport writer acquisition failed")
+        }
+        writer
+    }
+
+    public override func requestMethod(): String {
+        "GET"
+    }
+
+    public override func requestPath(): String {
+        "/h2-live-writer"
+    }
+
+    public override func requestUrlString(): String {
+        "/h2-live-writer"
+    }
+
+    public override func requestVersionString(): String {
+        "HTTP/2"
+    }
+
+    public override func requestRemoteAddr(): String {
+        "127.0.0.1"
+    }
+
+    public override func requestQueryValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestFormValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaderValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestBodyStream(): InputStream {
+        body
+    }
+
+    public override func requestBodySize(): ?Int64 {
+        Some(Int64(0))
+    }
+
+    public override func setResponseStatus(code: UInt16): Unit {
+        let _ = code
+    }
+
+    public override func setResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
+    }
+
+    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+        let _ = headers
+    }
+
+    public override func setResponseString(body: String): Unit {
+        let _ = body
+    }
+
+    public override func setResponseBytes(data: Array<UInt8>): Unit {
+        let _ = data
+    }
+
+    public override func attachResponseBodyStream(stream: InputStream): Unit {
+        let _ = stream
+    }
+}
+
+class H2FlowBudgetNonLossGuardEmptyInputStream <: InputStream {
+    public override func read(outBuf: Array<Byte>): Int64 {
+        let _ = outBuf
+        0
     }
 }
 

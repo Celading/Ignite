@@ -3311,6 +3311,94 @@ public func dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
     )
 }
 
+public class JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+    public let responseWriterSurface: String
+    public let transportId: String
+    public let transportKind: String
+    public let acquisitionStatusName: String
+    public let commitStatusName: String
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let streamId: Int64
+    public let endStream: Bool
+    public let byteCount: Int64
+    public let writeCalls: Int64
+    public let failureReason: String
+
+    public init(
+        responseWriterSurface: String,
+        transportId: String,
+        transportKind: String,
+        acquisitionStatusName: String,
+        commitStatusName: String,
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        streamId: Int64,
+        endStream: Bool,
+        byteCount: Int64,
+        writeCalls: Int64,
+        failureReason: String
+    ) {
+        this.responseWriterSurface = responseWriterSurface
+        this.transportId = transportId
+        this.transportKind = transportKind
+        this.acquisitionStatusName = acquisitionStatusName
+        this.commitStatusName = commitStatusName
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.streamId = streamId
+        this.endStream = endStream
+        this.byteCount = byteCount
+        this.writeCalls = writeCalls
+        this.failureReason = failureReason
+    }
+}
+
+public func dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
+    responseWriterSurface: String,
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    drain: JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot,
+    payload: Array<Byte>,
+    currentRequestCarrier: CurrentRequestCarrier
+): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+    let _ = buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+        drain,
+        payload
+    )
+    let writer = openResponseTransportWriter(currentRequestCarrier)
+    let commit =
+        dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+            responseWriterSurface,
+            transport,
+            drain,
+            payload,
+            writer
+        )
+    let statusName = if (commit.completed) {
+        "live-response-writer-acquisition-gate-complete"
+    } else {
+        "live-response-writer-acquisition-gate-incomplete"
+    }
+    JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult(
+        commit.responseWriterSurface,
+        commit.transportId,
+        commit.transportKind,
+        "response-transport-writer-acquired",
+        commit.statusName,
+        statusName,
+        commit.attempted,
+        commit.completed,
+        commit.streamId,
+        commit.endStream,
+        commit.byteCount,
+        commit.writeCalls,
+        commit.failureReason
+    )
+}
+
 func cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(
     frameWire: Array<Byte>
 ): Array<UInt8> {
