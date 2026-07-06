@@ -1853,6 +1853,65 @@ public class ServerEngineAbstractionTestSuite {
         )
     }
 
+    @TestCase
+    public func testInjectedServerEngineSkipsAppSetPseudoHeadersAndKeepsFrameworkStatusFirstFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-pseudo-header-skip-turn", { ctx =>
+            let _ = ctx
+                .status(UInt16(206))
+                .setHeader(":status", "500")
+                .setHeader(":path", "/should-not-leak")
+                .setHeader(":method", "POST")
+                .setHeader(":scheme", "https")
+                .setHeader(":authority", "example.invalid")
+                .setHeader("x-h2-turn", "sr117")
+                .sendString("sr117-body")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl:
+                    "/h2-response-pseudo-header-skip-turn?mode=pseudo",
+                streamId: 115
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(206))
+        @Assert(engine.turnHeadersFirstName, ":status")
+        @Assert(engine.turnHeadersStatus, "206")
+        @Assert(engine.turnHeadersStatusStaticIndex, 10)
+        @Assert(engine.turnHeadersPseudoFieldCount, 1)
+        @Assert(engine.turnHeadersUnexpectedPseudoFieldSeen, false)
+        @Assert(engine.turnHeadersCustomHeader, "sr117")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 115)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes("sr117-body")
+            ),
+            true
+        )
+    }
+
     func assertAcceptedSocketH2ResponseStatusStaticIndex(
         routePath: String,
         status: UInt16,
@@ -15452,8 +15511,11 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersEndHeaders: Bool = false
     public var turnHeadersEndStream: Bool = false
     public var turnHeadersFrameStreamId: Int64 = 0
+    public var turnHeadersFirstName: String = ""
     public var turnHeadersStatus: String = ""
     public var turnHeadersStatusStaticIndex: Int64 = 0
+    public var turnHeadersPseudoFieldCount: Int64 = 0
+    public var turnHeadersUnexpectedPseudoFieldSeen: Bool = false
     public var turnHeadersCacheControl: String = ""
     public var turnHeadersCacheControlNameStaticIndex: Int64 = 0
     public var turnHeadersContentLength: String = ""
@@ -15515,7 +15577,17 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     )
                 let headerFields =
                     parseJinguiAcceptedTransportH2HeaderFields(headerBlock)
+                var headerFieldIndex: Int64 = 0
                 for (field in headerFields) {
+                    if (headerFieldIndex == 0) {
+                        turnHeadersFirstName = field.name
+                    }
+                    if (field.name.startsWith(":")) {
+                        turnHeadersPseudoFieldCount += 1
+                        if (field.name != ":status") {
+                            turnHeadersUnexpectedPseudoFieldSeen = true
+                        }
+                    }
                     if (field.name == ":status") {
                         turnHeadersStatus = field.value
                         turnHeadersStatusStaticIndex = field.staticIndex
@@ -15559,6 +15631,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     if (field.name == "connection") {
                         turnHeadersConnectionHeaderSeen = true
                     }
+                    headerFieldIndex += 1
                 }
                 turnHeadersFrameType = headersFrame.frameType
                 turnHeadersEndHeaders = headersFragment.endHeaders

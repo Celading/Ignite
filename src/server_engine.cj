@@ -816,10 +816,14 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
     }
 
     public override func setResponseHeader(key: String, value: String): Unit {
-        responseHeaders.add(key, value)
+        let normalizedName = key.trimAscii().toAsciiLower()
+        if (serverJinguiAcceptedTransportH2FieldNameIsPseudo(normalizedName)) {
+            return
+        }
+        responseHeaders.add(normalizedName, value)
         capturedResponseHeaderFields.add(
             ServerJinguiAcceptedTransportResponseHeaderField(
-                key.trimAscii().toAsciiLower(),
+                normalizedName,
                 value
             )
         )
