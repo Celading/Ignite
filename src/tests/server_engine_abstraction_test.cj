@@ -515,6 +515,37 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellStableTlsH2ConnectionEndClassifierDistinguishesCloseFromProtocolErrors(): Unit {
+        let eofAfterSuccessMessage =
+            "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expected one logical request before socket read ended, bufferedRecordWireBytes=0, bufferedH2FrameWireBytes=0, hasOpenHeaderBlock=false, bufferedHeaderBlockBytes=0, bufferedBodyBytes=0"
+
+        @Assert(
+            isSocketServerEngineShellStableTlsH2ConnectionEndError(
+                eofAfterSuccessMessage
+            ),
+            true
+        )
+        @Assert(
+            isSocketServerEngineShellStableTlsH2ConnectionEndError(
+                "ConnectionException: Socket is closed."
+            ),
+            true
+        )
+        @Assert(
+            isSocketServerEngineShellStableTlsH2ConnectionEndError(
+                "accepted-session H2 request-turn requires same-stream DATA"
+            ),
+            false
+        )
+        @Assert(
+            isSocketServerEngineShellStableTlsH2ConnectionEndError(
+                "accepted-session H2 request-turn got type=9 streamId=1"
+            ),
+            false
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineReceivesListenAndShutdown(): Unit {
         let app = App(config: Config(enableTlsPrecheck: false))
         let engine = SpyServerEngine()

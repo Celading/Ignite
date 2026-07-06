@@ -225,9 +225,34 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
             if (servedTurns == 0) {
                 throw e
             }
-            moreTurns = false
+            if (
+                isSocketServerEngineShellStableTlsH2ConnectionEndError(
+                    e.message
+                )
+            ) {
+                moreTurns = false
+            } else {
+                throw e
+            }
         }
     }
+}
+
+public func isSocketServerEngineShellStableTlsH2ConnectionEndError(
+    message: String
+): Bool {
+    if (
+        message.contains("Socket is closed") ||
+        message.contains("socket is closed")
+    ) {
+        return true
+    }
+    message.contains("expected one logical request before socket read ended") &&
+        message.contains("bufferedRecordWireBytes=0") &&
+        message.contains("bufferedH2FrameWireBytes=0") &&
+        message.contains("hasOpenHeaderBlock=false") &&
+        message.contains("bufferedHeaderBlockBytes=0") &&
+        message.contains("bufferedBodyBytes=0")
 }
 
 func socketServerEngineShellExperimentalServerKeyExchangePrivate(): Array<Byte> {
