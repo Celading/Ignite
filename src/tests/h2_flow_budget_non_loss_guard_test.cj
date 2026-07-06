@@ -399,6 +399,73 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         }
         @Assert(rejectedLengthMismatch, true)
     }
+
+    @TestCase
+    public func testWriterDataFrameSinkStoresEncodedWire(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let sink = JinguiAcceptedTransportH2FrameWireBufferSink()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sink")
+            )
+        let written =
+            writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                frame,
+                sink
+            )
+
+        @Assert(written, 13)
+        @Assert(sink.frameCount(), 1)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(
+            sink.lastFrameWire()
+        )
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("sink"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameSinkDoesNotAppendAfterEncodeFailure(): Unit {
+        let sink = JinguiAcceptedTransportH2FrameWireBufferSink()
+        var rejected = false
+        try {
+            let _ = writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    1,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    0,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                ),
+                sink
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(sink.frameCount(), 0)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {

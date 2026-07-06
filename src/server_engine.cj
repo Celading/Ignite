@@ -2888,6 +2888,45 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
     out.toArray()
 }
 
+public class JinguiAcceptedTransportH2FrameWireBufferSink {
+    let _frames = ArrayList<Array<Byte>>()
+
+    public init() {}
+
+    public func writeFrameWire(frameWire: Array<Byte>): Int64 {
+        _frames.add(cloneServerEngineByteWindow(frameWire, 0, frameWire.size))
+        frameWire.size
+    }
+
+    public func frameCount(): Int64 {
+        _frames.size
+    }
+
+    public func frameWireAt(index: Int64): Array<Byte> {
+        if (index < 0 || index >= _frames.size) {
+            throw Exception(
+                "H2 frame wire buffer sink index out of range, index=${index}, size=${_frames.size}"
+            )
+        }
+        cloneServerEngineByteWindow(_frames[index], 0, _frames[index].size)
+    }
+
+    public func lastFrameWire(): Array<Byte> {
+        if (_frames.size == 0) {
+            throw Exception("H2 frame wire buffer sink is empty")
+        }
+        frameWireAt(_frames.size - 1)
+    }
+}
+
+public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot,
+    sink: JinguiAcceptedTransportH2FrameWireBufferSink
+): Int64 {
+    let frameWire = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(frame)
+    sink.writeFrameWire(frameWire)
+}
+
 func appendJinguiAcceptedTransportH2HeaderBlockBytes(
     out: ArrayList<Byte>,
     bytes: Array<Byte>
