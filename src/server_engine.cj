@@ -3122,6 +3122,7 @@ func shouldSkipJinguiAcceptedTransportH2ResponseHeader(name: String): Bool {
     name == "connection" ||
     name == "keep-alive" ||
     name == "proxy-connection" ||
+    name == "te" ||
     name == "transfer-encoding" ||
     name == "upgrade"
 }

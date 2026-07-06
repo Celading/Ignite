@@ -1912,6 +1912,71 @@ public class ServerEngineAbstractionTestSuite {
         )
     }
 
+    @TestCase
+    public func testInjectedServerEngineSkipsForbiddenRegularHeadersFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-regular-header-skip-turn", { ctx =>
+            let _ = ctx
+                .status(UInt16(206))
+                .setHeader("connection", "close")
+                .setHeader("keep-alive", "timeout=5")
+                .setHeader("proxy-connection", "keep-alive")
+                .setHeader("transfer-encoding", "chunked")
+                .setHeader("upgrade", "websocket")
+                .setHeader("te", "gzip")
+                .setHeader("x-h2-turn", "sr118")
+                .sendString("sr118-body")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl:
+                    "/h2-response-regular-header-skip-turn?mode=regular",
+                streamId: 117
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(206))
+        @Assert(engine.turnHeadersFirstName, ":status")
+        @Assert(engine.turnHeadersStatus, "206")
+        @Assert(engine.turnHeadersStatusStaticIndex, 10)
+        @Assert(engine.turnHeadersPseudoFieldCount, 1)
+        @Assert(engine.turnHeadersConnectionHeaderSeen, false)
+        @Assert(engine.turnHeadersKeepAliveHeaderSeen, false)
+        @Assert(engine.turnHeadersProxyConnectionHeaderSeen, false)
+        @Assert(engine.turnHeadersTransferEncodingHeaderSeen, false)
+        @Assert(engine.turnHeadersUpgradeHeaderSeen, false)
+        @Assert(engine.turnHeadersTeHeaderSeen, false)
+        @Assert(engine.turnHeadersCustomHeader, "sr118")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 117)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes("sr118-body")
+            ),
+            true
+        )
+    }
+
     func assertAcceptedSocketH2ResponseStatusStaticIndex(
         routePath: String,
         status: UInt16,
@@ -15531,6 +15596,11 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersServer: String = ""
     public var turnHeadersServerNameStaticIndex: Int64 = 0
     public var turnHeadersConnectionHeaderSeen: Bool = false
+    public var turnHeadersKeepAliveHeaderSeen: Bool = false
+    public var turnHeadersProxyConnectionHeaderSeen: Bool = false
+    public var turnHeadersTransferEncodingHeaderSeen: Bool = false
+    public var turnHeadersUpgradeHeaderSeen: Bool = false
+    public var turnHeadersTeHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
     public var turnFrameEndStream: Bool = false
@@ -15630,6 +15700,21 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     }
                     if (field.name == "connection") {
                         turnHeadersConnectionHeaderSeen = true
+                    }
+                    if (field.name == "keep-alive") {
+                        turnHeadersKeepAliveHeaderSeen = true
+                    }
+                    if (field.name == "proxy-connection") {
+                        turnHeadersProxyConnectionHeaderSeen = true
+                    }
+                    if (field.name == "transfer-encoding") {
+                        turnHeadersTransferEncodingHeaderSeen = true
+                    }
+                    if (field.name == "upgrade") {
+                        turnHeadersUpgradeHeaderSeen = true
+                    }
+                    if (field.name == "te") {
+                        turnHeadersTeHeaderSeen = true
                     }
                     headerFieldIndex += 1
                 }
