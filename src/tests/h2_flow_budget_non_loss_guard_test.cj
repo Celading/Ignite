@@ -239,6 +239,84 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(model.connectionSendBudget(), 4)
         @Assert(model.streamSendBudget(1), 14)
     }
+
+    @TestCase
+    public func testWriterDataFrameSnapshotUsesChunkEndStreamFlag(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 6, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        let firstFrame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                firstChunk,
+                h2FlowBudgetNonLossGuardBytes("abcd")
+            )
+        @Assert(firstFrame.frameType, UInt8(0x0))
+        @Assert(firstFrame.flags, UInt8(0x0))
+        @Assert(firstFrame.streamId, 1)
+        @Assert(firstFrame.payloadLength, 4)
+        @Assert(firstFrame.payload.size, 4)
+
+        let finalChunk = queue.tryDrainHeadChunk(4)
+        let finalFrame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                finalChunk,
+                h2FlowBudgetNonLossGuardBytes("ef")
+            )
+        @Assert(finalFrame.frameType, UInt8(0x0))
+        @Assert(finalFrame.flags, UInt8(0x1))
+        @Assert(finalFrame.streamId, 1)
+        @Assert(finalFrame.payloadLength, 2)
+        @Assert(finalFrame.payload.size, 2)
+    }
+
+    @TestCase
+    public func testWriterDataFrameSnapshotRejectsBlockedChunk(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 8)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLength(1, 4), 1)
+        let blockedChunk = queue.tryDrainHeadChunk(4)
+        var rejected = false
+        try {
+            let _ = buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                blockedChunk,
+                h2FlowBudgetNonLossGuardBytes("abcd")
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+        @Assert(rejected, true)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {

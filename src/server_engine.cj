@@ -2820,6 +2820,34 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
     }
 }
 
+public func buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+    drain: JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot,
+    payload: Array<Byte>
+): JinguiAcceptedTransportH2FrameWireSnapshot {
+    if (!drain.drained) {
+        throw Exception(
+            "H2 writer DATA frame snapshot requires a drained writer chunk, streamId=${drain.streamId}"
+        )
+    }
+    if (payload.size != drain.byteCount) {
+        throw Exception(
+            "H2 writer DATA frame payload length mismatch, expected=${drain.byteCount}, actual=${payload.size}, streamId=${drain.streamId}"
+        )
+    }
+    let flags = if (drain.endStream) {
+        UInt8(0x1)
+    } else {
+        UInt8(0x0)
+    }
+    JinguiAcceptedTransportH2FrameWireSnapshot(
+        drain.byteCount,
+        UInt8(0x0),
+        flags,
+        drain.streamId,
+        payload
+    )
+}
+
 func appendJinguiAcceptedTransportH2HeaderBlockBytes(
     out: ArrayList<Byte>,
     bytes: Array<Byte>
