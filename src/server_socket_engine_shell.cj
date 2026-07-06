@@ -168,23 +168,58 @@ func serveSocketServerEngineShellTlsTurn(
 ): Unit {
     let accepted = listener.accept()
     try {
-        let hpackDecoderState =
-            ServerJinguiAcceptedTransportH2HpackDecoderState()
-        let _ =
-            option.serveJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
-                accepted,
-                app,
-                socketServerEngineShellExperimentalServerKeyExchangePrivate(),
-                transportId: "socket-server-engine-shell-native-tls-live-ingress",
-                readChunkSize: 4096,
-                maxFragmentLen: 16384,
-                closeSocketAfterTurn: true,
-                hpackDecoderState: Some(hpackDecoderState),
-                attachedSessionReadyHook: tlsAcceptedSessionReadyHook
-            )
+        serveSocketServerEngineShellStableTlsH2SocketTurns(
+            accepted,
+            option,
+            app,
+            tlsAcceptedSessionReadyHook
+        )
     } finally {
         if (!accepted.isClosed()) {
             accepted.close()
+        }
+    }
+}
+
+func serveSocketServerEngineShellStableTlsH2SocketTurns(
+    accepted: TcpSocket,
+    option: ServerEngineListenOption,
+    app: App,
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+): Unit {
+    let attached =
+        option.attachJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHelloX25519Core(
+            accepted,
+            socketServerEngineShellExperimentalServerKeyExchangePrivate(),
+            transportId: "socket-server-engine-shell-native-tls-live-ingress",
+            readChunkSize: 4096,
+            notifyReadySnapshot: false
+        )
+    if (let Some(hook) <- tlsAcceptedSessionReadyHook) {
+        hook(attached.session)
+    }
+    let hpackDecoderState =
+        ServerJinguiAcceptedTransportH2HpackDecoderState()
+    var servedTurns: Int64 = 0
+    var moreTurns = true
+    while (moreTurns && !accepted.isClosed()) {
+        try {
+            let _ =
+                option.serveJinguiAcceptedTransportSessionAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
+                    attached.session,
+                    accepted,
+                    app,
+                    readChunkSize: 4096,
+                    maxFragmentLen: 16384,
+                    closeSocketAfterTurn: false,
+                    hpackDecoderState: Some(hpackDecoderState)
+                )
+            servedTurns += 1
+        } catch (e: Exception) {
+            if (servedTurns == 0) {
+                throw e
+            }
+            moreTurns = false
         }
     }
 }
