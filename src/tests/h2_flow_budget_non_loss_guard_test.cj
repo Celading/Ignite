@@ -1774,6 +1774,297 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(capture.writeCalls, 0)
         @Assert(capture.totalBytes, 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedSocketResponseWriterLifecycleProbeWritesThroughCarrierLifecycle(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => capture.write(bytes) }
+            )
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        let secondChunk = queue.tryDrainHeadChunk(4)
+        let carrier =
+            H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier(
+                lifecycle,
+                false
+            )
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+
+        let first =
+            handoff.commitDataFrame(
+                "accepted-socket-response-writer-lifecycle-probe",
+                firstChunk,
+                h2FlowBudgetNonLossGuardBytes("part")
+            )
+        let second =
+            handoff.commitDataFrame(
+                "accepted-socket-response-writer-lifecycle-probe",
+                secondChunk,
+                h2FlowBudgetNonLossGuardBytes("done")
+            )
+
+        @Assert(first.transportId, "h2-flow-budget-transport")
+        @Assert(first.transportKind, "accepted-socket")
+        @Assert(first.acquisitionStatusName, "response-transport-writer-acquired")
+        @Assert(second.transportId, "h2-flow-budget-transport")
+        @Assert(second.transportKind, "accepted-socket")
+        @Assert(second.acquisitionStatusName, "response-transport-writer-reused")
+        @Assert(second.endStream, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(handoff.acquisitionCount(), 1)
+        @Assert(lifecycle.socketWriteCount, 2)
+        @Assert(lifecycle.totalEncodedSocketBytes, 26)
+        @Assert(capture.writeCalls, 2)
+        @Assert(capture.totalBytes, 26)
+        let firstParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(0))
+        let secondParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(1))
+        @Assert(firstParsed.flags, UInt8(0x0))
+        @Assert(firstParsed.payload, h2FlowBudgetNonLossGuardBytes("part"))
+        @Assert(secondParsed.flags, UInt8(0x1))
+        @Assert(secondParsed.payload, h2FlowBudgetNonLossGuardBytes("done"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedSocketResponseWriterLifecycleProbeRejectsBlockedDrainBeforeCarrierOpen(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => capture.write(bytes) }
+            )
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let blocked = queue.tryDrainHeadChunk(4)
+        @Assert(blocked.drained, false)
+        let carrier =
+            H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier(
+                lifecycle,
+                false
+            )
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+        var rejected = false
+        try {
+            let _ =
+                handoff.commitDataFrame(
+                    "accepted-socket-response-writer-lifecycle-probe",
+                    blocked,
+                    h2FlowBudgetNonLossGuardBytes("wait")
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(carrier.openCalls, 0)
+        @Assert(handoff.acquisitionCount(), 0)
+        @Assert(lifecycle.socketWriteCount, 0)
+        @Assert(lifecycle.totalEncodedSocketBytes, 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedSocketResponseWriterLifecycleProbePropagatesSinkFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let failingSink = H2FlowBudgetNonLossGuardFailingAcceptedSocketSink()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => failingSink.write(bytes) }
+            )
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let carrier =
+            H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier(
+                lifecycle,
+                false
+            )
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+        var propagated = false
+        try {
+            let _ =
+                handoff.commitDataFrame(
+                    "accepted-socket-response-writer-lifecycle-probe",
+                    chunk,
+                    h2FlowBudgetNonLossGuardBytes("fail")
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(handoff.acquisitionCount(), 1)
+        @Assert(lifecycle.socketWriteCount, 1)
+        @Assert(lifecycle.totalEncodedSocketBytes, 13)
+        @Assert(failingSink.writeCalls, 1)
+    }
+}
+
+class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCarrier {
+    let lifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    let failOnOpen: Bool
+    let body = H2FlowBudgetNonLossGuardEmptyInputStream()
+    public var openCalls: Int64 = 0
+
+    init(
+        lifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle,
+        failOnOpen: Bool
+    ) {
+        this.lifecycle = lifecycle
+        this.failOnOpen = failOnOpen
+    }
+
+    public override func rawHttpContext(): HttpContext {
+        throw Exception("raw HttpContext should not be required for H2 accepted-socket lifecycle probe")
+    }
+
+    public override func upgradeWebSocketRaw(): WebSocket {
+        throw Exception("websocket upgrade should not run in H2 accepted-socket lifecycle probe")
+    }
+
+    public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
+        openCalls += 1
+        if (failOnOpen) {
+            throw Exception("accepted-socket lifecycle writer acquisition failed")
+        }
+        lifecycle.openResponseTransportWriter()
+    }
+
+    public override func requestMethod(): String {
+        "GET"
+    }
+
+    public override func requestPath(): String {
+        "/h2-accepted-socket-lifecycle"
+    }
+
+    public override func requestUrlString(): String {
+        "/h2-accepted-socket-lifecycle"
+    }
+
+    public override func requestVersionString(): String {
+        "HTTP/2"
+    }
+
+    public override func requestRemoteAddr(): String {
+        "127.0.0.1"
+    }
+
+    public override func requestQueryValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestFormValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaderValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestBodyStream(): InputStream {
+        body
+    }
+
+    public override func requestBodySize(): ?Int64 {
+        Some(Int64(0))
+    }
+
+    public override func setResponseStatus(code: UInt16): Unit {
+        let _ = code
+    }
+
+    public override func setResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
+    }
+
+    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+        let _ = headers
+    }
+
+    public override func setResponseString(body: String): Unit {
+        let _ = body
+    }
+
+    public override func setResponseBytes(data: Array<UInt8>): Unit {
+        let _ = data
+    }
+
+    public override func attachResponseBodyStream(stream: InputStream): Unit {
+        let _ = stream
+    }
 }
 
 class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
@@ -1992,6 +2283,16 @@ class H2FlowBudgetNonLossGuardFailingResponseTransportWriter <: ResponseTranspor
     public override func write(data: Array<UInt8>): Unit {
         writeCalls += 1
         throw Exception("response transport writer failed")
+    }
+}
+
+class H2FlowBudgetNonLossGuardFailingAcceptedSocketSink {
+    public var writeCalls: Int64 = 0
+
+    public func write(data: Array<UInt8>): Unit {
+        let _ = data
+        writeCalls += 1
+        throw Exception("accepted-socket lifecycle sink failed")
     }
 }
 

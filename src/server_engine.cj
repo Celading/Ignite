@@ -656,14 +656,35 @@ class ServerJinguiAcceptedTransportBytesInputStream <: InputStream {
     }
 }
 
+public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
+    let _sink: ResponseTransportWriteSink
+    public var socketWriteCount: Int64 = 0
+    public var totalEncodedSocketBytes: Int64 = 0
+
+    public init(sink: ResponseTransportWriteSink) {
+        this._sink = sink
+    }
+
+    public func writeSocketResponseBytes(bytes: Array<UInt8>): Unit {
+        socketWriteCount += 1
+        totalEncodedSocketBytes += bytes.size
+        _sink(bytes)
+    }
+
+    public func openResponseTransportWriter(): ResponseTransportWriter {
+        openSinkBackedResponseTransportWriter({ bytes =>
+            writeSocketResponseBytes(bytes)
+        })
+    }
+}
+
 class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrier {
     let logicalRequest: ServerJinguiAcceptedTransportLogicalRequest
     let socket: TcpSocket
     let requestBodyStreamValue: InputStream
+    let responseWriterLifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
     public let responseHeaders = HttpHeaders()
     public var responseStatus: UInt16 = 200
-    public var socketWriteCount: Int64 = 0
-    public var totalEncodedSocketBytes: Int64 = 0
 
     init(
         logicalRequest: ServerJinguiAcceptedTransportLogicalRequest,
@@ -671,6 +692,10 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
     ) {
         this.logicalRequest = logicalRequest
         this.socket = socket
+        this.responseWriterLifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => socket.write(bytes) }
+            )
         this.requestBodyStreamValue = if (logicalRequest.bodyBytes.size > 0) {
             ServerJinguiAcceptedTransportBytesInputStream(logicalRequest.bodyBytes)
         } else {
@@ -679,9 +704,7 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
     }
 
     func writeSocketResponseBytes(bytes: Array<UInt8>): Unit {
-        socketWriteCount += 1
-        totalEncodedSocketBytes += bytes.size
-        socket.write(bytes)
+        responseWriterLifecycle.writeSocketResponseBytes(bytes)
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -693,9 +716,7 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
-        openSinkBackedResponseTransportWriter({ bytes =>
-            writeSocketResponseBytes(bytes)
-        })
+        responseWriterLifecycle.openResponseTransportWriter()
     }
 
     public override func requestMethod(): String {
@@ -57918,8 +57939,8 @@ public class ServerEngineListenOption {
                 readySnapshot,
                 carrier.responseStatus,
                 cloneServerEngineHeaders(carrier.responseHeaders),
-                carrier.socketWriteCount,
-                carrier.totalEncodedSocketBytes
+                carrier.responseWriterLifecycle.socketWriteCount,
+                carrier.responseWriterLifecycle.totalEncodedSocketBytes
             )
         } finally {
             if (closeSocketAfterTurn && !acceptedSocket.isClosed()) {
