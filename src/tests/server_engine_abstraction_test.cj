@@ -1783,6 +1783,112 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitIndexedStaticStatusForCommonH2ResponseStatusesFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-200",
+            UInt16(200),
+            "200",
+            8,
+            "sr115-200",
+            101,
+            true
+        )
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-204",
+            UInt16(204),
+            "204",
+            9,
+            "sr115-204",
+            103,
+            false
+        )
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-404",
+            UInt16(404),
+            "404",
+            13,
+            "sr115-404",
+            105,
+            true
+        )
+    }
+
+    func assertAcceptedSocketH2ResponseStatusStaticIndex(
+        routePath: String,
+        status: UInt16,
+        expectedStatusValue: String,
+        expectedStaticIndex: Int64,
+        label: String,
+        streamId: Int64,
+        withBody: Bool
+    ): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let responseBody = "${label}:body"
+        app.get(routePath, { ctx =>
+            if (withBody) {
+                let _ = ctx
+                    .status(status)
+                    .setHeader("x-h2-turn", label)
+                    .sendString(responseBody)
+            } else {
+                let _ = ctx
+                    .status(status)
+                    .setHeader("x-h2-turn", label)
+            }
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "${routePath}?mode=status-index",
+                streamId: streamId
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, status)
+        @Assert(engine.turnCustomHeader, label)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersFrameStreamId, streamId)
+        @Assert(engine.turnHeadersStatus, expectedStatusValue)
+        @Assert(engine.turnHeadersStatusStaticIndex, expectedStaticIndex)
+        @Assert(engine.turnHeadersCustomHeader, label)
+        if (withBody) {
+            @Assert(engine.turnDecodedFrameCount, 2)
+            @Assert(engine.turnHeadersEndStream, false)
+            @Assert(engine.turnFrameType, UInt8(0x0))
+            @Assert(engine.turnFrameEndStream, true)
+            @Assert(engine.turnFrameStreamId, streamId)
+            @Assert(
+                serverEngineAbstractionTestByteArraysEqual(
+                    engine.turnFramePayload,
+                    serverEngineAbstractionTestTextBytes(responseBody)
+                ),
+                true
+            )
+        } else {
+            @Assert(engine.turnDecodedFrameCount, 1)
+            @Assert(engine.turnHeadersEndStream, true)
+            @Assert(engine.turnDataFrameSeen, false)
+            @Assert(engine.turnFramePayload.size, 0)
+        }
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15307,6 +15413,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersEndStream: Bool = false
     public var turnHeadersFrameStreamId: Int64 = 0
     public var turnHeadersStatus: String = ""
+    public var turnHeadersStatusStaticIndex: Int64 = 0
     public var turnHeadersCacheControl: String = ""
     public var turnHeadersCacheControlNameStaticIndex: Int64 = 0
     public var turnHeadersContentLength: String = ""
@@ -15371,6 +15478,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                 for (field in headerFields) {
                     if (field.name == ":status") {
                         turnHeadersStatus = field.value
+                        turnHeadersStatusStaticIndex = field.staticIndex
                     }
                     if (field.name == "cache-control") {
                         turnHeadersCacheControl = field.value

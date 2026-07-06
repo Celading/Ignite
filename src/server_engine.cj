@@ -3008,13 +3008,37 @@ func buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
     headers: Array<ServerJinguiAcceptedTransportResponseHeaderField>
 ): Array<Byte> {
     let out = ArrayList<Byte>()
-    appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
-        out,
-        8,
-        "${status}"
-    )
+    let statusStaticIndex =
+        serverJinguiAcceptedTransportH2ResponseStatusStaticIndex(status)
+    if (statusStaticIndex > 0) {
+        appendJinguiAcceptedTransportH2HpackIndexedHeaderField(
+            out,
+            statusStaticIndex
+        )
+    } else {
+        appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
+            out,
+            8,
+            "${status}"
+        )
+    }
     appendJinguiAcceptedTransportH2CapturedResponseHeaders(out, headers)
     out.toArray()
+}
+
+func serverJinguiAcceptedTransportH2ResponseStatusStaticIndex(
+    status: UInt16
+): Int64 {
+    if (status == UInt16(200)) {
+        return 8
+    }
+    if (status == UInt16(204)) {
+        return 9
+    }
+    if (status == UInt16(404)) {
+        return 13
+    }
+    0
 }
 
 func appendJinguiAcceptedTransportH2CapturedResponseHeaders(
@@ -3103,6 +3127,23 @@ func appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
         nameStaticIndex
     )
     appendJinguiAcceptedTransportH2HpackBoundedAsciiString(out, value)
+}
+
+func appendJinguiAcceptedTransportH2HpackIndexedHeaderField(
+    out: ArrayList<Byte>,
+    staticIndex: Int64
+): Unit {
+    if (staticIndex <= 0) {
+        throw Exception(
+            "bounded H2 response HPACK indexed field requires positive static index, got ${staticIndex}"
+        )
+    }
+    appendJinguiAcceptedTransportH2HpackIntegerWithPrefix(
+        out,
+        7,
+        UInt8(0x80),
+        staticIndex
+    )
 }
 
 func appendJinguiAcceptedTransportH2HpackIntegerWithPrefix(
