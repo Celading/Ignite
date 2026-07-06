@@ -2992,20 +2992,35 @@ func buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
         8,
         "${status}"
     )
-    for ((name, values) in headers) {
-        let normalizedName = name.trimAscii().toAsciiLower()
-        if (shouldSkipJinguiAcceptedTransportH2ResponseHeader(normalizedName)) {
-            continue
-        }
-        for (value in values) {
-            appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
-                out,
-                normalizedName,
-                value
-            )
-        }
-    }
+    appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
+        out,
+        headers,
+        "content-type"
+    )
+    appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
+        out,
+        headers,
+        "x-h2-turn"
+    )
     out.toArray()
+}
+
+func appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
+    out: ArrayList<Byte>,
+    headers: HttpHeaders,
+    name: String
+): Unit {
+    let normalizedName = name.trimAscii().toAsciiLower()
+    if (shouldSkipJinguiAcceptedTransportH2ResponseHeader(normalizedName)) {
+        return
+    }
+    if (let Some(value) <- headers.getFirst(normalizedName)) {
+        appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
+            out,
+            normalizedName,
+            value
+        )
+    }
 }
 
 func shouldSkipJinguiAcceptedTransportH2ResponseHeader(name: String): Bool {
@@ -58202,11 +58217,35 @@ public class ServerEngineListenOption {
         for (bodyWrite in capturedBodyWrites) {
             totalCapturedBytes += bodyWrite.size
         }
-        if (totalCapturedBytes <= 0) {
-            throw Exception(
-                "accepted-socket H2 data response turn requires captured response body bytes in this bounded seam"
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                buildServerJinguiAcceptedTransportDescriptorSnapshot(
+                    session.transport
+                ),
+                wrappedCarrier
             )
+        if (totalCapturedBytes <= 0) {
+            let _ =
+                handoff.commitFrameWireSnapshot(
+                    "accepted-socket-application-data-empty-response-headers-turn",
+                    buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
+                        request.streamId,
+                        responseStatus,
+                        responseHeaders,
+                        endStream: true
+                    )
+                )
+            return
         }
+        let _ =
+            handoff.commitFrameWireSnapshot(
+                "accepted-socket-application-data-response-headers-turn",
+                buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
+                    request.streamId,
+                    responseStatus,
+                    responseHeaders
+                )
+            )
         let responseBudget = totalCapturedBytes + 16384
         let model =
             JinguiAcceptedTransportH2FlowBudgetModel(
@@ -58227,22 +58266,6 @@ public class ServerEngineListenOption {
                 serverEngineUInt8ToByteArray(request.path.toArray())
             )
         )
-        let handoff =
-            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
-                buildServerJinguiAcceptedTransportDescriptorSnapshot(
-                    session.transport
-                ),
-                wrappedCarrier
-            )
-        let _ =
-            handoff.commitFrameWireSnapshot(
-                "accepted-socket-application-data-response-headers-turn",
-                buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
-                    request.streamId,
-                    responseStatus,
-                    responseHeaders
-                )
-            )
         var i: Int64 = 0
         while (i < capturedBodyWrites.size) {
             let bodyWrite = capturedBodyWrites[i]

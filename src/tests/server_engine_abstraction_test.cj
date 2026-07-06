@@ -1492,6 +1492,50 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitH2EmptyBodyResponseHeadersEndStreamFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-empty-response-turn", { ctx =>
+            let _ = ctx
+                .status(204)
+                .setHeader("x-h2-turn", "sr110")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-empty-response-turn?mode=empty",
+                streamId: 91
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(204))
+        @Assert(engine.turnCustomHeader, "sr110")
+        @Assert(engine.turnDecodedFrameCount, 1)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, true)
+        @Assert(engine.turnHeadersFrameStreamId, 91)
+        @Assert(engine.turnHeadersStatus, "204")
+        @Assert(engine.turnHeadersCustomHeader, "sr110")
+        @Assert(engine.turnDataFrameSeen, false)
+        @Assert(engine.turnFramePayload.size, 0)
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15003,6 +15047,8 @@ class JinguiAcceptedTransportH2ApplicationDataFailureCloseGuardProbeEngine <: Se
 }
 
 class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: ServerEngine {
+    let turnRequestUrl: String
+    let turnStreamId: Int64
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -15015,11 +15061,20 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersFrameStreamId: Int64 = 0
     public var turnHeadersStatus: String = ""
     public var turnHeadersCustomHeader: String = ""
+    public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
     public var turnFrameEndStream: Bool = false
     public var turnFrameStreamId: Int64 = 0
     public var turnFramePayload: Array<Byte> = []
     var turnClientChannel: ?ContractTlsRecordChannel = None
+
+    public init(
+        turnRequestUrl!: String = "/h2-appdata-response-turn?mode=data",
+        streamId!: Int64 = 83
+    ) {
+        this.turnRequestUrl = turnRequestUrl
+        this.turnStreamId = streamId
+    }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
         match (turnClientChannel) {
@@ -15063,17 +15118,22 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                 turnHeadersEndHeaders = headersFragment.endHeaders
                 turnHeadersEndStream = headersFragment.endStream
                 turnHeadersFrameStreamId = headersFrame.streamId
-                let frame = parseJinguiAcceptedTransportH2FrameWire(frames[1])
-                let dataFrame = parseJinguiAcceptedTransportH2DataFrame(frame)
-                turnFrameType = frame.frameType
-                turnFrameEndStream = dataFrame.endStream
-                turnFrameStreamId = frame.streamId
-                turnFramePayload =
-                    cloneServerEngineAbstractionTestByteWindow(
-                        dataFrame.dataBytes,
-                        0,
-                        dataFrame.dataBytes.size
-                    )
+                if (frames.size > 1) {
+                    let frame =
+                        parseJinguiAcceptedTransportH2FrameWire(frames[1])
+                    let dataFrame =
+                        parseJinguiAcceptedTransportH2DataFrame(frame)
+                    turnDataFrameSeen = true
+                    turnFrameType = frame.frameType
+                    turnFrameEndStream = dataFrame.endStream
+                    turnFrameStreamId = frame.streamId
+                    turnFramePayload =
+                        cloneServerEngineAbstractionTestByteWindow(
+                            dataFrame.dataBytes,
+                            0,
+                            dataFrame.dataBytes.size
+                        )
+                }
             case None =>
                 throw Exception(
                     "expected SR108 turn companion client record channel before socket wire decode"
@@ -15110,8 +15170,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         app,
                         ServerJinguiAcceptedTransportLogicalRequest(
                             "GET",
-                            "/h2-appdata-response-turn?mode=data",
-                            streamId: 83
+                            turnRequestUrl,
+                            streamId: turnStreamId
                         ),
                         clientHello.encodedClientHello,
                         engineIncrementalBytes(32, start: 736),
