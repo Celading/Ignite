@@ -1332,6 +1332,51 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEnginePropagatesH2ApplicationDataWriterFailureAndCloseGuard(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataFailureCloseGuardProbeEngine()
+        app.serverEngine(engine)
+
+        app.listen("127.0.0.1", reserveServerEngineAbstractionLoopbackPort())
+
+        @Assert(engine.failureRejected, true)
+        @Assert(
+            contains(
+                engine.failureMessage,
+                "sr107 tls application-data downstream write failed"
+            ),
+            true
+        )
+        @Assert(engine.failureWriterOpenCalls, 1)
+        @Assert(engine.failureHandoffAcquisitionCount, 1)
+        @Assert(engine.failureSocketWriteCount, 1)
+        @Assert(engine.failureSinkAttempts, 1)
+        @Assert(engine.failureAttemptedEncodedBytes > 0, true)
+        @Assert(engine.failureLifecycleClosed, false)
+
+        @Assert(engine.closeGuardFirstCompleted, true)
+        @Assert(engine.closeGuardRejected, true)
+        @Assert(
+            contains(
+                engine.closeGuardMessage,
+                "accepted transport socket response writer lifecycle is closed: sr107-close"
+            ),
+            true
+        )
+        @Assert(engine.closeGuardWriterOpenCalls, 1)
+        @Assert(engine.closeGuardHandoffAcquisitionCount, 1)
+        @Assert(engine.closeGuardSocketWriteCount, 1)
+        @Assert(engine.closeGuardEncodedRecordCount, 1)
+        @Assert(engine.closeGuardLifecycleClosed, true)
+        @Assert(engine.closeGuardCloseReason, "sr107-close")
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -14632,6 +14677,211 @@ class JinguiAcceptedTransportH2LifecycleApplicationDataWriterProbeEngine <: Serv
         }
         blockedWriterOpenCalls = carrier.openCalls
         blockedEncodedRecordCount = collector.writes.size
+    }
+
+    public override func shutdown(): Unit {}
+}
+
+class JinguiAcceptedTransportH2ApplicationDataFailureCloseGuardProbeEngine <: ServerEngine {
+    public var failureRejected: Bool = false
+    public var failureMessage: String = ""
+    public var failureWriterOpenCalls: Int64 = 0
+    public var failureHandoffAcquisitionCount: Int64 = 0
+    public var failureSocketWriteCount: Int64 = 0
+    public var failureSinkAttempts: Int64 = 0
+    public var failureAttemptedEncodedBytes: Int64 = 0
+    public var failureLifecycleClosed: Bool = true
+    public var closeGuardFirstCompleted: Bool = false
+    public var closeGuardRejected: Bool = false
+    public var closeGuardMessage: String = ""
+    public var closeGuardWriterOpenCalls: Int64 = 0
+    public var closeGuardHandoffAcquisitionCount: Int64 = 0
+    public var closeGuardSocketWriteCount: Int64 = 0
+    public var closeGuardEncodedRecordCount: Int64 = 0
+    public var closeGuardLifecycleClosed: Bool = false
+    public var closeGuardCloseReason: String = ""
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        app: App,
+        onReady: ?((ServerEngineReadySignal) -> Unit)
+    ): Unit {
+        let _ = app
+        runFailureProbe(option)
+        runCloseGuardProbe(option)
+        if (let Some(cb) <- onReady) {
+            cb(ServerEngineReadySignal())
+        }
+    }
+
+    func runFailureProbe(option: ServerEngineListenOption): Unit {
+        let transport = ContractAcceptedTransportDescriptor(
+            "h2-appdata-failure-guard",
+            localEndpoint: "127.0.0.1:443",
+            remoteEndpoint: "127.0.0.1:55450"
+        )
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 576))
+        )
+        let session = option.attachJinguiAcceptedTransportTls13X25519(
+            transport,
+            clientHello.encodedClientHello,
+            engineIncrementalBytes(32, start: 608)
+        )
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes =>
+                    failureSinkAttempts += 1
+                    failureAttemptedEncodedBytes += bytes.size
+                    throw Exception(
+                        "sr107 tls application-data downstream write failed"
+                    )
+                }
+            )
+        let carrier =
+            AcceptedTransportH2LifecycleApplicationDataProbeCarrier(
+                "/h2-appdata-failure-guard",
+                lifecycle,
+                false
+            )
+        let wrappedCarrier =
+            option.wrapCurrentRequestCarrierWithJinguiAcceptedTransportApplicationDataResponse(
+                session,
+                carrier,
+                maxFragmentLen: 64
+            )
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(16, 16)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                serverEngineAbstractionTestTextBytes("s1")
+            )
+        )
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                ServerJinguiAcceptedTransportDescriptorSnapshot(
+                    "h2-appdata-failure-guard",
+                    "accepted-socket",
+                    "127.0.0.1:443",
+                    "127.0.0.1:55450"
+                ),
+                wrappedCarrier
+            )
+        try {
+            let _ =
+                handoff.commitDataFrame(
+                    "accepted-socket-lifecycle-application-data-sr107",
+                    chunk,
+                    serverEngineAbstractionTestTextBytes("fail")
+                )
+        } catch (e: Exception) {
+            failureRejected = true
+            failureMessage = e.message
+        }
+        failureWriterOpenCalls = carrier.openCalls
+        failureHandoffAcquisitionCount = handoff.acquisitionCount()
+        failureSocketWriteCount = lifecycle.socketWriteCount
+        failureLifecycleClosed = lifecycle.closed
+    }
+
+    func runCloseGuardProbe(option: ServerEngineListenOption): Unit {
+        let transport = ContractAcceptedTransportDescriptor(
+            "h2-appdata-close-guard",
+            localEndpoint: "127.0.0.1:443",
+            remoteEndpoint: "127.0.0.1:55451"
+        )
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 640))
+        )
+        let session = option.attachJinguiAcceptedTransportTls13X25519(
+            transport,
+            clientHello.encodedClientHello,
+            engineIncrementalBytes(32, start: 672)
+        )
+        let collector = CollectingResponseTransportWriter()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => collector.write(bytes) }
+            )
+        let carrier =
+            AcceptedTransportH2LifecycleApplicationDataProbeCarrier(
+                "/h2-appdata-close-guard",
+                lifecycle,
+                false
+            )
+        let wrappedCarrier =
+            option.wrapCurrentRequestCarrierWithJinguiAcceptedTransportApplicationDataResponse(
+                session,
+                carrier,
+                maxFragmentLen: 64
+            )
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(16, 16)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                serverEngineAbstractionTestTextBytes("s1")
+            )
+        )
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        let secondChunk = queue.tryDrainHeadChunk(4)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                ServerJinguiAcceptedTransportDescriptorSnapshot(
+                    "h2-appdata-close-guard",
+                    "accepted-socket",
+                    "127.0.0.1:443",
+                    "127.0.0.1:55451"
+                ),
+                wrappedCarrier
+            )
+        let first =
+            handoff.commitDataFrame(
+                "accepted-socket-lifecycle-application-data-sr107",
+                firstChunk,
+                serverEngineAbstractionTestTextBytes("open")
+            )
+        closeGuardFirstCompleted = first.completed
+        lifecycle.closeResponseWriterLifecycle(reason: "sr107-close")
+        try {
+            let _ =
+                handoff.commitDataFrame(
+                    "accepted-socket-lifecycle-application-data-sr107",
+                    secondChunk,
+                    serverEngineAbstractionTestTextBytes("shut")
+                )
+        } catch (e: Exception) {
+            closeGuardRejected = true
+            closeGuardMessage = e.message
+        }
+        closeGuardWriterOpenCalls = carrier.openCalls
+        closeGuardHandoffAcquisitionCount = handoff.acquisitionCount()
+        closeGuardSocketWriteCount = lifecycle.socketWriteCount
+        closeGuardEncodedRecordCount = collector.writes.size
+        closeGuardLifecycleClosed = lifecycle.closed
+        closeGuardCloseReason = lifecycle.closeReason
     }
 
     public override func shutdown(): Unit {}

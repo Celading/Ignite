@@ -660,18 +660,37 @@ public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
     let _sink: ResponseTransportWriteSink
     public var socketWriteCount: Int64 = 0
     public var totalEncodedSocketBytes: Int64 = 0
+    public var closed: Bool = false
+    public var closeReason: String = ""
 
     public init(sink: ResponseTransportWriteSink) {
         this._sink = sink
     }
 
+    public func closeResponseWriterLifecycle(
+        reason!: String = "response-writer-closed"
+    ): Unit {
+        closed = true
+        closeReason = reason
+    }
+
     public func writeSocketResponseBytes(bytes: Array<UInt8>): Unit {
+        if (closed) {
+            throw Exception(
+                "accepted transport socket response writer lifecycle is closed: ${closeReason}"
+            )
+        }
         socketWriteCount += 1
         totalEncodedSocketBytes += bytes.size
         _sink(bytes)
     }
 
     public func openResponseTransportWriter(): ResponseTransportWriter {
+        if (closed) {
+            throw Exception(
+                "accepted transport socket response writer lifecycle is closed: ${closeReason}"
+            )
+        }
         openSinkBackedResponseTransportWriter({ bytes =>
             writeSocketResponseBytes(bytes)
         })
