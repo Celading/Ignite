@@ -2659,14 +2659,14 @@ public class JinguiAcceptedTransportH2WriterFlowGate {
 
 class JinguiAcceptedTransportH2WriterFlowQueueEntry {
     let streamId: Int64
-    let byteCount: Int64
+    var remainingByteCount: Int64
 
     init(
         streamId: Int64,
         byteCount: Int64
     ) {
         this.streamId = streamId
-        this.byteCount = byteCount
+        this.remainingByteCount = byteCount
     }
 }
 
@@ -2675,6 +2675,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
     public let waitingForWindowUpdate: Bool
     public let streamId: Int64
     public let byteCount: Int64
+    public let remainingByteCount: Int64
     public let pendingCount: Int64
     public let decision: JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot
 
@@ -2683,6 +2684,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
         waitingForWindowUpdate: Bool,
         streamId: Int64,
         byteCount: Int64,
+        remainingByteCount: Int64,
         pendingCount: Int64,
         decision: JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot
     ) {
@@ -2690,6 +2692,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
         this.waitingForWindowUpdate = waitingForWindowUpdate
         this.streamId = streamId
         this.byteCount = byteCount
+        this.remainingByteCount = remainingByteCount
         this.pendingCount = pendingCount
         this.decision = decision
     }
@@ -2718,9 +2721,9 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
                 "H2 writer flow queue requires non-zero streamId, got ${streamId}"
             )
         }
-        if (byteCount < 0) {
+        if (byteCount <= 0) {
             throw Exception(
-                "H2 writer flow queue requires non-negative byteCount, got ${byteCount}"
+                "H2 writer flow queue requires positive byteCount, got ${byteCount}"
             )
         }
         _entries.add(
@@ -2738,16 +2741,39 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
         if (_entries.size == 0) {
             throw Exception("H2 writer flow queue cannot drain empty queue")
         }
+        tryDrainHeadChunk(_entries[0].remainingByteCount)
+    }
+
+    public func tryDrainHeadChunk(
+        maxFrameByteCount: Int64
+    ): JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
+        if (_entries.size == 0) {
+            throw Exception("H2 writer flow queue cannot drain empty queue")
+        }
+        if (maxFrameByteCount <= 0) {
+            throw Exception(
+                "H2 writer flow queue requires positive maxFrameByteCount, got ${maxFrameByteCount}"
+            )
+        }
         let entry = _entries[0]
+        let claimByteCount = claimByteCountFor(
+            entry.remainingByteCount,
+            maxFrameByteCount
+        )
         let decision =
-            _gate.tryClaimDataWrite(entry.streamId, entry.byteCount)
+            _gate.tryClaimDataWrite(entry.streamId, claimByteCount)
         if (decision.canWrite) {
-            let _ = _entries.remove(at: Int64(0))
+            entry.remainingByteCount -= claimByteCount
+            let remainingAfterDrain = entry.remainingByteCount
+            if (entry.remainingByteCount <= 0) {
+                let _ = _entries.remove(at: Int64(0))
+            }
             return JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot(
                 true,
                 false,
                 entry.streamId,
-                entry.byteCount,
+                claimByteCount,
+                remainingAfterDrain,
                 _entries.size,
                 decision
             )
@@ -2756,10 +2782,21 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
             false,
             decision.waitingForWindowUpdate,
             entry.streamId,
-            entry.byteCount,
+            claimByteCount,
+            entry.remainingByteCount,
             _entries.size,
             decision
         )
+    }
+
+    func claimByteCountFor(
+        remainingByteCount: Int64,
+        maxFrameByteCount: Int64
+    ): Int64 {
+        if (remainingByteCount < maxFrameByteCount) {
+            return remainingByteCount
+        }
+        maxFrameByteCount
     }
 }
 

@@ -142,6 +142,65 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(model.connectionSendBudget(), 1)
         @Assert(model.streamSendBudget(1), 4)
     }
+
+    @TestCase
+    public func testWriterFlowQueueChunkDrainKeepsRemainingBytesOnWindowWait(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(6, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLength(1, 10), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        @Assert(firstChunk.drained, true)
+        @Assert(firstChunk.byteCount, 4)
+        @Assert(firstChunk.remainingByteCount, 6)
+        @Assert(firstChunk.pendingCount, 1)
+        @Assert(queue.pendingCount(), 1)
+        @Assert(model.connectionSendBudget(), 2)
+        @Assert(model.streamSendBudget(1), 16)
+
+        let blockedSecondChunk = queue.tryDrainHeadChunk(4)
+        @Assert(blockedSecondChunk.drained, false)
+        @Assert(blockedSecondChunk.waitingForWindowUpdate, true)
+        @Assert(blockedSecondChunk.byteCount, 4)
+        @Assert(blockedSecondChunk.remainingByteCount, 6)
+        @Assert(blockedSecondChunk.pendingCount, 1)
+        @Assert(queue.pendingCount(), 1)
+        @Assert(model.connectionSendBudget(), 2)
+        @Assert(model.streamSendBudget(1), 16)
+
+        model.observeWindowUpdateFrame(
+            JinguiAcceptedTransportH2FrameWireSnapshot(
+                4,
+                UInt8(0x8),
+                UInt8(0x0),
+                0,
+                h2FlowBudgetNonLossGuardWindowUpdatePayload(4)
+            )
+        )
+
+        let secondChunk = queue.tryDrainHeadChunk(4)
+        @Assert(secondChunk.drained, true)
+        @Assert(secondChunk.byteCount, 4)
+        @Assert(secondChunk.remainingByteCount, 2)
+        @Assert(secondChunk.pendingCount, 1)
+        @Assert(queue.pendingCount(), 1)
+        @Assert(model.connectionSendBudget(), 2)
+        @Assert(model.streamSendBudget(1), 12)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
