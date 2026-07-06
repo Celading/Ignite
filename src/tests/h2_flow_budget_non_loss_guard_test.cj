@@ -201,6 +201,44 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(model.connectionSendBudget(), 2)
         @Assert(model.streamSendBudget(1), 12)
     }
+
+    @TestCase
+    public func testWriterFlowQueueEndStreamOnlyOnFinalChunk(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 6, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        @Assert(firstChunk.drained, true)
+        @Assert(firstChunk.endStream, false)
+        @Assert(firstChunk.byteCount, 4)
+        @Assert(firstChunk.remainingByteCount, 2)
+        @Assert(firstChunk.pendingCount, 1)
+
+        let finalChunk = queue.tryDrainHeadChunk(4)
+        @Assert(finalChunk.drained, true)
+        @Assert(finalChunk.endStream, true)
+        @Assert(finalChunk.byteCount, 2)
+        @Assert(finalChunk.remainingByteCount, 0)
+        @Assert(finalChunk.pendingCount, 0)
+        @Assert(queue.pendingCount(), 0)
+        @Assert(model.connectionSendBudget(), 4)
+        @Assert(model.streamSendBudget(1), 14)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {

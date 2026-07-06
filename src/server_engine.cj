@@ -2659,19 +2659,23 @@ public class JinguiAcceptedTransportH2WriterFlowGate {
 
 class JinguiAcceptedTransportH2WriterFlowQueueEntry {
     let streamId: Int64
+    let endStreamWhenDrained: Bool
     var remainingByteCount: Int64
 
     init(
         streamId: Int64,
-        byteCount: Int64
+        byteCount: Int64,
+        endStreamWhenDrained: Bool
     ) {
         this.streamId = streamId
+        this.endStreamWhenDrained = endStreamWhenDrained
         this.remainingByteCount = byteCount
     }
 }
 
 public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
     public let drained: Bool
+    public let endStream: Bool
     public let waitingForWindowUpdate: Bool
     public let streamId: Int64
     public let byteCount: Int64
@@ -2681,6 +2685,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
 
     public init(
         drained: Bool,
+        endStream: Bool,
         waitingForWindowUpdate: Bool,
         streamId: Int64,
         byteCount: Int64,
@@ -2689,6 +2694,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
         decision: JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot
     ) {
         this.drained = drained
+        this.endStream = endStream
         this.waitingForWindowUpdate = waitingForWindowUpdate
         this.streamId = streamId
         this.byteCount = byteCount
@@ -2716,6 +2722,14 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
         streamId: Int64,
         byteCount: Int64
     ): Int64 {
+        enqueueDataLengthWithEndStream(streamId, byteCount, false)
+    }
+
+    public func enqueueDataLengthWithEndStream(
+        streamId: Int64,
+        byteCount: Int64,
+        endStreamWhenDrained: Bool
+    ): Int64 {
         if (streamId <= 0) {
             throw Exception(
                 "H2 writer flow queue requires non-zero streamId, got ${streamId}"
@@ -2727,7 +2741,11 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
             )
         }
         _entries.add(
-            JinguiAcceptedTransportH2WriterFlowQueueEntry(streamId, byteCount)
+            JinguiAcceptedTransportH2WriterFlowQueueEntry(
+                streamId,
+                byteCount,
+                endStreamWhenDrained
+            )
         )
         _entries.size
     }
@@ -2770,6 +2788,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
             }
             return JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot(
                 true,
+                remainingAfterDrain <= 0 && entry.endStreamWhenDrained,
                 false,
                 entry.streamId,
                 claimByteCount,
@@ -2779,6 +2798,7 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
             )
         }
         JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot(
+            false,
             false,
             decision.waitingForWindowUpdate,
             entry.streamId,
