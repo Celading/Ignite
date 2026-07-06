@@ -5316,6 +5316,56 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2DecodedHeaderFieldsSkipTeTrailersUntilRequestTrailerSupport(): Unit {
+        let fields = [
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":method",
+                "GET",
+                "indexed",
+                2,
+                2
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":path",
+                "/te-trailers",
+                "literal-with-indexing",
+                0,
+                4
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":authority",
+                "api.example.com:9443",
+                "literal-without-indexing",
+                0,
+                1
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "te",
+                "trailers",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "x-mode",
+                "decoded-te-policy",
+                "literal-never-indexed",
+                0,
+                0
+            )
+        ]
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
+                fields
+            )
+
+        @Assert(request.path, "/te-trailers")
+        @Assert(request.headers.getFirst("host") ?? "", "api.example.com:9443")
+        @Assert(request.headers.getFirst("x-mode") ?? "", "decoded-te-policy")
+        @Assert(request.headers.getFirst("te") ?? "", "")
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2DecodedHeaderFieldsRejectMissingMethod(): Unit {
         let fields = [
             JinguiAcceptedTransportH2DecodedHeaderField(
@@ -5533,6 +5583,49 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(request.headers.getFirst("proxy-connection") ?? "", "")
         @Assert(request.headers.getFirst("transfer-encoding") ?? "", "")
         @Assert(request.headers.getFirst("upgrade") ?? "", "")
+        @Assert(request.headers.getFirst("te") ?? "", "")
+    }
+
+    @TestCase
+    public func testJinguiAcceptedTransportH2HeaderBlockSkipsTeTrailersUntilRequestTrailerSupport(): Unit {
+        let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            25,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                serverEngineAbstractionTestByteArray([UInt8(0x44), UInt8(0x0c)]),
+                serverEngineAbstractionTestByteArray("/te-trailers".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x01), UInt8(0x14)]),
+                serverEngineAbstractionTestByteArray(
+                    "api.example.com:9443".toArray()
+                ),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x02)]),
+                serverEngineAbstractionTestByteArray("te".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x08)]),
+                serverEngineAbstractionTestByteArray("trailers".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x06)]),
+                serverEngineAbstractionTestByteArray("x-mode".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x0e)]),
+                serverEngineAbstractionTestByteArray("wire-te-policy".toArray())
+            ])
+        )
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
+                snapshot
+            )
+
+        @Assert(request.method, "GET")
+        @Assert(request.path, "/te-trailers")
+        @Assert(
+            request.headers.getFirst("host") ?? "",
+            "api.example.com:9443"
+        )
+        @Assert(request.headers.getFirst("x-mode") ?? "", "wire-te-policy")
         @Assert(request.headers.getFirst("te") ?? "", "")
     }
 
