@@ -3171,6 +3171,75 @@ public func dryRunJinguiAcceptedTransportH2ApplicationDataResponseWriter(
     )
 }
 
+public class JinguiAcceptedTransportH2ResponseTransportWriterAdapterDryRunResult {
+    public let responseWriterSurface: String
+    public let transportId: String
+    public let transportKind: String
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let byteCount: Int64
+    public let writeCalls: Int64
+    public let failureReason: String
+
+    public init(
+        responseWriterSurface: String,
+        transportId: String,
+        transportKind: String,
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        byteCount: Int64,
+        writeCalls: Int64,
+        failureReason: String
+    ) {
+        this.responseWriterSurface = responseWriterSurface
+        this.transportId = transportId
+        this.transportKind = transportKind
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.byteCount = byteCount
+        this.writeCalls = writeCalls
+        this.failureReason = failureReason
+    }
+}
+
+public func dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
+    responseWriterSurface: String,
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot,
+    writer: ResponseTransportWriter
+): JinguiAcceptedTransportH2ResponseTransportWriterAdapterDryRunResult {
+    let frameWire = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(frame)
+    let responseBytes =
+        cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(frameWire)
+    writer.write(responseBytes)
+    JinguiAcceptedTransportH2ResponseTransportWriterAdapterDryRunResult(
+        responseWriterSurface,
+        transport.transportId,
+        transport.transportKind,
+        "response-transport-writer-complete",
+        true,
+        true,
+        frameWire.size,
+        1,
+        ""
+    )
+}
+
+func cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(
+    frameWire: Array<Byte>
+): Array<UInt8> {
+    let out = Array<UInt8>(frameWire.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < frameWire.size) {
+        out[i] = UInt8(frameWire[i])
+        i += 1
+    }
+    out
+}
+
 public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot,
     sink: JinguiAcceptedTransportH2FrameWireWriterSink

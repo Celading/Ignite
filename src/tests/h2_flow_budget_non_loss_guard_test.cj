@@ -969,6 +969,136 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(rejected, true)
         @Assert(capture.writeCalls, 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameResponseTransportWriterAdapterDryRunWritesEncodedDataFrame(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("rtrn")
+            )
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+        let result =
+            dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
+                "response-transport-writer",
+                h2FlowBudgetNonLossGuardTransport(),
+                frame,
+                writer
+            )
+
+        @Assert(result.responseWriterSurface, "response-transport-writer")
+        @Assert(result.transportId, "h2-flow-budget-transport")
+        @Assert(result.transportKind, "accepted-socket")
+        @Assert(result.statusName, "response-transport-writer-complete")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, true)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writeCalls, 1)
+        @Assert(capture.writeCalls, 1)
+        @Assert(capture.totalBytes, 13)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(capture.lastWire())
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("rtrn"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameResponseTransportWriterAdapterDryRunPropagatesWriterFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let writer = H2FlowBudgetNonLossGuardFailingResponseTransportWriter()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("fail")
+            )
+        var propagated = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
+                    "response-transport-writer",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    frame,
+                    writer
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(writer.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameResponseTransportWriterAdapterDryRunRejectsInvalidBeforeWrite(): Unit {
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        var rejected = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
+                    "response-transport-writer",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    JinguiAcceptedTransportH2FrameWireSnapshot(
+                        1,
+                        UInt8(0x0),
+                        UInt8(0x0),
+                        0,
+                        h2FlowBudgetNonLossGuardBytes("x")
+                    ),
+                    writer
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
@@ -1046,4 +1176,52 @@ class H2FlowBudgetNonLossGuardFunctionSinkCapture {
         }
         h2FlowBudgetNonLossGuardCloneBytes(_wires[_wires.size - 1])
     }
+}
+
+class H2FlowBudgetNonLossGuardResponseTransportCapture {
+    public var writeCalls: Int64 = 0
+    public var totalBytes: Int64 = 0
+    let _wires = ArrayList<Array<UInt8>>()
+
+    public func write(wire: Array<UInt8>): Unit {
+        writeCalls += 1
+        totalBytes += wire.size
+        _wires.add(h2FlowBudgetNonLossGuardCloneUInt8Bytes(wire))
+    }
+
+    public func lastWire(): Array<Byte> {
+        if (_wires.size == 0) {
+            throw Exception("response transport capture has no frame wire")
+        }
+        h2FlowBudgetNonLossGuardUInt8BytesAsBytes(_wires[_wires.size - 1])
+    }
+}
+
+class H2FlowBudgetNonLossGuardFailingResponseTransportWriter <: ResponseTransportWriter {
+    public var writeCalls: Int64 = 0
+
+    public override func write(data: Array<UInt8>): Unit {
+        writeCalls += 1
+        throw Exception("response transport writer failed")
+    }
+}
+
+func h2FlowBudgetNonLossGuardCloneUInt8Bytes(input: Array<UInt8>): Array<UInt8> {
+    let out = Array<UInt8>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
+}
+
+func h2FlowBudgetNonLossGuardUInt8BytesAsBytes(input: Array<UInt8>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
 }
