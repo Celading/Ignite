@@ -5467,6 +5467,76 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2HeaderBlockSkipsForbiddenRegularRequestHeaders(): Unit {
+        let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            23,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                serverEngineAbstractionTestByteArray([UInt8(0x44), UInt8(0x1a)]),
+                serverEngineAbstractionTestByteArray(
+                    "/request-header-block-skip".toArray()
+                ),
+                serverEngineAbstractionTestByteArray([UInt8(0x01), UInt8(0x14)]),
+                serverEngineAbstractionTestByteArray(
+                    "api.example.com:9443".toArray()
+                ),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x0a)]),
+                serverEngineAbstractionTestByteArray("connection".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x05)]),
+                serverEngineAbstractionTestByteArray("close".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x0a)]),
+                serverEngineAbstractionTestByteArray("keep-alive".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x09)]),
+                serverEngineAbstractionTestByteArray("timeout=5".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x10)]),
+                serverEngineAbstractionTestByteArray("proxy-connection".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x0a)]),
+                serverEngineAbstractionTestByteArray("keep-alive".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x11)]),
+                serverEngineAbstractionTestByteArray("transfer-encoding".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x07)]),
+                serverEngineAbstractionTestByteArray("chunked".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x07)]),
+                serverEngineAbstractionTestByteArray("upgrade".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x09)]),
+                serverEngineAbstractionTestByteArray("websocket".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x02)]),
+                serverEngineAbstractionTestByteArray("te".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("gzip".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x06)]),
+                serverEngineAbstractionTestByteArray("x-mode".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("wire".toArray())
+            ])
+        )
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
+                snapshot
+            )
+
+        @Assert(request.method, "GET")
+        @Assert(request.path, "/request-header-block-skip")
+        @Assert(
+            request.headers.getFirst("host") ?? "",
+            "api.example.com:9443"
+        )
+        @Assert(request.headers.getFirst("x-mode") ?? "", "wire")
+        @Assert(request.headers.getFirst("connection") ?? "", "")
+        @Assert(request.headers.getFirst("keep-alive") ?? "", "")
+        @Assert(request.headers.getFirst("proxy-connection") ?? "", "")
+        @Assert(request.headers.getFirst("transfer-encoding") ?? "", "")
+        @Assert(request.headers.getFirst("upgrade") ?? "", "")
+        @Assert(request.headers.getFirst("te") ?? "", "")
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2HeaderBlockRejectsUnsupportedPseudoHeaderProjection(): Unit {
         let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
             21,
