@@ -3035,8 +3035,20 @@ func serverJinguiAcceptedTransportH2ResponseStatusStaticIndex(
     if (status == UInt16(204)) {
         return 9
     }
+    if (status == UInt16(206)) {
+        return 10
+    }
+    if (status == UInt16(304)) {
+        return 11
+    }
+    if (status == UInt16(400)) {
+        return 12
+    }
     if (status == UInt16(404)) {
         return 13
+    }
+    if (status == UInt16(500)) {
+        return 14
     }
     0
 }

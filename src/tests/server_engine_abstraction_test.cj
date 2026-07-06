@@ -1813,6 +1813,46 @@ public class ServerEngineAbstractionTestSuite {
         )
     }
 
+    @TestCase
+    public func testInjectedServerEngineCanEmitRemainingIndexedStaticStatusMatrixFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-206",
+            UInt16(206),
+            "206",
+            10,
+            "sr116-206",
+            107,
+            true
+        )
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-304",
+            UInt16(304),
+            "304",
+            11,
+            "sr116-304",
+            109,
+            false
+        )
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-400",
+            UInt16(400),
+            "400",
+            12,
+            "sr116-400",
+            111,
+            true
+        )
+        assertAcceptedSocketH2ResponseStatusStaticIndex(
+            "/h2-response-status-index-500",
+            UInt16(500),
+            "500",
+            14,
+            "sr116-500",
+            113,
+            true
+        )
+    }
+
     func assertAcceptedSocketH2ResponseStatusStaticIndex(
         routePath: String,
         status: UInt16,
