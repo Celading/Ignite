@@ -383,6 +383,138 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellDirectTlsListenServesBufferedSecondH2TurnFromCarryover(): Unit {
+        let clientChannelProbe = NativeTlsLiveIngressClientChannelProbe()
+        let routeProbe = NativeTlsLiveIngressSequentialRouteProbe()
+        let app = App(config: Config(
+            enableNetworkChangeNotice: false,
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/native-tls-live-ingress-one", { ctx =>
+            routeProbe.firstInvoked = true
+            routeProbe.firstDynHeader = ctx.header("x-dyn") ?? ""
+            let _ = ctx.sendString("first:${routeProbe.firstDynHeader}")
+        })
+        app.get("/native-tls-live-ingress-two", { ctx =>
+            routeProbe.secondInvoked = true
+            routeProbe.secondDynHeader = ctx.header("x-dyn") ?? ""
+            let _ = ctx.sendString("second:${routeProbe.secondDynHeader}")
+        })
+        app.serverEngine(SocketServerEngineShell(
+            selectionLabel: "manual-opt-in",
+            tlsAcceptedSessionReadyHook: { session =>
+                clientChannelProbe.channel = Some(
+                    contractTls13CreateClientRecordChannel(
+                        session.keyMaterial,
+                        algorithm: session.recordChannel.algorithm
+                    )
+                )
+            }
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 3328))
+        )
+        let clientHelloWire =
+            buildServerEngineAbstractionTestTlsRecordWire(
+                clientHello.encodedClientHello
+            )
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var firstDecoded = ""
+        var secondDecoded = ""
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        socket.connect()
+        try {
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                [
+                    cloneServerEngineByteWindow(clientHelloWire, 0, 6),
+                    cloneServerEngineByteWindow(
+                        clientHelloWire,
+                        6,
+                        clientHelloWire.size - 6
+                    )
+                ],
+                writePauseMillis: 20
+            )
+            let channel =
+                waitForNativeTlsLiveIngressClientChannel(
+                    "native shell TLS live ingress buffered carryover H2 channel",
+                    clientChannelProbe
+                )
+            let firstHeaderBlock =
+                concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                    serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x1c)]),
+                    serverEngineAbstractionTestByteArray(
+                        "/native-tls-live-ingress-one".toArray()
+                    ),
+                    serverEngineAbstractionTestByteArray([UInt8(0x40), UInt8(0x05)]),
+                    serverEngineAbstractionTestByteArray("x-dyn".toArray()),
+                    serverEngineAbstractionTestByteArray([UInt8(0x03)]),
+                    serverEngineAbstractionTestByteArray("one".toArray())
+                ])
+            let secondHeaderBlock =
+                concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                    serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x1c)]),
+                    serverEngineAbstractionTestByteArray(
+                        "/native-tls-live-ingress-two".toArray()
+                    ),
+                    serverEngineAbstractionTestByteArray([UInt8(0xbe)])
+                ])
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                buildAcceptedTransportTlsH2TwoHeadersPlusDataRequestRecords(
+                    channel,
+                    firstHeaderBlock,
+                    111,
+                    "first-body",
+                    secondHeaderBlock,
+                    113,
+                    "second-body"
+                ),
+                writePauseMillis: 0
+            )
+            let firstRecord =
+                readAcceptedTransportResponseSocketFirstCompleteRecord(
+                    socket,
+                    readChunkSize: 3
+                )
+            firstDecoded =
+                String.fromUtf8(channel.openAndReassemble([firstRecord]))
+            let secondRecord =
+                readAcceptedTransportResponseSocketFirstCompleteRecord(
+                    socket,
+                    readChunkSize: 3
+                )
+            secondDecoded =
+                String.fromUtf8(channel.openAndReassemble([secondRecord]))
+        } finally {
+            if (!socket.isClosed()) {
+                socket.close()
+            }
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(routeProbe.firstInvoked, true)
+        @Assert(routeProbe.secondInvoked, true)
+        @Assert(routeProbe.firstDynHeader, "one")
+        @Assert(routeProbe.secondDynHeader, "one")
+        @Assert(firstDecoded, "first:one")
+        @Assert(secondDecoded, "second:one")
+    }
+
+    @TestCase
     public func testInjectedServerEngineReceivesListenAndShutdown(): Unit {
         let app = App(config: Config(enableTlsPrecheck: false))
         let engine = SpyServerEngine()
@@ -15418,6 +15550,51 @@ func buildAcceptedTransportTlsH2HeadersPlusDataRequestRecords(
             )
         ]),
         maxFragmentLen: 7
+    )
+}
+
+func buildAcceptedTransportTlsH2TwoHeadersPlusDataRequestRecords(
+    channel: ContractTlsRecordChannel,
+    firstHeaderBlockFragment: Array<Byte>,
+    firstStreamId: Int64,
+    firstBodyText: String,
+    secondHeaderBlockFragment: Array<Byte>,
+    secondStreamId: Int64,
+    secondBodyText: String
+): Array<Array<Byte>> {
+    channel.sealFragments(
+        ContractTlsRecordContentType.ApplicationData,
+        concatServerEngineAbstractionTestByteArrays([
+            buildServerEngineAbstractionTestH2FrameWire(
+                buildServerEngineAbstractionTestH2HeadersPayload(
+                    firstHeaderBlockFragment
+                ),
+                frameType: UInt8(0x1),
+                flags: UInt8(0x4),
+                streamId: firstStreamId
+            ),
+            buildServerEngineAbstractionTestH2FrameWire(
+                serverEngineAbstractionTestByteArray(firstBodyText.toArray()),
+                frameType: UInt8(0x0),
+                flags: UInt8(0x1),
+                streamId: firstStreamId
+            ),
+            buildServerEngineAbstractionTestH2FrameWire(
+                buildServerEngineAbstractionTestH2HeadersPayload(
+                    secondHeaderBlockFragment
+                ),
+                frameType: UInt8(0x1),
+                flags: UInt8(0x4),
+                streamId: secondStreamId
+            ),
+            buildServerEngineAbstractionTestH2FrameWire(
+                serverEngineAbstractionTestByteArray(secondBodyText.toArray()),
+                frameType: UInt8(0x0),
+                flags: UInt8(0x1),
+                streamId: secondStreamId
+            )
+        ]),
+        maxFragmentLen: 4096
     )
 }
 

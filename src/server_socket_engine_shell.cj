@@ -200,6 +200,11 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
     }
     let hpackDecoderState =
         ServerJinguiAcceptedTransportH2HpackDecoderState()
+    let requestAccumulator =
+        option.buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
+            attached.session,
+            hpackDecoderState: Some(hpackDecoderState)
+        )
     var servedTurns: Int64 = 0
     var moreTurns = true
     while (moreTurns && !accepted.isClosed()) {
@@ -212,7 +217,8 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
                     readChunkSize: 4096,
                     maxFragmentLen: 16384,
                     closeSocketAfterTurn: false,
-                    hpackDecoderState: Some(hpackDecoderState)
+                    hpackDecoderState: Some(hpackDecoderState),
+                    requestAccumulator: Some(requestAccumulator)
                 )
             servedTurns += 1
         } catch (e: Exception) {

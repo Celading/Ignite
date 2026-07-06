@@ -832,6 +832,31 @@ public class JinguiAcceptedTransportRecordWireAccumulator {
         out.toArray()
     }
 
+    public func drainOneCompleteRecord(): Array<Array<Byte>> {
+        let out = ArrayList<Array<Byte>>()
+        let remaining = bufferedByteCount()
+        if (remaining < 5) {
+            return out.toArray()
+        }
+        let payloadLen =
+            (Int64(UInt8(_buffer[_readCursor + 3])) << 8) +
+            Int64(UInt8(_buffer[_readCursor + 4]))
+        let recordSize = Int64(5) + payloadLen
+        if (remaining < recordSize) {
+            return out.toArray()
+        }
+        out.add(
+            cloneServerEngineByteListWindow(
+                _buffer,
+                _readCursor,
+                recordSize
+            )
+        )
+        _readCursor += recordSize
+        compactBuffer()
+        out.toArray()
+    }
+
     public func bufferedByteCount(): Int64 {
         _buffer.size - _readCursor
     }
@@ -1164,6 +1189,32 @@ public class JinguiAcceptedTransportH2FrameWireAccumulator {
             )
             _readCursor += frameSize
         }
+        compactBuffer()
+        out.toArray()
+    }
+
+    public func drainOneCompleteFrame(): Array<Array<Byte>> {
+        let out = ArrayList<Array<Byte>>()
+        let remaining = bufferedByteCount()
+        if (remaining < 9) {
+            return out.toArray()
+        }
+        let payloadLen =
+            (Int64(UInt8(_buffer[_readCursor])) << 16) +
+            (Int64(UInt8(_buffer[_readCursor + 1])) << 8) +
+            Int64(UInt8(_buffer[_readCursor + 2]))
+        let frameSize = Int64(9) + payloadLen
+        if (remaining < frameSize) {
+            return out.toArray()
+        }
+        out.add(
+            cloneServerEngineByteListWindow(
+                _buffer,
+                _readCursor,
+                frameSize
+            )
+        )
+        _readCursor += frameSize
         compactBuffer()
         out.toArray()
     }
@@ -1682,16 +1733,28 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
 
     public func append(fragment: Array<Byte>): Unit {
         ensureServerJinguiAcceptedTransportSessionCodecReady(_session)
-        _recordAccumulator.append(fragment)
-        for (encodedRecord in _recordAccumulator.drainCompleteRecords()) {
-            _frameAccumulator.append(
-                _session.recordChannel.openApplicationData(encodedRecord)
-            )
-            for (frameWire in _frameAccumulator.drainCompleteFrames()) {
+        if (fragment.size > 0) {
+            _recordAccumulator.append(fragment)
+        }
+        drainBufferedUntilOneLogicalRequest()
+    }
+
+    func drainBufferedUntilOneLogicalRequest(): Unit {
+        while (_ready.size == 0 && !_sealedLogicalRequest) {
+            let frameWireItems = _frameAccumulator.drainOneCompleteFrame()
+            if (frameWireItems.size > 0) {
                 appendParsedFrame(
-                    parseJinguiAcceptedTransportH2FrameWire(frameWire)
+                    parseJinguiAcceptedTransportH2FrameWire(frameWireItems[0])
                 )
+                continue
             }
+            let encodedRecords = _recordAccumulator.drainOneCompleteRecord()
+            if (encodedRecords.size == 0) {
+                break
+            }
+            _frameAccumulator.append(
+                _session.recordChannel.openApplicationData(encodedRecords[0])
+            )
         }
     }
 
@@ -1702,6 +1765,7 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
         }
         let out = _ready.toArray()
         _ready.clear()
+        _sealedLogicalRequest = false
         out
     }
 
@@ -57099,28 +57163,46 @@ public class ServerEngineListenOption {
         acceptedSocket: TcpSocket,
         readChunkSize!: Int64 = 4096,
         hpackDecoderState!:
-            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None,
+        requestAccumulator!:
+            ?JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator = None
     ): ServerJinguiAcceptedTransportLogicalRequest {
-        let requestAccumulator =
+        var allowBufferedCarryover = false
+        var logicalRequestAccumulator =
             buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
                 session,
                 hpackDecoderState: hpackDecoderState
             )
+        if (let Some(accumulator) <- requestAccumulator) {
+            logicalRequestAccumulator = accumulator
+            allowBufferedCarryover = true
+        }
         let chunkSize = if (readChunkSize > 0) {
             readChunkSize
         } else {
             4096
         }
         let buf = Array<UInt8>(chunkSize, repeat: 0)
+        logicalRequestAccumulator.append([])
+        let carried = logicalRequestAccumulator.drainCompleteLogicalRequests()
+        if (carried.size > 0) {
+            if (carried.size != 1) {
+                throw Exception(
+                    "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expects exactly one buffered carryover logical request, got count=${carried.size}"
+                )
+            }
+            return carried[0]
+        }
         while (true) {
             let n = acceptedSocket.read(buf)
             if (n <= 0) {
                 break
             }
-            requestAccumulator.append(
+            logicalRequestAccumulator.append(
                 serverEngineUInt8ToByteArray(buf[..n])
             )
-            let completed = requestAccumulator.drainCompleteLogicalRequests()
+            let completed =
+                logicalRequestAccumulator.drainCompleteLogicalRequests()
             if (completed.size == 0) {
                 continue
             }
@@ -57129,39 +57211,41 @@ public class ServerEngineListenOption {
                     "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expects exactly one logical request, got count=${completed.size}"
                 )
             }
-            let bufferedRecordWireBytes =
-                requestAccumulator.bufferedRecordWireByteCount()
-            let bufferedH2FrameWireBytes =
-                requestAccumulator.bufferedH2FrameWireByteCount()
-            let hasOpenHeaderBlock =
-                requestAccumulator.hasOpenHeaderBlock()
-            let bufferedHeaderBlockBytes =
-                requestAccumulator.bufferedHeaderBlockByteCount()
-            let bufferedBodyBytes =
-                requestAccumulator.bufferedBodyByteCount()
-            if (
-                bufferedRecordWireBytes != 0 ||
-                bufferedH2FrameWireBytes != 0 ||
-                hasOpenHeaderBlock ||
-                bufferedHeaderBlockBytes != 0 ||
-                bufferedBodyBytes != 0
-            ) {
-                throw Exception(
-                    "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expects fully drained ingress after one logical request, bufferedRecordWireBytes=${bufferedRecordWireBytes}, bufferedH2FrameWireBytes=${bufferedH2FrameWireBytes}, hasOpenHeaderBlock=${hasOpenHeaderBlock}, bufferedHeaderBlockBytes=${bufferedHeaderBlockBytes}, bufferedBodyBytes=${bufferedBodyBytes}"
-                )
+            if (!allowBufferedCarryover) {
+                let bufferedRecordWireBytes =
+                    logicalRequestAccumulator.bufferedRecordWireByteCount()
+                let bufferedH2FrameWireBytes =
+                    logicalRequestAccumulator.bufferedH2FrameWireByteCount()
+                let hasOpenHeaderBlock =
+                    logicalRequestAccumulator.hasOpenHeaderBlock()
+                let bufferedHeaderBlockBytes =
+                    logicalRequestAccumulator.bufferedHeaderBlockByteCount()
+                let bufferedBodyBytes =
+                    logicalRequestAccumulator.bufferedBodyByteCount()
+                if (
+                    bufferedRecordWireBytes != 0 ||
+                    bufferedH2FrameWireBytes != 0 ||
+                    hasOpenHeaderBlock ||
+                    bufferedHeaderBlockBytes != 0 ||
+                    bufferedBodyBytes != 0
+                ) {
+                    throw Exception(
+                        "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expects fully drained ingress after one logical request, bufferedRecordWireBytes=${bufferedRecordWireBytes}, bufferedH2FrameWireBytes=${bufferedH2FrameWireBytes}, hasOpenHeaderBlock=${hasOpenHeaderBlock}, bufferedHeaderBlockBytes=${bufferedHeaderBlockBytes}, bufferedBodyBytes=${bufferedBodyBytes}"
+                    )
+                }
             }
             return completed[0]
         }
         let bufferedRecordWireBytes =
-            requestAccumulator.bufferedRecordWireByteCount()
+            logicalRequestAccumulator.bufferedRecordWireByteCount()
         let bufferedH2FrameWireBytes =
-            requestAccumulator.bufferedH2FrameWireByteCount()
+            logicalRequestAccumulator.bufferedH2FrameWireByteCount()
         let hasOpenHeaderBlock =
-            requestAccumulator.hasOpenHeaderBlock()
+            logicalRequestAccumulator.hasOpenHeaderBlock()
         let bufferedHeaderBlockBytes =
-            requestAccumulator.bufferedHeaderBlockByteCount()
+            logicalRequestAccumulator.bufferedHeaderBlockByteCount()
         let bufferedBodyBytes =
-            requestAccumulator.bufferedBodyByteCount()
+            logicalRequestAccumulator.bufferedBodyByteCount()
         throw Exception(
             "accepted-session accepted-socket fragmented-record-wire headers-plus-data request-turn expected one logical request before socket read ended, bufferedRecordWireBytes=${bufferedRecordWireBytes}, bufferedH2FrameWireBytes=${bufferedH2FrameWireBytes}, hasOpenHeaderBlock=${hasOpenHeaderBlock}, bufferedHeaderBlockBytes=${bufferedHeaderBlockBytes}, bufferedBodyBytes=${bufferedBodyBytes}"
         )
@@ -57309,14 +57393,17 @@ public class ServerEngineListenOption {
         maxFragmentLen!: Int64 = 16384,
         closeSocketAfterTurn!: Bool = true,
         hpackDecoderState!:
-            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None,
+        requestAccumulator!:
+            ?JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let request =
             buildJinguiAcceptedTransportLogicalRequestFromAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataCore(
                 session,
                 acceptedSocket,
                 readChunkSize: readChunkSize,
-                hpackDecoderState: hpackDecoderState
+                hpackDecoderState: hpackDecoderState,
+                requestAccumulator: requestAccumulator
             )
         serveJinguiAcceptedTransportSessionLogicalRequestTurnCore(
             session,
