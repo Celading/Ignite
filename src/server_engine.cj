@@ -2657,6 +2657,112 @@ public class JinguiAcceptedTransportH2WriterFlowGate {
     }
 }
 
+class JinguiAcceptedTransportH2WriterFlowQueueEntry {
+    let streamId: Int64
+    let byteCount: Int64
+
+    init(
+        streamId: Int64,
+        byteCount: Int64
+    ) {
+        this.streamId = streamId
+        this.byteCount = byteCount
+    }
+}
+
+public class JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
+    public let drained: Bool
+    public let waitingForWindowUpdate: Bool
+    public let streamId: Int64
+    public let byteCount: Int64
+    public let pendingCount: Int64
+    public let decision: JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot
+
+    public init(
+        drained: Bool,
+        waitingForWindowUpdate: Bool,
+        streamId: Int64,
+        byteCount: Int64,
+        pendingCount: Int64,
+        decision: JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot
+    ) {
+        this.drained = drained
+        this.waitingForWindowUpdate = waitingForWindowUpdate
+        this.streamId = streamId
+        this.byteCount = byteCount
+        this.pendingCount = pendingCount
+        this.decision = decision
+    }
+}
+
+/// Minimal non-lossy queue attachment for H2 writer DATA budget claims.
+///
+/// This queue does not write to a socket. It only proves that a writer-owned
+/// DATA entry remains pending when the flow gate asks for WINDOW_UPDATE.
+public class JinguiAcceptedTransportH2WriterFlowQueue {
+    let _gate: JinguiAcceptedTransportH2WriterFlowGate
+    let _entries = ArrayList<JinguiAcceptedTransportH2WriterFlowQueueEntry>()
+
+    public init(
+        gate: JinguiAcceptedTransportH2WriterFlowGate
+    ) {
+        this._gate = gate
+    }
+
+    public func enqueueDataLength(
+        streamId: Int64,
+        byteCount: Int64
+    ): Int64 {
+        if (streamId <= 0) {
+            throw Exception(
+                "H2 writer flow queue requires non-zero streamId, got ${streamId}"
+            )
+        }
+        if (byteCount < 0) {
+            throw Exception(
+                "H2 writer flow queue requires non-negative byteCount, got ${byteCount}"
+            )
+        }
+        _entries.add(
+            JinguiAcceptedTransportH2WriterFlowQueueEntry(streamId, byteCount)
+        )
+        _entries.size
+    }
+
+    public func pendingCount(): Int64 {
+        _entries.size
+    }
+
+    public func tryDrainHead(
+    ): JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
+        if (_entries.size == 0) {
+            throw Exception("H2 writer flow queue cannot drain empty queue")
+        }
+        let entry = _entries[0]
+        let decision =
+            _gate.tryClaimDataWrite(entry.streamId, entry.byteCount)
+        if (decision.canWrite) {
+            let _ = _entries.remove(at: Int64(0))
+            return JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot(
+                true,
+                false,
+                entry.streamId,
+                entry.byteCount,
+                _entries.size,
+                decision
+            )
+        }
+        JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot(
+            false,
+            decision.waitingForWindowUpdate,
+            entry.streamId,
+            entry.byteCount,
+            _entries.size,
+            decision
+        )
+    }
+}
+
 func appendJinguiAcceptedTransportH2HeaderBlockBytes(
     out: ArrayList<Byte>,
     bytes: Array<Byte>

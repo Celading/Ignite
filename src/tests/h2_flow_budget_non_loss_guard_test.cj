@@ -93,6 +93,55 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(model.connectionSendBudget(), 1)
         @Assert(model.streamSendBudget(1), 4)
     }
+
+    @TestCase
+    public func testWriterFlowQueueKeepsBlockedHeadUntilWindowUpdate(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 8)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLength(1, 4), 1)
+        let blocked = queue.tryDrainHead()
+        @Assert(blocked.drained, false)
+        @Assert(blocked.waitingForWindowUpdate, true)
+        @Assert(blocked.pendingCount, 1)
+        @Assert(blocked.decision.statusName, "waiting-for-window-update")
+        @Assert(queue.pendingCount(), 1)
+        @Assert(model.connectionSendBudget(), 3)
+        @Assert(model.streamSendBudget(1), 8)
+
+        model.observeWindowUpdateFrame(
+            JinguiAcceptedTransportH2FrameWireSnapshot(
+                4,
+                UInt8(0x8),
+                UInt8(0x0),
+                0,
+                h2FlowBudgetNonLossGuardWindowUpdatePayload(2)
+            )
+        )
+
+        let drained = queue.tryDrainHead()
+        @Assert(drained.drained, true)
+        @Assert(drained.waitingForWindowUpdate, false)
+        @Assert(drained.pendingCount, 0)
+        @Assert(drained.decision.statusName, "sent")
+        @Assert(queue.pendingCount(), 0)
+        @Assert(model.connectionSendBudget(), 1)
+        @Assert(model.streamSendBudget(1), 4)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
