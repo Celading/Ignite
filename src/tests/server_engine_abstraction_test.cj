@@ -1291,6 +1291,47 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanSealH2DataFramesThroughAcceptedSocketLifecycleApplicationDataWriter(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let engine =
+            JinguiAcceptedTransportH2LifecycleApplicationDataWriterProbeEngine()
+        app.serverEngine(engine)
+
+        app.listen("127.0.0.1", reserveServerEngineAbstractionLoopbackPort())
+
+        @Assert(engine.successWriterOpenCalls, 1)
+        @Assert(engine.successHandoffAcquisitionCount, 1)
+        @Assert(engine.successSocketWriteCount, 2)
+        @Assert(engine.successEncodedRecordCount, 2)
+        @Assert(engine.successDecodedFrameCount, 2)
+        @Assert(engine.successFirstFrameType, UInt8(0x0))
+        @Assert(engine.successFirstFrameFlags, UInt8(0x0))
+        @Assert(engine.successSecondFrameType, UInt8(0x0))
+        @Assert(engine.successSecondFrameFlags, UInt8(0x1))
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.successFirstPayload,
+                serverEngineAbstractionTestTextBytes("part")
+            ),
+            true
+        )
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.successSecondPayload,
+                serverEngineAbstractionTestTextBytes("done")
+            ),
+            true
+        )
+        @Assert(engine.blockedRejected, true)
+        @Assert(engine.blockedWriterOpenCalls, 0)
+        @Assert(engine.blockedEncodedRecordCount, 0)
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -14380,6 +14421,222 @@ class JinguiAcceptedTransportResponseTransportWriterProbeEngine <: ServerEngine 
     public override func shutdown(): Unit {}
 }
 
+class JinguiAcceptedTransportH2LifecycleApplicationDataWriterProbeEngine <: ServerEngine {
+    public var successWriterOpenCalls: Int64 = 0
+    public var successHandoffAcquisitionCount: Int64 = 0
+    public var successSocketWriteCount: Int64 = 0
+    public var successEncodedSocketBytes: Int64 = 0
+    public var successEncodedRecordCount: Int64 = 0
+    public var successDecodedFrameCount: Int64 = 0
+    public var successFirstFrameType: UInt8 = 0
+    public var successFirstFrameFlags: UInt8 = 0
+    public var successSecondFrameType: UInt8 = 0
+    public var successSecondFrameFlags: UInt8 = 0
+    public var successFirstPayload: Array<Byte> = []
+    public var successSecondPayload: Array<Byte> = []
+    public var blockedRejected: Bool = false
+    public var blockedWriterOpenCalls: Int64 = 0
+    public var blockedEncodedRecordCount: Int64 = 0
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        app: App,
+        onReady: ?((ServerEngineReadySignal) -> Unit)
+    ): Unit {
+        let _ = app
+        runSuccessProbe(option)
+        runBlockedProbe(option)
+        if (let Some(cb) <- onReady) {
+            cb(ServerEngineReadySignal())
+        }
+    }
+
+    func runSuccessProbe(option: ServerEngineListenOption): Unit {
+        let transport = ContractAcceptedTransportDescriptor(
+            "h2-lifecycle-appdata-success",
+            localEndpoint: "127.0.0.1:443",
+            remoteEndpoint: "127.0.0.1:55448"
+        )
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 448))
+        )
+        let session = option.attachJinguiAcceptedTransportTls13X25519(
+            transport,
+            clientHello.encodedClientHello,
+            engineIncrementalBytes(32, start: 480)
+        )
+        let clientChannel = contractTls13CreateClientRecordChannel(
+            session.keyMaterial,
+            algorithm: session.recordChannel.algorithm
+        )
+        let collector = CollectingResponseTransportWriter()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => collector.write(bytes) }
+            )
+        let carrier =
+            AcceptedTransportH2LifecycleApplicationDataProbeCarrier(
+                "/h2-lifecycle-appdata-success",
+                lifecycle,
+                false
+            )
+        let wrappedCarrier =
+            option.wrapCurrentRequestCarrierWithJinguiAcceptedTransportApplicationDataResponse(
+                session,
+                carrier,
+                maxFragmentLen: 64
+            )
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                serverEngineAbstractionTestTextBytes("s1")
+            )
+        )
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        let secondChunk = queue.tryDrainHeadChunk(4)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                ServerJinguiAcceptedTransportDescriptorSnapshot(
+                    "h2-lifecycle-appdata-success",
+                    "accepted-socket",
+                    "127.0.0.1:443",
+                    "127.0.0.1:55448"
+                ),
+                wrappedCarrier
+            )
+        let _ =
+            handoff.commitDataFrame(
+                "accepted-socket-lifecycle-application-data-writer-probe",
+                firstChunk,
+                serverEngineAbstractionTestTextBytes("part")
+            )
+        let _ =
+            handoff.commitDataFrame(
+                "accepted-socket-lifecycle-application-data-writer-probe",
+                secondChunk,
+                serverEngineAbstractionTestTextBytes("done")
+            )
+
+        successWriterOpenCalls = carrier.openCalls
+        successHandoffAcquisitionCount = handoff.acquisitionCount()
+        successSocketWriteCount = lifecycle.socketWriteCount
+        successEncodedSocketBytes = lifecycle.totalEncodedSocketBytes
+        successEncodedRecordCount = collector.writes.size
+        let decodedWire =
+            clientChannel.openAndReassemble(
+                serverEngineAbstractionTestByteRecords(collector.writes)
+            )
+        let frames = splitJinguiAcceptedTransportH2FrameWire(decodedWire)
+        successDecodedFrameCount = frames.size
+        let firstFrame = parseJinguiAcceptedTransportH2FrameWire(frames[0])
+        let secondFrame = parseJinguiAcceptedTransportH2FrameWire(frames[1])
+        successFirstFrameType = firstFrame.frameType
+        successFirstFrameFlags = firstFrame.flags
+        successSecondFrameType = secondFrame.frameType
+        successSecondFrameFlags = secondFrame.flags
+        successFirstPayload =
+            cloneServerEngineAbstractionTestByteWindow(
+                firstFrame.payload,
+                0,
+                firstFrame.payload.size
+            )
+        successSecondPayload =
+            cloneServerEngineAbstractionTestByteWindow(
+                secondFrame.payload,
+                0,
+                secondFrame.payload.size
+            )
+    }
+
+    func runBlockedProbe(option: ServerEngineListenOption): Unit {
+        let transport = ContractAcceptedTransportDescriptor(
+            "h2-lifecycle-appdata-blocked",
+            localEndpoint: "127.0.0.1:443",
+            remoteEndpoint: "127.0.0.1:55449"
+        )
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["h2", "http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 512))
+        )
+        let session = option.attachJinguiAcceptedTransportTls13X25519(
+            transport,
+            clientHello.encodedClientHello,
+            engineIncrementalBytes(32, start: 544)
+        )
+        let collector = CollectingResponseTransportWriter()
+        let lifecycle =
+            ServerJinguiAcceptedTransportSocketResponseWriterLifecycle(
+                { bytes => collector.write(bytes) }
+            )
+        let carrier =
+            AcceptedTransportH2LifecycleApplicationDataProbeCarrier(
+                "/h2-lifecycle-appdata-blocked",
+                lifecycle,
+                false
+            )
+        let wrappedCarrier =
+            option.wrapCurrentRequestCarrierWithJinguiAcceptedTransportApplicationDataResponse(
+                session,
+                carrier,
+                maxFragmentLen: 64
+            )
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                serverEngineAbstractionTestTextBytes("s1")
+            )
+        )
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let blocked = queue.tryDrainHeadChunk(4)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                ServerJinguiAcceptedTransportDescriptorSnapshot(
+                    "h2-lifecycle-appdata-blocked",
+                    "accepted-socket",
+                    "127.0.0.1:443",
+                    "127.0.0.1:55449"
+                ),
+                wrappedCarrier
+            )
+        try {
+            let _ =
+                handoff.commitDataFrame(
+                    "accepted-socket-lifecycle-application-data-writer-probe",
+                    blocked,
+                    serverEngineAbstractionTestTextBytes("wait")
+                )
+        } catch (_: Exception) {
+            blockedRejected = true
+        }
+        blockedWriterOpenCalls = carrier.openCalls
+        blockedEncodedRecordCount = collector.writes.size
+    }
+
+    public override func shutdown(): Unit {}
+}
+
 class JinguiAcceptedTransportResponseCarrierProbeEngine <: ServerEngine {
     public var jsonWriteDecodedJson: String = ""
     public var jsonStreamDecodedJson: String = ""
@@ -15187,6 +15444,123 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         let _ = stream
         throw Exception(
             "response stream should be intercepted by accepted transport response carrier wrapper"
+        )
+    }
+}
+
+class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestCarrier {
+    let pathText: String
+    let lifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    let failOnOpen: Bool
+    public let responseHeaders = HttpHeaders()
+    public var responseStatus: UInt16 = 200
+    public var openCalls: Int64 = 0
+
+    init(
+        pathText: String,
+        lifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle,
+        failOnOpen: Bool
+    ) {
+        this.pathText = pathText
+        this.lifecycle = lifecycle
+        this.failOnOpen = failOnOpen
+    }
+
+    public override func rawHttpContext(): HttpContext {
+        throw Exception("raw HttpContext should not be required for accepted transport H2 lifecycle application-data probe carrier")
+    }
+
+    public override func upgradeWebSocketRaw(): WebSocket {
+        throw Exception("websocket upgrade should not run for accepted transport H2 lifecycle application-data probe carrier")
+    }
+
+    public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
+        openCalls += 1
+        if (failOnOpen) {
+            throw Exception(
+                "accepted transport H2 lifecycle application-data writer acquisition failed"
+            )
+        }
+        lifecycle.openResponseTransportWriter()
+    }
+
+    public override func requestMethod(): String {
+        "GET"
+    }
+
+    public override func requestPath(): String {
+        pathText
+    }
+
+    public override func requestUrlString(): String {
+        pathText
+    }
+
+    public override func requestVersionString(): String {
+        "h2"
+    }
+
+    public override func requestRemoteAddr(): String {
+        "127.0.0.1"
+    }
+
+    public override func requestQueryValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestFormValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaderValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestBodyStream(): InputStream {
+        AcceptedTransportResponseProbeEmptyInputStream()
+    }
+
+    public override func requestBodySize(): ?Int64 {
+        Some(0)
+    }
+
+    public override func setResponseStatus(code: UInt16): Unit {
+        responseStatus = code
+    }
+
+    public override func setResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
+    }
+
+    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+        let _ = headers
+    }
+
+    public override func setResponseString(body: String): Unit {
+        let _ = body
+        throw Exception(
+            "response string should not run in accepted transport H2 lifecycle application-data probe"
+        )
+    }
+
+    public override func setResponseBytes(data: Array<UInt8>): Unit {
+        let _ = data
+        throw Exception(
+            "response bytes should not run in accepted transport H2 lifecycle application-data probe"
+        )
+    }
+
+    public override func attachResponseBodyStream(stream: InputStream): Unit {
+        let _ = stream
+        throw Exception(
+            "response stream should not run in accepted transport H2 lifecycle application-data probe"
         )
     }
 }
@@ -16032,6 +16406,17 @@ func cloneServerEngineAbstractionTestBytes(input: Array<UInt8>): Array<UInt8> {
 }
 
 func serverEngineAbstractionTestByteArray(input: Array<UInt8>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
+}
+
+func serverEngineAbstractionTestTextBytes(text: String): Array<Byte> {
+    let input = text.toArray()
     let out = Array<Byte>(input.size, repeat: 0)
     var i: Int64 = 0
     while (i < input.size) {
