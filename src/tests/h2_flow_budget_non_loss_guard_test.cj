@@ -1099,6 +1099,146 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(capture.writeCalls, 0)
         @Assert(capture.totalBytes, 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameNativeResponseCommitAdapterGateWritesEncodedDataFrame(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+        let result =
+            dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+                "native-h2-response-commit-adapter",
+                h2FlowBudgetNonLossGuardTransport(),
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("gate"),
+                writer
+            )
+
+        @Assert(result.responseWriterSurface, "native-h2-response-commit-adapter")
+        @Assert(result.transportId, "h2-flow-budget-transport")
+        @Assert(result.transportKind, "accepted-socket")
+        @Assert(result.adapterStatusName, "response-transport-writer-complete")
+        @Assert(result.statusName, "native-response-commit-adapter-complete")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, true)
+        @Assert(result.streamId, 1)
+        @Assert(result.endStream, true)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writeCalls, 1)
+        @Assert(capture.writeCalls, 1)
+        @Assert(capture.totalBytes, 13)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(capture.lastWire())
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("gate"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameNativeResponseCommitAdapterGatePropagatesWriterFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let writer = H2FlowBudgetNonLossGuardFailingResponseTransportWriter()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        var propagated = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+                    "native-h2-response-commit-adapter",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    chunk,
+                    h2FlowBudgetNonLossGuardBytes("fail"),
+                    writer
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(writer.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameNativeResponseCommitAdapterGateRejectsBlockedDrainBeforeWrite(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let blocked = queue.tryDrainHeadChunk(4)
+        @Assert(blocked.drained, false)
+
+        var rejected = false
+        try {
+            let _ =
+                dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+                    "native-h2-response-commit-adapter",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    blocked,
+                    h2FlowBudgetNonLossGuardBytes("wait"),
+                    writer
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {

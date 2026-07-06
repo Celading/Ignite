@@ -3228,6 +3228,89 @@ public func dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
     )
 }
 
+public class JinguiAcceptedTransportH2NativeResponseCommitAdapterGateDryRunResult {
+    public let responseWriterSurface: String
+    public let transportId: String
+    public let transportKind: String
+    public let adapterStatusName: String
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let streamId: Int64
+    public let endStream: Bool
+    public let byteCount: Int64
+    public let writeCalls: Int64
+    public let failureReason: String
+
+    public init(
+        responseWriterSurface: String,
+        transportId: String,
+        transportKind: String,
+        adapterStatusName: String,
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        streamId: Int64,
+        endStream: Bool,
+        byteCount: Int64,
+        writeCalls: Int64,
+        failureReason: String
+    ) {
+        this.responseWriterSurface = responseWriterSurface
+        this.transportId = transportId
+        this.transportKind = transportKind
+        this.adapterStatusName = adapterStatusName
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.streamId = streamId
+        this.endStream = endStream
+        this.byteCount = byteCount
+        this.writeCalls = writeCalls
+        this.failureReason = failureReason
+    }
+}
+
+public func dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+    responseWriterSurface: String,
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    drain: JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot,
+    payload: Array<Byte>,
+    writer: ResponseTransportWriter
+): JinguiAcceptedTransportH2NativeResponseCommitAdapterGateDryRunResult {
+    let frame =
+        buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+            drain,
+            payload
+        )
+    let adapter =
+        dryRunJinguiAcceptedTransportH2ResponseTransportWriterAdapter(
+            responseWriterSurface,
+            transport,
+            frame,
+            writer
+        )
+    let statusName = if (adapter.completed) {
+        "native-response-commit-adapter-complete"
+    } else {
+        "native-response-commit-adapter-incomplete"
+    }
+    JinguiAcceptedTransportH2NativeResponseCommitAdapterGateDryRunResult(
+        adapter.responseWriterSurface,
+        adapter.transportId,
+        adapter.transportKind,
+        adapter.statusName,
+        statusName,
+        adapter.attempted,
+        adapter.completed,
+        frame.streamId,
+        frame.flags == UInt8(0x1),
+        adapter.byteCount,
+        adapter.writeCalls,
+        adapter.failureReason
+    )
+}
+
 func cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(
     frameWire: Array<Byte>
 ): Array<UInt8> {
