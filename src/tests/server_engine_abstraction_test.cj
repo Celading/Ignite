@@ -3795,6 +3795,61 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2HpackDecoderStateCanReuseDynamicIndexAcrossHeaderBlocks(): Unit {
+        let hpackDecoderState =
+            ServerJinguiAcceptedTransportH2HpackDecoderState()
+        let firstSnapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            31,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("/one".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x40), UInt8(0x05)]),
+                serverEngineAbstractionTestByteArray("x-dyn".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x03)]),
+                serverEngineAbstractionTestByteArray("one".toArray())
+            ])
+        )
+        let secondSnapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            33,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                serverEngineAbstractionTestByteArray([UInt8(0x04), UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("/two".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0xbe)])
+            ])
+        )
+
+        let firstFields =
+            hpackDecoderState.parseHeaderFields(firstSnapshot)
+        @Assert(firstFields.size, 3)
+        @Assert(firstFields[2].name, "x-dyn")
+        @Assert(firstFields[2].value, "one")
+        @Assert(firstFields[2].representationKind, "literal-with-indexing")
+        @Assert(hpackDecoderState.dynamicEntryCount(), 1)
+
+        let secondFields =
+            hpackDecoderState.parseHeaderFields(secondSnapshot)
+        @Assert(secondFields.size, 3)
+        @Assert(secondFields[2].name, "x-dyn")
+        @Assert(secondFields[2].value, "one")
+        @Assert(secondFields[2].representationKind, "indexed-dynamic")
+        @Assert(secondFields[2].staticIndex, 0)
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2HeaderFieldDecodeRejectsDynamicTableUpdate(): Unit {
         let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
             13,

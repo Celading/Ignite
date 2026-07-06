@@ -542,6 +542,17 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
     )
 }
 
+public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithHpackDecoderState(
+    headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+    hpackDecoderState: ServerJinguiAcceptedTransportH2HpackDecoderState,
+    bodyBytes!: Array<UInt8> = []
+): ServerJinguiAcceptedTransportLogicalRequest {
+    buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
+        hpackDecoderState.parseHeaderFields(headerBlock),
+        bodyBytes: bodyBytes
+    )
+}
+
 public class ServerJinguiAcceptedTransportTls13ClientHelloCapture {
     public let encodedClientHello: Array<Byte>
     public let consumedRecordCount: Int64
@@ -1648,14 +1659,25 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
     let _recordAccumulator = JinguiAcceptedTransportRecordWireAccumulator()
     let _frameAccumulator = JinguiAcceptedTransportH2FrameWireAccumulator()
     let _headerBlockAccumulator = JinguiAcceptedTransportH2HeaderBlockAccumulator()
+    let _hpackDecoderState: ServerJinguiAcceptedTransportH2HpackDecoderState
     let _ready = ArrayList<ServerJinguiAcceptedTransportLogicalRequest>()
     var _sealedLogicalRequest = false
     var _completedHeaderBlock: ?JinguiAcceptedTransportH2HeaderBlockSnapshot = None
     var _bodyBytes = ArrayList<Byte>()
 
-    public init(session: ContractHttpServerAcceptedTransportSession) {
+    public init(
+        session: ContractHttpServerAcceptedTransportSession,
+        hpackDecoderState!: ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
+    ) {
         ensureServerJinguiAcceptedTransportSessionCodecReady(session)
         _session = session
+        match (hpackDecoderState) {
+            case Some(state) =>
+                _hpackDecoderState = state
+            case None =>
+                _hpackDecoderState =
+                    ServerJinguiAcceptedTransportH2HpackDecoderState()
+        }
     }
 
     public func append(fragment: Array<Byte>): Unit {
@@ -1769,8 +1791,9 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
             )
         }
         _ready.add(
-            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithHpackDecoderState(
                 headerBlock,
+                _hpackDecoderState,
                 bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray())
             )
         )
@@ -2584,6 +2607,102 @@ class ServerJinguiAcceptedTransportH2StaticHeaderField {
     }
 }
 
+class ServerJinguiAcceptedTransportH2DynamicHeaderTable {
+    let _entries = ArrayList<ServerJinguiAcceptedTransportH2StaticHeaderField>()
+    let _maxAllowedSize: Int64
+    var _maxSize: Int64
+    var _currentSize: Int64 = 0
+
+    init(
+        maxSize!: Int64 =
+            serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate()
+    ) {
+        if (
+            maxSize < 0 ||
+            maxSize >
+                serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate()
+        ) {
+            throw Exception(
+                "H2 HPACK dynamic table initial max-size exceeds bounded max, value=${maxSize}, max=${serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate()}"
+            )
+        }
+        _maxAllowedSize = maxSize
+        _maxSize = maxSize
+    }
+
+    func maxSize(): Int64 {
+        _maxSize
+    }
+
+    func maxAllowedSize(): Int64 {
+        _maxAllowedSize
+    }
+
+    func currentSize(): Int64 {
+        _currentSize
+    }
+
+    func entryCount(): Int64 {
+        _entries.size
+    }
+
+    func updateMaxSize(maxSize: Int64): Unit {
+        if (
+            maxSize < 0 ||
+            maxSize > _maxAllowedSize
+        ) {
+            throw Exception(
+                "H2 HPACK dynamic table size update exceeds configured max, value=${maxSize}, max=${_maxAllowedSize}"
+            )
+        }
+        _maxSize = maxSize
+        evictUntilWithinMaxSize()
+    }
+
+    func add(name: String, value: String): Unit {
+        let entry =
+            ServerJinguiAcceptedTransportH2StaticHeaderField(name, value)
+        let size = entrySize(entry)
+        if (size > _maxSize) {
+            _entries.clear()
+            _currentSize = 0
+            return
+        }
+        _entries.add(entry)
+        _currentSize += size
+        evictUntilWithinMaxSize()
+    }
+
+    func lookup(
+        index: Int64
+    ): ServerJinguiAcceptedTransportH2StaticHeaderField {
+        let dynamicOffset =
+            index - serverJinguiAcceptedTransportH2FirstDynamicTableIndex()
+        if (dynamicOffset < 0 || dynamicOffset >= _entries.size) {
+            throw Exception(
+                "H2 HPACK dynamic table cannot resolve index=${index}, entryCount=${_entries.size}"
+            )
+        }
+        _entries[_entries.size - 1 - dynamicOffset]
+    }
+
+    func evictUntilWithinMaxSize(): Unit {
+        while (_currentSize > _maxSize && _entries.size > 0) {
+            let removed = _entries.remove(at: Int64(0))
+            _currentSize -= entrySize(removed)
+        }
+        if (_currentSize < 0) {
+            _currentSize = 0
+        }
+    }
+
+    func entrySize(
+        entry: ServerJinguiAcceptedTransportH2StaticHeaderField
+    ): Int64 {
+        entry.name.size + entry.value.size + 32
+    }
+}
+
 class ServerJinguiAcceptedTransportH2HpackIntegerDecodeResult {
     let value: Int64
     let nextCursor: Int64
@@ -2617,6 +2736,50 @@ class ServerJinguiAcceptedTransportH2DecodedHeaderFieldParseResult {
     }
 }
 
+public class ServerJinguiAcceptedTransportH2HpackDecoderState {
+    let _dynamicTable: ServerJinguiAcceptedTransportH2DynamicHeaderTable
+
+    public init() {
+        this._dynamicTable =
+            ServerJinguiAcceptedTransportH2DynamicHeaderTable(
+                maxSize:
+                    serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate()
+            )
+    }
+
+    public init(maxDynamicTableSize: Int64) {
+        this._dynamicTable =
+            ServerJinguiAcceptedTransportH2DynamicHeaderTable(
+                maxSize: maxDynamicTableSize
+            )
+    }
+
+    public func parseHeaderFields(
+        headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot
+    ): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
+        parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTable(
+            headerBlock.headerBlockFragment,
+            _dynamicTable
+        )
+    }
+
+    public func updateMaxDynamicTableSize(maxDynamicTableSize: Int64): Unit {
+        _dynamicTable.updateMaxSize(maxDynamicTableSize)
+    }
+
+    public func dynamicTableMaxSize(): Int64 {
+        _dynamicTable.maxSize()
+    }
+
+    public func dynamicEntryCount(): Int64 {
+        _dynamicTable.entryCount()
+    }
+
+    public func dynamicTableCurrentSize(): Int64 {
+        _dynamicTable.currentSize()
+    }
+}
+
 public func parseJinguiAcceptedTransportH2HeaderFields(
     headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot
 ): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
@@ -2625,8 +2788,42 @@ public func parseJinguiAcceptedTransportH2HeaderFields(
     )
 }
 
+public func parseJinguiAcceptedTransportH2HeaderFieldsWithDynamicTableMaxSize(
+    headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+    maxDynamicTableSize: Int64
+): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
+    parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTableMaxSize(
+        headerBlock.headerBlockFragment,
+        maxDynamicTableSize
+    )
+}
+
 func parseJinguiAcceptedTransportH2HeaderFieldsFromBytes(
     headerBlockFragment: Array<Byte>
+): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
+    parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTableMaxSize(
+        headerBlockFragment,
+        serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate()
+    )
+}
+
+func parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTableMaxSize(
+    headerBlockFragment: Array<Byte>,
+    maxDynamicTableSize: Int64
+): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
+    let dynamicTable =
+        ServerJinguiAcceptedTransportH2DynamicHeaderTable(
+            maxSize: maxDynamicTableSize
+        )
+    parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTable(
+        headerBlockFragment,
+        dynamicTable
+    )
+}
+
+func parseJinguiAcceptedTransportH2HeaderFieldsFromBytesWithDynamicTable(
+    headerBlockFragment: Array<Byte>,
+    dynamicTable: ServerJinguiAcceptedTransportH2DynamicHeaderTable
 ): Array<JinguiAcceptedTransportH2DecodedHeaderField> {
     let out = ArrayList<JinguiAcceptedTransportH2DecodedHeaderField>()
     var cursor: Int64 = 0
@@ -2645,16 +2842,32 @@ func parseJinguiAcceptedTransportH2HeaderFieldsFromBytes(
                 )
             }
             let entry =
-                serverJinguiAcceptedTransportH2StaticHeaderFieldByIndex(
-                    indexed.value
+                serverJinguiAcceptedTransportH2HeaderFieldByIndex(
+                    indexed.value,
+                    dynamicTable
                 )
+            let isStatic =
+                indexed.value <
+                    serverJinguiAcceptedTransportH2FirstDynamicTableIndex()
+            let representationKind =
+                if (isStatic) {
+                    "indexed"
+                } else {
+                    "indexed-dynamic"
+                }
+            let staticIndex =
+                if (isStatic) {
+                    indexed.value
+                } else {
+                    0
+                }
             out.add(
                 JinguiAcceptedTransportH2DecodedHeaderField(
                     entry.name,
                     entry.value,
-                    "indexed",
-                    indexed.value,
-                    indexed.value
+                    representationKind,
+                    staticIndex,
+                    staticIndex
                 )
             )
             cursor = indexed.nextCursor
@@ -2666,9 +2879,11 @@ func parseJinguiAcceptedTransportH2HeaderFieldsFromBytes(
                     headerBlockFragment,
                     cursor,
                     6,
-                    "literal-with-indexing"
+                    "literal-with-indexing",
+                    dynamicTable
                 )
             out.add(decoded.field)
+            dynamicTable.add(decoded.field.name, decoded.field.value)
             cursor = decoded.nextCursor
             continue
         }
@@ -2688,7 +2903,8 @@ func parseJinguiAcceptedTransportH2HeaderFieldsFromBytes(
                 headerBlockFragment,
                 cursor,
                 4,
-                representationKind
+                representationKind,
+                dynamicTable
             )
         out.add(decoded.field)
         cursor = decoded.nextCursor
@@ -2700,7 +2916,8 @@ func parseServerJinguiAcceptedTransportH2LiteralHeaderField(
     headerBlockFragment: Array<Byte>,
     cursor: Int64,
     prefixBits: Int64,
-    representationKind: String
+    representationKind: String,
+    dynamicTable: ServerJinguiAcceptedTransportH2DynamicHeaderTable
 ): ServerJinguiAcceptedTransportH2DecodedHeaderFieldParseResult {
     let nameIndex =
         decodeServerJinguiAcceptedTransportH2HpackInteger(
@@ -2721,11 +2938,17 @@ func parseServerJinguiAcceptedTransportH2LiteralHeaderField(
         nextCursor = decodedName.nextCursor
     } else {
         let entry =
-            serverJinguiAcceptedTransportH2StaticHeaderFieldByIndex(
-                nameIndex.value
+            serverJinguiAcceptedTransportH2HeaderFieldByIndex(
+                nameIndex.value,
+                dynamicTable
             )
         name = entry.name
-        nameStaticIndex = nameIndex.value
+        if (
+            nameIndex.value <
+                serverJinguiAcceptedTransportH2FirstDynamicTableIndex()
+        ) {
+            nameStaticIndex = nameIndex.value
+        }
     }
     let decodedValue =
         decodeServerJinguiAcceptedTransportH2HpackString(
@@ -2855,6 +3078,24 @@ func serverJinguiAcceptedTransportH2HpackPrefixMask(
     throw Exception(
         "unsupported H2 HPACK prefix bits=${prefixBits}"
     )
+}
+
+func serverJinguiAcceptedTransportH2HpackMaxDynamicTableSizeUpdate(): Int64 {
+    65536
+}
+
+func serverJinguiAcceptedTransportH2FirstDynamicTableIndex(): Int64 {
+    62
+}
+
+func serverJinguiAcceptedTransportH2HeaderFieldByIndex(
+    index: Int64,
+    dynamicTable: ServerJinguiAcceptedTransportH2DynamicHeaderTable
+): ServerJinguiAcceptedTransportH2StaticHeaderField {
+    if (index < serverJinguiAcceptedTransportH2FirstDynamicTableIndex()) {
+        return serverJinguiAcceptedTransportH2StaticHeaderFieldByIndex(index)
+    }
+    dynamicTable.lookup(index)
 }
 
 func serverJinguiAcceptedTransportH2StaticHeaderFieldByIndex(
@@ -56049,10 +56290,12 @@ public class ServerTlsIngressContext {
     }
 
     public func buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-        session: ContractHttpServerAcceptedTransportSession
+        session: ContractHttpServerAcceptedTransportSession,
+        hpackDecoderState!: ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
     ): JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator {
         JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-            session
+            session,
+            hpackDecoderState: hpackDecoderState
         )
     }
 
@@ -56601,11 +56844,13 @@ public class ServerEngineListenOption {
     }
 
     public func buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-        session: ContractHttpServerAcceptedTransportSession
+        session: ContractHttpServerAcceptedTransportSession,
+        hpackDecoderState!: ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
     ): JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator {
         loadTlsIngressContext()
             .buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-                session
+                session,
+                hpackDecoderState: hpackDecoderState
             )
     }
 
@@ -56852,11 +57097,14 @@ public class ServerEngineListenOption {
     func buildJinguiAcceptedTransportLogicalRequestFromAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataCore(
         session: ContractHttpServerAcceptedTransportSession,
         acceptedSocket: TcpSocket,
-        readChunkSize!: Int64 = 4096
+        readChunkSize!: Int64 = 4096,
+        hpackDecoderState!:
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
     ): ServerJinguiAcceptedTransportLogicalRequest {
         let requestAccumulator =
             buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-                session
+                session,
+                hpackDecoderState: hpackDecoderState
             )
         let chunkSize = if (readChunkSize > 0) {
             readChunkSize
@@ -57059,13 +57307,16 @@ public class ServerEngineListenOption {
         app: App,
         readChunkSize!: Int64 = 4096,
         maxFragmentLen!: Int64 = 16384,
-        closeSocketAfterTurn!: Bool = true
+        closeSocketAfterTurn!: Bool = true,
+        hpackDecoderState!:
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let request =
             buildJinguiAcceptedTransportLogicalRequestFromAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataCore(
                 session,
                 acceptedSocket,
-                readChunkSize: readChunkSize
+                readChunkSize: readChunkSize,
+                hpackDecoderState: hpackDecoderState
             )
         serveJinguiAcceptedTransportSessionLogicalRequestTurnCore(
             session,
@@ -57121,6 +57372,8 @@ public class ServerEngineListenOption {
         maxFragmentLen!: Int64 = 16384,
         closeSocketAfterTurn!: Bool = true,
         policy!: ContractTlsHttpNegotiationPolicy = ContractTlsHttpNegotiationPolicy(),
+        hpackDecoderState!:
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None,
         attachedSessionReadyHook!:
             ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
@@ -57143,7 +57396,8 @@ public class ServerEngineListenOption {
             app,
             readChunkSize: readChunkSize,
             maxFragmentLen: maxFragmentLen,
-            closeSocketAfterTurn: closeSocketAfterTurn
+            closeSocketAfterTurn: closeSocketAfterTurn,
+            hpackDecoderState: hpackDecoderState
         )
     }
 
@@ -57156,6 +57410,8 @@ public class ServerEngineListenOption {
         maxFragmentLen!: Int64 = 16384,
         closeSocketAfterTurn!: Bool = true,
         policy!: ContractTlsHttpNegotiationPolicy = ContractTlsHttpNegotiationPolicy(),
+        hpackDecoderState!:
+            ?ServerJinguiAcceptedTransportH2HpackDecoderState = None,
         attachedSessionReadyHook!:
             ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
@@ -57177,7 +57433,8 @@ public class ServerEngineListenOption {
             app,
             readChunkSize: readChunkSize,
             maxFragmentLen: maxFragmentLen,
-            closeSocketAfterTurn: closeSocketAfterTurn
+            closeSocketAfterTurn: closeSocketAfterTurn,
+            hpackDecoderState: hpackDecoderState
         )
     }
 

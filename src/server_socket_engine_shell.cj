@@ -168,6 +168,8 @@ func serveSocketServerEngineShellTlsTurn(
 ): Unit {
     let accepted = listener.accept()
     try {
+        let hpackDecoderState =
+            ServerJinguiAcceptedTransportH2HpackDecoderState()
         let _ =
             option.serveJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
                 accepted,
@@ -177,6 +179,7 @@ func serveSocketServerEngineShellTlsTurn(
                 readChunkSize: 4096,
                 maxFragmentLen: 16384,
                 closeSocketAfterTurn: true,
+                hpackDecoderState: Some(hpackDecoderState),
                 attachedSessionReadyHook: tlsAcceptedSessionReadyHook
             )
     } finally {
