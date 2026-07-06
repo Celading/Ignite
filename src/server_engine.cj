@@ -2935,6 +2935,84 @@ public class JinguiAcceptedTransportH2FrameWireFunctionSink <: JinguiAcceptedTra
     }
 }
 
+public class JinguiAcceptedTransportH2SocketWriteDryRunResult {
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let byteCount: Int64
+    public let writtenByteCount: Int64
+    public let failureReason: String
+
+    public init(
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        byteCount: Int64,
+        writtenByteCount: Int64,
+        failureReason: String
+    ) {
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.byteCount = byteCount
+        this.writtenByteCount = writtenByteCount
+        this.failureReason = failureReason
+    }
+}
+
+public class JinguiAcceptedTransportH2FrameWireSocketDryRunSink <: JinguiAcceptedTransportH2FrameWireWriterSink {
+    let _write: (Array<Byte>) -> Int64
+    var _writeCalls: Int64 = 0
+    var _lastResult = JinguiAcceptedTransportH2SocketWriteDryRunResult(
+        "not-run",
+        false,
+        false,
+        0,
+        0,
+        "socket dry-run has not attempted a write"
+    )
+
+    public init(write: (Array<Byte>) -> Int64) {
+        this._write = write
+    }
+
+    public override func writeFrameWire(frameWire: Array<Byte>): Int64 {
+        let frozen = cloneServerEngineByteWindow(frameWire, 0, frameWire.size)
+        _writeCalls += 1
+        let written = _write(frozen)
+        if (written != frozen.size) {
+            _lastResult = JinguiAcceptedTransportH2SocketWriteDryRunResult(
+                "incomplete-write",
+                true,
+                false,
+                frozen.size,
+                written,
+                "socket dry-run expected complete frame write"
+            )
+            throw Exception(
+                "H2 frame wire socket dry-run incomplete write, expected=${frozen.size}, actual=${written}"
+            )
+        }
+        _lastResult = JinguiAcceptedTransportH2SocketWriteDryRunResult(
+            "complete-write",
+            true,
+            true,
+            frozen.size,
+            written,
+            ""
+        )
+        written
+    }
+
+    public func writeCalls(): Int64 {
+        _writeCalls
+    }
+
+    public func lastResult(): JinguiAcceptedTransportH2SocketWriteDryRunResult {
+        _lastResult
+    }
+}
+
 public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot,
     sink: JinguiAcceptedTransportH2FrameWireWriterSink

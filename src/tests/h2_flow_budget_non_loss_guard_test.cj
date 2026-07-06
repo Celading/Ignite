@@ -605,6 +605,137 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(rejected, true)
         @Assert(capture.writeCalls, 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameSocketDryRunSinkAcceptsCompleteWrite(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+        let sink = JinguiAcceptedTransportH2FrameWireSocketDryRunSink({ wire =>
+            capture.write(wire)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sock")
+            )
+        let written =
+            writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                frame,
+                sink
+            )
+
+        @Assert(written, 13)
+        @Assert(sink.writeCalls(), 1)
+        @Assert(capture.writeCalls, 1)
+        let result = sink.lastResult()
+        @Assert(result.statusName, "complete-write")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, true)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writtenByteCount, 13)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(capture.lastWire())
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("sock"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameSocketDryRunSinkRejectsShortWrite(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+        let sink = JinguiAcceptedTransportH2FrameWireSocketDryRunSink({ wire =>
+            capture.write(wire) - 1
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sock")
+            )
+        var rejected = false
+        try {
+            let _ = writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                frame,
+                sink
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(sink.writeCalls(), 1)
+        @Assert(capture.writeCalls, 1)
+        let result = sink.lastResult()
+        @Assert(result.statusName, "incomplete-write")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, false)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writtenByteCount, 12)
+    }
+
+    @TestCase
+    public func testWriterDataFrameSocketDryRunSinkRejectsInvalidBeforeWrite(): Unit {
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+        let sink = JinguiAcceptedTransportH2FrameWireSocketDryRunSink({ wire =>
+            capture.write(wire)
+        })
+        var rejected = false
+        try {
+            let _ = writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    1,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    0,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                ),
+                sink
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(sink.writeCalls(), 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(sink.lastResult().statusName, "not-run")
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
