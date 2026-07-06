@@ -3013,6 +3013,92 @@ public class JinguiAcceptedTransportH2FrameWireSocketDryRunSink <: JinguiAccepte
     }
 }
 
+public class JinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult {
+    public let transportId: String
+    public let transportKind: String
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let byteCount: Int64
+    public let writtenByteCount: Int64
+    public let writeCalls: Int64
+    public let failureReason: String
+
+    public init(
+        transportId: String,
+        transportKind: String,
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        byteCount: Int64,
+        writtenByteCount: Int64,
+        writeCalls: Int64,
+        failureReason: String
+    ) {
+        this.transportId = transportId
+        this.transportKind = transportKind
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.byteCount = byteCount
+        this.writtenByteCount = writtenByteCount
+        this.writeCalls = writeCalls
+        this.failureReason = failureReason
+    }
+}
+
+func buildJinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult(
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    socketResult: JinguiAcceptedTransportH2SocketWriteDryRunResult,
+    writeCalls: Int64
+): JinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult {
+    let statusName = if (socketResult.completed) {
+        "attached-complete-write"
+    } else {
+        "attached-incomplete-write"
+    }
+    JinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult(
+        transport.transportId,
+        transport.transportKind,
+        statusName,
+        socketResult.attempted,
+        socketResult.completed,
+        socketResult.byteCount,
+        socketResult.writtenByteCount,
+        writeCalls,
+        socketResult.failureReason
+    )
+}
+
+public func attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot,
+    write: (Array<Byte>) -> Int64
+): JinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult {
+    let sink = JinguiAcceptedTransportH2FrameWireSocketDryRunSink(write)
+    try {
+        let _ = writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+            frame,
+            sink
+        )
+    } catch (e: Exception) {
+        let socketResult = sink.lastResult()
+        if (!socketResult.attempted) {
+            throw e
+        }
+        return buildJinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult(
+            transport,
+            socketResult,
+            sink.writeCalls()
+        )
+    }
+    buildJinguiAcceptedTransportH2AcceptedTransportWriterAttachDryRunResult(
+        transport,
+        sink.lastResult(),
+        sink.writeCalls()
+    )
+}
+
 public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot,
     sink: JinguiAcceptedTransportH2FrameWireWriterSink

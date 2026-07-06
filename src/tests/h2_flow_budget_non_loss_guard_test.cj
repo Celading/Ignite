@@ -736,6 +736,117 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(capture.writeCalls, 0)
         @Assert(sink.lastResult().statusName, "not-run")
     }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedTransportAttachDryRunCompleteWrite(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sock")
+            )
+        let result = attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
+            h2FlowBudgetNonLossGuardTransport(),
+            frame,
+            { wire => capture.write(wire) }
+        )
+
+        @Assert(result.transportId, "h2-flow-budget-transport")
+        @Assert(result.transportKind, "accepted-socket")
+        @Assert(result.statusName, "attached-complete-write")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, true)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writtenByteCount, 13)
+        @Assert(result.writeCalls, 1)
+        @Assert(capture.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedTransportAttachDryRunShortWrite(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sock")
+            )
+        let result = attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
+            h2FlowBudgetNonLossGuardTransport(),
+            frame,
+            { wire => capture.write(wire) - 1 }
+        )
+
+        @Assert(result.transportId, "h2-flow-budget-transport")
+        @Assert(result.statusName, "attached-incomplete-write")
+        @Assert(result.attempted, true)
+        @Assert(result.completed, false)
+        @Assert(result.byteCount, 13)
+        @Assert(result.writtenByteCount, 12)
+        @Assert(result.writeCalls, 1)
+        @Assert(capture.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameAcceptedTransportAttachDryRunRejectsInvalidBeforeWrite(): Unit {
+        let capture = H2FlowBudgetNonLossGuardFunctionSinkCapture()
+        var rejected = false
+        try {
+            let _ = attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
+                h2FlowBudgetNonLossGuardTransport(),
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    1,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    0,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                ),
+                { wire => capture.write(wire) }
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(capture.writeCalls, 0)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
@@ -756,6 +867,15 @@ func h2FlowBudgetNonLossGuardWindowUpdatePayload(increment: Int64): Array<Byte> 
     out[2] = UInt8((increment >> 8) & 0xff)
     out[3] = UInt8(increment & 0xff)
     out
+}
+
+func h2FlowBudgetNonLossGuardTransport(): ServerJinguiAcceptedTransportDescriptorSnapshot {
+    ServerJinguiAcceptedTransportDescriptorSnapshot(
+        "h2-flow-budget-transport",
+        "accepted-socket",
+        "127.0.0.1:443",
+        "127.0.0.1:50000"
+    )
 }
 
 class H2FlowBudgetNonLossGuardSocketAdapterContractSink <: JinguiAcceptedTransportH2FrameWireWriterSink {
