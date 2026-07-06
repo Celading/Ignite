@@ -1437,6 +1437,169 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(capture.writeCalls, 0)
         @Assert(capture.totalBytes, 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterLeaseGateReusesWriterAcrossTwoDataFrames(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
+        let firstChunk = queue.tryDrainHeadChunk(4)
+        let secondChunk = queue.tryDrainHeadChunk(4)
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let lease =
+            JinguiAcceptedTransportH2LiveResponseWriterLeaseGate(carrier)
+
+        let first =
+            lease.commitDataFrame(
+                "live-response-writer-lease-gate",
+                h2FlowBudgetNonLossGuardTransport(),
+                firstChunk,
+                h2FlowBudgetNonLossGuardBytes("part")
+            )
+        let second =
+            lease.commitDataFrame(
+                "live-response-writer-lease-gate",
+                h2FlowBudgetNonLossGuardTransport(),
+                secondChunk,
+                h2FlowBudgetNonLossGuardBytes("done")
+            )
+
+        @Assert(first.acquisitionStatusName, "response-transport-writer-acquired")
+        @Assert(first.statusName, "live-response-writer-lease-gate-complete")
+        @Assert(first.endStream, false)
+        @Assert(second.acquisitionStatusName, "response-transport-writer-reused")
+        @Assert(second.statusName, "live-response-writer-lease-gate-complete")
+        @Assert(second.endStream, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(lease.acquisitionCount(), 1)
+        @Assert(capture.writeCalls, 2)
+        @Assert(capture.totalBytes, 26)
+        let firstParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(0))
+        let secondParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(1))
+        @Assert(firstParsed.flags, UInt8(0x0))
+        @Assert(firstParsed.streamId, 1)
+        @Assert(firstParsed.payload, h2FlowBudgetNonLossGuardBytes("part"))
+        @Assert(secondParsed.flags, UInt8(0x1))
+        @Assert(secondParsed.streamId, 1)
+        @Assert(secondParsed.payload, h2FlowBudgetNonLossGuardBytes("done"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterLeaseGatePropagatesWriterFailure(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let writer = H2FlowBudgetNonLossGuardFailingResponseTransportWriter()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let lease =
+            JinguiAcceptedTransportH2LiveResponseWriterLeaseGate(carrier)
+        var propagated = false
+        try {
+            let _ =
+                lease.commitDataFrame(
+                    "live-response-writer-lease-gate",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    chunk,
+                    h2FlowBudgetNonLossGuardBytes("fail")
+                )
+        } catch (_: Exception) {
+            propagated = true
+        }
+
+        @Assert(propagated, true)
+        @Assert(carrier.openCalls, 1)
+        @Assert(lease.acquisitionCount(), 1)
+        @Assert(writer.writeCalls, 1)
+    }
+
+    @TestCase
+    public func testWriterDataFrameLiveResponseWriterLeaseGateRejectsBlockedDrainBeforeAcquire(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let blocked = queue.tryDrainHeadChunk(4)
+        @Assert(blocked.drained, false)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let lease =
+            JinguiAcceptedTransportH2LiveResponseWriterLeaseGate(carrier)
+        var rejected = false
+        try {
+            let _ =
+                lease.commitDataFrame(
+                    "live-response-writer-lease-gate",
+                    h2FlowBudgetNonLossGuardTransport(),
+                    blocked,
+                    h2FlowBudgetNonLossGuardBytes("wait")
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(carrier.openCalls, 0)
+        @Assert(lease.acquisitionCount(), 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
 }
 
 class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
@@ -1639,6 +1802,13 @@ class H2FlowBudgetNonLossGuardResponseTransportCapture {
             throw Exception("response transport capture has no frame wire")
         }
         h2FlowBudgetNonLossGuardUInt8BytesAsBytes(_wires[_wires.size - 1])
+    }
+
+    public func wireAt(index: Int64): Array<Byte> {
+        if (index < 0 || index >= _wires.size) {
+            throw Exception("response transport capture frame index out of range")
+        }
+        h2FlowBudgetNonLossGuardUInt8BytesAsBytes(_wires[index])
     }
 }
 

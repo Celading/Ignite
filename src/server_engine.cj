@@ -3399,6 +3399,76 @@ public func dryRunJinguiAcceptedTransportH2LiveResponseWriterAcquisitionGate(
     )
 }
 
+public class JinguiAcceptedTransportH2LiveResponseWriterLeaseGate {
+    let _currentRequestCarrier: CurrentRequestCarrier
+    var _writer: ?ResponseTransportWriter = None
+    var _acquisitionCount: Int64 = 0
+
+    public init(currentRequestCarrier: CurrentRequestCarrier) {
+        this._currentRequestCarrier = currentRequestCarrier
+    }
+
+    public func acquisitionCount(): Int64 {
+        _acquisitionCount
+    }
+
+    func ensureWriter(): ResponseTransportWriter {
+        match (_writer) {
+            case Some(writer) => writer
+            case None =>
+                let writer = openResponseTransportWriter(_currentRequestCarrier)
+                _writer = Some(writer)
+                _acquisitionCount += 1
+                writer
+        }
+    }
+
+    public func commitDataFrame(
+        responseWriterSurface: String,
+        transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+        drain: JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot,
+        payload: Array<Byte>
+    ): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+        let _ = buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+            drain,
+            payload
+        )
+        let acquisitionStatusName = match (_writer) {
+            case Some(_) => "response-transport-writer-reused"
+            case None => "response-transport-writer-acquired"
+        }
+        let writer = ensureWriter()
+        let commit =
+            dryRunJinguiAcceptedTransportH2NativeResponseCommitAdapterGate(
+                responseWriterSurface,
+                transport,
+                drain,
+                payload,
+                writer
+            )
+        let statusName = if (commit.completed) {
+            "live-response-writer-lease-gate-complete"
+        } else {
+            "live-response-writer-lease-gate-incomplete"
+        }
+        JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult(
+            commit.responseWriterSurface,
+            commit.transportId,
+            commit.transportKind,
+            acquisitionStatusName,
+            commit.statusName,
+            statusName,
+            commit.attempted,
+            commit.completed,
+            commit.streamId,
+            commit.endStream,
+            commit.byteCount,
+            commit.writeCalls,
+            commit.failureReason
+        )
+    }
+}
+
 func cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(
     frameWire: Array<Byte>
 ): Array<UInt8> {
