@@ -2630,6 +2630,33 @@ public class JinguiAcceptedTransportH2FlowBudgetModel {
     }
 }
 
+/// Writer-facing gate for H2 DATA send-window claims.
+///
+/// Future H2 writers should depend on this seam instead of reaching into the
+/// flow-budget model. A failed claim is non-lossy; only `Sent` spends budget.
+public class JinguiAcceptedTransportH2WriterFlowGate {
+    let _model: JinguiAcceptedTransportH2FlowBudgetModel
+
+    public init(
+        model: JinguiAcceptedTransportH2FlowBudgetModel
+    ) {
+        this._model = model
+    }
+
+    public func tryClaimDataWrite(
+        streamId: Int64,
+        byteCount: Int64
+    ): JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot {
+        _model.trySpendData(streamId, byteCount)
+    }
+
+    public func classifyWriteTimeout(
+        streamId: Int64
+    ): JinguiAcceptedTransportH2FlowBudgetDecisionSnapshot {
+        _model.classifyTimeout(streamId)
+    }
+}
+
 func appendJinguiAcceptedTransportH2HeaderBlockBytes(
     out: ArrayList<Byte>,
     bytes: Array<Byte>

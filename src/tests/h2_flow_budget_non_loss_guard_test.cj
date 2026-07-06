@@ -47,6 +47,52 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(sentAfterConnectionWindowUpdate.connectionSendBudget, 1)
         @Assert(sentAfterConnectionWindowUpdate.streamSendBudget, 4)
     }
+
+    @TestCase
+    public func testWriterFlowGateShortageIsNonLossyUntilWindowUpdate(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 8)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        let blockedByConnectionWindow = gate.tryClaimDataWrite(1, 4)
+        @Assert(blockedByConnectionWindow.statusName, "waiting-for-window-update")
+        @Assert(blockedByConnectionWindow.canWrite, false)
+        @Assert(blockedByConnectionWindow.waitingForWindowUpdate, true)
+        @Assert(blockedByConnectionWindow.connectionSendBudget, 3)
+        @Assert(blockedByConnectionWindow.streamSendBudget, 8)
+        @Assert(model.connectionSendBudget(), 3)
+        @Assert(model.streamSendBudget(1), 8)
+
+        model.observeWindowUpdateFrame(
+            JinguiAcceptedTransportH2FrameWireSnapshot(
+                4,
+                UInt8(0x8),
+                UInt8(0x0),
+                0,
+                h2FlowBudgetNonLossGuardWindowUpdatePayload(2)
+            )
+        )
+
+        let sentAfterWindowUpdate = gate.tryClaimDataWrite(1, 4)
+        @Assert(sentAfterWindowUpdate.statusName, "sent")
+        @Assert(sentAfterWindowUpdate.canWrite, true)
+        @Assert(sentAfterWindowUpdate.connectionSendBudget, 1)
+        @Assert(sentAfterWindowUpdate.streamSendBudget, 4)
+        @Assert(model.connectionSendBudget(), 1)
+        @Assert(model.streamSendBudget(1), 4)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
@@ -68,4 +114,3 @@ func h2FlowBudgetNonLossGuardWindowUpdatePayload(increment: Int64): Array<Byte> 
     out[3] = UInt8(increment & 0xff)
     out
 }
-
