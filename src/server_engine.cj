@@ -637,6 +637,16 @@ public class ServerJinguiAcceptedTransportSocketResponseTurnResult {
     }
 }
 
+public class ServerJinguiAcceptedTransportResponseHeaderField {
+    public let name: String
+    public let value: String
+
+    public init(name: String, value: String) {
+        this.name = name
+        this.value = value
+    }
+}
+
 class ServerJinguiAcceptedTransportEmptyInputStream <: InputStream {
     public override func read(outBuf: Array<Byte>): Int64 {
         let _ = outBuf
@@ -716,6 +726,7 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
     let socket: TcpSocket
     let requestBodyStreamValue: InputStream
     let responseWriterLifecycle: ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    let capturedResponseHeaderFields = ArrayList<ServerJinguiAcceptedTransportResponseHeaderField>()
     public let responseHeaders = HttpHeaders()
     public var responseStatus: UInt16 = 200
 
@@ -806,6 +817,12 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
 
     public override func setResponseHeader(key: String, value: String): Unit {
         responseHeaders.add(key, value)
+        capturedResponseHeaderFields.add(
+            ServerJinguiAcceptedTransportResponseHeaderField(
+                key.trimAscii().toAsciiLower(),
+                value
+            )
+        )
     }
 
     public override func addResponseHeaders(headers: HttpHeaders): Unit {
@@ -835,6 +852,10 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         throw Exception(
             "response stream should be intercepted by accepted transport socket response carrier wrapper"
         )
+    }
+
+    public func responseHeaderFieldsForH2(): Array<ServerJinguiAcceptedTransportResponseHeaderField> {
+        capturedResponseHeaderFields.toArray()
     }
 }
 
@@ -2956,7 +2977,7 @@ public func encodeJinguiAcceptedTransportH2FrameWireSnapshot(
 public func buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
     streamId: Int64,
     status: UInt16,
-    headers: HttpHeaders,
+    headers: Array<ServerJinguiAcceptedTransportResponseHeaderField>,
     endStream!: Bool = false
 ): JinguiAcceptedTransportH2FrameWireSnapshot {
     if (streamId <= 0) {
@@ -2984,7 +3005,7 @@ public func buildJinguiAcceptedTransportH2ResponseHeadersFrameWireSnapshot(
 
 func buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
     status: UInt16,
-    headers: HttpHeaders
+    headers: Array<ServerJinguiAcceptedTransportResponseHeaderField>
 ): Array<Byte> {
     let out = ArrayList<Byte>()
     appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingIndexedName(
@@ -2992,39 +3013,42 @@ func buildJinguiAcceptedTransportH2ResponseHeaderBlockFragment(
         8,
         "${status}"
     )
-    appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
-        out,
-        headers,
-        "content-type"
-    )
-    appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
-        out,
-        headers,
-        "x-h2-turn"
-    )
+    appendJinguiAcceptedTransportH2CapturedResponseHeaders(out, headers)
     out.toArray()
 }
 
-func appendJinguiAcceptedTransportH2ResponseHeaderIfPresent(
+func appendJinguiAcceptedTransportH2CapturedResponseHeaders(
     out: ArrayList<Byte>,
-    headers: HttpHeaders,
-    name: String
+    headers: Array<ServerJinguiAcceptedTransportResponseHeaderField>
+): Unit {
+    for (header in headers) {
+        appendJinguiAcceptedTransportH2ResponseHeaderField(
+            out,
+            header.name,
+            header.value
+        )
+    }
+}
+
+func appendJinguiAcceptedTransportH2ResponseHeaderField(
+    out: ArrayList<Byte>,
+    name: String,
+    value: String
 ): Unit {
     let normalizedName = name.trimAscii().toAsciiLower()
     if (shouldSkipJinguiAcceptedTransportH2ResponseHeader(normalizedName)) {
         return
     }
-    if (let Some(value) <- headers.getFirst(normalizedName)) {
-        appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
-            out,
-            normalizedName,
-            value
-        )
-    }
+    appendJinguiAcceptedTransportH2HpackLiteralWithoutIndexingNewName(
+        out,
+        normalizedName,
+        value
+    )
 }
 
 func shouldSkipJinguiAcceptedTransportH2ResponseHeader(name: String): Bool {
     name == "" ||
+    serverJinguiAcceptedTransportH2FieldNameIsPseudo(name) ||
     name == "connection" ||
     name == "keep-alive" ||
     name == "proxy-connection" ||
@@ -58187,7 +58211,7 @@ public class ServerEngineListenOption {
                 request,
                 wrappedCarrier,
                 carrier.responseStatus,
-                carrier.responseHeaders,
+                carrier.responseHeaderFieldsForH2(),
                 capturedBodyWrites
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
@@ -58210,7 +58234,7 @@ public class ServerEngineListenOption {
         request: ServerJinguiAcceptedTransportLogicalRequest,
         wrappedCarrier: CurrentRequestCarrier,
         responseStatus: UInt16,
-        responseHeaders: HttpHeaders,
+        responseHeaders: Array<ServerJinguiAcceptedTransportResponseHeaderField>,
         capturedBodyWrites: ArrayList<Array<UInt8>>
     ): Unit {
         var totalCapturedBytes: Int64 = 0

@@ -1536,6 +1536,67 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanForwardCapturedH2ResponseHeadersFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-header-forwarding-turn", { ctx =>
+            let mode = ctx.queryFromUrl("mode") ?? ""
+            let _ = ctx
+                .status(208)
+                .setHeader("x-h2-turn", "sr111")
+                .setHeader("x-h2-extra", "captured")
+                .setHeader("connection", "close")
+                .sendString("sr111:${ctx.method}:${ctx.path}:${mode}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-response-header-forwarding-turn?mode=headers",
+                streamId: 93
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(208))
+        @Assert(engine.turnCustomHeader, "sr111")
+        @Assert(engine.turnExtraHeader, "captured")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 93)
+        @Assert(engine.turnHeadersStatus, "208")
+        @Assert(engine.turnHeadersCustomHeader, "sr111")
+        @Assert(engine.turnHeadersExtraHeader, "captured")
+        @Assert(engine.turnHeadersConnectionHeaderSeen, false)
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 93)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes(
+                    "sr111:GET:/h2-response-header-forwarding-turn:headers"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15061,11 +15122,14 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersFrameStreamId: Int64 = 0
     public var turnHeadersStatus: String = ""
     public var turnHeadersCustomHeader: String = ""
+    public var turnHeadersExtraHeader: String = ""
+    public var turnHeadersConnectionHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
     public var turnFrameEndStream: Bool = false
     public var turnFrameStreamId: Int64 = 0
     public var turnFramePayload: Array<Byte> = []
+    public var turnExtraHeader: String = ""
     var turnClientChannel: ?ContractTlsRecordChannel = None
 
     public init(
@@ -15112,6 +15176,12 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     }
                     if (field.name == "x-h2-turn") {
                         turnHeadersCustomHeader = field.value
+                    }
+                    if (field.name == "x-h2-extra") {
+                        turnHeadersExtraHeader = field.value
+                    }
+                    if (field.name == "connection") {
+                        turnHeadersConnectionHeaderSeen = true
                     }
                 }
                 turnHeadersFrameType = headersFrame.frameType
@@ -15190,6 +15260,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     turn.responseHeaders.getFirst("content-type") ?? ""
                 turnCustomHeader =
                     turn.responseHeaders.getFirst("x-h2-turn") ?? ""
+                turnExtraHeader =
+                    turn.responseHeaders.getFirst("x-h2-extra") ?? ""
                 turnSocketWriteCount = turn.socketWriteCount
             } finally {
                 if (!accepted.isClosed()) {
