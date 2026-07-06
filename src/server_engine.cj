@@ -3099,6 +3099,78 @@ public func attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
     )
 }
 
+public class JinguiAcceptedTransportH2ApplicationDataWriterDryRunResult {
+    public let responseWriterSurface: String
+    public let transportId: String
+    public let transportKind: String
+    public let attachStatusName: String
+    public let statusName: String
+    public let attempted: Bool
+    public let completed: Bool
+    public let byteCount: Int64
+    public let writtenByteCount: Int64
+    public let writeCalls: Int64
+    public let failureReason: String
+
+    public init(
+        responseWriterSurface: String,
+        transportId: String,
+        transportKind: String,
+        attachStatusName: String,
+        statusName: String,
+        attempted: Bool,
+        completed: Bool,
+        byteCount: Int64,
+        writtenByteCount: Int64,
+        writeCalls: Int64,
+        failureReason: String
+    ) {
+        this.responseWriterSurface = responseWriterSurface
+        this.transportId = transportId
+        this.transportKind = transportKind
+        this.attachStatusName = attachStatusName
+        this.statusName = statusName
+        this.attempted = attempted
+        this.completed = completed
+        this.byteCount = byteCount
+        this.writtenByteCount = writtenByteCount
+        this.writeCalls = writeCalls
+        this.failureReason = failureReason
+    }
+}
+
+public func dryRunJinguiAcceptedTransportH2ApplicationDataResponseWriter(
+    responseWriterSurface: String,
+    transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot,
+    write: (Array<Byte>) -> Int64
+): JinguiAcceptedTransportH2ApplicationDataWriterDryRunResult {
+    let attach =
+        attachJinguiAcceptedTransportH2DataFrameWriterDryRun(
+            transport,
+            frame,
+            write
+        )
+    let statusName = if (attach.completed) {
+        "application-data-writer-complete"
+    } else {
+        "application-data-writer-incomplete"
+    }
+    JinguiAcceptedTransportH2ApplicationDataWriterDryRunResult(
+        responseWriterSurface,
+        attach.transportId,
+        attach.transportKind,
+        attach.statusName,
+        statusName,
+        attach.attempted,
+        attach.completed,
+        attach.byteCount,
+        attach.writtenByteCount,
+        attach.writeCalls,
+        attach.failureReason
+    )
+}
+
 public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot,
     sink: JinguiAcceptedTransportH2FrameWireWriterSink
