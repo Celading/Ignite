@@ -3469,6 +3469,47 @@ public class JinguiAcceptedTransportH2LiveResponseWriterLeaseGate {
     }
 }
 
+public class JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate {
+    let _transport: ServerJinguiAcceptedTransportDescriptorSnapshot
+    let _leaseGate: JinguiAcceptedTransportH2LiveResponseWriterLeaseGate
+
+    public init(
+        transport: ServerJinguiAcceptedTransportDescriptorSnapshot,
+        currentRequestCarrier: CurrentRequestCarrier
+    ) {
+        this._transport = transport
+        this._leaseGate =
+            JinguiAcceptedTransportH2LiveResponseWriterLeaseGate(
+                currentRequestCarrier
+            )
+    }
+
+    public func transportId(): String {
+        _transport.transportId
+    }
+
+    public func transportKind(): String {
+        _transport.transportKind
+    }
+
+    public func acquisitionCount(): Int64 {
+        _leaseGate.acquisitionCount()
+    }
+
+    public func commitDataFrame(
+        responseWriterSurface: String,
+        drain: JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot,
+        payload: Array<Byte>
+    ): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+        _leaseGate.commitDataFrame(
+            responseWriterSurface,
+            _transport,
+            drain,
+            payload
+        )
+    }
+}
+
 func cloneJinguiAcceptedTransportH2FrameWireAsResponseBytes(
     frameWire: Array<Byte>
 ): Array<UInt8> {
