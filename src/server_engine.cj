@@ -2848,6 +2848,46 @@ public func buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
     )
 }
 
+public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
+    frame: JinguiAcceptedTransportH2FrameWireSnapshot
+): Array<Byte> {
+    if (frame.frameType != UInt8(0x0)) {
+        throw Exception(
+            "H2 DATA frame encoder requires DATA frame type=0, got type=${Int64(frame.frameType)}"
+        )
+    }
+    if (frame.streamId <= 0) {
+        throw Exception(
+            "H2 DATA frame encoder requires non-zero streamId, got ${frame.streamId}"
+        )
+    }
+    if (frame.payloadLength != frame.payload.size) {
+        throw Exception(
+            "H2 DATA frame encoder payload length mismatch, expected=${frame.payloadLength}, actual=${frame.payload.size}, streamId=${frame.streamId}"
+        )
+    }
+    if (frame.payloadLength < 0 || frame.payloadLength > 0xffffff) {
+        throw Exception(
+            "H2 DATA frame encoder payload length exceeds 24-bit frame header, got ${frame.payloadLength}"
+        )
+    }
+    let out = ArrayList<Byte>()
+    let payloadLen = frame.payloadLength
+    out.add(UInt8((payloadLen >> 16) & 0xff))
+    out.add(UInt8((payloadLen >> 8) & 0xff))
+    out.add(UInt8(payloadLen & 0xff))
+    out.add(frame.frameType)
+    out.add(frame.flags)
+    out.add(UInt8((frame.streamId >> 24) & 0x7f))
+    out.add(UInt8((frame.streamId >> 16) & 0xff))
+    out.add(UInt8((frame.streamId >> 8) & 0xff))
+    out.add(UInt8(frame.streamId & 0xff))
+    for (b in frame.payload) {
+        out.add(b)
+    }
+    out.toArray()
+}
+
 func appendJinguiAcceptedTransportH2HeaderBlockBytes(
     out: ArrayList<Byte>,
     bytes: Array<Byte>

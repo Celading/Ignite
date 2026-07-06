@@ -317,6 +317,88 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         }
         @Assert(rejected, true)
     }
+
+    @TestCase
+    public func testWriterDataFrameRawWireEncoderRoundTripsSnapshot(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("DATA")
+            )
+        let wire = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(frame)
+
+        @Assert(wire.size, 13)
+        @Assert(wire[0], UInt8(0x0))
+        @Assert(wire[1], UInt8(0x0))
+        @Assert(wire[2], UInt8(0x4))
+        @Assert(wire[3], UInt8(0x0))
+        @Assert(wire[4], UInt8(0x1))
+        @Assert(wire[5], UInt8(0x0))
+        @Assert(wire[6], UInt8(0x0))
+        @Assert(wire[7], UInt8(0x0))
+        @Assert(wire[8], UInt8(0x1))
+
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(wire)
+        @Assert(parsed.payloadLength, 4)
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("DATA"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameRawWireEncoderRejectsInvalidSnapshot(): Unit {
+        var rejectedZeroStream = false
+        try {
+            let _ = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    1,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    0,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                )
+            )
+        } catch (_: Exception) {
+            rejectedZeroStream = true
+        }
+        @Assert(rejectedZeroStream, true)
+
+        var rejectedLengthMismatch = false
+        try {
+            let _ = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    2,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    1,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                )
+            )
+        } catch (_: Exception) {
+            rejectedLengthMismatch = true
+        }
+        @Assert(rejectedLengthMismatch, true)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
