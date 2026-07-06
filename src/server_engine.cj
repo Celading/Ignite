@@ -526,7 +526,11 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
                 "H2 decoded header-field logical-request projection does not support pseudo header `${field.name}` in this bounded seam"
             )
         }
-        headers.add(field.name, field.value)
+        let normalizedName = field.name.trimAscii().toAsciiLower()
+        if (shouldSkipJinguiAcceptedTransportH2RequestHeader(normalizedName)) {
+            continue
+        }
+        headers.add(normalizedName, field.value)
     }
     buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         pseudoHeaders,
@@ -534,6 +538,17 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
         bodyBytes: bodyBytes,
         streamId: streamId
     )
+}
+
+func shouldSkipJinguiAcceptedTransportH2RequestHeader(name: String): Bool {
+    name == "" ||
+    serverJinguiAcceptedTransportH2FieldNameIsPseudo(name) ||
+    name == "connection" ||
+    name == "keep-alive" ||
+    name == "proxy-connection" ||
+    name == "te" ||
+    name == "transfer-encoding" ||
+    name == "upgrade"
 }
 
 public func buildServerJinguiAcceptedTransportH2PseudoHeadersFromHeaderBlock(

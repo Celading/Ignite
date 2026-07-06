@@ -5227,6 +5227,95 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2DecodedHeaderFieldsSkipForbiddenRegularRequestHeaders(): Unit {
+        let fields = [
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":method",
+                "GET",
+                "indexed",
+                2,
+                2
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":path",
+                "/request-regular-header-skip",
+                "literal-with-indexing",
+                0,
+                4
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                ":authority",
+                "api.example.com:9443",
+                "literal-without-indexing",
+                0,
+                1
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "connection",
+                "close",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "keep-alive",
+                "timeout=5",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "proxy-connection",
+                "keep-alive",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "transfer-encoding",
+                "chunked",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "upgrade",
+                "websocket",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "te",
+                "gzip",
+                "literal-never-indexed",
+                0,
+                0
+            ),
+            JinguiAcceptedTransportH2DecodedHeaderField(
+                "x-mode",
+                "decoded",
+                "literal-never-indexed",
+                0,
+                0
+            )
+        ]
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
+                fields
+            )
+
+        @Assert(request.headers.getFirst("host") ?? "", "api.example.com:9443")
+        @Assert(request.headers.getFirst("x-mode") ?? "", "decoded")
+        @Assert(request.headers.getFirst("connection") ?? "", "")
+        @Assert(request.headers.getFirst("keep-alive") ?? "", "")
+        @Assert(request.headers.getFirst("proxy-connection") ?? "", "")
+        @Assert(request.headers.getFirst("transfer-encoding") ?? "", "")
+        @Assert(request.headers.getFirst("upgrade") ?? "", "")
+        @Assert(request.headers.getFirst("te") ?? "", "")
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2DecodedHeaderFieldsRejectMissingMethod(): Unit {
         let fields = [
             JinguiAcceptedTransportH2DecodedHeaderField(
