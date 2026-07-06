@@ -199,6 +199,10 @@ public class Ctx {
         _currentRequestCarrier.requestHeaderValue(key)
     }
 
+    public func trailer(key: String): ?String {
+        _currentRequestCarrier.requestTrailers().getFirst(key)
+    }
+
     public func requestBody(): InputStream {
         if (let Some(cached) <- _bodyBytesCache) {
             return CachedRequestBodyReplayInputStream(toRequestBodyReplayByteArray(cached))

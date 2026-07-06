@@ -170,6 +170,10 @@ class RequestBodyStreamOverflowTestCarrier <: CurrentRequestCarrier {
         headers
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         bodyStream
     }

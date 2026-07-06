@@ -20,6 +20,7 @@ public interface CurrentRequestCarrier {
     func requestFormValue(key: String): ?String
     func requestHeaderValue(key: String): ?String
     func requestHeaders(): HttpHeaders
+    func requestTrailers(): HttpHeaders
     func requestBodyStream(): InputStream
     func requestBodySize(): ?Int64
     func setResponseStatus(code: UInt16): Unit
@@ -83,6 +84,10 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier {
 
     public override func requestHeaders(): HttpHeaders {
         _httpCtx.request.headers
+    }
+
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -191,6 +196,10 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
 
     public override func requestHeaders(): HttpHeaders {
         _downstream.requestHeaders()
+    }
+
+    public override func requestTrailers(): HttpHeaders {
+        _downstream.requestTrailers()
     }
 
     public override func requestBodyStream(): InputStream {

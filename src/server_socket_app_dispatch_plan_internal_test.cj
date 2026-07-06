@@ -186,6 +186,10 @@ class DispatchPlanTrackingCarrier <: CurrentRequestCarrier {
         HttpHeaders()
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         body
     }

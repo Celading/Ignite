@@ -994,6 +994,10 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
         requestHeadersValue
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         SocketServerEngineShellBytesInputStream(requestBodyBytesValue)
     }

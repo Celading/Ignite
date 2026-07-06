@@ -2033,6 +2033,10 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
         HttpHeaders()
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         body
     }
@@ -2130,6 +2134,10 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestTrailers(): HttpHeaders {
         HttpHeaders()
     }
 

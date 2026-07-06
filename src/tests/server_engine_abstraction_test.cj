@@ -5630,6 +5630,56 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportLogicalRequestSeparatesHeadersAndTrailers(): Unit {
+        let headers = HttpHeaders()
+        headers.add("x-shared", "header-value")
+        headers.add("x-header-only", "head")
+        let trailers = HttpHeaders()
+        trailers.add("x-shared", "trailer-value")
+        trailers.add("x-trailer-only", "tail")
+
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
+                ServerJinguiAcceptedTransportH2PseudoHeaders(
+                    "POST",
+                    "/trailer-model"
+                ),
+                headers: Some(headers),
+                trailers: Some(trailers),
+                bodyBytes: "body".toArray(),
+                streamId: 31
+            )
+
+        headers.add("x-shared", "late-header")
+        trailers.add("x-shared", "late-trailer")
+
+        @Assert(request.headers.getFirst("x-shared") ?? "", "header-value")
+        @Assert(request.trailers.getFirst("x-shared") ?? "", "trailer-value")
+        @Assert(request.headers.getFirst("x-header-only") ?? "", "head")
+        @Assert(request.trailers.getFirst("x-trailer-only") ?? "", "tail")
+        @Assert(request.headers.getFirst("x-trailer-only") ?? "", "")
+        @Assert(request.trailers.getFirst("x-header-only") ?? "", "")
+        @Assert(request.streamId, Int64(31))
+    }
+
+    @TestCase
+    public func testCtxTrailerReadsCarrierTrailersWithoutHeaderFallback(): Unit {
+        let trailers = HttpHeaders()
+        trailers.add("x-request-trailer", "seen")
+        let carrier = AcceptedTransportResponseProbeCarrier(
+            "/ctx-trailer",
+            requestTrailers: Some(trailers)
+        )
+        let ctx = Ctx(carrier, App(config: Config(enableNetworkChangeNotice: false)))
+
+        trailers.add("x-request-trailer", "late")
+
+        @Assert(ctx.trailer("x-request-trailer") ?? "", "seen")
+        @Assert(ctx.header("x-request-trailer") ?? "", "")
+        @Assert(ctx.trailer("x-missing-trailer") ?? "", "")
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2HeaderBlockRejectsUnsupportedPseudoHeaderProjection(): Unit {
         let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
             21,
@@ -16772,14 +16822,30 @@ class JinguiAcceptedTransportH2PseudoHeadersProbeEngine <: ServerEngine {
     public override func shutdown(): Unit {}
 }
 
+func cloneServerEngineAbstractionTestHeaders(headers: HttpHeaders): HttpHeaders {
+    let out = HttpHeaders()
+    for ((name, values) in headers) {
+        for (value in values) {
+            out.add(name, value)
+        }
+    }
+    out
+}
+
 class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
     let pathText: String
+    let requestTrailersValue: HttpHeaders
     public let responseHeaders = HttpHeaders()
     public let writer = CollectingResponseTransportWriter()
     public var responseStatus: UInt16 = 200
 
-    init(pathText: String) {
+    init(pathText: String, requestTrailers!: ?HttpHeaders = None) {
         this.pathText = pathText
+        this.requestTrailersValue = if (let Some(value) <- requestTrailers) {
+            cloneServerEngineAbstractionTestHeaders(value)
+        } else {
+            HttpHeaders()
+        }
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -16831,6 +16897,10 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
 
     public override func requestHeaders(): HttpHeaders {
         HttpHeaders()
+    }
+
+    public override func requestTrailers(): HttpHeaders {
+        requestTrailersValue
     }
 
     public override func requestBodyStream(): InputStream {
@@ -16950,6 +17020,10 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         HttpHeaders()
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         AcceptedTransportResponseProbeEmptyInputStream()
     }
@@ -17061,6 +17135,10 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
     }
 
     public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestTrailers(): HttpHeaders {
         HttpHeaders()
     }
 

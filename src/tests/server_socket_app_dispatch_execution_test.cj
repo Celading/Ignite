@@ -335,6 +335,10 @@ class WebSocketUpgradeSentinelCarrier <: CurrentRequestCarrier {
         HttpHeaders()
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         body
     }
@@ -450,6 +454,10 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
         HttpHeaders()
     }
 
+    public override func requestTrailers(): HttpHeaders {
+        HttpHeaders()
+    }
+
     public override func requestBodyStream(): InputStream {
         body
     }
@@ -546,6 +554,10 @@ class ResponseTransportSeamTrackingCarrier <: CurrentRequestCarrier {
     }
 
     public override func requestHeaders(): HttpHeaders {
+        HttpHeaders()
+    }
+
+    public override func requestTrailers(): HttpHeaders {
         HttpHeaders()
     }
 

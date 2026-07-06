@@ -377,6 +377,7 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
     public let urlString: String
     public let versionString: String
     public let headers: HttpHeaders
+    public let trailers: HttpHeaders
     public let bodyBytes: Array<UInt8>
     public let queryString: String
     public let streamId: Int64
@@ -387,6 +388,7 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
         urlString!: String = "",
         versionString!: String = "h2",
         headers!: ?HttpHeaders = None,
+        trailers!: ?HttpHeaders = None,
         bodyBytes!: Array<UInt8> = [],
         streamId!: Int64 = 1
     ) {
@@ -421,6 +423,11 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
         } else {
             HttpHeaders()
         }
+        this.trailers = if (let Some(value) <- trailers) {
+            cloneServerEngineHeaders(value)
+        } else {
+            HttpHeaders()
+        }
         this.bodyBytes = cloneServerEngineUInt8Array(bodyBytes)
         this.queryString =
             serverJinguiAcceptedTransportLogicalRequestQueryString(
@@ -433,6 +440,7 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
     pseudoHeaders: ServerJinguiAcceptedTransportH2PseudoHeaders,
     headers!: ?HttpHeaders = None,
+    trailers!: ?HttpHeaders = None,
     bodyBytes!: Array<UInt8> = [],
     streamId!: Int64 = 1
 ): ServerJinguiAcceptedTransportLogicalRequest {
@@ -447,6 +455,7 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         urlString: pseudoHeaders.path,
         versionString: "h2",
         headers: Some(projectedHeaders),
+        trailers: trailers,
         bodyBytes: bodyBytes,
         streamId: streamId
     )
@@ -816,6 +825,10 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
 
     public override func requestHeaders(): HttpHeaders {
         logicalRequest.headers
+    }
+
+    public override func requestTrailers(): HttpHeaders {
+        logicalRequest.trailers
     }
 
     public override func requestBodyStream(): InputStream {
