@@ -2888,12 +2888,16 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
     out.toArray()
 }
 
-public class JinguiAcceptedTransportH2FrameWireBufferSink {
+public interface JinguiAcceptedTransportH2FrameWireWriterSink {
+    func writeFrameWire(frameWire: Array<Byte>): Int64
+}
+
+public class JinguiAcceptedTransportH2FrameWireBufferSink <: JinguiAcceptedTransportH2FrameWireWriterSink {
     let _frames = ArrayList<Array<Byte>>()
 
     public init() {}
 
-    public func writeFrameWire(frameWire: Array<Byte>): Int64 {
+    public override func writeFrameWire(frameWire: Array<Byte>): Int64 {
         _frames.add(cloneServerEngineByteWindow(frameWire, 0, frameWire.size))
         frameWire.size
     }
@@ -2921,7 +2925,7 @@ public class JinguiAcceptedTransportH2FrameWireBufferSink {
 
 public func writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot,
-    sink: JinguiAcceptedTransportH2FrameWireBufferSink
+    sink: JinguiAcceptedTransportH2FrameWireWriterSink
 ): Int64 {
     let frameWire = encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(frame)
     sink.writeFrameWire(frameWire)

@@ -1,6 +1,7 @@
 package ignite.tests
 
 import ignite.*
+import std.collection.ArrayList
 
 @Test
 public class H2FlowBudgetNonLossGuardTestSuite {
@@ -466,6 +467,73 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(rejected, true)
         @Assert(sink.frameCount(), 0)
     }
+
+    @TestCase
+    public func testWriterDataFrameSocketAdapterContractReceivesEncodedWire(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(10, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let adapter = H2FlowBudgetNonLossGuardSocketAdapterContractSink()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let chunk = queue.tryDrainHeadChunk(4)
+        let frame =
+            buildJinguiAcceptedTransportH2WriterDataFrameWireSnapshot(
+                chunk,
+                h2FlowBudgetNonLossGuardBytes("sock")
+            )
+        let written =
+            writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                frame,
+                adapter
+            )
+
+        @Assert(written, 13)
+        @Assert(adapter.writeCalls, 1)
+        @Assert(adapter.totalBytes, 13)
+        let parsed = parseJinguiAcceptedTransportH2FrameWire(adapter.lastWire())
+        @Assert(parsed.frameType, UInt8(0x0))
+        @Assert(parsed.flags, UInt8(0x1))
+        @Assert(parsed.streamId, 1)
+        @Assert(parsed.payload, h2FlowBudgetNonLossGuardBytes("sock"))
+    }
+
+    @TestCase
+    public func testWriterDataFrameSocketAdapterContractRejectsBeforeWrite(): Unit {
+        let adapter = H2FlowBudgetNonLossGuardSocketAdapterContractSink()
+        var rejected = false
+        try {
+            let _ = writeJinguiAcceptedTransportH2DataFrameWireSnapshotToSink(
+                JinguiAcceptedTransportH2FrameWireSnapshot(
+                    1,
+                    UInt8(0x0),
+                    UInt8(0x0),
+                    0,
+                    h2FlowBudgetNonLossGuardBytes("x")
+                ),
+                adapter
+            )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(adapter.writeCalls, 0)
+        @Assert(adapter.totalBytes, 0)
+    }
 }
 
 func h2FlowBudgetNonLossGuardBytes(text: String): Array<Byte> {
@@ -485,5 +553,35 @@ func h2FlowBudgetNonLossGuardWindowUpdatePayload(increment: Int64): Array<Byte> 
     out[1] = UInt8((increment >> 16) & 0xff)
     out[2] = UInt8((increment >> 8) & 0xff)
     out[3] = UInt8(increment & 0xff)
+    out
+}
+
+class H2FlowBudgetNonLossGuardSocketAdapterContractSink <: JinguiAcceptedTransportH2FrameWireWriterSink {
+    public var writeCalls: Int64 = 0
+    public var totalBytes: Int64 = 0
+    let _wires = ArrayList<Array<Byte>>()
+
+    public override func writeFrameWire(frameWire: Array<Byte>): Int64 {
+        writeCalls += 1
+        totalBytes += frameWire.size
+        _wires.add(h2FlowBudgetNonLossGuardCloneBytes(frameWire))
+        frameWire.size
+    }
+
+    public func lastWire(): Array<Byte> {
+        if (_wires.size == 0) {
+            throw Exception("adapter contract sink has no frame wire")
+        }
+        h2FlowBudgetNonLossGuardCloneBytes(_wires[_wires.size - 1])
+    }
+}
+
+func h2FlowBudgetNonLossGuardCloneBytes(input: Array<Byte>): Array<Byte> {
+    let out = Array<Byte>(input.size, repeat: 0)
+    var i: Int64 = 0
+    while (i < input.size) {
+        out[i] = input[i]
+        i += 1
+    }
     out
 }
