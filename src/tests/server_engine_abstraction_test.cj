@@ -1720,6 +1720,69 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitStaticNameLiteralMatrixForH2ResponseHeadersFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-response-static-name-matrix-turn", { ctx =>
+            let _ = ctx
+                .status(211)
+                .setHeader("x-h2-turn", "sr114")
+                .setHeader("cache-control", "no-store")
+                .setHeader("content-length", "12")
+                .sendString("sr114-static")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-response-static-name-matrix-turn?mode=matrix",
+                streamId: 99
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(211))
+        @Assert(engine.turnCustomHeader, "sr114")
+        @Assert(engine.turnDecodedFrameCount, 2)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 99)
+        @Assert(engine.turnHeadersStatus, "211")
+        @Assert(engine.turnHeadersCustomHeader, "sr114")
+        @Assert(engine.turnHeadersCacheControl, "no-store")
+        @Assert(engine.turnHeadersCacheControlNameStaticIndex, 24)
+        @Assert(engine.turnHeadersContentLength, "12")
+        @Assert(engine.turnHeadersContentLengthNameStaticIndex, 28)
+        @Assert(engine.turnHeadersContentType, "text/plain; charset=utf-8")
+        @Assert(engine.turnHeadersContentTypeNameStaticIndex, 31)
+        @Assert(engine.turnHeadersServer, "Ignite")
+        @Assert(engine.turnHeadersServerNameStaticIndex, 54)
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 99)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnFramePayload,
+                serverEngineAbstractionTestTextBytes("sr114-static")
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanServeAcceptedTransportSocketFragmentedTlsHandshakeClientHelloApplicationDataProvidedBodyRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -15244,6 +15307,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersEndStream: Bool = false
     public var turnHeadersFrameStreamId: Int64 = 0
     public var turnHeadersStatus: String = ""
+    public var turnHeadersCacheControl: String = ""
+    public var turnHeadersCacheControlNameStaticIndex: Int64 = 0
+    public var turnHeadersContentLength: String = ""
+    public var turnHeadersContentLengthNameStaticIndex: Int64 = 0
     public var turnHeadersContentType: String = ""
     public var turnHeadersContentTypeNameStaticIndex: Int64 = 0
     public var turnHeadersCustomHeader: String = ""
@@ -15252,6 +15319,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersRepeatHeaderCount: Int64 = 0
     public var turnHeadersRepeatHeaderFirst: String = ""
     public var turnHeadersRepeatHeaderSecond: String = ""
+    public var turnHeadersServer: String = ""
+    public var turnHeadersServerNameStaticIndex: Int64 = 0
     public var turnHeadersConnectionHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
     public var turnFrameType: UInt8 = 0
@@ -15303,6 +15372,16 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     if (field.name == ":status") {
                         turnHeadersStatus = field.value
                     }
+                    if (field.name == "cache-control") {
+                        turnHeadersCacheControl = field.value
+                        turnHeadersCacheControlNameStaticIndex =
+                            field.nameStaticIndex
+                    }
+                    if (field.name == "content-length") {
+                        turnHeadersContentLength = field.value
+                        turnHeadersContentLengthNameStaticIndex =
+                            field.nameStaticIndex
+                    }
                     if (field.name == "content-type") {
                         turnHeadersContentType = field.value
                         turnHeadersContentTypeNameStaticIndex =
@@ -15323,6 +15402,11 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         } else if (turnHeadersRepeatHeaderCount == 2) {
                             turnHeadersRepeatHeaderSecond = field.value
                         }
+                    }
+                    if (field.name == "server") {
+                        turnHeadersServer = field.value
+                        turnHeadersServerNameStaticIndex =
+                            field.nameStaticIndex
                     }
                     if (field.name == "connection") {
                         turnHeadersConnectionHeaderSeen = true

@@ -3061,8 +3061,17 @@ func appendJinguiAcceptedTransportH2ResponseHeaderField(
 func serverJinguiAcceptedTransportH2ResponseHeaderStaticNameIndex(
     name: String
 ): Int64 {
+    if (name == "cache-control") {
+        return 24
+    }
+    if (name == "content-length") {
+        return 28
+    }
     if (name == "content-type") {
         return 31
+    }
+    if (name == "server") {
+        return 54
     }
     0
 }
