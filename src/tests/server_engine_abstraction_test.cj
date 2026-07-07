@@ -2333,6 +2333,84 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineDoesNotRecoverFromIncompleteSocketBackedWindowUpdatePoll(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-incomplete-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(233)
+                .setHeader("x-h2-turn", "hq0712-incomplete-window-update")
+                .sendString("hq0712-incomplete-window-update")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-incomplete-window-update-response-turn?mode=flow",
+                streamId: 163,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 1,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 1
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "hq0712 socket-backed incomplete window update poll",
+                    { => engine.socketBackedWindowUpdateWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "H2 WINDOW_UPDATE increment must be positive"
+            ),
+            false
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
