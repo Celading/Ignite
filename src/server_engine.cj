@@ -3146,6 +3146,28 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
 public type JinguiAcceptedTransportH2PeerControlFramePoller =
     () -> Array<JinguiAcceptedTransportH2FrameWireSnapshot>
 
+public class JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution {
+    public let frames: Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    public let requestFrameCount: Int64
+    public let explicitFrameCount: Int64
+    public let polledFrameCount: Int64
+    public let pollerAttemptCount: Int64
+
+    public init(
+        frames: Array<JinguiAcceptedTransportH2FrameWireSnapshot>,
+        requestFrameCount: Int64,
+        explicitFrameCount: Int64,
+        polledFrameCount: Int64,
+        pollerAttemptCount: Int64
+    ) {
+        this.frames = frames
+        this.requestFrameCount = requestFrameCount
+        this.explicitFrameCount = explicitFrameCount
+        this.polledFrameCount = polledFrameCount
+        this.pollerAttemptCount = pollerAttemptCount
+    }
+}
+
 public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     public let schedulerOwner: String
     public let responseWriterOwner: String
@@ -3156,6 +3178,11 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     public let writeAttemptCount: Int64
     public let peerControlPollRoundCount: Int64
     public let observedWindowUpdateFrameCount: Int64
+    public let recoveryRoundCount: Int64
+    public let requestWindowUpdateFrameCount: Int64
+    public let explicitWindowUpdateFrameCount: Int64
+    public let polledWindowUpdateFrameCount: Int64
+    public let pollerAttemptCount: Int64
     public let committedBodyWriteCount: Int64
     public let committedBodyByteCount: Int64
     public let committedDataFrameCount: Int64
@@ -3173,6 +3200,11 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         writeAttemptCount: Int64,
         peerControlPollRoundCount: Int64,
         observedWindowUpdateFrameCount: Int64,
+        recoveryRoundCount: Int64,
+        requestWindowUpdateFrameCount: Int64,
+        explicitWindowUpdateFrameCount: Int64,
+        polledWindowUpdateFrameCount: Int64,
+        pollerAttemptCount: Int64,
         committedBodyWriteCount: Int64,
         committedBodyByteCount: Int64,
         committedDataFrameCount: Int64,
@@ -3189,6 +3221,11 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         this.writeAttemptCount = writeAttemptCount
         this.peerControlPollRoundCount = peerControlPollRoundCount
         this.observedWindowUpdateFrameCount = observedWindowUpdateFrameCount
+        this.recoveryRoundCount = recoveryRoundCount
+        this.requestWindowUpdateFrameCount = requestWindowUpdateFrameCount
+        this.explicitWindowUpdateFrameCount = explicitWindowUpdateFrameCount
+        this.polledWindowUpdateFrameCount = polledWindowUpdateFrameCount
+        this.pollerAttemptCount = pollerAttemptCount
         this.committedBodyWriteCount = committedBodyWriteCount
         this.committedBodyByteCount = committedBodyByteCount
         this.committedDataFrameCount = committedDataFrameCount
@@ -3205,6 +3242,11 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
     public var writeAttemptCount: Int64 = 0
     public var peerControlPollRoundCount: Int64 = 0
     public var observedWindowUpdateFrameCount: Int64 = 0
+    public var recoveryRoundCount: Int64 = 0
+    public var requestWindowUpdateFrameCount: Int64 = 0
+    public var explicitWindowUpdateFrameCount: Int64 = 0
+    public var polledWindowUpdateFrameCount: Int64 = 0
+    public var pollerAttemptCount: Int64 = 0
     public var committedBodyWriteCount: Int64 = 0
     public var committedBodyByteCount: Int64 = 0
     public var committedDataFrameCount: Int64 = 0
@@ -3229,6 +3271,16 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
     ): Unit {
         peerControlPollRoundCount += 1
         observedWindowUpdateFrameCount += frames.size
+    }
+
+    public func recordWindowUpdateFrameResolution(
+        resolution: JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution
+    ): Unit {
+        recoveryRoundCount += 1
+        requestWindowUpdateFrameCount += resolution.requestFrameCount
+        explicitWindowUpdateFrameCount += resolution.explicitFrameCount
+        polledWindowUpdateFrameCount += resolution.polledFrameCount
+        pollerAttemptCount += resolution.pollerAttemptCount
     }
 
     public func recordCommittedBodyWrite(byteCount!: Int64 = 0): Unit {
@@ -3272,6 +3324,11 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
             writeAttemptCount,
             peerControlPollRoundCount,
             observedWindowUpdateFrameCount,
+            recoveryRoundCount,
+            requestWindowUpdateFrameCount,
+            explicitWindowUpdateFrameCount,
+            polledWindowUpdateFrameCount,
+            pollerAttemptCount,
             committedBodyWriteCount,
             committedBodyByteCount,
             committedDataFrameCount,
@@ -58946,7 +59003,7 @@ public class ServerEngineListenOption {
                                 responseWriterLifecycle
                             )
                         }
-                        let retryWindowUpdateFrames =
+                        let retryWindowUpdateResolution =
                             resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
                                 request,
                                 responseWindowUpdateFramesBeforeRetry,
@@ -58962,7 +59019,12 @@ public class ServerEngineListenOption {
                                         responseWindowUpdateMaxPollAttempts
                                     }
                             )
+                        let retryWindowUpdateFrames =
+                            retryWindowUpdateResolution.frames
                         recoveryRound += 1
+                        schedulerTrace.recordWindowUpdateFrameResolution(
+                            retryWindowUpdateResolution
+                        )
                         if (dynamicRetryWindowUpdatePollerAvailable) {
                             schedulerTrace.recordPeerControlPollRound(
                                 retryWindowUpdateFrames
@@ -59089,12 +59151,24 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
         responseWindowUpdateMaxPollAttempts!: Int64 = 1
-    ): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
+    ): JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution {
         if (request.peerWindowUpdateFrames.size > 0) {
-            return request.peerWindowUpdateFrames
+            return JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution(
+                request.peerWindowUpdateFrames,
+                request.peerWindowUpdateFrames.size,
+                0,
+                0,
+                0
+            )
         }
         if (explicitWindowUpdateFrames.size > 0) {
-            return explicitWindowUpdateFrames
+            return JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution(
+                explicitWindowUpdateFrames,
+                0,
+                explicitWindowUpdateFrames.size,
+                0,
+                0
+            )
         }
         match (responseWindowUpdateFramePoller) {
             case Some(poller) =>
@@ -59104,15 +59178,36 @@ public class ServerEngineListenOption {
                     1
                 }
                 var attempt: Int64 = 0
+                var pollerAttemptCount: Int64 = 0
                 while (attempt < pollAttempts) {
                     let frames = poller()
+                    pollerAttemptCount += 1
                     if (frames.size > 0) {
-                        return frames
+                        return JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution(
+                            frames,
+                            0,
+                            0,
+                            frames.size,
+                            pollerAttemptCount
+                        )
                     }
                     attempt += 1
                 }
-                []
-            case None => []
+                JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution(
+                    [],
+                    0,
+                    0,
+                    0,
+                    pollerAttemptCount
+                )
+            case None =>
+                JinguiAcceptedTransportH2ResponseRetryWindowUpdateFrameResolution(
+                    [],
+                    0,
+                    0,
+                    0,
+                    0
+                )
         }
     }
 
