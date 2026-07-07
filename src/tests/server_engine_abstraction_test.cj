@@ -1987,6 +1987,85 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineDrainsSingleResponseBodyWriteInChunksAfterWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let singleWritePayload =
+            "hq0723-single-write-chunked-data-drain"
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(singleWritePayload)
+        app.get("/h2-polled-single-write-chunked-data-drain-response-turn", { ctx =>
+            let _ = ctx
+                .status(242)
+                .setHeader("content-type", "text/plain; charset=utf-8")
+                .setHeader("x-h2-turn", "hq0723-single-write-chunk")
+            let writer = ctx.transportWriter()
+            writer.write(singleWritePayload.toArray())
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-polled-single-write-chunked-data-drain-response-turn?mode=flow",
+                streamId: 141,
+                responseInitialConnectionSendBudget: Some(4),
+                responseInitialStreamSendBudget: Some(4),
+                responseWindowUpdateFramesFromPoll: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        expectedPayload.size
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        141,
+                        expectedPayload.size
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(242))
+        @Assert(engine.turnCustomHeader, "hq0723-single-write-chunk")
+        @Assert(engine.turnHeadersFrameStreamId, 141)
+        @Assert(engine.turnHeadersStatus, "242")
+        @Assert(engine.turnDataFrameCount, 2)
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 141)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerStreamId, 141)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 3)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                expectedPayload
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversTwoResponseBodyWritesAfterRepeatedPolledConnectionWindowUpdates(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -2051,7 +2130,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerStreamId, 153)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
-        @Assert(engine.turnSchedulerWriteAttemptCount, 4)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
@@ -2133,7 +2212,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerStreamId, 157)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
-        @Assert(engine.turnSchedulerWriteAttemptCount, 4)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
@@ -2232,7 +2311,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
         @Assert(
             engine.turnSchedulerWriteAttemptCount,
-            engine.turnSchedulerPeerControlPollRoundCount + 2
+            engine.turnSchedulerPeerControlPollRoundCount + 4
         )
         @Assert(
             engine.turnSchedulerPeerControlPollRoundCount,
@@ -2336,7 +2415,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
         @Assert(
             engine.turnSchedulerWriteAttemptCount,
-            engine.turnSchedulerPeerControlPollRoundCount + 2
+            engine.turnSchedulerPeerControlPollRoundCount + 4
         )
         @Assert(
             engine.turnSchedulerPeerControlPollRoundCount,
@@ -2432,7 +2511,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerStreamId, 161)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
-        @Assert(engine.turnSchedulerWriteAttemptCount, 4)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
@@ -2544,7 +2623,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
         @Assert(
             engine.turnSchedulerWriteAttemptCount,
-            engine.turnSchedulerPeerControlPollRoundCount + 2
+            engine.turnSchedulerPeerControlPollRoundCount + 4
         )
         @Assert(
             engine.turnSchedulerPeerControlPollRoundCount,
@@ -3171,7 +3250,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerStreamId, 169)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
-        @Assert(engine.turnSchedulerWriteAttemptCount, 1)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 2)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
@@ -3591,8 +3670,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
-        @Assert(engine.turnSchedulerCommittedBodyByteCount, 0)
-        @Assert(engine.turnSchedulerRemainingBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
         @Assert(engine.turnSchedulerCompleted, false)
         @Assert(
             engine.turnSchedulerCloseReason,
@@ -3657,8 +3739,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
-        @Assert(engine.turnSchedulerCommittedBodyByteCount, 0)
-        @Assert(engine.turnSchedulerRemainingBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
         @Assert(engine.turnSchedulerCompleted, false)
         @Assert(
             engine.turnSchedulerCloseReason,

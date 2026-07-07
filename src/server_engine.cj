@@ -3232,6 +3232,10 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
         committedBodyByteCount += byteCount
     }
 
+    public func recordCommittedBodyBytes(byteCount: Int64): Unit {
+        committedBodyByteCount += byteCount
+    }
+
     public func recordClose(reason: String): Unit {
         closeReason = reason
     }
@@ -58878,16 +58882,34 @@ public class ServerEngineListenOption {
                         1
                     }
                 var payloadCommitted = false
+                var payloadOffset: Int64 = 0
                 while (!payloadCommitted) {
                     schedulerTrace.recordWriteAttempt()
                     try {
+                        let chunkByteCount =
+                            nextJinguiAcceptedTransportH2ResponseDataChunkByteCount(
+                                payload.size,
+                                payloadOffset,
+                                model,
+                                request.streamId
+                            )
+                        let chunk =
+                            cloneServerEngineByteWindow(
+                                payload,
+                                payloadOffset,
+                                chunkByteCount
+                            )
                         let _ =
                             handoff.commitNextQueuedDataPayload(
                                 "accepted-socket-application-data-response-writer-turn",
                                 queue,
-                                payload
+                                chunk
                             )
-                        payloadCommitted = true
+                        payloadOffset += chunkByteCount
+                        schedulerTrace.recordCommittedBodyBytes(
+                            chunkByteCount
+                        )
+                        payloadCommitted = payloadOffset >= payload.size
                     } catch (e: Exception) {
                         if (
                             !isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
@@ -58963,15 +58985,43 @@ public class ServerEngineListenOption {
                         }
                     }
                     if (payloadCommitted) {
-                        schedulerTrace.recordCommittedBodyWrite(
-                            byteCount: payload.size
-                        )
+                        schedulerTrace.recordCommittedBodyWrite()
                     }
                 }
             }
             i += 1
         }
         schedulerTrace.markCompleted()
+    }
+
+    func nextJinguiAcceptedTransportH2ResponseDataChunkByteCount(
+        payloadSize: Int64,
+        payloadOffset: Int64,
+        model: JinguiAcceptedTransportH2FlowBudgetModel,
+        streamId: Int64
+    ): Int64 {
+        let remaining = payloadSize - payloadOffset
+        if (remaining <= 0) {
+            throw Exception(
+                "H2 response DATA chunk requires positive remaining payload bytes, remaining=${remaining}"
+            )
+        }
+        var chunkLimit: Int64 = 16384
+        if (remaining < chunkLimit) {
+            chunkLimit = remaining
+        }
+        let connectionBudget = model.connectionSendBudget()
+        let streamBudget = model.streamSendBudget(streamId)
+        if (connectionBudget < chunkLimit) {
+            chunkLimit = connectionBudget
+        }
+        if (streamBudget < chunkLimit) {
+            chunkLimit = streamBudget
+        }
+        if (chunkLimit > 0) {
+            return chunkLimit
+        }
+        1
     }
 
     func isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
