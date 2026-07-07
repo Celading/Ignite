@@ -2555,6 +2555,81 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineClosesSplitSocketBackedWindowUpdateWhenGlobalPollBudgetIsTooSmall(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-split-dual-window-update-budget-too-small", { ctx =>
+            let _ = ctx
+                .status(236)
+                .setHeader("x-h2-turn", "hq0715-budget-too-small")
+                .sendString("hq0715-budget-too-small")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-split-dual-window-update-budget-too-small?mode=flow",
+                streamId: 169,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(3),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        169,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 1
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "hq0715 socket-backed global budget too small",
+                    { => engine.socketBackedWindowUpdateWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),

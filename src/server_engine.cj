@@ -58723,6 +58723,11 @@ public class ServerEngineListenOption {
                 let staticRetryWindowUpdatesAvailable =
                     request.peerWindowUpdateFrames.size > 0 ||
                     responseWindowUpdateFramesBeforeRetry.size > 0
+                let dynamicRetryWindowUpdatePollerAvailable =
+                    match (responseWindowUpdateFramePoller) {
+                        case Some(_) => true
+                        case None => false
+                    }
                 var staticRetryWindowUpdatesConsumed = false
                 var recoveryRound: Int64 = 0
                 let recoveryRoundLimit =
@@ -58771,9 +58776,24 @@ public class ServerEngineListenOption {
                                 responseWindowUpdateFramePoller:
                                     responseWindowUpdateFramePoller,
                                 responseWindowUpdateMaxPollAttempts:
-                                    responseWindowUpdateMaxPollAttempts
+                                    if (
+                                        dynamicRetryWindowUpdatePollerAvailable &&
+                                        !staticRetryWindowUpdatesAvailable
+                                    ) {
+                                        1
+                                    } else {
+                                        responseWindowUpdateMaxPollAttempts
+                                    }
                             )
+                        recoveryRound += 1
                         if (retryWindowUpdateFrames.size == 0) {
+                            if (
+                                dynamicRetryWindowUpdatePollerAvailable &&
+                                !staticRetryWindowUpdatesAvailable &&
+                                recoveryRound < recoveryRoundLimit
+                            ) {
+                                continue
+                            }
                             closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
                                 responseWriterLifecycle
                             )
@@ -58788,7 +58808,6 @@ public class ServerEngineListenOption {
                         if (staticRetryWindowUpdatesAvailable) {
                             staticRetryWindowUpdatesConsumed = true
                         }
-                        recoveryRound += 1
                     }
                 }
             }
