@@ -58720,53 +58720,19 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
-                var retryWindowUpdatesApplied = false
-                try {
-                    let _ =
-                        handoff.commitNextQueuedDataPayload(
-                            "accepted-socket-application-data-response-writer-turn",
-                            queue,
-                            payload
-                        )
-                } catch (e: Exception) {
-                    if (
-                        !isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
-                            e
-                        )
-                    ) {
-                        throw e
+                let staticRetryWindowUpdatesAvailable =
+                    request.peerWindowUpdateFrames.size > 0 ||
+                    responseWindowUpdateFramesBeforeRetry.size > 0
+                var staticRetryWindowUpdatesConsumed = false
+                var recoveryRound: Int64 = 0
+                let recoveryRoundLimit =
+                    if (responseWindowUpdateMaxPollAttempts > 0) {
+                        responseWindowUpdateMaxPollAttempts
+                    } else {
+                        1
                     }
-                    if (retryWindowUpdatesApplied) {
-                        closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
-                            responseWriterLifecycle
-                        )
-                        throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
-                            e,
-                            responseWriterLifecycle
-                        )
-                    }
-                    let retryWindowUpdateFrames =
-                        resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
-                            request,
-                            responseWindowUpdateFramesBeforeRetry,
-                            responseWindowUpdateFramePoller:
-                                responseWindowUpdateFramePoller,
-                            responseWindowUpdateMaxPollAttempts:
-                                responseWindowUpdateMaxPollAttempts
-                        )
-                    if (retryWindowUpdateFrames.size == 0) {
-                        closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
-                            responseWriterLifecycle
-                        )
-                        throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
-                            e,
-                            responseWriterLifecycle
-                        )
-                    }
-                    for (frame in retryWindowUpdateFrames) {
-                        let _ = model.observeWindowUpdateFrame(frame)
-                    }
-                    retryWindowUpdatesApplied = true
+                var payloadCommitted = false
+                while (!payloadCommitted) {
                     try {
                         let _ =
                             handoff.commitNextQueuedDataPayload(
@@ -58774,21 +58740,55 @@ public class ServerEngineListenOption {
                                 queue,
                                 payload
                             )
-                    } catch (retryError: Exception) {
+                        payloadCommitted = true
+                    } catch (e: Exception) {
                         if (
-                            isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
-                                retryError
+                            !isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
+                                e
+                            )
+                        ) {
+                            throw e
+                        }
+                        if (
+                            recoveryRound >= recoveryRoundLimit ||
+                            (
+                                staticRetryWindowUpdatesAvailable &&
+                                staticRetryWindowUpdatesConsumed
                             )
                         ) {
                             closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
                                 responseWriterLifecycle
                             )
                             throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
-                                retryError,
+                                e,
                                 responseWriterLifecycle
                             )
                         }
-                        throw retryError
+                        let retryWindowUpdateFrames =
+                            resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
+                                request,
+                                responseWindowUpdateFramesBeforeRetry,
+                                responseWindowUpdateFramePoller:
+                                    responseWindowUpdateFramePoller,
+                                responseWindowUpdateMaxPollAttempts:
+                                    responseWindowUpdateMaxPollAttempts
+                            )
+                        if (retryWindowUpdateFrames.size == 0) {
+                            closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
+                                responseWriterLifecycle
+                            )
+                            throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
+                                e,
+                                responseWriterLifecycle
+                            )
+                        }
+                        for (frame in retryWindowUpdateFrames) {
+                            let _ = model.observeWindowUpdateFrame(frame)
+                        }
+                        if (staticRetryWindowUpdatesAvailable) {
+                            staticRetryWindowUpdatesConsumed = true
+                        }
+                        recoveryRound += 1
                     }
                 }
             }
@@ -58973,7 +58973,6 @@ public class ServerEngineListenOption {
             closeSocketAfterTurn: closeSocketAfterTurn
         )
     }
-
     func buildJinguiAcceptedTransportLogicalRequestFromApplicationDataFragmentedRecordWireH2HeaderBlockCore(
         session: ContractHttpServerAcceptedTransportSession,
         encodedRequestWireFragments: Array<Array<Byte>>,
