@@ -1471,6 +1471,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "{\"kind\":\"hq0697\",\"ok\":true,\"count\":2}"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(212))
@@ -1487,12 +1491,20 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameType, UInt8(0x0))
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 119)
+        @Assert(engine.turnSchedulerStreamId, 119)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 2)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 0)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "{\"kind\":\"hq0697\",\"ok\":true,\"count\":2}"
-                )
+                expectedPayload
             ),
             true
         )
@@ -2390,6 +2402,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0720-onehq0720-two"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(240))
@@ -2414,18 +2430,18 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerStreamId, 161)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerWriteAttemptCount, 4)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0720-onehq0720-two"
-                )
+                expectedPayload
             ),
             true
         )
@@ -2495,6 +2511,10 @@ public class ServerEngineAbstractionTestSuite {
             )
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0720-onehq0720-two"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(241))
@@ -2519,6 +2539,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerStreamId, 163)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
         @Assert(
             engine.turnSchedulerWriteAttemptCount,
             engine.turnSchedulerPeerControlPollRoundCount + 2
@@ -2530,14 +2551,13 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerPeerControlPollRoundCount > 10, true)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0720-onehq0720-two"
-                )
+                expectedPayload
             ),
             true
         )
@@ -19281,10 +19301,12 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnSchedulerPeerControlReadOwner: String = ""
     public var turnSchedulerStreamId: Int64 = 0
     public var turnSchedulerQueuedBodyWriteCount: Int64 = 0
+    public var turnSchedulerQueuedBodyByteCount: Int64 = 0
     public var turnSchedulerWriteAttemptCount: Int64 = 0
     public var turnSchedulerPeerControlPollRoundCount: Int64 = 0
     public var turnSchedulerObservedWindowUpdateFrameCount: Int64 = 0
     public var turnSchedulerCommittedBodyWriteCount: Int64 = 0
+    public var turnSchedulerCommittedBodyByteCount: Int64 = 0
     public var turnSchedulerCompleted: Bool = false
     public var turnSchedulerCloseReason: String = ""
     public var turnRejected: Bool = false
@@ -19350,6 +19372,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         turnSchedulerStreamId = schedulerSnapshot.streamId
         turnSchedulerQueuedBodyWriteCount =
             schedulerSnapshot.queuedBodyWriteCount
+        turnSchedulerQueuedBodyByteCount =
+            schedulerSnapshot.queuedBodyByteCount
         turnSchedulerWriteAttemptCount =
             schedulerSnapshot.writeAttemptCount
         turnSchedulerPeerControlPollRoundCount =
@@ -19358,6 +19382,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             schedulerSnapshot.observedWindowUpdateFrameCount
         turnSchedulerCommittedBodyWriteCount =
             schedulerSnapshot.committedBodyWriteCount
+        turnSchedulerCommittedBodyByteCount =
+            schedulerSnapshot.committedBodyByteCount
         turnSchedulerCompleted = schedulerSnapshot.completed
         turnSchedulerCloseReason = schedulerSnapshot.closeReason
     }

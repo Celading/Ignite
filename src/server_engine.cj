@@ -3152,10 +3152,12 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     public let peerControlReadOwner: String
     public let streamId: Int64
     public let queuedBodyWriteCount: Int64
+    public let queuedBodyByteCount: Int64
     public let writeAttemptCount: Int64
     public let peerControlPollRoundCount: Int64
     public let observedWindowUpdateFrameCount: Int64
     public let committedBodyWriteCount: Int64
+    public let committedBodyByteCount: Int64
     public let completed: Bool
     public let closeReason: String
 
@@ -3165,10 +3167,12 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         peerControlReadOwner: String,
         streamId: Int64,
         queuedBodyWriteCount: Int64,
+        queuedBodyByteCount: Int64,
         writeAttemptCount: Int64,
         peerControlPollRoundCount: Int64,
         observedWindowUpdateFrameCount: Int64,
         committedBodyWriteCount: Int64,
+        committedBodyByteCount: Int64,
         completed: Bool,
         closeReason: String
     ) {
@@ -3177,10 +3181,12 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         this.peerControlReadOwner = peerControlReadOwner
         this.streamId = streamId
         this.queuedBodyWriteCount = queuedBodyWriteCount
+        this.queuedBodyByteCount = queuedBodyByteCount
         this.writeAttemptCount = writeAttemptCount
         this.peerControlPollRoundCount = peerControlPollRoundCount
         this.observedWindowUpdateFrameCount = observedWindowUpdateFrameCount
         this.committedBodyWriteCount = committedBodyWriteCount
+        this.committedBodyByteCount = committedBodyByteCount
         this.completed = completed
         this.closeReason = closeReason
     }
@@ -3189,10 +3195,12 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
 public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
     let _streamId: Int64
     public var queuedBodyWriteCount: Int64 = 0
+    public var queuedBodyByteCount: Int64 = 0
     public var writeAttemptCount: Int64 = 0
     public var peerControlPollRoundCount: Int64 = 0
     public var observedWindowUpdateFrameCount: Int64 = 0
     public var committedBodyWriteCount: Int64 = 0
+    public var committedBodyByteCount: Int64 = 0
     public var completed: Bool = false
     public var closeReason: String = ""
 
@@ -3200,8 +3208,9 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
         this._streamId = streamId
     }
 
-    public func recordQueuedBodyWrite(): Unit {
+    public func recordQueuedBodyWrite(byteCount!: Int64 = 0): Unit {
         queuedBodyWriteCount += 1
+        queuedBodyByteCount += byteCount
     }
 
     public func recordWriteAttempt(): Unit {
@@ -3215,8 +3224,9 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
         observedWindowUpdateFrameCount += frames.size
     }
 
-    public func recordCommittedBodyWrite(): Unit {
+    public func recordCommittedBodyWrite(byteCount!: Int64 = 0): Unit {
         committedBodyWriteCount += 1
+        committedBodyByteCount += byteCount
     }
 
     public func recordClose(reason: String): Unit {
@@ -3235,10 +3245,12 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
             "response-window-update-poller",
             _streamId,
             queuedBodyWriteCount,
+            queuedBodyByteCount,
             writeAttemptCount,
             peerControlPollRoundCount,
             observedWindowUpdateFrameCount,
             committedBodyWriteCount,
+            committedBodyByteCount,
             completed,
             closeReason
         )
@@ -58836,7 +58848,7 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
-                schedulerTrace.recordQueuedBodyWrite()
+                schedulerTrace.recordQueuedBodyWrite(byteCount: payload.size)
                 let staticRetryWindowUpdatesAvailable =
                     request.peerWindowUpdateFrames.size > 0 ||
                     responseWindowUpdateFramesBeforeRetry.size > 0
@@ -58939,7 +58951,9 @@ public class ServerEngineListenOption {
                         }
                     }
                     if (payloadCommitted) {
-                        schedulerTrace.recordCommittedBodyWrite()
+                        schedulerTrace.recordCommittedBodyWrite(
+                            byteCount: payload.size
+                        )
                     }
                 }
             }
