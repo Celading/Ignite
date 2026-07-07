@@ -1625,6 +1625,124 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterStreamWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-stream-window-update-recovery-response-turn", { ctx =>
+            let _ = ctx
+                .status(215)
+                .setHeader("x-h2-turn", "hq0700-stream")
+                .sendString("hq0700-stream-window-recovered")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-stream-window-update-recovery-response-turn?mode=flow",
+                streamId: 125,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                responseWindowUpdateFramesBeforeRetry: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        125,
+                        64
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(215))
+        @Assert(engine.turnCustomHeader, "hq0700-stream")
+        @Assert(engine.turnHeadersFrameStreamId, 125)
+        @Assert(engine.turnHeadersStatus, "215")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 125)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0700-stream-window-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterConnectionAndStreamWindowUpdates(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-dual-window-update-recovery-response-turn", { ctx =>
+            let _ = ctx
+                .status(216)
+                .setHeader("x-h2-turn", "hq0700-dual")
+                .sendString("hq0700-dual-window-recovered")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-dual-window-update-recovery-response-turn?mode=flow",
+                streamId: 127,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(3),
+                responseWindowUpdateFramesBeforeRetry: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        64
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        127,
+                        64
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(216))
+        @Assert(engine.turnCustomHeader, "hq0700-dual")
+        @Assert(engine.turnHeadersFrameStreamId, 127)
+        @Assert(engine.turnHeadersStatus, "216")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 127)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0700-dual-window-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
