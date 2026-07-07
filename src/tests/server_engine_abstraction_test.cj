@@ -3672,6 +3672,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
         @Assert(
             engine.turnSchedulerRemainingBodyByteCount,
             expectedPayload.size - 3
@@ -3741,6 +3742,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
         @Assert(
             engine.turnSchedulerRemainingBodyByteCount,
             expectedPayload.size - 3
