@@ -3640,6 +3640,52 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanReadAcceptedSocketApplicationDataTrailingHeadersAsRequestTrailers(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.post("/trailers", { ctx =>
+            let body = ctx.bodyString()
+            let trailer = ctx.trailer("x-request-trailer") ?? ""
+            let _ = ctx
+                .setHeader("x-accepted-socket-trailer", trailer)
+                .sendString("body:${body};trailer:${trailer}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTrailingHeadersRequestTurnProbeEngine()
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "accepted-socket fragmented headers-plus-data trailing headers request",
+                { => engine.requestWireFragments },
+                writePauseMillis: 20
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.readyStatus, "READY")
+        @Assert(engine.responseStatus, UInt16(200))
+        @Assert(engine.responseTrailerHeader, "tail")
+        @Assert(
+            engine.openSocketWire(responseWire),
+            "body:accepted-body;trailer:tail"
+        )
+        @Assert(engine.contentType, "text/plain; charset=utf-8")
+        @Assert(engine.transferEncoding, "")
+        @Assert(engine.socketWriteCount >= 1, true)
+    }
+
+    @TestCase
     public func testInjectedServerEngineRejectsWrongStreamAcceptedTransportSessionAcceptedSocketApplicationDataFragmentedRecordWireDataForRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -13878,6 +13924,165 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHe
             } finally {
                 if (!bodyJsonAccepted.isClosed()) {
                     bodyJsonAccepted.close()
+                }
+            }
+        } finally {
+            if (!listener.isClosed()) {
+                listener.close()
+            }
+        }
+    }
+
+    public override func shutdown(): Unit {}
+}
+
+class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTrailingHeadersRequestTurnProbeEngine <: ServerEngine {
+    public var readyStatus: String = ""
+    public var responseStatus: UInt16 = 0
+    public var responseTrailerHeader: String = ""
+    public var contentType: String = ""
+    public var transferEncoding: String = ""
+    public var socketWriteCount: Int64 = 0
+    public var requestWireFragments: ?Array<Array<Byte>> = None
+    var clientChannel: ?ContractTlsRecordChannel = None
+
+    public func openSocketWire(wire: Array<UInt8>): String {
+        match (clientChannel) {
+            case Some(channel) =>
+                String.fromUtf8(
+                    channel.openAndReassemble(
+                        splitJinguiAcceptedTransportRecordWire(
+                            serverEngineAbstractionTestByteArray(wire)
+                        )
+                    )
+                )
+            case None =>
+                throw Exception(
+                    "expected accepted-socket trailing HEADERS request-turn companion client record channel before socket wire open"
+                )
+        }
+    }
+
+    public override func listen(
+        option: ServerEngineListenOption,
+        app: App,
+        onReady: ?((ServerEngineReadySignal) -> Unit)
+    ): Unit {
+        let listener = TcpServerSocket(
+            bindAt: IPSocketAddress.parse("${option.addr}:${option.port}")
+        )
+        listener.bind()
+        try {
+            if (let Some(cb) <- onReady) {
+                cb(ServerEngineReadySignal())
+            }
+
+            let accepted = listener.accept()
+            try {
+                let clientHello = contractTls13BuildHttpClientHelloX25519(
+                    "www.example.com",
+                    alpnProtocols: ["h2", "http/1.1"],
+                    clientPrivateKey: Some(
+                        engineIncrementalBytes(32, start: 2240)
+                    )
+                )
+                let headerBlock = concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x83)]),
+                    serverEngineAbstractionTestByteArray([UInt8(0x44), UInt8(0x09)]),
+                    serverEngineAbstractionTestByteArray("/trailers".toArray())
+                ])
+                let trailerBlock = concatServerEngineAbstractionTestByteArrays([
+                    serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x11)]),
+                    serverEngineAbstractionTestByteArray("x-request-trailer".toArray()),
+                    serverEngineAbstractionTestByteArray([UInt8(0x04)]),
+                    serverEngineAbstractionTestByteArray("tail".toArray())
+                ])
+                let transport = ContractAcceptedTransportDescriptor(
+                    "accepted-socket-fragmented-appdata-trailers-turn-transport",
+                    localEndpoint: accepted.localAddress.toString(),
+                    remoteEndpoint: accepted.remoteAddress.toString()
+                )
+                let session = option.attachJinguiAcceptedTransportTls13X25519(
+                    transport,
+                    clientHello.encodedClientHello,
+                    engineIncrementalBytes(32, start: 2272)
+                )
+                let requestClientChannel =
+                    contractTls13CreateClientRecordChannel(
+                        session.keyMaterial,
+                        algorithm: session.recordChannel.algorithm
+                    )
+                let requestRecords =
+                    requestClientChannel.sealFragments(
+                        ContractTlsRecordContentType.ApplicationData,
+                        concatServerEngineAbstractionTestByteArrays([
+                            buildServerEngineAbstractionTestH2FrameWire(
+                                buildServerEngineAbstractionTestH2HeadersPayload(
+                                    headerBlock
+                                ),
+                                frameType: UInt8(0x1),
+                                flags: UInt8(0x4),
+                                streamId: 105
+                            ),
+                            buildServerEngineAbstractionTestH2FrameWire(
+                                serverEngineAbstractionTestByteArray(
+                                    "accepted-body".toArray()
+                                ),
+                                frameType: UInt8(0x0),
+                                flags: UInt8(0x0),
+                                streamId: 105
+                            ),
+                            buildServerEngineAbstractionTestH2FrameWire(
+                                buildServerEngineAbstractionTestH2HeadersPayload(
+                                    trailerBlock
+                                ),
+                                frameType: UInt8(0x1),
+                                flags: UInt8(0x5),
+                                streamId: 105
+                            )
+                        ]),
+                        maxFragmentLen: 7
+                    )
+                let encodedWire =
+                    concatServerEngineAbstractionTestByteArrays(requestRecords)
+                requestWireFragments = Some([
+                    cloneServerEngineByteWindow(
+                        encodedWire,
+                        0,
+                        4
+                    ),
+                    cloneServerEngineByteWindow(
+                        encodedWire,
+                        4,
+                        encodedWire.size - 7
+                    ),
+                    cloneServerEngineByteWindow(
+                        encodedWire,
+                        encodedWire.size - 3,
+                        3
+                    )
+                ])
+                let turn =
+                    option.serveJinguiAcceptedTransportSessionAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
+                        session,
+                        accepted,
+                        app,
+                        readChunkSize: 5,
+                        maxFragmentLen: 8
+                    )
+                clientChannel = Some(requestClientChannel)
+                readyStatus = turn.readySnapshot.status
+                responseStatus = turn.responseStatus
+                responseTrailerHeader =
+                    turn.responseHeaders.getFirst("x-accepted-socket-trailer") ?? ""
+                contentType =
+                    turn.responseHeaders.getFirst("content-type") ?? ""
+                transferEncoding =
+                    turn.responseHeaders.getFirst("transfer-encoding") ?? ""
+                socketWriteCount = turn.socketWriteCount
+            } finally {
+                if (!accepted.isClosed()) {
+                    accepted.close()
                 }
             }
         } finally {

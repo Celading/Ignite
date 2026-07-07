@@ -1982,6 +1982,10 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
         headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
         frame: JinguiAcceptedTransportH2FrameWireSnapshot
     ): Unit {
+        if (frame.frameType == UInt8(0x1) || frame.frameType == UInt8(0x9)) {
+            appendTrailingHeaderFrame(headerBlock, frame)
+            return
+        }
         if (frame.frameType != UInt8(0x0)) {
             throw Exception(
                 "accepted-session fragmented-record-wire headers-plus-data logical-request projection stays inside one request boundary and only accepts same-stream DATA after one complete H2 header block, got type=${Int64(frame.frameType)}, streamId=${frame.streamId}"
@@ -2009,6 +2013,44 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
             buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithHpackDecoderState(
                 headerBlock,
                 _hpackDecoderState,
+                bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray())
+            )
+        )
+        _sealedLogicalRequest = true
+        _completedHeaderBlock = None
+        _bodyBytes = ArrayList<Byte>()
+    }
+
+    func appendTrailingHeaderFrame(
+        headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+        frame: JinguiAcceptedTransportH2FrameWireSnapshot
+    ): Unit {
+        if (_bodyBytes.size == 0) {
+            throw Exception(
+                "accepted-session fragmented-record-wire headers-plus-data logical-request projection expects at least one same-stream H2 DATA frame before trailing HEADERS"
+            )
+        }
+        _headerBlockAccumulator.append(frame)
+        let completedTrailerBlocks =
+            _headerBlockAccumulator.drainCompleteHeaderBlocks()
+        if (completedTrailerBlocks.size == 0) {
+            return
+        }
+        if (completedTrailerBlocks.size != 1) {
+            throw Exception(
+                "accepted-session fragmented-record-wire headers-plus-data logical-request projection expects exactly one trailing HEADERS block, got count=${completedTrailerBlocks.size}"
+            )
+        }
+        let trailerBlock = completedTrailerBlocks[0]
+        if (!trailerBlock.endStream) {
+            throw Exception(
+                "accepted-session fragmented-record-wire headers-plus-data logical-request projection expects trailing HEADERS to carry END_STREAM, streamId=${trailerBlock.streamId}"
+            )
+        }
+        _ready.add(
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
+                headerBlock,
+                trailerBlock,
                 bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray())
             )
         )
