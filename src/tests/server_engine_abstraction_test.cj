@@ -2047,6 +2047,137 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledStreamWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-stream-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(224)
+                .setHeader("x-h2-turn", "hq0705-socket-stream")
+                .sendString("hq0705-socket-stream-window-update-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-stream-window-update-response-turn?mode=flow",
+                streamId: 143,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        143,
+                        128
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0705 socket-backed stream window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(224))
+        @Assert(engine.turnCustomHeader, "hq0705-socket-stream")
+        @Assert(engine.turnHeadersFrameStreamId, 143)
+        @Assert(engine.turnHeadersStatus, "224")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 143)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0705-socket-stream-window-update-stall"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineIgnoresSocketBackedPolledUnrelatedStreamWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-unrelated-stream-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(225)
+                .setHeader("x-h2-turn", "hq0705-socket-unrelated")
+                .sendString("hq0705-socket-unrelated-window-update-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-unrelated-stream-window-update-response-turn?mode=flow",
+                streamId: 145,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        147,
+                        128
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0705 socket-backed unrelated stream window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "lifecycle closed=true; reason=h2-response-data-window-update-stall"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineClosesResponseWriterLifecycleWhenBlockedResponseDataHasNoWindowUpdatePoller(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
