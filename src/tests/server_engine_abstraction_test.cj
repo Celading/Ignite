@@ -3884,6 +3884,44 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketOrphanTrailingContinuation(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "orphan-trailing-continuation"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ =
+            runAcceptedTransportRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "accepted-socket fragmented orphan trailing continuation reject request",
+                { => engine.requestWireFragments },
+                writePauseMillis: 20
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "H2 header-block accumulator expects HEADERS frame first"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanCaptureAcceptedTransportSocketFragmentedTlsHandshakeClientHello(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -14453,6 +14491,35 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHe
                             frameType: UInt8(0x9),
                             flags: UInt8(0x4),
                             streamId: 95
+                        )
+                    ])
+                } else if (rejectMode == "orphan-trailing-continuation") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "blocked".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x0),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            cloneServerEngineByteWindow(
+                                trailerBlock,
+                                trailerBlock.size - 5,
+                                5
+                            ),
+                            frameType: UInt8(0x9),
+                            flags: UInt8(0x4),
+                            streamId: 93
                         )
                     ])
                 } else {
