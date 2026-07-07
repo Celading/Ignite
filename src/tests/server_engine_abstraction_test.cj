@@ -1627,6 +1627,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameType, UInt8(0x0))
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 123)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1684,6 +1688,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "215")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 125)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1745,6 +1753,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "216")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 127)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1802,6 +1814,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "217")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 129)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1859,6 +1875,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "218")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 131)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1917,6 +1937,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 133)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -1975,6 +1999,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 135)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
