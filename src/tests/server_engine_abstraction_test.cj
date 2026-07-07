@@ -3808,6 +3808,44 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketTrailingHeadersBeforeData(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "trailing-headers-before-data"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ =
+            runAcceptedTransportRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "accepted-socket fragmented trailing headers before data reject request",
+                { => engine.requestWireFragments },
+                writePauseMillis: 20
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "expects at least one same-stream H2 DATA frame before trailing HEADERS"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanCaptureAcceptedTransportSocketFragmentedTlsHandshakeClientHello(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -14316,6 +14354,25 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHe
                             ),
                             frameType: UInt8(0x1),
                             flags: UInt8(0x4),
+                            streamId: 93
+                        )
+                    ])
+                } else if (rejectMode == "trailing-headers-before-data") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                trailerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x5),
                             streamId: 93
                         )
                     ])
