@@ -2555,6 +2555,103 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecordsResponseTurnSchedulerTraceForSplitSocketBackedWindowUpdateRecovery(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-scheduler-trace-response-turn", { ctx =>
+            let _ = ctx
+                .status(237)
+                .setHeader("x-h2-turn", "hq0716-scheduler-trace")
+                .sendString("hq0716-scheduler-trace")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-scheduler-trace-response-turn?mode=flow",
+                streamId: 171,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(3),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        171,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 512
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0716 socket-backed scheduler trace",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(237))
+        @Assert(engine.turnCustomHeader, "hq0716-scheduler-trace")
+        @Assert(engine.turnHeadersFrameStreamId, 171)
+        @Assert(engine.turnHeadersStatus, "237")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 171)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(
+            engine.turnSchedulerResponseWriterOwner,
+            "accepted-socket-response-writer-handoff"
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlReadOwner,
+            "response-window-update-poller"
+        )
+        @Assert(engine.turnSchedulerStreamId, 171)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount > 10, true)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0716-scheduler-trace"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineClosesSplitSocketBackedWindowUpdateWhenGlobalPollBudgetIsTooSmall(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -18710,6 +18807,17 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnDataPayload: Array<Byte> = []
     public var turnExtraHeader: String = ""
     public var responseWindowUpdatePollCalls: Int64 = 0
+    public var turnSchedulerOwner: String = ""
+    public var turnSchedulerResponseWriterOwner: String = ""
+    public var turnSchedulerPeerControlReadOwner: String = ""
+    public var turnSchedulerStreamId: Int64 = 0
+    public var turnSchedulerQueuedBodyWriteCount: Int64 = 0
+    public var turnSchedulerWriteAttemptCount: Int64 = 0
+    public var turnSchedulerPeerControlPollRoundCount: Int64 = 0
+    public var turnSchedulerObservedWindowUpdateFrameCount: Int64 = 0
+    public var turnSchedulerCommittedBodyWriteCount: Int64 = 0
+    public var turnSchedulerCompleted: Bool = false
+    public var turnSchedulerCloseReason: String = ""
     public var turnRejected: Bool = false
     public var turnRejectMessage: String = ""
     public var socketBackedWindowUpdateWireFragments:
@@ -19000,6 +19108,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         peerWindowUpdateFrames:
                             requestPeerWindowUpdateFrames
                     )
+                let schedulerTrace =
+                    JinguiAcceptedTransportH2ResponseTurnSchedulerTrace(
+                        turnStreamId
+                    )
                 let turn = if (useSocketBackedResponseWindowUpdatePoller) {
                         let session = match (socketBackedPreparedSession) {
                             case Some(preparedSession) => preparedSession
@@ -19037,7 +19149,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseWindowUpdateFramePoller:
                                 responseWindowUpdateFramePoller,
                             responseWindowUpdateMaxPollAttempts:
-                                responseWindowUpdateMaxPollAttempts
+                                responseWindowUpdateMaxPollAttempts,
+                            responseSchedulerTrace: Some(schedulerTrace)
                         )
                     } else {
                         option.serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
@@ -19057,9 +19170,29 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseWindowUpdateFramePoller:
                                 responseWindowUpdateFramePoller,
                             responseWindowUpdateMaxPollAttempts:
-                                responseWindowUpdateMaxPollAttempts
+                                responseWindowUpdateMaxPollAttempts,
+                            responseSchedulerTrace: Some(schedulerTrace)
                         )
                     }
+                let schedulerSnapshot = schedulerTrace.snapshot()
+                turnSchedulerOwner = schedulerSnapshot.schedulerOwner
+                turnSchedulerResponseWriterOwner =
+                    schedulerSnapshot.responseWriterOwner
+                turnSchedulerPeerControlReadOwner =
+                    schedulerSnapshot.peerControlReadOwner
+                turnSchedulerStreamId = schedulerSnapshot.streamId
+                turnSchedulerQueuedBodyWriteCount =
+                    schedulerSnapshot.queuedBodyWriteCount
+                turnSchedulerWriteAttemptCount =
+                    schedulerSnapshot.writeAttemptCount
+                turnSchedulerPeerControlPollRoundCount =
+                    schedulerSnapshot.peerControlPollRoundCount
+                turnSchedulerObservedWindowUpdateFrameCount =
+                    schedulerSnapshot.observedWindowUpdateFrameCount
+                turnSchedulerCommittedBodyWriteCount =
+                    schedulerSnapshot.committedBodyWriteCount
+                turnSchedulerCompleted = schedulerSnapshot.completed
+                turnSchedulerCloseReason = schedulerSnapshot.closeReason
                 match (turnClientChannel) {
                     case Some(_) => ()
                     case None =>

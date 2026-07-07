@@ -3146,6 +3146,105 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
 public type JinguiAcceptedTransportH2PeerControlFramePoller =
     () -> Array<JinguiAcceptedTransportH2FrameWireSnapshot>
 
+public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
+    public let schedulerOwner: String
+    public let responseWriterOwner: String
+    public let peerControlReadOwner: String
+    public let streamId: Int64
+    public let queuedBodyWriteCount: Int64
+    public let writeAttemptCount: Int64
+    public let peerControlPollRoundCount: Int64
+    public let observedWindowUpdateFrameCount: Int64
+    public let committedBodyWriteCount: Int64
+    public let completed: Bool
+    public let closeReason: String
+
+    public init(
+        schedulerOwner: String,
+        responseWriterOwner: String,
+        peerControlReadOwner: String,
+        streamId: Int64,
+        queuedBodyWriteCount: Int64,
+        writeAttemptCount: Int64,
+        peerControlPollRoundCount: Int64,
+        observedWindowUpdateFrameCount: Int64,
+        committedBodyWriteCount: Int64,
+        completed: Bool,
+        closeReason: String
+    ) {
+        this.schedulerOwner = schedulerOwner
+        this.responseWriterOwner = responseWriterOwner
+        this.peerControlReadOwner = peerControlReadOwner
+        this.streamId = streamId
+        this.queuedBodyWriteCount = queuedBodyWriteCount
+        this.writeAttemptCount = writeAttemptCount
+        this.peerControlPollRoundCount = peerControlPollRoundCount
+        this.observedWindowUpdateFrameCount = observedWindowUpdateFrameCount
+        this.committedBodyWriteCount = committedBodyWriteCount
+        this.completed = completed
+        this.closeReason = closeReason
+    }
+}
+
+public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
+    let _streamId: Int64
+    public var queuedBodyWriteCount: Int64 = 0
+    public var writeAttemptCount: Int64 = 0
+    public var peerControlPollRoundCount: Int64 = 0
+    public var observedWindowUpdateFrameCount: Int64 = 0
+    public var committedBodyWriteCount: Int64 = 0
+    public var completed: Bool = false
+    public var closeReason: String = ""
+
+    public init(streamId: Int64) {
+        this._streamId = streamId
+    }
+
+    public func recordQueuedBodyWrite(): Unit {
+        queuedBodyWriteCount += 1
+    }
+
+    public func recordWriteAttempt(): Unit {
+        writeAttemptCount += 1
+    }
+
+    public func recordPeerControlPollRound(
+        frames: Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    ): Unit {
+        peerControlPollRoundCount += 1
+        observedWindowUpdateFrameCount += frames.size
+    }
+
+    public func recordCommittedBodyWrite(): Unit {
+        committedBodyWriteCount += 1
+    }
+
+    public func recordClose(reason: String): Unit {
+        closeReason = reason
+    }
+
+    public func markCompleted(): Unit {
+        completed = true
+    }
+
+    public func snapshot(
+    ): JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
+        JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot(
+            "accepted-socket-h2-response-turn-scheduler",
+            "accepted-socket-response-writer-handoff",
+            "response-window-update-poller",
+            _streamId,
+            queuedBodyWriteCount,
+            writeAttemptCount,
+            peerControlPollRoundCount,
+            observedWindowUpdateFrameCount,
+            committedBodyWriteCount,
+            completed,
+            closeReason
+        )
+    }
+}
+
 public func encodeJinguiAcceptedTransportH2FrameWireSnapshot(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot
 ): Array<Byte> {
@@ -58537,7 +58636,9 @@ public class ServerEngineListenOption {
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
-        responseWindowUpdateMaxPollAttempts!: Int64 = 1
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1,
+        responseSchedulerTrace!:
+            ?JinguiAcceptedTransportH2ResponseTurnSchedulerTrace = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let readySnapshot = notifyJinguiAcceptedTransportSession(session)
         let carrier = ServerJinguiAcceptedTransportSocketResponseCarrier(
@@ -58576,6 +58677,7 @@ public class ServerEngineListenOption {
                     responseWindowUpdateFramePoller,
                 responseWindowUpdateMaxPollAttempts:
                     responseWindowUpdateMaxPollAttempts,
+                responseSchedulerTrace: responseSchedulerTrace,
                 responseWriterLifecycle: Some(carrier.responseWriterLifecycle)
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
@@ -58606,7 +58708,9 @@ public class ServerEngineListenOption {
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
-        responseWindowUpdateMaxPollAttempts!: Int64 = 1
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1,
+        responseSchedulerTrace!:
+            ?JinguiAcceptedTransportH2ResponseTurnSchedulerTrace = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurnCore(
             session,
@@ -58624,7 +58728,8 @@ public class ServerEngineListenOption {
             responseWindowUpdateFramePoller:
                 responseWindowUpdateFramePoller,
             responseWindowUpdateMaxPollAttempts:
-                responseWindowUpdateMaxPollAttempts
+                responseWindowUpdateMaxPollAttempts,
+            responseSchedulerTrace: responseSchedulerTrace
         )
     }
 
@@ -58642,6 +58747,8 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
         responseWindowUpdateMaxPollAttempts!: Int64 = 1,
+        responseSchedulerTrace!:
+            ?JinguiAcceptedTransportH2ResponseTurnSchedulerTrace = None,
         responseWriterLifecycle!:
             ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle = None
     ): Unit {
@@ -58656,6 +58763,14 @@ public class ServerEngineListenOption {
                 ),
                 wrappedCarrier
             )
+        let schedulerTrace =
+            match (responseSchedulerTrace) {
+                case Some(trace) => trace
+                case None =>
+                    JinguiAcceptedTransportH2ResponseTurnSchedulerTrace(
+                        request.streamId
+                    )
+            }
         if (totalCapturedBytes <= 0) {
             let _ =
                 handoff.commitFrameWireSnapshot(
@@ -58667,6 +58782,7 @@ public class ServerEngineListenOption {
                         endStream: true
                     )
                 )
+            schedulerTrace.markCompleted()
             return
         }
         let _ =
@@ -58720,6 +58836,7 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
+                schedulerTrace.recordQueuedBodyWrite()
                 let staticRetryWindowUpdatesAvailable =
                     request.peerWindowUpdateFrames.size > 0 ||
                     responseWindowUpdateFramesBeforeRetry.size > 0
@@ -58738,6 +58855,7 @@ public class ServerEngineListenOption {
                     }
                 var payloadCommitted = false
                 while (!payloadCommitted) {
+                    schedulerTrace.recordWriteAttempt()
                     try {
                         let _ =
                             handoff.commitNextQueuedDataPayload(
@@ -58761,6 +58879,9 @@ public class ServerEngineListenOption {
                                 staticRetryWindowUpdatesConsumed
                             )
                         ) {
+                            schedulerTrace.recordClose(
+                                jinguiAcceptedTransportH2ResponseWindowUpdateStallCloseReason()
+                            )
                             closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
                                 responseWriterLifecycle
                             )
@@ -58786,6 +58907,11 @@ public class ServerEngineListenOption {
                                     }
                             )
                         recoveryRound += 1
+                        if (dynamicRetryWindowUpdatePollerAvailable) {
+                            schedulerTrace.recordPeerControlPollRound(
+                                retryWindowUpdateFrames
+                            )
+                        }
                         if (retryWindowUpdateFrames.size == 0) {
                             if (
                                 dynamicRetryWindowUpdatePollerAvailable &&
@@ -58794,6 +58920,9 @@ public class ServerEngineListenOption {
                             ) {
                                 continue
                             }
+                            schedulerTrace.recordClose(
+                                jinguiAcceptedTransportH2ResponseWindowUpdateStallCloseReason()
+                            )
                             closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
                                 responseWriterLifecycle
                             )
@@ -58809,10 +58938,14 @@ public class ServerEngineListenOption {
                             staticRetryWindowUpdatesConsumed = true
                         }
                     }
+                    if (payloadCommitted) {
+                        schedulerTrace.recordCommittedBodyWrite()
+                    }
                 }
             }
             i += 1
         }
+        schedulerTrace.markCompleted()
     }
 
     func isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
@@ -59262,7 +59395,9 @@ public class ServerEngineListenOption {
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
-        responseWindowUpdateMaxPollAttempts!: Int64 = 1
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1,
+        responseSchedulerTrace!:
+            ?JinguiAcceptedTransportH2ResponseTurnSchedulerTrace = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let transport = buildServerAcceptedTransportDescriptorFromSocket(
             acceptedSocket,
@@ -59290,7 +59425,8 @@ public class ServerEngineListenOption {
             responseWindowUpdateFramePoller:
                 responseWindowUpdateFramePoller,
             responseWindowUpdateMaxPollAttempts:
-                responseWindowUpdateMaxPollAttempts
+                responseWindowUpdateMaxPollAttempts,
+            responseSchedulerTrace: responseSchedulerTrace
         )
     }
 
