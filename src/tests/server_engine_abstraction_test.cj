@@ -2411,6 +2411,76 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversAfterOneByteSocketBackedWindowUpdateCarryover(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-one-byte-window-update-carryover-response-turn", { ctx =>
+            let _ = ctx
+                .status(234)
+                .setHeader("x-h2-turn", "hq0713-one-byte-carryover")
+                .sendString("hq0713-one-byte-window-update-carryover")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-one-byte-window-update-carryover-response-turn?mode=flow",
+                streamId: 165,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 1,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 512
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0713 socket-backed one-byte window update carryover",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(234))
+        @Assert(engine.turnCustomHeader, "hq0713-one-byte-carryover")
+        @Assert(engine.turnHeadersFrameStreamId, 165)
+        @Assert(engine.turnHeadersStatus, "234")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 165)
+        @Assert(engine.responseWindowUpdatePollCalls > 10, true)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0713-one-byte-window-update-carryover"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
