@@ -1973,6 +1973,105 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineClosesResponseWriterLifecycleWhenBlockedResponseDataHasNoWindowUpdatePoller(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-no-poller-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(221)
+                .setHeader("x-h2-turn", "hq0703-no-poller")
+                .sendString("hq0703-no-poller-window-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-no-poller-window-update-response-turn?mode=flow",
+                streamId: 137,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ = runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "lifecycle closed=true; reason=h2-response-data-window-update-stall"
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineClosesResponseWriterLifecycleWhenBlockedResponseDataPollerReturnsNoWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-empty-poller-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(222)
+                .setHeader("x-h2-turn", "hq0703-empty-poller")
+                .sendString("hq0703-empty-poller-window-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-empty-poller-window-update-response-turn?mode=flow",
+                streamId: 139,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128)
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ = runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "lifecycle closed=true; reason=h2-response-data-window-update-stall"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -17560,6 +17659,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     let responseWindowUpdateFramesFromPoll:
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    let enableResponseWindowUpdatePoller: Bool
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -17604,6 +17704,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnDataPayload: Array<Byte> = []
     public var turnExtraHeader: String = ""
     public var responseWindowUpdatePollCalls: Int64 = 0
+    public var turnRejected: Bool = false
+    public var turnRejectMessage: String = ""
     var turnClientChannel: ?ContractTlsRecordChannel = None
 
     public init(
@@ -17616,7 +17718,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         requestPeerWindowUpdateFrames!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramesFromPoll!:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        enableResponseWindowUpdatePoller!: Bool = true
     ) {
         this.turnRequestUrl = turnRequestUrl
         this.turnStreamId = streamId
@@ -17630,6 +17733,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             requestPeerWindowUpdateFrames
         this.responseWindowUpdateFramesFromPoll =
             responseWindowUpdateFramesFromPoll
+        this.enableResponseWindowUpdatePoller =
+            enableResponseWindowUpdatePoller
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -17797,6 +17902,14 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         engineIncrementalBytes(32, start: 704)
                     )
                 )
+                var responseWindowUpdateFramePoller:
+                    ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+                if (enableResponseWindowUpdatePoller) {
+                    responseWindowUpdateFramePoller = Some({ =>
+                        responseWindowUpdatePollCalls += 1
+                        responseWindowUpdateFramesFromPoll
+                    })
+                }
                 let turn =
                     option.serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
                         accepted,
@@ -17818,10 +17931,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseInitialStreamSendBudget,
                         responseWindowUpdateFramesBeforeRetry:
                             responseWindowUpdateFramesBeforeRetry,
-                        responseWindowUpdateFramePoller: Some({ =>
-                            responseWindowUpdatePollCalls += 1
-                            responseWindowUpdateFramesFromPoll
-                        })
+                        responseWindowUpdateFramePoller:
+                            responseWindowUpdateFramePoller
                     )
                 turnClientChannel = Some(
                     contractTls13CreateClientRecordChannel(
@@ -17838,6 +17949,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                 turnExtraHeader =
                     turn.responseHeaders.getFirst("x-h2-extra") ?? ""
                 turnSocketWriteCount = turn.socketWriteCount
+            } catch (e: Exception) {
+                turnRejected = true
+                turnRejectMessage = e.message
             } finally {
                 if (!accepted.isClosed()) {
                     accepted.close()

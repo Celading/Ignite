@@ -58572,7 +58572,8 @@ public class ServerEngineListenOption {
                 responseWindowUpdateFramesBeforeRetry:
                     responseWindowUpdateFramesBeforeRetry,
                 responseWindowUpdateFramePoller:
-                    responseWindowUpdateFramePoller
+                    responseWindowUpdateFramePoller,
+                responseWriterLifecycle: Some(carrier.responseWriterLifecycle)
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
                 session,
@@ -58601,7 +58602,9 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramesBeforeRetry!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
-            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWriterLifecycle!:
+            ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle = None
     ): Unit {
         var totalCapturedBytes: Int64 = 0
         for (bodyWrite in capturedBodyWrites) {
@@ -58687,8 +58690,21 @@ public class ServerEngineListenOption {
                             payload
                         )
                 } catch (e: Exception) {
-                    if (retryWindowUpdatesApplied) {
+                    if (
+                        !isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
+                            e
+                        )
+                    ) {
                         throw e
+                    }
+                    if (retryWindowUpdatesApplied) {
+                        closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
+                            responseWriterLifecycle
+                        )
+                        throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
+                            e,
+                            responseWriterLifecycle
+                        )
                     }
                     let retryWindowUpdateFrames =
                         resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
@@ -58698,22 +58714,93 @@ public class ServerEngineListenOption {
                                 responseWindowUpdateFramePoller
                         )
                     if (retryWindowUpdateFrames.size == 0) {
-                        throw e
+                        closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
+                            responseWriterLifecycle
+                        )
+                        throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
+                            e,
+                            responseWriterLifecycle
+                        )
                     }
                     for (frame in retryWindowUpdateFrames) {
                         let _ = model.observeWindowUpdateFrame(frame)
                     }
                     retryWindowUpdatesApplied = true
-                    let _ =
-                        handoff.commitNextQueuedDataPayload(
-                            "accepted-socket-application-data-response-writer-turn",
-                            queue,
-                            payload
-                        )
+                    try {
+                        let _ =
+                            handoff.commitNextQueuedDataPayload(
+                                "accepted-socket-application-data-response-writer-turn",
+                                queue,
+                                payload
+                            )
+                    } catch (retryError: Exception) {
+                        if (
+                            isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
+                                retryError
+                            )
+                        ) {
+                            closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
+                                responseWriterLifecycle
+                            )
+                            throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
+                                retryError,
+                                responseWriterLifecycle
+                            )
+                        }
+                        throw retryError
+                    }
                 }
             }
             i += 1
         }
+    }
+
+    func isJinguiAcceptedTransportH2WaitingForWindowUpdateError(
+        e: Exception
+    ): Bool {
+        e.message.contains("waiting for WINDOW_UPDATE")
+    }
+
+    func jinguiAcceptedTransportH2ResponseWindowUpdateStallCloseReason(): String {
+        "h2-response-data-window-update-stall"
+    }
+
+    func closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
+        responseWriterLifecycle:
+            ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    ): Unit {
+        match (responseWriterLifecycle) {
+            case Some(lifecycle) =>
+                if (!lifecycle.closed) {
+                    lifecycle.closeResponseWriterLifecycle(
+                        reason:
+                            jinguiAcceptedTransportH2ResponseWindowUpdateStallCloseReason()
+                    )
+                }
+            case None => ()
+        }
+    }
+
+    func jinguiAcceptedTransportH2ResponseWindowUpdateStallLifecycleStatus(
+        responseWriterLifecycle:
+            ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    ): String {
+        match (responseWriterLifecycle) {
+            case Some(lifecycle) =>
+                let closedStatus = if (lifecycle.closed) { "true" } else { "false" }
+                "closed=${closedStatus}; reason=${lifecycle.closeReason}"
+            case None => "closed=unknown; reason=no-lifecycle"
+        }
+    }
+
+    func throwJinguiAcceptedTransportH2ResponseWindowUpdateStallClosed(
+        e: Exception,
+        responseWriterLifecycle:
+            ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle
+    ): Nothing {
+        throw Exception(
+            "${e.message}; response writer lifecycle closed: ${jinguiAcceptedTransportH2ResponseWindowUpdateStallCloseReason()}; lifecycle ${jinguiAcceptedTransportH2ResponseWindowUpdateStallLifecycleStatus(responseWriterLifecycle)}"
+        )
     }
 
     func resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
