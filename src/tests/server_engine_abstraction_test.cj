@@ -2056,6 +2056,88 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecordsResponseTurnSchedulerTraceForRepeatedPolledStreamWindowUpdates(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-polled-repeated-stream-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(238)
+                .setHeader("content-type", "text/plain; charset=utf-8")
+                .setHeader("x-h2-turn", "hq0719-stream-repeat-poll")
+            let writer = ctx.transportWriter()
+            writer.write("hq0719-one".toArray())
+            writer.write("hq0719-two".toArray())
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-polled-repeated-stream-window-update-response-turn?mode=flow",
+                streamId: 157,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                responseWindowUpdateFramesFromPoll: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        157,
+                        10
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(238))
+        @Assert(engine.turnCustomHeader, "hq0719-stream-repeat-poll")
+        @Assert(engine.turnHeadersFrameStreamId, 157)
+        @Assert(engine.turnHeadersStatus, "238")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 157)
+        @Assert(engine.responseWindowUpdatePollCalls, 2)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(
+            engine.turnSchedulerResponseWriterOwner,
+            "accepted-socket-response-writer-handoff"
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlReadOwner,
+            "response-window-update-poller"
+        )
+        @Assert(engine.turnSchedulerStreamId, 157)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 4)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0719-onehq0719-two"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversTwoResponseBodyWritesAfterRepeatedSocketBackedConnectionWindowUpdates(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -2153,6 +2235,110 @@ public class ServerEngineAbstractionTestSuite {
                 engine.turnDataPayload,
                 serverEngineAbstractionTestTextBytes(
                     "hq0709-onehq0709-two"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRecordsResponseTurnSchedulerTraceForRepeatedSocketBackedStreamWindowUpdates(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-repeated-stream-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(239)
+                .setHeader("content-type", "text/plain; charset=utf-8")
+                .setHeader("x-h2-turn", "hq0719-socket-stream-repeat")
+            let writer = ctx.transportWriter()
+            writer.write("hq0719-one".toArray())
+            writer.write("hq0719-two".toArray())
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-repeated-stream-window-update-response-turn?mode=flow",
+                streamId: 159,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        159,
+                        10
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        159,
+                        10
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 128
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0719 socket-backed repeated stream window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(239))
+        @Assert(engine.turnCustomHeader, "hq0719-socket-stream-repeat")
+        @Assert(engine.turnHeadersFrameStreamId, 159)
+        @Assert(engine.turnHeadersStatus, "239")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 159)
+        @Assert(engine.responseWindowUpdatePollCalls > 2, true)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(
+            engine.turnSchedulerResponseWriterOwner,
+            "accepted-socket-response-writer-handoff"
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlReadOwner,
+            "response-window-update-poller"
+        )
+        @Assert(engine.turnSchedulerStreamId, 159)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(
+            engine.turnSchedulerWriteAttemptCount,
+            engine.turnSchedulerPeerControlPollRoundCount + 2
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount > 2, true)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0719-onehq0719-two"
                 )
             ),
             true
