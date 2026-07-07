@@ -2807,9 +2807,30 @@ public class ServerEngineAbstractionTestSuite {
                 writePauseMillis: 0
             )
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0710-noise-only-window-stall"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 159)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
         @Assert(
             contains(
                 engine.turnRejectMessage,
@@ -2881,9 +2902,25 @@ public class ServerEngineAbstractionTestSuite {
                 writePauseMillis: 0
             )
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0711-invalid-window-update"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 161)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
+        @Assert(engine.turnSchedulerCompleted, false)
         @Assert(
             contains(
                 engine.turnRejectMessage,
@@ -2953,9 +2990,30 @@ public class ServerEngineAbstractionTestSuite {
             clientError = e.message
         }
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0712-incomplete-window-update"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 163)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
         @Assert(
             clientError == "" ||
                 contains(clientError, "Connection reset") ||
@@ -3654,9 +3712,29 @@ public class ServerEngineAbstractionTestSuite {
             clientError = e.message
         }
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0705-socket-unrelated-window-update-stall"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 145)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 3)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 1)
+        @Assert(
+            engine.turnSchedulerRemainingBodyByteCount,
+            expectedPayload.size - 3
+        )
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
         @Assert(
             clientError == "" ||
                 contains(clientError, "Connection reset") ||
