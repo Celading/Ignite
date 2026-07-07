@@ -58590,6 +58590,38 @@ public class ServerEngineListenOption {
         }
     }
 
+    public func serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurn(
+        session: ContractHttpServerAcceptedTransportSession,
+        acceptedSocket: TcpSocket,
+        app: App,
+        request: ServerJinguiAcceptedTransportLogicalRequest,
+        maxFragmentLen!: Int64 = 16384,
+        closeSocketAfterTurn!: Bool = true,
+        responseInitialConnectionSendBudget!: ?Int64 = None,
+        responseInitialStreamSendBudget!: ?Int64 = None,
+        responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        responseWindowUpdateFramePoller!:
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+    ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
+        serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurnCore(
+            session,
+            acceptedSocket,
+            app,
+            request,
+            maxFragmentLen: maxFragmentLen,
+            closeSocketAfterTurn: closeSocketAfterTurn,
+            responseInitialConnectionSendBudget:
+                responseInitialConnectionSendBudget,
+            responseInitialStreamSendBudget:
+                responseInitialStreamSendBudget,
+            responseWindowUpdateFramesBeforeRetry:
+                responseWindowUpdateFramesBeforeRetry,
+            responseWindowUpdateFramePoller:
+                responseWindowUpdateFramePoller
+        )
+    }
+
     func commitJinguiAcceptedTransportCapturedH2DataResponseBody(
         session: ContractHttpServerAcceptedTransportSession,
         request: ServerJinguiAcceptedTransportLogicalRequest,
@@ -58820,6 +58852,62 @@ public class ServerEngineListenOption {
             case Some(poller) => poller()
             case None => []
         }
+    }
+
+    public func buildJinguiAcceptedTransportH2SocketPeerWindowUpdateFramePoller(
+        session: ContractHttpServerAcceptedTransportSession,
+        acceptedSocket: TcpSocket,
+        streamId: Int64,
+        readChunkSize!: Int64 = 4096
+    ): JinguiAcceptedTransportH2PeerControlFramePoller {
+        let chunkSize = if (readChunkSize > 0) {
+            readChunkSize
+        } else {
+            4096
+        }
+        let recordAccumulator = JinguiAcceptedTransportRecordWireAccumulator()
+        let frameAccumulator = JinguiAcceptedTransportH2FrameWireAccumulator()
+        { =>
+            let buf = Array<UInt8>(chunkSize, repeat: 0)
+            let n = acceptedSocket.read(buf)
+            if (n > 0) {
+                recordAccumulator.append(
+                    serverEngineUInt8ToByteArray(buf[..n])
+                )
+                let records = recordAccumulator.drainCompleteRecords()
+                if (records.size > 0) {
+                    frameAccumulator.append(
+                        openAndReassembleJinguiAcceptedTransportApplicationData(
+                            session,
+                            records
+                        )
+                    )
+                }
+            }
+            filterJinguiAcceptedTransportH2SocketPeerWindowUpdateFrames(
+                streamId,
+                frameAccumulator.drainCompleteFrames()
+            )
+        }
+    }
+
+    func filterJinguiAcceptedTransportH2SocketPeerWindowUpdateFrames(
+        streamId: Int64,
+        frameWires: Array<Array<Byte>>
+    ): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
+        let out = ArrayList<JinguiAcceptedTransportH2FrameWireSnapshot>()
+        for (frameWire in frameWires) {
+            let frame = parseJinguiAcceptedTransportH2FrameWire(frameWire)
+            if (frame.frameType != UInt8(0x8)) {
+                continue
+            }
+            let windowUpdate =
+                parseJinguiAcceptedTransportH2WindowUpdateFrame(frame)
+            if (windowUpdate.connectionScoped || windowUpdate.streamId == streamId) {
+                out.add(frame)
+            }
+        }
+        out.toArray()
     }
 
     func serveJinguiAcceptedTransportSessionApplicationDataLogicalRequestTurnBuildAndServeCore(

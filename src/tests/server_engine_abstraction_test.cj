@@ -11,6 +11,7 @@ import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
 import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
+    ContractHttpServerAcceptedTransportSession,
     ContractTlsRecordChannel,
     ContractTlsRecordContentType,
     contractTls13CreateClientRecordChannel,
@@ -1966,6 +1967,79 @@ public class ServerEngineAbstractionTestSuite {
                 engine.turnDataPayload,
                 serverEngineAbstractionTestTextBytes(
                     "hq0702-polled-stream-window-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(223)
+                .setHeader("x-h2-turn", "hq0704-socket-poller")
+                .sendString("hq0704-socket-window-update-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-window-update-response-turn?mode=flow",
+                streamId: 141,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                responseWindowUpdateFramesFromPoll: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0704 socket-backed window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(223))
+        @Assert(engine.turnCustomHeader, "hq0704-socket-poller")
+        @Assert(engine.turnHeadersFrameStreamId, 141)
+        @Assert(engine.turnHeadersStatus, "223")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 141)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0704-socket-window-update-stall"
                 )
             ),
             true
@@ -17660,6 +17734,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     let responseWindowUpdateFramesFromPoll:
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     let enableResponseWindowUpdatePoller: Bool
+    let enableSocketBackedResponseWindowUpdatePoller: Bool
+    let socketBackedResponseWindowUpdateFrames:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -17706,6 +17783,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var responseWindowUpdatePollCalls: Int64 = 0
     public var turnRejected: Bool = false
     public var turnRejectMessage: String = ""
+    public var socketBackedWindowUpdateWireFragments:
+        ?Array<Array<Byte>> = None
     var turnClientChannel: ?ContractTlsRecordChannel = None
 
     public init(
@@ -17719,7 +17798,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramesFromPoll!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
-        enableResponseWindowUpdatePoller!: Bool = true
+        enableResponseWindowUpdatePoller!: Bool = true,
+        enableSocketBackedResponseWindowUpdatePoller!: Bool = false,
+        socketBackedResponseWindowUpdateFrames!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ) {
         this.turnRequestUrl = turnRequestUrl
         this.turnStreamId = streamId
@@ -17735,6 +17817,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             responseWindowUpdateFramesFromPoll
         this.enableResponseWindowUpdatePoller =
             enableResponseWindowUpdatePoller
+        this.enableSocketBackedResponseWindowUpdatePoller =
+            enableSocketBackedResponseWindowUpdatePoller
+        this.socketBackedResponseWindowUpdateFrames =
+            socketBackedResponseWindowUpdateFrames
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -17893,53 +17979,152 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                 cb(ServerEngineReadySignal())
             }
 
-            let accepted = listener.accept()
-            try {
-                let clientHello = contractTls13BuildHttpClientHelloX25519(
-                    "www.example.com",
-                    alpnProtocols: ["h2", "http/1.1"],
-                    clientPrivateKey: Some(
-                        engineIncrementalBytes(32, start: 704)
+            let clientHello = contractTls13BuildHttpClientHelloX25519(
+                "www.example.com",
+                alpnProtocols: ["h2", "http/1.1"],
+                clientPrivateKey: Some(
+                    engineIncrementalBytes(32, start: 704)
+                )
+            )
+            let useSocketBackedResponseWindowUpdatePoller =
+                enableSocketBackedResponseWindowUpdatePoller ||
+                (
+                    !enableResponseWindowUpdatePoller &&
+                    responseWindowUpdateFramesFromPoll.size > 0
+                )
+            var socketBackedPreparedSession:
+                ?ContractHttpServerAcceptedTransportSession = None
+            if (useSocketBackedResponseWindowUpdatePoller) {
+                let preTransport = ContractAcceptedTransportDescriptor(
+                    "h2-appdata-response-turn-transport-prepared",
+                    localEndpoint: "127.0.0.1:443",
+                    remoteEndpoint: "127.0.0.1:55470"
+                )
+                let preSession =
+                    option.attachJinguiAcceptedTransportTls13X25519(
+                        preTransport,
+                        clientHello.encodedClientHello,
+                        engineIncrementalBytes(32, start: 736)
+                    )
+                socketBackedPreparedSession = Some(preSession)
+                let preClientChannel =
+                    contractTls13CreateClientRecordChannel(
+                        preSession.keyMaterial,
+                        algorithm: preSession.recordChannel.algorithm
+                    )
+                turnClientChannel = Some(preClientChannel)
+                let preFrameWires = ArrayList<Array<Byte>>()
+                let preSocketBackedFrames =
+                    if (socketBackedResponseWindowUpdateFrames.size > 0) {
+                        socketBackedResponseWindowUpdateFrames
+                    } else {
+                        responseWindowUpdateFramesFromPoll
+                    }
+                for (frame in preSocketBackedFrames) {
+                    preFrameWires.add(
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            frame.payload,
+                            frameType: frame.frameType,
+                            flags: frame.flags,
+                            streamId: frame.streamId
+                        )
+                    )
+                }
+                socketBackedWindowUpdateWireFragments = Some(
+                    preClientChannel.sealFragments(
+                        ContractTlsRecordContentType.ApplicationData,
+                        concatServerEngineAbstractionTestByteArrays(
+                            preFrameWires.toArray()
+                        ),
+                        maxFragmentLen: 7
                     )
                 )
+            }
+
+            let accepted = listener.accept()
+            try {
                 var responseWindowUpdateFramePoller:
                     ?JinguiAcceptedTransportH2PeerControlFramePoller = None
-                if (enableResponseWindowUpdatePoller) {
+                if (
+                    !useSocketBackedResponseWindowUpdatePoller &&
+                    enableResponseWindowUpdatePoller
+                ) {
                     responseWindowUpdateFramePoller = Some({ =>
                         responseWindowUpdatePollCalls += 1
                         responseWindowUpdateFramesFromPoll
                     })
                 }
-                let turn =
-                    option.serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
-                        accepted,
-                        app,
-                        ServerJinguiAcceptedTransportLogicalRequest(
-                            "GET",
-                            turnRequestUrl,
-                            streamId: turnStreamId,
-                            peerWindowUpdateFrames:
-                                requestPeerWindowUpdateFrames
-                        ),
-                        clientHello.encodedClientHello,
-                        engineIncrementalBytes(32, start: 736),
-                        transportId: "h2-appdata-response-turn-transport",
-                        maxFragmentLen: 8,
-                        responseInitialConnectionSendBudget:
-                            responseInitialConnectionSendBudget,
-                        responseInitialStreamSendBudget:
-                            responseInitialStreamSendBudget,
-                        responseWindowUpdateFramesBeforeRetry:
-                            responseWindowUpdateFramesBeforeRetry,
-                        responseWindowUpdateFramePoller:
-                            responseWindowUpdateFramePoller
+                let logicalRequest =
+                    ServerJinguiAcceptedTransportLogicalRequest(
+                        "GET",
+                        turnRequestUrl,
+                        streamId: turnStreamId,
+                        peerWindowUpdateFrames:
+                            requestPeerWindowUpdateFrames
                     )
-                turnClientChannel = Some(
-                    contractTls13CreateClientRecordChannel(
-                        turn.session.keyMaterial,
-                        algorithm: turn.session.recordChannel.algorithm
-                    )
-                )
+                let turn = if (useSocketBackedResponseWindowUpdatePoller) {
+                        let session = match (socketBackedPreparedSession) {
+                            case Some(preparedSession) => preparedSession
+                            case None =>
+                                throw Exception(
+                                    "expected prepared socket-backed H2 session"
+                                )
+                        }
+                        let socketBackedPoller =
+                            option.buildJinguiAcceptedTransportH2SocketPeerWindowUpdateFramePoller(
+                                session,
+                                accepted,
+                                turnStreamId,
+                                readChunkSize: 64
+                            )
+                        responseWindowUpdateFramePoller = Some({ =>
+                            responseWindowUpdatePollCalls += 1
+                            socketBackedPoller()
+                        })
+                        option.serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurn(
+                            session,
+                            accepted,
+                            app,
+                            logicalRequest,
+                            maxFragmentLen: 8,
+                            responseInitialConnectionSendBudget:
+                                responseInitialConnectionSendBudget,
+                            responseInitialStreamSendBudget:
+                                responseInitialStreamSendBudget,
+                            responseWindowUpdateFramesBeforeRetry:
+                                responseWindowUpdateFramesBeforeRetry,
+                            responseWindowUpdateFramePoller:
+                                responseWindowUpdateFramePoller
+                        )
+                    } else {
+                        option.serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
+                            accepted,
+                            app,
+                            logicalRequest,
+                            clientHello.encodedClientHello,
+                            engineIncrementalBytes(32, start: 736),
+                            transportId: "h2-appdata-response-turn-transport",
+                            maxFragmentLen: 8,
+                            responseInitialConnectionSendBudget:
+                                responseInitialConnectionSendBudget,
+                            responseInitialStreamSendBudget:
+                                responseInitialStreamSendBudget,
+                            responseWindowUpdateFramesBeforeRetry:
+                                responseWindowUpdateFramesBeforeRetry,
+                            responseWindowUpdateFramePoller:
+                                responseWindowUpdateFramePoller
+                        )
+                    }
+                match (turnClientChannel) {
+                    case Some(_) => ()
+                    case None =>
+                        turnClientChannel = Some(
+                            contractTls13CreateClientRecordChannel(
+                                turn.session.keyMaterial,
+                                algorithm: turn.session.recordChannel.algorithm
+                            )
+                        )
+                }
                 turnReadyStatus = turn.readySnapshot.status
                 turnResponseStatus = turn.responseStatus
                 turnContentType =
@@ -19277,6 +19462,38 @@ func runAcceptedTransportRequestResponseSocketSinkClient(
             i += 1
         }
         readAcceptedTransportResponseSocketSinkWire(socket)
+    } finally {
+        if (!socket.isClosed()) {
+            socket.close()
+        }
+    }
+}
+
+func runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+    host: String,
+    port: UInt16,
+    label: String,
+    supplier: AcceptedTransportRequestWireFragmentsSupplier,
+    writePauseMillis!: Int64 = 10
+): Array<UInt8> {
+    let socket = TcpSocket(IPSocketAddress.parse("${host}:${port}"))
+    socket.connect()
+    try {
+        let writerFuture = spawn {
+            let requestWireFragments =
+                waitForAcceptedTransportPreparedRequestWireFragments(
+                    label,
+                    supplier
+                )
+            writeAcceptedTransportSocketWireFragments(
+                socket,
+                requestWireFragments,
+                writePauseMillis: writePauseMillis
+            )
+        }
+        let responseWire = readAcceptedTransportResponseSocketSinkWire(socket)
+        let _ = writerFuture.get(Duration.second * 5)
+        responseWire
     } finally {
         if (!socket.isClosed()) {
             socket.close()
