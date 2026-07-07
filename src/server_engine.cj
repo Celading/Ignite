@@ -3235,6 +3235,146 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     }
 }
 
+public class JinguiAcceptedTransportH2RuntimeProgressReadout {
+    public let responseTurnProgressAccepted: Bool
+    public let h2RuntimeProofContinuationAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let streamId: Int64
+    public let committedDataFrameCount: Int64
+    public let recoveryRoundCount: Int64
+    public let polledWindowUpdateFrameCount: Int64
+    public let remainingBodyByteCount: Int64
+    public let closeReason: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        responseTurnProgressAccepted: Bool,
+        h2RuntimeProofContinuationAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        streamId: Int64,
+        committedDataFrameCount: Int64,
+        recoveryRoundCount: Int64,
+        polledWindowUpdateFrameCount: Int64,
+        remainingBodyByteCount: Int64,
+        closeReason: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.responseTurnProgressAccepted = responseTurnProgressAccepted
+        this.h2RuntimeProofContinuationAllowed =
+            h2RuntimeProofContinuationAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.streamId = streamId
+        this.committedDataFrameCount = committedDataFrameCount
+        this.recoveryRoundCount = recoveryRoundCount
+        this.polledWindowUpdateFrameCount = polledWindowUpdateFrameCount
+        this.remainingBodyByteCount = remainingBodyByteCount
+        this.closeReason = closeReason
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeProgressReadout(
+    snapshot: JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot
+): JinguiAcceptedTransportH2RuntimeProgressReadout {
+    let blockers =
+        jinguiAcceptedTransportH2RuntimeProgressReadoutBlockers(snapshot)
+    let nonClaims = jinguiAcceptedTransportH2RuntimeProgressReadoutNonClaims()
+    if (blockers.size == 0) {
+        return JinguiAcceptedTransportH2RuntimeProgressReadout(
+            true,
+            true,
+            false,
+            "ready-for-bounded-h2-runtime-proof-continuation",
+            "consume-response-turn-progress-without-closure-claim",
+            snapshot.streamId,
+            snapshot.committedDataFrameCount,
+            snapshot.recoveryRoundCount,
+            snapshot.polledWindowUpdateFrameCount,
+            snapshot.remainingBodyByteCount,
+            snapshot.closeReason,
+            [],
+            nonClaims,
+            "open the next bounded H2 runtime packet; closure still needs browser, h2spec, scheduler fairness, and release-grade proof",
+            "QUIC can reuse this response-turn progress readout before claiming stream runtime closure"
+        )
+    }
+    JinguiAcceptedTransportH2RuntimeProgressReadout(
+        false,
+        false,
+        false,
+        "blocked-h2-response-turn-progress",
+        "repair-response-turn-progress-before-runtime-continuation",
+        snapshot.streamId,
+        snapshot.committedDataFrameCount,
+        snapshot.recoveryRoundCount,
+        snapshot.polledWindowUpdateFrameCount,
+        snapshot.remainingBodyByteCount,
+        snapshot.closeReason,
+        blockers,
+        nonClaims,
+        "keep the packet in response-turn repair mode until the scheduler trace completes without close reason",
+        "QUIC should treat incomplete response-turn progress as stream writer repair evidence, not runtime closure evidence"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeProgressReadoutBlockers(
+    snapshot: JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot
+): Array<String> {
+    let blockers = ArrayList<String>()
+    if (!snapshot.completed) {
+        blockers.add("RESPONSE_TURN_NOT_COMPLETED")
+    }
+    if (snapshot.closeReason.size > 0) {
+        blockers.add("CLOSE_REASON:${snapshot.closeReason}")
+    }
+    if (snapshot.queuedBodyWriteCount > snapshot.committedBodyWriteCount) {
+        blockers.add("BODY_WRITE_NOT_FULLY_COMMITTED")
+    }
+    if (snapshot.remainingBodyByteCount > 0) {
+        blockers.add("BODY_BYTES_REMAINING:${snapshot.remainingBodyByteCount}")
+    }
+    if (snapshot.committedDataFrameCount <= 0) {
+        blockers.add("NO_DATA_FRAME_COMMITTED")
+    }
+    let acceptedRecoveryFrameCount =
+        snapshot.requestWindowUpdateFrameCount +
+        snapshot.explicitWindowUpdateFrameCount +
+        snapshot.polledWindowUpdateFrameCount
+    if (
+        snapshot.recoveryRoundCount > 0 &&
+        acceptedRecoveryFrameCount <= 0
+    ) {
+        blockers.add("NO_ACCEPTED_RECOVERY_WINDOW_UPDATE")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeProgressReadoutNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_BROWSER_REPLAY_CLAIM",
+        "NO_H2SPEC_CLAIM",
+        "NO_SCHEDULER_FAIRNESS_CLAIM",
+        "NO_RELEASE_CLAIM",
+    ]
+}
+
 public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
     let _streamId: Int64
     public var queuedBodyWriteCount: Int64 = 0

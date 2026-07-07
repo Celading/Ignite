@@ -2711,6 +2711,18 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(engine.turnRuntimeProgressAccepted, true)
+        @Assert(engine.turnRuntimeProofContinuationAllowed, true)
+        @Assert(engine.turnRuntimeClosureClaimAllowed, false)
+        @Assert(
+            engine.turnRuntimeProgressStatus,
+            "ready-for-bounded-h2-runtime-proof-continuation"
+        )
+        @Assert(
+            engine.turnRuntimeProgressDecision,
+            "consume-response-turn-progress-without-closure-claim"
+        )
+        @Assert(engine.turnRuntimeProgressBlockerCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -3225,6 +3237,29 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(
             engine.turnSchedulerCloseReason,
             "h2-response-data-window-update-stall"
+        )
+        @Assert(engine.turnRuntimeProgressAccepted, false)
+        @Assert(engine.turnRuntimeProofContinuationAllowed, false)
+        @Assert(engine.turnRuntimeClosureClaimAllowed, false)
+        @Assert(
+            engine.turnRuntimeProgressStatus,
+            "blocked-h2-response-turn-progress"
+        )
+        @Assert(
+            engine.turnRuntimeProgressDecision,
+            "repair-response-turn-progress-before-runtime-continuation"
+        )
+        @Assert(engine.turnRuntimeProgressBlockerCount > 0, true)
+        @Assert(
+            engine.turnRuntimeProgressFirstBlocker,
+            "RESPONSE_TURN_NOT_COMPLETED"
+        )
+        @Assert(
+            contains(
+                engine.turnRuntimeProgressNextAction,
+                "response-turn repair"
+            ),
+            true
         )
         @Assert(
             clientError == "" ||
@@ -19961,6 +19996,14 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnSchedulerRemainingBodyByteCount: Int64 = 0
     public var turnSchedulerCompleted: Bool = false
     public var turnSchedulerCloseReason: String = ""
+    public var turnRuntimeProgressAccepted: Bool = false
+    public var turnRuntimeProofContinuationAllowed: Bool = false
+    public var turnRuntimeClosureClaimAllowed: Bool = false
+    public var turnRuntimeProgressStatus: String = ""
+    public var turnRuntimeProgressDecision: String = ""
+    public var turnRuntimeProgressBlockerCount: Int64 = 0
+    public var turnRuntimeProgressFirstBlocker: String = ""
+    public var turnRuntimeProgressNextAction: String = ""
     public var turnRejected: Bool = false
     public var turnRejectMessage: String = ""
     public var socketBackedWindowUpdateWireFragments:
@@ -20052,6 +20095,26 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             schedulerSnapshot.remainingBodyByteCount
         turnSchedulerCompleted = schedulerSnapshot.completed
         turnSchedulerCloseReason = schedulerSnapshot.closeReason
+        let progressReadout =
+            buildJinguiAcceptedTransportH2RuntimeProgressReadout(
+                schedulerSnapshot
+            )
+        turnRuntimeProgressAccepted =
+            progressReadout.responseTurnProgressAccepted
+        turnRuntimeProofContinuationAllowed =
+            progressReadout.h2RuntimeProofContinuationAllowed
+        turnRuntimeClosureClaimAllowed =
+            progressReadout.h2RuntimeClosureClaimAllowed
+        turnRuntimeProgressStatus = progressReadout.status
+        turnRuntimeProgressDecision = progressReadout.decision
+        turnRuntimeProgressBlockerCount = progressReadout.blockers.size
+        turnRuntimeProgressFirstBlocker =
+            if (progressReadout.blockers.size > 0) {
+                progressReadout.blockers[0]
+            } else {
+                ""
+            }
+        turnRuntimeProgressNextAction = progressReadout.nextAction
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
