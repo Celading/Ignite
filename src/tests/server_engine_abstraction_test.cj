@@ -2116,6 +2116,76 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterPartialPollCarryoverSocketBackedWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-partial-carryover-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(227)
+                .setHeader("x-h2-turn", "hq0707-socket-carryover")
+                .sendString("hq0707-socket-partial-poll-carryover")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-partial-carryover-window-update-response-turn?mode=flow",
+                streamId: 151,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 128
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0707 socket-backed partial poll carryover window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(227))
+        @Assert(engine.turnCustomHeader, "hq0707-socket-carryover")
+        @Assert(engine.turnHeadersFrameStreamId, 151)
+        @Assert(engine.turnHeadersStatus, "227")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 151)
+        @Assert(engine.responseWindowUpdatePollCalls > 1, true)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0707-socket-partial-poll-carryover"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledStreamWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -17939,6 +18009,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     let socketBackedResponseWindowUpdatePollReadChunkSize: Int64
     let socketBackedResponseWindowUpdatePollMaxReadAttempts: Int64
+    let responseWindowUpdateMaxPollAttempts: Int64
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -18005,7 +18076,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         socketBackedResponseWindowUpdateFrames!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         socketBackedResponseWindowUpdatePollReadChunkSize!: Int64 = 64,
-        socketBackedResponseWindowUpdatePollMaxReadAttempts!: Int64 = 1
+        socketBackedResponseWindowUpdatePollMaxReadAttempts!: Int64 = 1,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1
     ) {
         this.turnRequestUrl = turnRequestUrl
         this.turnStreamId = streamId
@@ -18029,6 +18101,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             socketBackedResponseWindowUpdatePollReadChunkSize
         this.socketBackedResponseWindowUpdatePollMaxReadAttempts =
             socketBackedResponseWindowUpdatePollMaxReadAttempts
+        this.responseWindowUpdateMaxPollAttempts =
+            responseWindowUpdateMaxPollAttempts
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -18305,7 +18379,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseWindowUpdateFramesBeforeRetry:
                                 responseWindowUpdateFramesBeforeRetry,
                             responseWindowUpdateFramePoller:
-                                responseWindowUpdateFramePoller
+                                responseWindowUpdateFramePoller,
+                            responseWindowUpdateMaxPollAttempts:
+                                responseWindowUpdateMaxPollAttempts
                         )
                     } else {
                         option.serveJinguiAcceptedTransportSocketLogicalRequestH2DataResponseTurn(
@@ -18323,7 +18399,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseWindowUpdateFramesBeforeRetry:
                                 responseWindowUpdateFramesBeforeRetry,
                             responseWindowUpdateFramePoller:
-                                responseWindowUpdateFramePoller
+                                responseWindowUpdateFramePoller,
+                            responseWindowUpdateMaxPollAttempts:
+                                responseWindowUpdateMaxPollAttempts
                         )
                     }
                 match (turnClientChannel) {

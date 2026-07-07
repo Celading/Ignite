@@ -58536,7 +58536,8 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramesBeforeRetry!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
-            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let readySnapshot = notifyJinguiAcceptedTransportSession(session)
         let carrier = ServerJinguiAcceptedTransportSocketResponseCarrier(
@@ -58573,6 +58574,8 @@ public class ServerEngineListenOption {
                     responseWindowUpdateFramesBeforeRetry,
                 responseWindowUpdateFramePoller:
                     responseWindowUpdateFramePoller,
+                responseWindowUpdateMaxPollAttempts:
+                    responseWindowUpdateMaxPollAttempts,
                 responseWriterLifecycle: Some(carrier.responseWriterLifecycle)
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
@@ -58602,7 +58605,8 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramesBeforeRetry!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
-            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         serveJinguiAcceptedTransportSessionLogicalRequestH2DataResponseTurnCore(
             session,
@@ -58618,7 +58622,9 @@ public class ServerEngineListenOption {
             responseWindowUpdateFramesBeforeRetry:
                 responseWindowUpdateFramesBeforeRetry,
             responseWindowUpdateFramePoller:
-                responseWindowUpdateFramePoller
+                responseWindowUpdateFramePoller,
+            responseWindowUpdateMaxPollAttempts:
+                responseWindowUpdateMaxPollAttempts
         )
     }
 
@@ -58635,6 +58641,7 @@ public class ServerEngineListenOption {
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
             ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1,
         responseWriterLifecycle!:
             ?ServerJinguiAcceptedTransportSocketResponseWriterLifecycle = None
     ): Unit {
@@ -58743,7 +58750,9 @@ public class ServerEngineListenOption {
                             request,
                             responseWindowUpdateFramesBeforeRetry,
                             responseWindowUpdateFramePoller:
-                                responseWindowUpdateFramePoller
+                                responseWindowUpdateFramePoller,
+                            responseWindowUpdateMaxPollAttempts:
+                                responseWindowUpdateMaxPollAttempts
                         )
                     if (retryWindowUpdateFrames.size == 0) {
                         closeJinguiAcceptedTransportH2ResponseWriterLifecycleAfterWindowUpdateStall(
@@ -58840,7 +58849,8 @@ public class ServerEngineListenOption {
         explicitWindowUpdateFrames:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot>,
         responseWindowUpdateFramePoller!:
-            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1
     ): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
         if (request.peerWindowUpdateFrames.size > 0) {
             return request.peerWindowUpdateFrames
@@ -58849,7 +58859,21 @@ public class ServerEngineListenOption {
             return explicitWindowUpdateFrames
         }
         match (responseWindowUpdateFramePoller) {
-            case Some(poller) => poller()
+            case Some(poller) =>
+                let pollAttempts = if (responseWindowUpdateMaxPollAttempts > 0) {
+                    responseWindowUpdateMaxPollAttempts
+                } else {
+                    1
+                }
+                var attempt: Int64 = 0
+                while (attempt < pollAttempts) {
+                    let frames = poller()
+                    if (frames.size > 0) {
+                        return frames
+                    }
+                    attempt += 1
+                }
+                []
             case None => []
         }
     }
@@ -59219,7 +59243,8 @@ public class ServerEngineListenOption {
         responseWindowUpdateFramesBeforeRetry!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
         responseWindowUpdateFramePoller!:
-            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None,
+        responseWindowUpdateMaxPollAttempts!: Int64 = 1
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let transport = buildServerAcceptedTransportDescriptorFromSocket(
             acceptedSocket,
@@ -59245,7 +59270,9 @@ public class ServerEngineListenOption {
             responseWindowUpdateFramesBeforeRetry:
                 responseWindowUpdateFramesBeforeRetry,
             responseWindowUpdateFramePoller:
-                responseWindowUpdateFramePoller
+                responseWindowUpdateFramePoller,
+            responseWindowUpdateMaxPollAttempts:
+                responseWindowUpdateMaxPollAttempts
         )
     }
 
