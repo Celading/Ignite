@@ -2712,6 +2712,21 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(engine.turnSchedulerStreamId, 169)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 1)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
+        @Assert(
             clientError == "" ||
                 contains(clientError, "Connection reset") ||
                 contains(clientError, "Broken pipe"),
@@ -3264,6 +3279,18 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersCustomHeader, "sr110")
         @Assert(engine.turnDataFrameSeen, false)
         @Assert(engine.turnFramePayload.size, 0)
+        @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(engine.turnSchedulerStreamId, 91)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 0)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 0)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
     }
 
     @TestCase
@@ -18869,6 +18896,30 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             responseWindowUpdateMaxPollAttempts
     }
 
+    func recordTurnSchedulerSnapshot(
+        trace: JinguiAcceptedTransportH2ResponseTurnSchedulerTrace
+    ): Unit {
+        let schedulerSnapshot = trace.snapshot()
+        turnSchedulerOwner = schedulerSnapshot.schedulerOwner
+        turnSchedulerResponseWriterOwner =
+            schedulerSnapshot.responseWriterOwner
+        turnSchedulerPeerControlReadOwner =
+            schedulerSnapshot.peerControlReadOwner
+        turnSchedulerStreamId = schedulerSnapshot.streamId
+        turnSchedulerQueuedBodyWriteCount =
+            schedulerSnapshot.queuedBodyWriteCount
+        turnSchedulerWriteAttemptCount =
+            schedulerSnapshot.writeAttemptCount
+        turnSchedulerPeerControlPollRoundCount =
+            schedulerSnapshot.peerControlPollRoundCount
+        turnSchedulerObservedWindowUpdateFrameCount =
+            schedulerSnapshot.observedWindowUpdateFrameCount
+        turnSchedulerCommittedBodyWriteCount =
+            schedulerSnapshot.committedBodyWriteCount
+        turnSchedulerCompleted = schedulerSnapshot.completed
+        turnSchedulerCloseReason = schedulerSnapshot.closeReason
+    }
+
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
         match (turnClientChannel) {
             case Some(channel) =>
@@ -19088,6 +19139,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             }
 
             let accepted = listener.accept()
+            var schedulerTraceForTurn:
+                ?JinguiAcceptedTransportH2ResponseTurnSchedulerTrace = None
             try {
                 var responseWindowUpdateFramePoller:
                     ?JinguiAcceptedTransportH2PeerControlFramePoller = None
@@ -19112,6 +19165,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     JinguiAcceptedTransportH2ResponseTurnSchedulerTrace(
                         turnStreamId
                     )
+                schedulerTraceForTurn = Some(schedulerTrace)
                 let turn = if (useSocketBackedResponseWindowUpdatePoller) {
                         let session = match (socketBackedPreparedSession) {
                             case Some(preparedSession) => preparedSession
@@ -19174,25 +19228,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                             responseSchedulerTrace: Some(schedulerTrace)
                         )
                     }
-                let schedulerSnapshot = schedulerTrace.snapshot()
-                turnSchedulerOwner = schedulerSnapshot.schedulerOwner
-                turnSchedulerResponseWriterOwner =
-                    schedulerSnapshot.responseWriterOwner
-                turnSchedulerPeerControlReadOwner =
-                    schedulerSnapshot.peerControlReadOwner
-                turnSchedulerStreamId = schedulerSnapshot.streamId
-                turnSchedulerQueuedBodyWriteCount =
-                    schedulerSnapshot.queuedBodyWriteCount
-                turnSchedulerWriteAttemptCount =
-                    schedulerSnapshot.writeAttemptCount
-                turnSchedulerPeerControlPollRoundCount =
-                    schedulerSnapshot.peerControlPollRoundCount
-                turnSchedulerObservedWindowUpdateFrameCount =
-                    schedulerSnapshot.observedWindowUpdateFrameCount
-                turnSchedulerCommittedBodyWriteCount =
-                    schedulerSnapshot.committedBodyWriteCount
-                turnSchedulerCompleted = schedulerSnapshot.completed
-                turnSchedulerCloseReason = schedulerSnapshot.closeReason
+                recordTurnSchedulerSnapshot(schedulerTrace)
                 match (turnClientChannel) {
                     case Some(_) => ()
                     case None =>
@@ -19213,6 +19249,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                     turn.responseHeaders.getFirst("x-h2-extra") ?? ""
                 turnSocketWriteCount = turn.socketWriteCount
             } catch (e: Exception) {
+                match (schedulerTraceForTurn) {
+                    case Some(trace) => recordTurnSchedulerSnapshot(trace)
+                    case None => ()
+                }
                 turnRejected = true
                 turnRejectMessage = e.message
             } finally {
