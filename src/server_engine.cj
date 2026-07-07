@@ -513,6 +513,7 @@ public func buildServerJinguiAcceptedTransportH2PseudoHeadersFromDecodedHeaderFi
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
     headerFields: Array<JinguiAcceptedTransportH2DecodedHeaderField>,
+    trailers!: ?HttpHeaders = None,
     bodyBytes!: Array<UInt8> = [],
     streamId!: Int64 = 1
 ): ServerJinguiAcceptedTransportLogicalRequest {
@@ -544,9 +545,29 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
     buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         pseudoHeaders,
         headers: Some(headers),
+        trailers: trailers,
         bodyBytes: bodyBytes,
         streamId: streamId
     )
+}
+
+public func buildServerJinguiAcceptedTransportRequestTrailersFromDecodedH2HeaderFields(
+    headerFields: Array<JinguiAcceptedTransportH2DecodedHeaderField>
+): HttpHeaders {
+    let trailers = HttpHeaders()
+    for (field in headerFields) {
+        if (serverJinguiAcceptedTransportH2FieldNameIsPseudo(field.name)) {
+            throw Exception(
+                "H2 request trailer projection does not support pseudo header `${field.name}` in this bounded seam"
+            )
+        }
+        let normalizedName = field.name.trimAscii().toAsciiLower()
+        if (shouldSkipJinguiAcceptedTransportH2RequestHeader(normalizedName)) {
+            continue
+        }
+        trailers.add(normalizedName, field.value)
+    }
+    trailers
 }
 
 func shouldSkipJinguiAcceptedTransportH2RequestHeader(name: String): Bool {
@@ -570,12 +591,30 @@ public func buildServerJinguiAcceptedTransportH2PseudoHeadersFromHeaderBlock(
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
     headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+    trailers!: ?HttpHeaders = None,
     bodyBytes!: Array<UInt8> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
         parseJinguiAcceptedTransportH2HeaderFields(headerBlock),
+        trailers: trailers,
         bodyBytes: bodyBytes,
         streamId: headerBlock.streamId
+    )
+}
+
+public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
+    headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+    trailerHeaderBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+    bodyBytes!: Array<UInt8> = []
+): ServerJinguiAcceptedTransportLogicalRequest {
+    let trailers =
+        buildServerJinguiAcceptedTransportRequestTrailersFromDecodedH2HeaderFields(
+            parseJinguiAcceptedTransportH2HeaderFields(trailerHeaderBlock)
+        )
+    buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
+        headerBlock,
+        trailers: Some(trailers),
+        bodyBytes: bodyBytes
     )
 }
 

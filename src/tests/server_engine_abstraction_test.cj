@@ -5680,6 +5680,100 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2TrailingHeaderBlockProjectsRequestTrailersSeparately(): Unit {
+        let headerBlock = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            33,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x82)]),
+                serverEngineAbstractionTestByteArray([UInt8(0x44), UInt8(0x0e)]),
+                serverEngineAbstractionTestByteArray("/trailer-block".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x01), UInt8(0x14)]),
+                serverEngineAbstractionTestByteArray(
+                    "api.example.com:9443".toArray()
+                ),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x06)]),
+                serverEngineAbstractionTestByteArray("x-mode".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("head".toArray())
+            ])
+        )
+        let trailerBlock = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            33,
+            false,
+            false,
+            false,
+            true,
+            0,
+            0,
+            concatServerEngineAbstractionTestByteArrays([
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x11)]),
+                serverEngineAbstractionTestByteArray("x-request-trailer".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x04)]),
+                serverEngineAbstractionTestByteArray("tail".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x06)]),
+                serverEngineAbstractionTestByteArray("x-mode".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x0e)]),
+                serverEngineAbstractionTestByteArray("trailer-shadow".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x10), UInt8(0x0a)]),
+                serverEngineAbstractionTestByteArray("connection".toArray()),
+                serverEngineAbstractionTestByteArray([UInt8(0x05)]),
+                serverEngineAbstractionTestByteArray("close".toArray())
+            ])
+        )
+
+        let request =
+            buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
+                headerBlock,
+                trailerBlock,
+                bodyBytes: "payload".toArray()
+            )
+
+        @Assert(request.headers.getFirst("host") ?? "", "api.example.com:9443")
+        @Assert(request.headers.getFirst("x-mode") ?? "", "head")
+        @Assert(request.headers.getFirst("x-request-trailer") ?? "", "")
+        @Assert(request.trailers.getFirst("x-request-trailer") ?? "", "tail")
+        @Assert(request.trailers.getFirst("x-mode") ?? "", "trailer-shadow")
+        @Assert(request.trailers.getFirst("connection") ?? "", "")
+        @Assert(request.streamId, Int64(33))
+    }
+
+    @TestCase
+    public func testJinguiAcceptedTransportH2TrailingHeaderBlockRejectsPseudoHeader(): Unit {
+        let trailerBlock = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            35,
+            false,
+            false,
+            false,
+            true,
+            0,
+            0,
+            serverEngineAbstractionTestByteArray([UInt8(0x88)])
+        )
+
+        try {
+            let _ =
+                buildServerJinguiAcceptedTransportRequestTrailersFromDecodedH2HeaderFields(
+                    parseJinguiAcceptedTransportH2HeaderFields(trailerBlock)
+                )
+            @Fail("expected pseudo header rejection from request trailers")
+        } catch (e: Exception) {
+            @Assert(
+                contains(
+                    e.message,
+                    "does not support pseudo header `:status`"
+                ),
+                true
+            )
+        }
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2HeaderBlockRejectsUnsupportedPseudoHeaderProjection(): Unit {
         let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
             21,
