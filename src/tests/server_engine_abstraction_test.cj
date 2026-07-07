@@ -3478,6 +3478,10 @@ public class ServerEngineAbstractionTestSuite {
             )
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0704-socket-window-update-stall"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(223))
@@ -3488,16 +3492,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 141)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerStreamId, 141)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0704-socket-window-update-stall"
-                )
+                expectedPayload
             ),
             true
         )
@@ -3551,6 +3564,10 @@ public class ServerEngineAbstractionTestSuite {
             )
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0706-socket-fragmented-window-update-stall"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(226))
@@ -3561,16 +3578,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 149)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerStreamId, 149)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0706-socket-fragmented-window-update-stall"
-                )
+                expectedPayload
             ),
             true
         )
@@ -3625,6 +3651,10 @@ public class ServerEngineAbstractionTestSuite {
             )
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0707-socket-partial-poll-carryover"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(227))
@@ -3635,16 +3665,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 151)
         @Assert(engine.responseWindowUpdatePollCalls > 1, true)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerStreamId, 151)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0707-socket-partial-poll-carryover"
-                )
+                expectedPayload
             ),
             true
         )
@@ -3696,6 +3735,10 @@ public class ServerEngineAbstractionTestSuite {
             )
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0705-socket-stream-window-update-stall"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(224))
@@ -3706,16 +3749,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 143)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerStreamId, 143)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0705-socket-stream-window-update-stall"
-                )
+                expectedPayload
             ),
             true
         )
