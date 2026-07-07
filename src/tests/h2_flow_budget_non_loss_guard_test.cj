@@ -1974,8 +1974,6 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         )
 
         @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
-        let firstChunk = queue.tryDrainHeadChunk(4)
-        let secondChunk = queue.tryDrainHeadChunk(4)
         let carrier =
             H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier(
                 lifecycle,
@@ -1988,15 +1986,15 @@ public class H2FlowBudgetNonLossGuardTestSuite {
             )
 
         let first =
-            handoff.commitDataFrame(
+            handoff.commitNextQueuedDataPayload(
                 "accepted-socket-response-writer-lifecycle-probe",
-                firstChunk,
+                queue,
                 h2FlowBudgetNonLossGuardBytes("part")
             )
         let second =
-            handoff.commitDataFrame(
+            handoff.commitNextQueuedDataPayload(
                 "accepted-socket-response-writer-lifecycle-probe",
-                secondChunk,
+                queue,
                 h2FlowBudgetNonLossGuardBytes("done")
             )
 
@@ -2048,8 +2046,6 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         )
 
         @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
-        let blocked = queue.tryDrainHeadChunk(4)
-        @Assert(blocked.drained, false)
         let carrier =
             H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier(
                 lifecycle,
@@ -2063,9 +2059,9 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         var rejected = false
         try {
             let _ =
-                handoff.commitDataFrame(
+                handoff.commitNextQueuedDataPayload(
                     "accepted-socket-response-writer-lifecycle-probe",
-                    blocked,
+                    queue,
                     h2FlowBudgetNonLossGuardBytes("wait")
                 )
         } catch (_: Exception) {

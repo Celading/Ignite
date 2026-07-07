@@ -1438,6 +1438,66 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitMultiDataFramesFromTransportWriterAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-transport-writer-response-turn", { ctx =>
+            let _ = ctx
+                .status(212)
+                .setHeader("content-type", "application/json; charset=utf-8")
+                .setHeader("x-h2-turn", "hq0697")
+            let writer = ctx.transportWriter()
+            writer.write("{\"kind\":\"".toArray())
+            writer.write("hq0697\",\"ok\":true,\"count\":2}".toArray())
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-transport-writer-response-turn?mode=transport",
+                streamId: 119
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(212))
+        @Assert(engine.turnContentType, "application/json; charset=utf-8")
+        @Assert(engine.turnCustomHeader, "hq0697")
+        @Assert(engine.turnDecodedFrameCount > 2, true)
+        @Assert(engine.turnDataFrameCount > 1, true)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 119)
+        @Assert(engine.turnHeadersStatus, "212")
+        @Assert(engine.turnHeadersCustomHeader, "hq0697")
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 119)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "{\"kind\":\"hq0697\",\"ok\":true,\"count\":2}"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -17031,10 +17091,12 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnHeadersUpgradeHeaderSeen: Bool = false
     public var turnHeadersTeHeaderSeen: Bool = false
     public var turnDataFrameSeen: Bool = false
+    public var turnDataFrameCount: Int64 = 0
     public var turnFrameType: UInt8 = 0
     public var turnFrameEndStream: Bool = false
     public var turnFrameStreamId: Int64 = 0
     public var turnFramePayload: Array<Byte> = []
+    public var turnDataPayload: Array<Byte> = []
     public var turnExtraHeader: String = ""
     var turnClientChannel: ?ContractTlsRecordChannel = None
 
@@ -17151,22 +17213,36 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                 turnHeadersEndHeaders = headersFragment.endHeaders
                 turnHeadersEndStream = headersFragment.endStream
                 turnHeadersFrameStreamId = headersFrame.streamId
-                if (frames.size > 1) {
+                let joinedPayload = ArrayList<Byte>()
+                var dataFrameIndex: Int64 = 1
+                while (dataFrameIndex < frames.size) {
                     let frame =
-                        parseJinguiAcceptedTransportH2FrameWire(frames[1])
-                    let dataFrame =
-                        parseJinguiAcceptedTransportH2DataFrame(frame)
-                    turnDataFrameSeen = true
-                    turnFrameType = frame.frameType
-                    turnFrameEndStream = dataFrame.endStream
-                    turnFrameStreamId = frame.streamId
-                    turnFramePayload =
-                        cloneServerEngineAbstractionTestByteWindow(
-                            dataFrame.dataBytes,
-                            0,
-                            dataFrame.dataBytes.size
+                        parseJinguiAcceptedTransportH2FrameWire(
+                            frames[dataFrameIndex]
                         )
+                    if (frame.frameType == UInt8(0x0)) {
+                        let dataFrame =
+                            parseJinguiAcceptedTransportH2DataFrame(frame)
+                        if (!turnDataFrameSeen) {
+                            turnDataFrameSeen = true
+                            turnFrameType = frame.frameType
+                            turnFramePayload =
+                                cloneServerEngineAbstractionTestByteWindow(
+                                    dataFrame.dataBytes,
+                                    0,
+                                    dataFrame.dataBytes.size
+                                )
+                        }
+                        turnDataFrameCount += 1
+                        turnFrameEndStream = dataFrame.endStream
+                        turnFrameStreamId = frame.streamId
+                        for (b in dataFrame.dataBytes) {
+                            joinedPayload.add(b)
+                        }
+                    }
+                    dataFrameIndex += 1
                 }
+                turnDataPayload = joinedPayload.toArray()
             case None =>
                 throw Exception(
                     "expected SR108 turn companion client record channel before socket wire decode"

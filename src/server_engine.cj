@@ -58566,11 +58566,10 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
-                let drain = queue.tryDrainHeadChunk(payload.size)
                 let _ =
-                    handoff.commitDataFrame(
+                    handoff.commitNextQueuedDataPayload(
                         "accepted-socket-application-data-response-writer-turn",
-                        drain,
+                        queue,
                         payload
                     )
             }
