@@ -1499,6 +1499,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
@@ -2436,6 +2437,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
@@ -2552,6 +2554,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(engine.turnSchedulerCompleted, true)
         @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
@@ -3577,9 +3580,24 @@ public class ServerEngineAbstractionTestSuite {
 
         let _ = runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0703-no-poller-window-stall"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 137)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 0)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
         @Assert(
             contains(
                 engine.turnRejectMessage,
@@ -3626,9 +3644,26 @@ public class ServerEngineAbstractionTestSuite {
 
         let _ = runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0703-empty-poller-window-stall"
+            )
 
         @Assert(engine.turnRejected, true)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 139)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 0)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, 0)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerCompleted, false)
+        @Assert(
+            engine.turnSchedulerCloseReason,
+            "h2-response-data-window-update-stall"
+        )
         @Assert(
             contains(
                 engine.turnRejectMessage,
@@ -19307,6 +19342,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnSchedulerObservedWindowUpdateFrameCount: Int64 = 0
     public var turnSchedulerCommittedBodyWriteCount: Int64 = 0
     public var turnSchedulerCommittedBodyByteCount: Int64 = 0
+    public var turnSchedulerRemainingBodyByteCount: Int64 = 0
     public var turnSchedulerCompleted: Bool = false
     public var turnSchedulerCloseReason: String = ""
     public var turnRejected: Bool = false
@@ -19384,6 +19420,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             schedulerSnapshot.committedBodyWriteCount
         turnSchedulerCommittedBodyByteCount =
             schedulerSnapshot.committedBodyByteCount
+        turnSchedulerRemainingBodyByteCount =
+            schedulerSnapshot.remainingBodyByteCount
         turnSchedulerCompleted = schedulerSnapshot.completed
         turnSchedulerCloseReason = schedulerSnapshot.closeReason
     }

@@ -3158,6 +3158,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     public let observedWindowUpdateFrameCount: Int64
     public let committedBodyWriteCount: Int64
     public let committedBodyByteCount: Int64
+    public let remainingBodyByteCount: Int64
     public let completed: Bool
     public let closeReason: String
 
@@ -3173,6 +3174,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         observedWindowUpdateFrameCount: Int64,
         committedBodyWriteCount: Int64,
         committedBodyByteCount: Int64,
+        remainingBodyByteCount: Int64,
         completed: Bool,
         closeReason: String
     ) {
@@ -3187,6 +3189,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         this.observedWindowUpdateFrameCount = observedWindowUpdateFrameCount
         this.committedBodyWriteCount = committedBodyWriteCount
         this.committedBodyByteCount = committedBodyByteCount
+        this.remainingBodyByteCount = remainingBodyByteCount
         this.completed = completed
         this.closeReason = closeReason
     }
@@ -3237,6 +3240,14 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
         completed = true
     }
 
+    public func remainingBodyByteCount(): Int64 {
+        let remaining = queuedBodyByteCount - committedBodyByteCount
+        if (remaining > 0) {
+            return remaining
+        }
+        0
+    }
+
     public func snapshot(
     ): JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot(
@@ -3251,6 +3262,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
             observedWindowUpdateFrameCount,
             committedBodyWriteCount,
             committedBodyByteCount,
+            remainingBodyByteCount(),
             completed,
             closeReason
         )
