@@ -3971,6 +3971,202 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketDataAfterBodyEndStream(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "data-after-body-end-stream"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "accepted-socket fragmented data after body end-stream reject request",
+                    { => engine.requestWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "expects fully drained ingress after one logical request"
+            ),
+            true
+        )
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketHeadersAfterBodyEndStream(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "headers-after-body-end-stream"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "accepted-socket fragmented headers after body end-stream reject request",
+                    { => engine.requestWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "expects fully drained ingress after one logical request"
+            ),
+            true
+        )
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketHeadersAfterTrailingHeaders(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "headers-after-trailing-headers"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "accepted-socket fragmented headers after trailing headers reject request",
+                    { => engine.requestWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "expects fully drained ingress after one logical request"
+            ),
+            true
+        )
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRejectsAcceptedSocketContinuationAfterTrailingHeaders(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine(
+                rejectMode: "continuation-after-trailing-headers"
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        var clientError: String = ""
+        try {
+            let _ =
+                runAcceptedTransportRequestResponseSocketSinkClient(
+                    "127.0.0.1",
+                    port,
+                    "accepted-socket fragmented continuation after trailing headers reject request",
+                    { => engine.requestWireFragments },
+                    writePauseMillis: 0
+                )
+        } catch (e: Exception) {
+            clientError = e.message
+        }
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(
+            contains(
+                engine.observedError,
+                "expects fully drained ingress after one logical request"
+            ),
+            true
+        )
+        @Assert(
+            clientError == "" ||
+                contains(clientError, "Connection reset") ||
+                contains(clientError, "Broken pipe"),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanCaptureAcceptedTransportSocketFragmentedTlsHandshakeClientHello(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -14603,6 +14799,130 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHe
                             ),
                             frameType: UInt8(0x0),
                             flags: UInt8(0x1),
+                            streamId: 93
+                        )
+                    ])
+                } else if (rejectMode == "data-after-body-end-stream") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "blocked".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x1),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "too-late".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x1),
+                            streamId: 93
+                        )
+                    ])
+                } else if (rejectMode == "headers-after-body-end-stream") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "blocked".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x1),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x5),
+                            streamId: 93
+                        )
+                    ])
+                } else if (rejectMode == "headers-after-trailing-headers") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "blocked".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x0),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                trailerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x5),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x5),
+                            streamId: 93
+                        )
+                    ])
+                } else if (rejectMode == "continuation-after-trailing-headers") {
+                    concatServerEngineAbstractionTestByteArrays([
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                headerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x4),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "blocked".toArray()
+                            ),
+                            frameType: UInt8(0x0),
+                            flags: UInt8(0x0),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            buildServerEngineAbstractionTestH2HeadersPayload(
+                                trailerBlock
+                            ),
+                            frameType: UInt8(0x1),
+                            flags: UInt8(0x5),
+                            streamId: 93
+                        ),
+                        buildServerEngineAbstractionTestH2FrameWire(
+                            serverEngineAbstractionTestByteArray(
+                                "late".toArray()
+                            ),
+                            frameType: UInt8(0x9),
+                            flags: UInt8(0x4),
                             streamId: 93
                         )
                     ])
