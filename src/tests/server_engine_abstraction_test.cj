@@ -2113,6 +2113,152 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineIgnoresSocketBackedNonWindowUpdateBeforeValidWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-noise-before-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(230)
+                .setHeader("x-h2-turn", "hq0710-noise-before-update")
+                .sendString("hq0710-noise-before-window-update")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-noise-before-window-update-response-turn?mode=flow",
+                streamId: 157,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    JinguiAcceptedTransportH2FrameWireSnapshot(
+                        0,
+                        UInt8(0x4),
+                        UInt8(0x0),
+                        0,
+                        []
+                    ),
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1,
+                responseWindowUpdateMaxPollAttempts: 128
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0710 socket-backed settings noise before window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(230))
+        @Assert(engine.turnCustomHeader, "hq0710-noise-before-update")
+        @Assert(engine.turnHeadersFrameStreamId, 157)
+        @Assert(engine.turnHeadersStatus, "230")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 157)
+        @Assert(engine.responseWindowUpdatePollCalls > 1, true)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0710-noise-before-window-update"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineDoesNotRecoverBlockedResponseFromSocketBackedNonWindowUpdateOnly(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-noise-only-response-turn", { ctx =>
+            let _ = ctx
+                .status(231)
+                .setHeader("x-h2-turn", "hq0710-noise-only")
+                .sendString("hq0710-noise-only-window-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-noise-only-response-turn?mode=flow",
+                streamId: 159,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    JinguiAcceptedTransportH2FrameWireSnapshot(
+                        0,
+                        UInt8(0x4),
+                        UInt8(0x0),
+                        0,
+                        []
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 64,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0710 socket-backed settings noise only",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "lifecycle closed=true; reason=h2-response-data-window-update-stall"
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
