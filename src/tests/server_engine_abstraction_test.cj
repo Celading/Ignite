@@ -3371,6 +3371,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 141)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -3440,6 +3444,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 149)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -3510,6 +3518,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 151)
         @Assert(engine.responseWindowUpdatePollCalls > 1, true)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
@@ -3577,6 +3589,10 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 143)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
         @Assert(engine.turnRejected, false)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
