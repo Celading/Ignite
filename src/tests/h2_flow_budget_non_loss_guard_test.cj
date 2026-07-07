@@ -1776,6 +1776,180 @@ public class H2FlowBudgetNonLossGuardTestSuite {
     }
 
     @TestCase
+    public func testAcceptedSocketQueuedDataPayloadCommitSeamDrainsAndReusesWriter(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 8, true), 1)
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+
+        let first =
+            handoff.commitNextQueuedDataPayload(
+                "accepted-socket-queued-data-payload-commit-seam",
+                queue,
+                h2FlowBudgetNonLossGuardBytes("part")
+            )
+        let second =
+            handoff.commitNextQueuedDataPayload(
+                "accepted-socket-queued-data-payload-commit-seam",
+                queue,
+                h2FlowBudgetNonLossGuardBytes("done")
+            )
+
+        @Assert(first.acquisitionStatusName, "response-transport-writer-acquired")
+        @Assert(first.endStream, false)
+        @Assert(second.acquisitionStatusName, "response-transport-writer-reused")
+        @Assert(second.endStream, true)
+        @Assert(queue.pendingCount(), 0)
+        @Assert(model.connectionSendBudget(), 12)
+        @Assert(model.streamSendBudget(1), 12)
+        @Assert(carrier.openCalls, 1)
+        @Assert(handoff.acquisitionCount(), 1)
+        @Assert(capture.writeCalls, 2)
+        @Assert(capture.totalBytes, 26)
+        let firstParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(0))
+        let secondParsed =
+            parseJinguiAcceptedTransportH2FrameWire(capture.wireAt(1))
+        @Assert(firstParsed.flags, UInt8(0x0))
+        @Assert(firstParsed.payload, h2FlowBudgetNonLossGuardBytes("part"))
+        @Assert(secondParsed.flags, UInt8(0x1))
+        @Assert(secondParsed.payload, h2FlowBudgetNonLossGuardBytes("done"))
+    }
+
+    @TestCase
+    public func testAcceptedSocketQueuedDataPayloadCommitSeamWaitsForWindowUpdateBeforeAcquire(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(3, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+        var rejected = false
+        try {
+            let _ =
+                handoff.commitNextQueuedDataPayload(
+                    "accepted-socket-queued-data-payload-commit-seam",
+                    queue,
+                    h2FlowBudgetNonLossGuardBytes("wait")
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(queue.pendingCount(), 1)
+        @Assert(queue.headRemainingByteCount(), 4)
+        @Assert(model.connectionSendBudget(), 3)
+        @Assert(model.streamSendBudget(1), 20)
+        @Assert(carrier.openCalls, 0)
+        @Assert(handoff.acquisitionCount(), 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
+
+    @TestCase
+    public func testAcceptedSocketQueuedDataPayloadCommitSeamRejectsOversizedPayloadBeforeDrain(): Unit {
+        let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
+        let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
+        let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
+        let capture = H2FlowBudgetNonLossGuardResponseTransportCapture()
+        let writer = openSinkBackedResponseTransportWriter({ bytes =>
+            capture.write(bytes)
+        })
+
+        model.observeHeaders(
+            JinguiAcceptedTransportH2HeaderBlockSnapshot(
+                1,
+                false,
+                false,
+                false,
+                false,
+                0,
+                0,
+                h2FlowBudgetNonLossGuardBytes("s1")
+            )
+        )
+
+        @Assert(queue.enqueueDataLengthWithEndStream(1, 4, true), 1)
+        let carrier =
+            H2FlowBudgetNonLossGuardCurrentRequestCarrier(writer, false)
+        let handoff =
+            JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate(
+                h2FlowBudgetNonLossGuardTransport(),
+                carrier
+            )
+        var rejected = false
+        try {
+            let _ =
+                handoff.commitNextQueuedDataPayload(
+                    "accepted-socket-queued-data-payload-commit-seam",
+                    queue,
+                    h2FlowBudgetNonLossGuardBytes("too-long")
+                )
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(queue.pendingCount(), 1)
+        @Assert(queue.headRemainingByteCount(), 4)
+        @Assert(model.connectionSendBudget(), 20)
+        @Assert(model.streamSendBudget(1), 20)
+        @Assert(carrier.openCalls, 0)
+        @Assert(handoff.acquisitionCount(), 0)
+        @Assert(capture.writeCalls, 0)
+        @Assert(capture.totalBytes, 0)
+    }
+
+    @TestCase
     public func testWriterDataFrameAcceptedSocketResponseWriterLifecycleProbeWritesThroughCarrierLifecycle(): Unit {
         let model = JinguiAcceptedTransportH2FlowBudgetModel(20, 20)
         let gate = JinguiAcceptedTransportH2WriterFlowGate(model)

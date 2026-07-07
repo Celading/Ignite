@@ -2947,6 +2947,13 @@ public class JinguiAcceptedTransportH2WriterFlowQueue {
         _entries.size
     }
 
+    public func headRemainingByteCount(): Int64 {
+        if (_entries.size == 0) {
+            throw Exception("H2 writer flow queue cannot inspect empty queue")
+        }
+        _entries[0].remainingByteCount
+    }
+
     public func tryDrainHead(
     ): JinguiAcceptedTransportH2WriterFlowQueueDrainSnapshot {
         if (_entries.size == 0) {
@@ -3971,6 +3978,35 @@ public class JinguiAcceptedTransportH2AcceptedSocketResponseWriterHandoffGate {
         _leaseGate.commitDataFrame(
             responseWriterSurface,
             _transport,
+            drain,
+            payload
+        )
+    }
+
+    public func commitNextQueuedDataPayload(
+        responseWriterSurface: String,
+        queue: JinguiAcceptedTransportH2WriterFlowQueue,
+        payload: Array<Byte>
+    ): JinguiAcceptedTransportH2LiveResponseWriterAcquisitionGateDryRunResult {
+        if (payload.size <= 0) {
+            throw Exception(
+                "H2 accepted-socket queued DATA payload commit requires non-empty payload"
+            )
+        }
+        let remaining = queue.headRemainingByteCount()
+        if (payload.size > remaining) {
+            throw Exception(
+                "H2 accepted-socket queued DATA payload commit payload exceeds queued bytes, payload=${payload.size}, remaining=${remaining}"
+            )
+        }
+        let drain = queue.tryDrainHeadChunk(payload.size)
+        if (!drain.drained) {
+            throw Exception(
+                "H2 accepted-socket queued DATA payload commit is waiting for WINDOW_UPDATE, streamId=${drain.streamId}, pendingCount=${drain.pendingCount}"
+            )
+        }
+        commitDataFrame(
+            responseWriterSurface,
             drain,
             payload
         )
