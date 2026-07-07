@@ -1614,6 +1614,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0699-window-update-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(214))
@@ -1627,16 +1631,23 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameType, UInt8(0x0))
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 123)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 123)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0699-window-update-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1680,6 +1691,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0700-stream-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(215))
@@ -1688,16 +1703,23 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "215")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 125)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 125)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0700-stream-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1745,6 +1767,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0700-dual-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(216))
@@ -1753,16 +1779,23 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "216")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 127)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 127)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0700-dual-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1806,6 +1839,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0701-request-connection-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(217))
@@ -1814,16 +1851,23 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "217")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 129)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 129)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0701-request-connection-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1867,6 +1911,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0701-request-stream-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(218))
@@ -1875,16 +1923,23 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnHeadersStatus, "218")
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 131)
+        @Assert(engine.responseWindowUpdatePollCalls, 0)
+        @Assert(engine.turnSchedulerStreamId, 131)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0701-request-stream-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1928,6 +1983,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0702-polled-connection-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(219))
@@ -1937,16 +1996,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 133)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 133)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0702-polled-connection-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
@@ -1990,6 +2058,10 @@ public class ServerEngineAbstractionTestSuite {
             runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
         let _ = serverFuture.get(Duration.second * 5)
         engine.decodeTurnSocketWire(responseWire)
+        let expectedPayload =
+            serverEngineAbstractionTestTextBytes(
+                "hq0702-polled-stream-window-recovered"
+            )
 
         @Assert(engine.turnReadyStatus, "READY")
         @Assert(engine.turnResponseStatus, UInt16(220))
@@ -1999,16 +2071,25 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameEndStream, true)
         @Assert(engine.turnFrameStreamId, 135)
         @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnSchedulerStreamId, 135)
         @Assert(engine.turnSchedulerQueuedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerQueuedBodyByteCount, expectedPayload.size)
+        @Assert(engine.turnSchedulerWriteAttemptCount > 1, true)
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
-                serverEngineAbstractionTestTextBytes(
-                    "hq0702-polled-stream-window-recovered"
-                )
+                expectedPayload
             ),
             true
         )
