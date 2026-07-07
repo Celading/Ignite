@@ -381,6 +381,8 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
     public let bodyBytes: Array<UInt8>
     public let queryString: String
     public let streamId: Int64
+    public let peerWindowUpdateFrames:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot>
 
     public init(
         method: String,
@@ -390,7 +392,9 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
         headers!: ?HttpHeaders = None,
         trailers!: ?HttpHeaders = None,
         bodyBytes!: Array<UInt8> = [],
-        streamId!: Int64 = 1
+        streamId!: Int64 = 1,
+        peerWindowUpdateFrames!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ) {
         if (streamId <= 0) {
             throw Exception(
@@ -434,6 +438,10 @@ public class ServerJinguiAcceptedTransportLogicalRequest {
                 resolvedUrlString
             )
         this.streamId = streamId
+        this.peerWindowUpdateFrames =
+            cloneJinguiAcceptedTransportH2FrameWireSnapshots(
+                peerWindowUpdateFrames
+            )
     }
 }
 
@@ -442,7 +450,9 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
     headers!: ?HttpHeaders = None,
     trailers!: ?HttpHeaders = None,
     bodyBytes!: Array<UInt8> = [],
-    streamId!: Int64 = 1
+    streamId!: Int64 = 1,
+    peerWindowUpdateFrames!:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     let projectedHeaders =
         buildServerJinguiAcceptedTransportLogicalRequestHeadersWithAuthority(
@@ -457,7 +467,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2PseudoHeaders(
         headers: Some(projectedHeaders),
         trailers: trailers,
         bodyBytes: bodyBytes,
-        streamId: streamId
+        streamId: streamId,
+        peerWindowUpdateFrames: peerWindowUpdateFrames
     )
 }
 
@@ -515,7 +526,9 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
     headerFields: Array<JinguiAcceptedTransportH2DecodedHeaderField>,
     trailers!: ?HttpHeaders = None,
     bodyBytes!: Array<UInt8> = [],
-    streamId!: Int64 = 1
+    streamId!: Int64 = 1,
+    peerWindowUpdateFrames!:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     let pseudoHeaders =
         buildServerJinguiAcceptedTransportH2PseudoHeadersFromDecodedHeaderFields(
@@ -547,7 +560,8 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderF
         headers: Some(headers),
         trailers: trailers,
         bodyBytes: bodyBytes,
-        streamId: streamId
+        streamId: streamId,
+        peerWindowUpdateFrames: peerWindowUpdateFrames
     )
 }
 
@@ -592,20 +606,25 @@ public func buildServerJinguiAcceptedTransportH2PseudoHeadersFromHeaderBlock(
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
     headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
     trailers!: ?HttpHeaders = None,
-    bodyBytes!: Array<UInt8> = []
+    bodyBytes!: Array<UInt8> = [],
+    peerWindowUpdateFrames!:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
         parseJinguiAcceptedTransportH2HeaderFields(headerBlock),
         trailers: trailers,
         bodyBytes: bodyBytes,
-        streamId: headerBlock.streamId
+        streamId: headerBlock.streamId,
+        peerWindowUpdateFrames: peerWindowUpdateFrames
     )
 }
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
     headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
     trailerHeaderBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
-    bodyBytes!: Array<UInt8> = []
+    bodyBytes!: Array<UInt8> = [],
+    peerWindowUpdateFrames!:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     if (headerBlock.streamId != trailerHeaderBlock.streamId) {
         throw Exception(
@@ -619,19 +638,23 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWit
     buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlock(
         headerBlock,
         trailers: Some(trailers),
-        bodyBytes: bodyBytes
+        bodyBytes: bodyBytes,
+        peerWindowUpdateFrames: peerWindowUpdateFrames
     )
 }
 
 public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithHpackDecoderState(
     headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
     hpackDecoderState: ServerJinguiAcceptedTransportH2HpackDecoderState,
-    bodyBytes!: Array<UInt8> = []
+    bodyBytes!: Array<UInt8> = [],
+    peerWindowUpdateFrames!:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
     buildServerJinguiAcceptedTransportLogicalRequestFromDecodedH2HeaderFields(
         hpackDecoderState.parseHeaderFields(headerBlock),
         bodyBytes: bodyBytes,
-        streamId: headerBlock.streamId
+        streamId: headerBlock.streamId,
+        peerWindowUpdateFrames: peerWindowUpdateFrames
     )
 }
 
@@ -1214,6 +1237,35 @@ public class JinguiAcceptedTransportH2FrameWireSnapshot {
         this.streamId = streamId
         this.payload = cloneServerEngineByteWindow(payload, 0, payload.size)
     }
+}
+
+func cloneJinguiAcceptedTransportH2FrameWireSnapshots(
+    input: Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
+    let out =
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot>(input.size, repeat:
+            JinguiAcceptedTransportH2FrameWireSnapshot(
+                0,
+                UInt8(0),
+                UInt8(0),
+                0,
+                []
+            )
+        )
+    var i: Int64 = 0
+    while (i < input.size) {
+        let frame = input[i]
+        out[i] =
+            JinguiAcceptedTransportH2FrameWireSnapshot(
+                frame.payloadLength,
+                frame.frameType,
+                frame.flags,
+                frame.streamId,
+                frame.payload
+            )
+        i += 1
+    }
+    out
 }
 
 /// Parses one complete H2 frame wire into a bounded header + payload snapshot.
@@ -1863,6 +1915,8 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
     let _headerBlockAccumulator = JinguiAcceptedTransportH2HeaderBlockAccumulator()
     let _hpackDecoderState: ServerJinguiAcceptedTransportH2HpackDecoderState
     let _ready = ArrayList<ServerJinguiAcceptedTransportLogicalRequest>()
+    let _peerWindowUpdateFrames =
+        ArrayList<JinguiAcceptedTransportH2FrameWireSnapshot>()
     var _sealedLogicalRequest = false
     var _completedHeaderBlock: ?JinguiAcceptedTransportH2HeaderBlockSnapshot = None
     var _bodyBytes = ArrayList<Byte>()
@@ -1986,6 +2040,10 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
             appendTrailingHeaderFrame(headerBlock, frame)
             return
         }
+        if (frame.frameType == UInt8(0x8)) {
+            appendPeerWindowUpdateFrame(headerBlock, frame)
+            return
+        }
         if (frame.frameType != UInt8(0x0)) {
             throw Exception(
                 "accepted-session fragmented-record-wire headers-plus-data logical-request projection stays inside one request boundary and only accepts same-stream DATA after one complete H2 header block, got type=${Int64(frame.frameType)}, streamId=${frame.streamId}"
@@ -2013,12 +2071,31 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
             buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithHpackDecoderState(
                 headerBlock,
                 _hpackDecoderState,
-                bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray())
+                bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray()),
+                peerWindowUpdateFrames: _peerWindowUpdateFrames.toArray()
             )
         )
         _sealedLogicalRequest = true
         _completedHeaderBlock = None
         _bodyBytes = ArrayList<Byte>()
+        _peerWindowUpdateFrames.clear()
+    }
+
+    func appendPeerWindowUpdateFrame(
+        headerBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
+        frame: JinguiAcceptedTransportH2FrameWireSnapshot
+    ): Unit {
+        let windowUpdate =
+            parseJinguiAcceptedTransportH2WindowUpdateFrame(frame)
+        if (
+            !windowUpdate.connectionScoped &&
+            windowUpdate.streamId != headerBlock.streamId
+        ) {
+            throw Exception(
+                "accepted-session fragmented-record-wire headers-plus-data logical-request projection rejects cross-stream WINDOW_UPDATE in one-request boundary, requestStreamId=${headerBlock.streamId}, windowUpdateStreamId=${windowUpdate.streamId}"
+            )
+        }
+        _peerWindowUpdateFrames.add(frame)
     }
 
     func appendTrailingHeaderFrame(
@@ -2051,12 +2128,14 @@ public class JinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalReque
             buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
                 headerBlock,
                 trailerBlock,
-                bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray())
+                bodyBytes: serverEngineByteToUInt8Array(_bodyBytes.toArray()),
+                peerWindowUpdateFrames: _peerWindowUpdateFrames.toArray()
             )
         )
         _sealedLogicalRequest = true
         _completedHeaderBlock = None
         _bodyBytes = ArrayList<Byte>()
+        _peerWindowUpdateFrames.clear()
     }
 }
 
@@ -58564,6 +58643,11 @@ public class ServerEngineListenOption {
                 initialConnectionSendBudget,
                 initialStreamSendBudget
             )
+        let retryWindowUpdateFrames =
+            resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
+                request,
+                responseWindowUpdateFramesBeforeRetry
+            )
         let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
         let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
         model.observeHeaders(
@@ -58601,11 +58685,11 @@ public class ServerEngineListenOption {
                 } catch (e: Exception) {
                     if (
                         retryWindowUpdatesApplied ||
-                        responseWindowUpdateFramesBeforeRetry.size == 0
+                        retryWindowUpdateFrames.size == 0
                     ) {
                         throw e
                     }
-                    for (frame in responseWindowUpdateFramesBeforeRetry) {
+                    for (frame in retryWindowUpdateFrames) {
                         let _ = model.observeWindowUpdateFrame(frame)
                     }
                     retryWindowUpdatesApplied = true
@@ -58619,6 +58703,17 @@ public class ServerEngineListenOption {
             }
             i += 1
         }
+    }
+
+    func resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
+        request: ServerJinguiAcceptedTransportLogicalRequest,
+        explicitWindowUpdateFrames:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    ): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
+        if (request.peerWindowUpdateFrames.size > 0) {
+            return request.peerWindowUpdateFrames
+        }
+        explicitWindowUpdateFrames
     }
 
     func serveJinguiAcceptedTransportSessionApplicationDataLogicalRequestTurnBuildAndServeCore(

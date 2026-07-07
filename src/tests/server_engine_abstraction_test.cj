@@ -1743,6 +1743,120 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterRequestCarriedConnectionWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-request-carried-connection-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(217)
+                .setHeader("x-h2-turn", "hq0701-connection")
+                .sendString("hq0701-request-connection-window-recovered")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-request-carried-connection-window-update-response-turn?mode=flow",
+                streamId: 129,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                requestPeerWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        64
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(217))
+        @Assert(engine.turnCustomHeader, "hq0701-connection")
+        @Assert(engine.turnHeadersFrameStreamId, 129)
+        @Assert(engine.turnHeadersStatus, "217")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 129)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0701-request-connection-window-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterRequestCarriedStreamWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-request-carried-stream-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(218)
+                .setHeader("x-h2-turn", "hq0701-stream")
+                .sendString("hq0701-request-stream-window-recovered")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-request-carried-stream-window-update-response-turn?mode=flow",
+                streamId: 131,
+                responseInitialConnectionSendBudget: Some(128),
+                responseInitialStreamSendBudget: Some(3),
+                requestPeerWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        131,
+                        64
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(218))
+        @Assert(engine.turnCustomHeader, "hq0701-stream")
+        @Assert(engine.turnHeadersFrameStreamId, 131)
+        @Assert(engine.turnHeadersStatus, "218")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 131)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0701-request-stream-window-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -3728,6 +3842,9 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.requestHost, "api.example.com:9443")
         @Assert(engine.requestMode, "bridge-data")
         @Assert(engine.requestBody, "accepted-appdata-body")
+        @Assert(engine.requestPeerWindowUpdateFrameCount, 1)
+        @Assert(engine.requestPeerWindowUpdateStreamId, 53)
+        @Assert(engine.requestPeerWindowUpdateIncrement, 64)
         @Assert(engine.finalBufferedRecordWireByteCount, 0)
         @Assert(engine.finalBufferedH2FrameWireByteCount, 0)
         @Assert(engine.finalHasOpenHeaderBlock, false)
@@ -11015,6 +11132,9 @@ class JinguiAcceptedTransportApplicationDataHeadersPlusDataLogicalRequestAccumul
     public var requestHost: String = ""
     public var requestMode: String = ""
     public var requestBody: String = ""
+    public var requestPeerWindowUpdateFrameCount: Int64 = 0
+    public var requestPeerWindowUpdateStreamId: Int64 = 0
+    public var requestPeerWindowUpdateIncrement: Int64 = 0
     public var finalBufferedRecordWireByteCount: Int64 = 0
     public var finalBufferedH2FrameWireByteCount: Int64 = 0
     public var finalHasOpenHeaderBlock: Bool = false
@@ -11074,6 +11194,12 @@ class JinguiAcceptedTransportApplicationDataHeadersPlusDataLogicalRequestAccumul
                 frameType: UInt8(0x0),
                 flags: UInt8(0x0),
                 streamId: 53
+            ),
+            encodeJinguiAcceptedTransportH2FrameWireSnapshot(
+                buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                    53,
+                    64
+                )
             ),
             buildServerEngineAbstractionTestH2FrameWire(
                 serverEngineAbstractionTestByteArray(
@@ -11136,6 +11262,16 @@ class JinguiAcceptedTransportApplicationDataHeadersPlusDataLogicalRequestAccumul
                 serverEngineAbstractionTestByteText(
                     serverEngineAbstractionTestByteArray(request.bodyBytes)
                 )
+            requestPeerWindowUpdateFrameCount =
+                request.peerWindowUpdateFrames.size
+            if (request.peerWindowUpdateFrames.size > 0) {
+                let windowUpdate =
+                    parseJinguiAcceptedTransportH2WindowUpdateFrame(
+                        request.peerWindowUpdateFrames[0]
+                    )
+                requestPeerWindowUpdateStreamId = windowUpdate.streamId
+                requestPeerWindowUpdateIncrement = windowUpdate.increment
+            }
         }
         finalBufferedRecordWireByteCount =
             ingress.bufferedRecordWireByteCount()
@@ -17304,6 +17440,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     let responseInitialStreamSendBudget: ?Int64
     let responseWindowUpdateFramesBeforeRetry:
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    let requestPeerWindowUpdateFrames:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -17355,6 +17493,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         responseInitialConnectionSendBudget!: ?Int64 = None,
         responseInitialStreamSendBudget!: ?Int64 = None,
         responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        requestPeerWindowUpdateFrames!:
             Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ) {
         this.turnRequestUrl = turnRequestUrl
@@ -17365,6 +17505,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             responseInitialStreamSendBudget
         this.responseWindowUpdateFramesBeforeRetry =
             responseWindowUpdateFramesBeforeRetry
+        this.requestPeerWindowUpdateFrames =
+            requestPeerWindowUpdateFrames
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -17539,7 +17681,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         ServerJinguiAcceptedTransportLogicalRequest(
                             "GET",
                             turnRequestUrl,
-                            streamId: turnStreamId
+                            streamId: turnStreamId,
+                            peerWindowUpdateFrames:
+                                requestPeerWindowUpdateFrames
                         ),
                         clientHello.encodedClientHello,
                         engineIncrementalBytes(32, start: 736),
