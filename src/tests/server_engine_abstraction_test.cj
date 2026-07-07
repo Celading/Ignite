@@ -3686,6 +3686,54 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanReadAcceptedSocketApplicationDataTrailingContinuationAsRequestTrailers(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.post("/trailers", { ctx =>
+            let body = ctx.bodyString()
+            let trailer = ctx.trailer("x-request-trailer") ?? ""
+            let _ = ctx
+                .setHeader("x-accepted-socket-trailer", trailer)
+                .sendString("body:${body};trailer:${trailer}")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTrailingHeadersRequestTurnProbeEngine(
+                splitTrailingHeaderBlock: true
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "accepted-socket fragmented headers-plus-data trailing continuation request",
+                { => engine.requestWireFragments },
+                writePauseMillis: 20
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.readyStatus, "READY")
+        @Assert(engine.responseStatus, UInt16(200))
+        @Assert(engine.responseTrailerHeader, "tail")
+        @Assert(
+            engine.openSocketWire(responseWire),
+            "body:accepted-body;trailer:tail"
+        )
+        @Assert(engine.contentType, "text/plain; charset=utf-8")
+        @Assert(engine.transferEncoding, "")
+        @Assert(engine.socketWriteCount >= 1, true)
+    }
+
+    @TestCase
     public func testInjectedServerEngineRejectsWrongStreamAcceptedTransportSessionAcceptedSocketApplicationDataFragmentedRecordWireDataForRequestTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -13944,7 +13992,12 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTr
     public var transferEncoding: String = ""
     public var socketWriteCount: Int64 = 0
     public var requestWireFragments: ?Array<Array<Byte>> = None
+    let splitTrailingHeaderBlock: Bool
     var clientChannel: ?ContractTlsRecordChannel = None
+
+    public init(splitTrailingHeaderBlock!: Bool = false) {
+        this.splitTrailingHeaderBlock = splitTrailingHeaderBlock
+    }
 
     public func openSocketWire(wire: Array<UInt8>): String {
         match (clientChannel) {
@@ -14015,32 +14068,11 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTr
                 let requestRecords =
                     requestClientChannel.sealFragments(
                         ContractTlsRecordContentType.ApplicationData,
-                        concatServerEngineAbstractionTestByteArrays([
-                            buildServerEngineAbstractionTestH2FrameWire(
-                                buildServerEngineAbstractionTestH2HeadersPayload(
-                                    headerBlock
-                                ),
-                                frameType: UInt8(0x1),
-                                flags: UInt8(0x4),
-                                streamId: 105
-                            ),
-                            buildServerEngineAbstractionTestH2FrameWire(
-                                serverEngineAbstractionTestByteArray(
-                                    "accepted-body".toArray()
-                                ),
-                                frameType: UInt8(0x0),
-                                flags: UInt8(0x0),
-                                streamId: 105
-                            ),
-                            buildServerEngineAbstractionTestH2FrameWire(
-                                buildServerEngineAbstractionTestH2HeadersPayload(
-                                    trailerBlock
-                                ),
-                                frameType: UInt8(0x1),
-                                flags: UInt8(0x5),
-                                streamId: 105
-                            )
-                        ]),
+                        buildAcceptedTransportTrailingHeadersRequestTurnWire(
+                            headerBlock,
+                            trailerBlock,
+                            splitTrailingHeaderBlock
+                        ),
                         maxFragmentLen: 7
                     )
                 let encodedWire =
@@ -14093,6 +14125,75 @@ class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireTr
     }
 
     public override func shutdown(): Unit {}
+
+    func buildAcceptedTransportTrailingHeadersRequestTurnWire(
+        headerBlock: Array<Byte>,
+        trailerBlock: Array<Byte>,
+        splitTrailer: Bool
+    ): Array<Byte> {
+        let frames = ArrayList<Array<Byte>>()
+        frames.add(
+            buildServerEngineAbstractionTestH2FrameWire(
+                buildServerEngineAbstractionTestH2HeadersPayload(
+                    headerBlock
+                ),
+                frameType: UInt8(0x1),
+                flags: UInt8(0x4),
+                streamId: 105
+            )
+        )
+        frames.add(
+            buildServerEngineAbstractionTestH2FrameWire(
+                serverEngineAbstractionTestByteArray(
+                    "accepted-body".toArray()
+                ),
+                frameType: UInt8(0x0),
+                flags: UInt8(0x0),
+                streamId: 105
+            )
+        )
+        if (splitTrailer) {
+            let splitAt = trailerBlock.size - 5
+            frames.add(
+                buildServerEngineAbstractionTestH2FrameWire(
+                    buildServerEngineAbstractionTestH2HeadersPayload(
+                        cloneServerEngineByteWindow(
+                            trailerBlock,
+                            0,
+                            splitAt
+                        )
+                    ),
+                    frameType: UInt8(0x1),
+                    flags: UInt8(0x1),
+                    streamId: 105
+                )
+            )
+            frames.add(
+                buildServerEngineAbstractionTestH2FrameWire(
+                    cloneServerEngineByteWindow(
+                        trailerBlock,
+                        splitAt,
+                        trailerBlock.size - splitAt
+                    ),
+                    frameType: UInt8(0x9),
+                    flags: UInt8(0x4),
+                    streamId: 105
+                )
+            )
+        } else {
+            frames.add(
+                buildServerEngineAbstractionTestH2FrameWire(
+                    buildServerEngineAbstractionTestH2HeadersPayload(
+                        trailerBlock
+                    ),
+                    frameType: UInt8(0x1),
+                    flags: UInt8(0x5),
+                    streamId: 105
+                )
+            )
+        }
+        concatServerEngineAbstractionTestByteArrays(frames.toArray())
+    }
 }
 
 class JinguiAcceptedTransportAcceptedSocketApplicationDataFragmentedRecordWireHeadersPlusDataRequestTurnRejectProbeEngine <: ServerEngine {
