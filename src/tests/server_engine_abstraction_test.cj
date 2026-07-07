@@ -1498,6 +1498,71 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineCanEmitMultiDataFramesFromSendStreamAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
+        let streamPayload =
+            serverEngineAbstractionTestUInt8Array(
+                engineIncrementalBytes(70000, start: 17)
+            )
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-sendstream-response-turn", { ctx =>
+            let stream = SocketServerEngineShellStreamTrackingInput(streamPayload)
+            let _ = ctx
+                .status(213)
+                .setHeader("x-h2-turn", "hq0698")
+                .sendStream(
+                    stream,
+                    contentType: "application/octet-stream",
+                    contentLength: Some(streamPayload.size)
+                )
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-sendstream-response-turn?mode=sendstream",
+                streamId: 121
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(213))
+        @Assert(engine.turnContentType, "application/octet-stream")
+        @Assert(engine.turnCustomHeader, "hq0698")
+        @Assert(engine.turnHeadersContentLength, streamPayload.size.toString())
+        @Assert(engine.turnDecodedFrameCount > 2, true)
+        @Assert(engine.turnDataFrameCount > 1, true)
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 121)
+        @Assert(engine.turnHeadersStatus, "213")
+        @Assert(engine.turnHeadersCustomHeader, "hq0698")
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 121)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestByteArray(streamPayload)
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
