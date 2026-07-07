@@ -2052,6 +2052,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
+        @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
         @Assert(engine.turnSchedulerRemainingBodyByteCount, 0)
         @Assert(engine.turnSchedulerCompleted, true)
@@ -19427,6 +19428,7 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     public var turnSchedulerObservedWindowUpdateFrameCount: Int64 = 0
     public var turnSchedulerCommittedBodyWriteCount: Int64 = 0
     public var turnSchedulerCommittedBodyByteCount: Int64 = 0
+    public var turnSchedulerCommittedDataFrameCount: Int64 = 0
     public var turnSchedulerRemainingBodyByteCount: Int64 = 0
     public var turnSchedulerCompleted: Bool = false
     public var turnSchedulerCloseReason: String = ""
@@ -19505,6 +19507,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             schedulerSnapshot.committedBodyWriteCount
         turnSchedulerCommittedBodyByteCount =
             schedulerSnapshot.committedBodyByteCount
+        turnSchedulerCommittedDataFrameCount =
+            schedulerSnapshot.committedDataFrameCount
         turnSchedulerRemainingBodyByteCount =
             schedulerSnapshot.remainingBodyByteCount
         turnSchedulerCompleted = schedulerSnapshot.completed

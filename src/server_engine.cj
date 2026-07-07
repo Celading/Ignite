@@ -3158,6 +3158,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
     public let observedWindowUpdateFrameCount: Int64
     public let committedBodyWriteCount: Int64
     public let committedBodyByteCount: Int64
+    public let committedDataFrameCount: Int64
     public let remainingBodyByteCount: Int64
     public let completed: Bool
     public let closeReason: String
@@ -3174,6 +3175,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         observedWindowUpdateFrameCount: Int64,
         committedBodyWriteCount: Int64,
         committedBodyByteCount: Int64,
+        committedDataFrameCount: Int64,
         remainingBodyByteCount: Int64,
         completed: Bool,
         closeReason: String
@@ -3189,6 +3191,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot {
         this.observedWindowUpdateFrameCount = observedWindowUpdateFrameCount
         this.committedBodyWriteCount = committedBodyWriteCount
         this.committedBodyByteCount = committedBodyByteCount
+        this.committedDataFrameCount = committedDataFrameCount
         this.remainingBodyByteCount = remainingBodyByteCount
         this.completed = completed
         this.closeReason = closeReason
@@ -3204,6 +3207,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
     public var observedWindowUpdateFrameCount: Int64 = 0
     public var committedBodyWriteCount: Int64 = 0
     public var committedBodyByteCount: Int64 = 0
+    public var committedDataFrameCount: Int64 = 0
     public var completed: Bool = false
     public var closeReason: String = ""
 
@@ -3236,6 +3240,10 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
         committedBodyByteCount += byteCount
     }
 
+    public func recordCommittedDataFrame(): Unit {
+        committedDataFrameCount += 1
+    }
+
     public func recordClose(reason: String): Unit {
         closeReason = reason
     }
@@ -3266,6 +3274,7 @@ public class JinguiAcceptedTransportH2ResponseTurnSchedulerTrace {
             observedWindowUpdateFrameCount,
             committedBodyWriteCount,
             committedBodyByteCount,
+            committedDataFrameCount,
             remainingBodyByteCount(),
             completed,
             closeReason
@@ -58909,6 +58918,7 @@ public class ServerEngineListenOption {
                         schedulerTrace.recordCommittedBodyBytes(
                             chunkByteCount
                         )
+                        schedulerTrace.recordCommittedDataFrame()
                         payloadCommitted = payloadOffset >= payload.size
                     } catch (e: Exception) {
                         if (
