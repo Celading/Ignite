@@ -2025,6 +2025,26 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.responseWindowUpdatePollCalls, 2)
         @Assert(engine.turnRejected, false)
         @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(
+            engine.turnSchedulerResponseWriterOwner,
+            "accepted-socket-response-writer-handoff"
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlReadOwner,
+            "response-window-update-poller"
+        )
+        @Assert(engine.turnSchedulerStreamId, 153)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerWriteAttemptCount, 4)
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
+        @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
                 serverEngineAbstractionTestTextBytes(
@@ -2101,6 +2121,33 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnFrameStreamId, 155)
         @Assert(engine.responseWindowUpdatePollCalls > 2, true)
         @Assert(engine.turnRejected, false)
+        @Assert(
+            engine.turnSchedulerOwner,
+            "accepted-socket-h2-response-turn-scheduler"
+        )
+        @Assert(
+            engine.turnSchedulerResponseWriterOwner,
+            "accepted-socket-response-writer-handoff"
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlReadOwner,
+            "response-window-update-poller"
+        )
+        @Assert(engine.turnSchedulerStreamId, 155)
+        @Assert(engine.turnSchedulerQueuedBodyWriteCount, 2)
+        @Assert(
+            engine.turnSchedulerWriteAttemptCount,
+            engine.turnSchedulerPeerControlPollRoundCount + 2
+        )
+        @Assert(
+            engine.turnSchedulerPeerControlPollRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerPeerControlPollRoundCount > 2, true)
+        @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
+        @Assert(engine.turnSchedulerCompleted, true)
+        @Assert(engine.turnSchedulerCloseReason, "")
         @Assert(
             serverEngineAbstractionTestByteArraysEqual(
                 engine.turnDataPayload,
