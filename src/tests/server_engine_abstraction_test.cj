@@ -2195,6 +2195,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerWriteAttemptCount, 3)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 1)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerRecoveryRoundCount, 1)
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerPollerAttemptCount, 1)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 1)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
@@ -2278,6 +2283,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerRecoveryRoundCount, 2)
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerPollerAttemptCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCompleted, true)
@@ -2361,6 +2371,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerRecoveryRoundCount, 2)
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 2)
+        @Assert(engine.turnSchedulerPollerAttemptCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCompleted, true)
@@ -2466,6 +2481,17 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerPeerControlPollRoundCount > 2, true)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(
+            engine.turnSchedulerRecoveryRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 2)
+        @Assert(
+            engine.turnSchedulerPollerAttemptCount,
+            engine.responseWindowUpdatePollCalls
+        )
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCompleted, true)
@@ -2571,6 +2597,17 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerPeerControlPollRoundCount > 2, true)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 2)
+        @Assert(
+            engine.turnSchedulerRecoveryRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 2)
+        @Assert(
+            engine.turnSchedulerPollerAttemptCount,
+            engine.responseWindowUpdatePollCalls
+        )
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCompleted, true)
@@ -2663,6 +2700,11 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(engine.turnSchedulerWriteAttemptCount, 6)
         @Assert(engine.turnSchedulerPeerControlPollRoundCount, 2)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
+        @Assert(engine.turnSchedulerRecoveryRoundCount, 2)
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 4)
+        @Assert(engine.turnSchedulerPollerAttemptCount, 2)
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
@@ -2781,6 +2823,17 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.turnSchedulerPeerControlPollRoundCount > 10, true)
         @Assert(engine.turnSchedulerObservedWindowUpdateFrameCount, 4)
+        @Assert(
+            engine.turnSchedulerRecoveryRoundCount,
+            engine.responseWindowUpdatePollCalls
+        )
+        @Assert(engine.turnSchedulerRequestWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerExplicitWindowUpdateFrameCount, 0)
+        @Assert(engine.turnSchedulerPolledWindowUpdateFrameCount, 4)
+        @Assert(
+            engine.turnSchedulerPollerAttemptCount,
+            engine.responseWindowUpdatePollCalls
+        )
         @Assert(engine.turnSchedulerCommittedBodyWriteCount, 2)
         @Assert(engine.turnSchedulerCommittedDataFrameCount, 4)
         @Assert(engine.turnSchedulerCommittedBodyByteCount, expectedPayload.size)
