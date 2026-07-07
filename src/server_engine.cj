@@ -58709,7 +58709,6 @@ public class ServerEngineListenOption {
             )
         )
         var i: Int64 = 0
-        var retryWindowUpdatesApplied = false
         while (i < capturedBodyWrites.size) {
             let bodyWrite = capturedBodyWrites[i]
             if (bodyWrite.size > 0) {
@@ -58721,6 +58720,7 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
+                var retryWindowUpdatesApplied = false
                 try {
                     let _ =
                         handoff.commitNextQueuedDataPayload(

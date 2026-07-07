@@ -1974,6 +1974,68 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversTwoResponseBodyWritesAfterRepeatedPolledConnectionWindowUpdates(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-polled-repeated-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(228)
+                .setHeader("content-type", "text/plain; charset=utf-8")
+                .setHeader("x-h2-turn", "hq0708-repeat-poll")
+            let writer = ctx.transportWriter()
+            writer.write("hq0708-one".toArray())
+            writer.write("hq0708-two".toArray())
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-polled-repeated-window-update-response-turn?mode=flow",
+                streamId: 153,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                responseWindowUpdateFramesFromPoll: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        10
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(228))
+        @Assert(engine.turnCustomHeader, "hq0708-repeat-poll")
+        @Assert(engine.turnHeadersFrameStreamId, 153)
+        @Assert(engine.turnHeadersStatus, "228")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 153)
+        @Assert(engine.responseWindowUpdatePollCalls, 2)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0708-onehq0708-two"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
