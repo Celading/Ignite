@@ -5774,6 +5774,47 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testJinguiAcceptedTransportH2TrailingHeaderBlockRejectsStreamIdMismatch(): Unit {
+        let headerBlock = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            37,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            serverEngineAbstractionTestByteArray([UInt8(0x82), UInt8(0x84)])
+        )
+        let trailerBlock = JinguiAcceptedTransportH2HeaderBlockSnapshot(
+            39,
+            false,
+            false,
+            false,
+            true,
+            0,
+            0,
+            serverEngineAbstractionTestByteArray([UInt8(0x10)])
+        )
+
+        try {
+            let _ =
+                buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWithRequestTrailers(
+                    headerBlock,
+                    trailerBlock
+                )
+            @Fail("expected stream id mismatch rejection from request trailers")
+        } catch (e: Exception) {
+            @Assert(
+                contains(
+                    e.message,
+                    "stream id mismatch"
+                ),
+                true
+            )
+        }
+    }
+
+    @TestCase
     public func testJinguiAcceptedTransportH2HeaderBlockRejectsUnsupportedPseudoHeaderProjection(): Unit {
         let snapshot = JinguiAcceptedTransportH2HeaderBlockSnapshot(
             21,

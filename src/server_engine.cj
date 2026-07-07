@@ -607,6 +607,11 @@ public func buildServerJinguiAcceptedTransportLogicalRequestFromH2HeaderBlockWit
     trailerHeaderBlock: JinguiAcceptedTransportH2HeaderBlockSnapshot,
     bodyBytes!: Array<UInt8> = []
 ): ServerJinguiAcceptedTransportLogicalRequest {
+    if (headerBlock.streamId != trailerHeaderBlock.streamId) {
+        throw Exception(
+            "H2 request trailer projection stream id mismatch: request stream ${headerBlock.streamId}, trailer stream ${trailerHeaderBlock.streamId}"
+        )
+    }
     let trailers =
         buildServerJinguiAcceptedTransportRequestTrailersFromDecodedH2HeaderFields(
             parseJinguiAcceptedTransportH2HeaderFields(trailerHeaderBlock)
