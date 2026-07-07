@@ -1563,6 +1563,68 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-window-update-recovery-response-turn", { ctx =>
+            let _ = ctx
+                .status(214)
+                .setHeader("x-h2-turn", "hq0699")
+                .sendString("hq0699-window-update-recovered")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-window-update-recovery-response-turn?mode=flow",
+                streamId: 123,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                responseWindowUpdateFramesBeforeRetry: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        64
+                    )
+                ]
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportResponseSocketSinkClient("127.0.0.1", port)
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(214))
+        @Assert(engine.turnContentType, "text/plain; charset=utf-8")
+        @Assert(engine.turnCustomHeader, "hq0699")
+        @Assert(engine.turnHeadersFrameType, UInt8(0x1))
+        @Assert(engine.turnHeadersEndHeaders, true)
+        @Assert(engine.turnHeadersEndStream, false)
+        @Assert(engine.turnHeadersFrameStreamId, 123)
+        @Assert(engine.turnHeadersStatus, "214")
+        @Assert(engine.turnFrameType, UInt8(0x0))
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 123)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0699-window-update-recovered"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineCanEmitH2ResponseHeadersBeforeDataFromAcceptedSocketApplicationDataResponseWriterTurn(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -17120,6 +17182,10 @@ class JinguiAcceptedTransportH2ApplicationDataFailureCloseGuardProbeEngine <: Se
 class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: ServerEngine {
     let turnRequestUrl: String
     let turnStreamId: Int64
+    let responseInitialConnectionSendBudget: ?Int64
+    let responseInitialStreamSendBudget: ?Int64
+    let responseWindowUpdateFramesBeforeRetry:
+        Array<JinguiAcceptedTransportH2FrameWireSnapshot>
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -17167,10 +17233,20 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
 
     public init(
         turnRequestUrl!: String = "/h2-appdata-response-turn?mode=data",
-        streamId!: Int64 = 83
+        streamId!: Int64 = 83,
+        responseInitialConnectionSendBudget!: ?Int64 = None,
+        responseInitialStreamSendBudget!: ?Int64 = None,
+        responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ) {
         this.turnRequestUrl = turnRequestUrl
         this.turnStreamId = streamId
+        this.responseInitialConnectionSendBudget =
+            responseInitialConnectionSendBudget
+        this.responseInitialStreamSendBudget =
+            responseInitialStreamSendBudget
+        this.responseWindowUpdateFramesBeforeRetry =
+            responseWindowUpdateFramesBeforeRetry
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -17350,7 +17426,13 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                         clientHello.encodedClientHello,
                         engineIncrementalBytes(32, start: 736),
                         transportId: "h2-appdata-response-turn-transport",
-                        maxFragmentLen: 8
+                        maxFragmentLen: 8,
+                        responseInitialConnectionSendBudget:
+                            responseInitialConnectionSendBudget,
+                        responseInitialStreamSendBudget:
+                            responseInitialStreamSendBudget,
+                        responseWindowUpdateFramesBeforeRetry:
+                            responseWindowUpdateFramesBeforeRetry
                     )
                 turnClientChannel = Some(
                     contractTls13CreateClientRecordChannel(
@@ -19217,6 +19299,24 @@ func serverEngineAbstractionTestByteText(input: Array<Byte>): String {
         i += 1
     }
     String.fromUtf8(out)
+}
+
+func buildServerEngineAbstractionTestH2WindowUpdateFrame(
+    streamId: Int64,
+    increment: Int64
+): JinguiAcceptedTransportH2FrameWireSnapshot {
+    let payload = Array<UInt8>(4, repeat: 0)
+    payload[0] = UInt8((increment >> 24) & 0xff)
+    payload[1] = UInt8((increment >> 16) & 0xff)
+    payload[2] = UInt8((increment >> 8) & 0xff)
+    payload[3] = UInt8(increment & 0xff)
+    JinguiAcceptedTransportH2FrameWireSnapshot(
+        4,
+        UInt8(0x8),
+        UInt8(0x0),
+        streamId,
+        serverEngineAbstractionTestByteArray(payload)
+    )
 }
 
 func cloneServerEngineAbstractionTestByteWindow(

@@ -58448,7 +58448,11 @@ public class ServerEngineListenOption {
         app: App,
         request: ServerJinguiAcceptedTransportLogicalRequest,
         maxFragmentLen!: Int64 = 16384,
-        closeSocketAfterTurn!: Bool = true
+        closeSocketAfterTurn!: Bool = true,
+        responseInitialConnectionSendBudget!: ?Int64 = None,
+        responseInitialStreamSendBudget!: ?Int64 = None,
+        responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let readySnapshot = notifyJinguiAcceptedTransportSession(session)
         let carrier = ServerJinguiAcceptedTransportSocketResponseCarrier(
@@ -58476,7 +58480,13 @@ public class ServerEngineListenOption {
                 wrappedCarrier,
                 carrier.responseStatus,
                 carrier.responseHeaderFieldsForH2(),
-                capturedBodyWrites
+                capturedBodyWrites,
+                responseInitialConnectionSendBudget:
+                    responseInitialConnectionSendBudget,
+                responseInitialStreamSendBudget:
+                    responseInitialStreamSendBudget,
+                responseWindowUpdateFramesBeforeRetry:
+                    responseWindowUpdateFramesBeforeRetry
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
                 session,
@@ -58499,7 +58509,11 @@ public class ServerEngineListenOption {
         wrappedCarrier: CurrentRequestCarrier,
         responseStatus: UInt16,
         responseHeaders: Array<ServerJinguiAcceptedTransportResponseHeaderField>,
-        capturedBodyWrites: ArrayList<Array<UInt8>>
+        capturedBodyWrites: ArrayList<Array<UInt8>>,
+        responseInitialConnectionSendBudget!: ?Int64 = None,
+        responseInitialStreamSendBudget!: ?Int64 = None,
+        responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ): Unit {
         var totalCapturedBytes: Int64 = 0
         for (bodyWrite in capturedBodyWrites) {
@@ -58535,10 +58549,20 @@ public class ServerEngineListenOption {
                 )
             )
         let responseBudget = totalCapturedBytes + 16384
+        let initialConnectionSendBudget =
+            match (responseInitialConnectionSendBudget) {
+                case Some(budget) => budget
+                case None => responseBudget
+            }
+        let initialStreamSendBudget =
+            match (responseInitialStreamSendBudget) {
+                case Some(budget) => budget
+                case None => responseBudget
+            }
         let model =
             JinguiAcceptedTransportH2FlowBudgetModel(
-                responseBudget,
-                responseBudget
+                initialConnectionSendBudget,
+                initialStreamSendBudget
             )
         let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
         let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
@@ -58555,6 +58579,7 @@ public class ServerEngineListenOption {
             )
         )
         var i: Int64 = 0
+        var retryWindowUpdatesApplied = false
         while (i < capturedBodyWrites.size) {
             let bodyWrite = capturedBodyWrites[i]
             if (bodyWrite.size > 0) {
@@ -58566,12 +58591,31 @@ public class ServerEngineListenOption {
                         payload.size,
                         endStream
                     )
-                let _ =
-                    handoff.commitNextQueuedDataPayload(
-                        "accepted-socket-application-data-response-writer-turn",
-                        queue,
-                        payload
-                    )
+                try {
+                    let _ =
+                        handoff.commitNextQueuedDataPayload(
+                            "accepted-socket-application-data-response-writer-turn",
+                            queue,
+                            payload
+                        )
+                } catch (e: Exception) {
+                    if (
+                        retryWindowUpdatesApplied ||
+                        responseWindowUpdateFramesBeforeRetry.size == 0
+                    ) {
+                        throw e
+                    }
+                    for (frame in responseWindowUpdateFramesBeforeRetry) {
+                        let _ = model.observeWindowUpdateFrame(frame)
+                    }
+                    retryWindowUpdatesApplied = true
+                    let _ =
+                        handoff.commitNextQueuedDataPayload(
+                            "accepted-socket-application-data-response-writer-turn",
+                            queue,
+                            payload
+                        )
+                }
             }
             i += 1
         }
@@ -58863,7 +58907,11 @@ public class ServerEngineListenOption {
         transportId!: String = "accepted-transport",
         maxFragmentLen!: Int64 = 16384,
         closeSocketAfterTurn!: Bool = true,
-        policy!: ContractTlsHttpNegotiationPolicy = ContractTlsHttpNegotiationPolicy()
+        policy!: ContractTlsHttpNegotiationPolicy = ContractTlsHttpNegotiationPolicy(),
+        responseInitialConnectionSendBudget!: ?Int64 = None,
+        responseInitialStreamSendBudget!: ?Int64 = None,
+        responseWindowUpdateFramesBeforeRetry!:
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let transport = buildServerAcceptedTransportDescriptorFromSocket(
             acceptedSocket,
@@ -58881,7 +58929,13 @@ public class ServerEngineListenOption {
             app,
             request,
             maxFragmentLen: maxFragmentLen,
-            closeSocketAfterTurn: closeSocketAfterTurn
+            closeSocketAfterTurn: closeSocketAfterTurn,
+            responseInitialConnectionSendBudget:
+                responseInitialConnectionSendBudget,
+            responseInitialStreamSendBudget:
+                responseInitialStreamSendBudget,
+            responseWindowUpdateFramesBeforeRetry:
+                responseWindowUpdateFramesBeforeRetry
         )
     }
 
