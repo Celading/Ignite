@@ -3143,6 +3143,9 @@ public func encodeJinguiAcceptedTransportH2DataFrameWireSnapshot(
     encodeJinguiAcceptedTransportH2FrameWireSnapshot(frame)
 }
 
+public type JinguiAcceptedTransportH2PeerControlFramePoller =
+    () -> Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+
 public func encodeJinguiAcceptedTransportH2FrameWireSnapshot(
     frame: JinguiAcceptedTransportH2FrameWireSnapshot
 ): Array<Byte> {
@@ -58531,7 +58534,9 @@ public class ServerEngineListenOption {
         responseInitialConnectionSendBudget!: ?Int64 = None,
         responseInitialStreamSendBudget!: ?Int64 = None,
         responseWindowUpdateFramesBeforeRetry!:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        responseWindowUpdateFramePoller!:
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let readySnapshot = notifyJinguiAcceptedTransportSession(session)
         let carrier = ServerJinguiAcceptedTransportSocketResponseCarrier(
@@ -58565,7 +58570,9 @@ public class ServerEngineListenOption {
                 responseInitialStreamSendBudget:
                     responseInitialStreamSendBudget,
                 responseWindowUpdateFramesBeforeRetry:
-                    responseWindowUpdateFramesBeforeRetry
+                    responseWindowUpdateFramesBeforeRetry,
+                responseWindowUpdateFramePoller:
+                    responseWindowUpdateFramePoller
             )
             ServerJinguiAcceptedTransportSocketResponseTurnResult(
                 session,
@@ -58592,7 +58599,9 @@ public class ServerEngineListenOption {
         responseInitialConnectionSendBudget!: ?Int64 = None,
         responseInitialStreamSendBudget!: ?Int64 = None,
         responseWindowUpdateFramesBeforeRetry!:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        responseWindowUpdateFramePoller!:
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
     ): Unit {
         var totalCapturedBytes: Int64 = 0
         for (bodyWrite in capturedBodyWrites) {
@@ -58643,11 +58652,6 @@ public class ServerEngineListenOption {
                 initialConnectionSendBudget,
                 initialStreamSendBudget
             )
-        let retryWindowUpdateFrames =
-            resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
-                request,
-                responseWindowUpdateFramesBeforeRetry
-            )
         let gate = JinguiAcceptedTransportH2WriterFlowGate(model)
         let queue = JinguiAcceptedTransportH2WriterFlowQueue(gate)
         model.observeHeaders(
@@ -58683,10 +58687,17 @@ public class ServerEngineListenOption {
                             payload
                         )
                 } catch (e: Exception) {
-                    if (
-                        retryWindowUpdatesApplied ||
-                        retryWindowUpdateFrames.size == 0
-                    ) {
+                    if (retryWindowUpdatesApplied) {
+                        throw e
+                    }
+                    let retryWindowUpdateFrames =
+                        resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
+                            request,
+                            responseWindowUpdateFramesBeforeRetry,
+                            responseWindowUpdateFramePoller:
+                                responseWindowUpdateFramePoller
+                        )
+                    if (retryWindowUpdateFrames.size == 0) {
                         throw e
                     }
                     for (frame in retryWindowUpdateFrames) {
@@ -58708,12 +58719,20 @@ public class ServerEngineListenOption {
     func resolveJinguiAcceptedTransportH2ResponseRetryWindowUpdateFrames(
         request: ServerJinguiAcceptedTransportLogicalRequest,
         explicitWindowUpdateFrames:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot>,
+        responseWindowUpdateFramePoller!:
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
     ): Array<JinguiAcceptedTransportH2FrameWireSnapshot> {
         if (request.peerWindowUpdateFrames.size > 0) {
             return request.peerWindowUpdateFrames
         }
-        explicitWindowUpdateFrames
+        if (explicitWindowUpdateFrames.size > 0) {
+            return explicitWindowUpdateFrames
+        }
+        match (responseWindowUpdateFramePoller) {
+            case Some(poller) => poller()
+            case None => []
+        }
     }
 
     func serveJinguiAcceptedTransportSessionApplicationDataLogicalRequestTurnBuildAndServeCore(
@@ -59006,7 +59025,9 @@ public class ServerEngineListenOption {
         responseInitialConnectionSendBudget!: ?Int64 = None,
         responseInitialStreamSendBudget!: ?Int64 = None,
         responseWindowUpdateFramesBeforeRetry!:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        responseWindowUpdateFramePoller!:
+            ?JinguiAcceptedTransportH2PeerControlFramePoller = None
     ): ServerJinguiAcceptedTransportSocketResponseTurnResult {
         let transport = buildServerAcceptedTransportDescriptorFromSocket(
             acceptedSocket,
@@ -59030,7 +59051,9 @@ public class ServerEngineListenOption {
             responseInitialStreamSendBudget:
                 responseInitialStreamSendBudget,
             responseWindowUpdateFramesBeforeRetry:
-                responseWindowUpdateFramesBeforeRetry
+                responseWindowUpdateFramesBeforeRetry,
+            responseWindowUpdateFramePoller:
+                responseWindowUpdateFramePoller
         )
     }
 
