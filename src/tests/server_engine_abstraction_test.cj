@@ -2259,6 +2259,80 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRejectsSocketBackedInvalidWindowUpdateWithoutFalseRecovery(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-invalid-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(232)
+                .setHeader("x-h2-turn", "hq0711-invalid-window-update")
+                .sendString("hq0711-invalid-window-update")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-invalid-window-update-response-turn?mode=flow",
+                streamId: 161,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    JinguiAcceptedTransportH2FrameWireSnapshot(
+                        4,
+                        UInt8(0x8),
+                        UInt8(0x0),
+                        0,
+                        serverEngineAbstractionTestByteArray([
+                            UInt8(0),
+                            UInt8(0),
+                            UInt8(0),
+                            UInt8(0)
+                        ])
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 64,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 1
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let _ =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0711 socket-backed invalid window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+
+        @Assert(engine.turnRejected, true)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "H2 WINDOW_UPDATE increment must be positive"
+            ),
+            true
+        )
+        @Assert(
+            contains(
+                engine.turnRejectMessage,
+                "response writer lifecycle closed: h2-response-data-window-update-stall"
+            ),
+            false
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledConnectionWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
