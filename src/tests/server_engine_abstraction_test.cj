@@ -2047,6 +2047,75 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testInjectedServerEngineRecoversResponseTurnDataAfterFragmentedSocketBackedPolledConnectionWindowUpdate(): Unit {
+        let app = App(config: Config(
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/h2-socket-poller-fragmented-window-update-response-turn", { ctx =>
+            let _ = ctx
+                .status(226)
+                .setHeader("x-h2-turn", "hq0706-socket-fragmented")
+                .sendString("hq0706-socket-fragmented-window-update-stall")
+        })
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let engine =
+            JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine(
+                turnRequestUrl: "/h2-socket-poller-fragmented-window-update-response-turn?mode=flow",
+                streamId: 149,
+                responseInitialConnectionSendBudget: Some(3),
+                responseInitialStreamSendBudget: Some(128),
+                enableResponseWindowUpdatePoller: false,
+                enableSocketBackedResponseWindowUpdatePoller: true,
+                socketBackedResponseWindowUpdateFrames: [
+                    buildServerEngineAbstractionTestH2WindowUpdateFrame(
+                        0,
+                        128
+                    )
+                ],
+                socketBackedResponseWindowUpdatePollReadChunkSize: 3,
+                socketBackedResponseWindowUpdatePollMaxReadAttempts: 128
+            )
+        app.serverEngine(engine)
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        waitForShellReady(app, port)
+
+        let responseWire =
+            runAcceptedTransportDuplexRequestResponseSocketSinkClient(
+                "127.0.0.1",
+                port,
+                "hq0706 socket-backed fragmented window update",
+                { => engine.socketBackedWindowUpdateWireFragments },
+                writePauseMillis: 0
+            )
+        let _ = serverFuture.get(Duration.second * 5)
+        engine.decodeTurnSocketWire(responseWire)
+
+        @Assert(engine.turnReadyStatus, "READY")
+        @Assert(engine.turnResponseStatus, UInt16(226))
+        @Assert(engine.turnCustomHeader, "hq0706-socket-fragmented")
+        @Assert(engine.turnHeadersFrameStreamId, 149)
+        @Assert(engine.turnHeadersStatus, "226")
+        @Assert(engine.turnFrameEndStream, true)
+        @Assert(engine.turnFrameStreamId, 149)
+        @Assert(engine.responseWindowUpdatePollCalls, 1)
+        @Assert(engine.turnRejected, false)
+        @Assert(
+            serverEngineAbstractionTestByteArraysEqual(
+                engine.turnDataPayload,
+                serverEngineAbstractionTestTextBytes(
+                    "hq0706-socket-fragmented-window-update-stall"
+                )
+            ),
+            true
+        )
+    }
+
+    @TestCase
     public func testInjectedServerEngineRecoversResponseTurnDataAfterSocketBackedPolledStreamWindowUpdate(): Unit {
         let app = App(config: Config(
             tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
@@ -17868,6 +17937,8 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
     let enableSocketBackedResponseWindowUpdatePoller: Bool
     let socketBackedResponseWindowUpdateFrames:
         Array<JinguiAcceptedTransportH2FrameWireSnapshot>
+    let socketBackedResponseWindowUpdatePollReadChunkSize: Int64
+    let socketBackedResponseWindowUpdatePollMaxReadAttempts: Int64
     public var turnReadyStatus: String = ""
     public var turnResponseStatus: UInt16 = 0
     public var turnContentType: String = ""
@@ -17932,7 +18003,9 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
         enableResponseWindowUpdatePoller!: Bool = true,
         enableSocketBackedResponseWindowUpdatePoller!: Bool = false,
         socketBackedResponseWindowUpdateFrames!:
-            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = []
+            Array<JinguiAcceptedTransportH2FrameWireSnapshot> = [],
+        socketBackedResponseWindowUpdatePollReadChunkSize!: Int64 = 64,
+        socketBackedResponseWindowUpdatePollMaxReadAttempts!: Int64 = 1
     ) {
         this.turnRequestUrl = turnRequestUrl
         this.turnStreamId = streamId
@@ -17952,6 +18025,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
             enableSocketBackedResponseWindowUpdatePoller
         this.socketBackedResponseWindowUpdateFrames =
             socketBackedResponseWindowUpdateFrames
+        this.socketBackedResponseWindowUpdatePollReadChunkSize =
+            socketBackedResponseWindowUpdatePollReadChunkSize
+        this.socketBackedResponseWindowUpdatePollMaxReadAttempts =
+            socketBackedResponseWindowUpdatePollMaxReadAttempts
     }
 
     public func decodeTurnSocketWire(wire: Array<UInt8>): Unit {
@@ -18206,7 +18283,10 @@ class JinguiAcceptedTransportH2ApplicationDataResponseWriterTurnProbeEngine <: S
                                 session,
                                 accepted,
                                 turnStreamId,
-                                readChunkSize: 64
+                                readChunkSize:
+                                    socketBackedResponseWindowUpdatePollReadChunkSize,
+                                maxReadAttempts:
+                                    socketBackedResponseWindowUpdatePollMaxReadAttempts
                             )
                         responseWindowUpdateFramePoller = Some({ =>
                             responseWindowUpdatePollCalls += 1

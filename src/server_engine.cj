@@ -58858,19 +58858,30 @@ public class ServerEngineListenOption {
         session: ContractHttpServerAcceptedTransportSession,
         acceptedSocket: TcpSocket,
         streamId: Int64,
-        readChunkSize!: Int64 = 4096
+        readChunkSize!: Int64 = 4096,
+        maxReadAttempts!: Int64 = 1
     ): JinguiAcceptedTransportH2PeerControlFramePoller {
         let chunkSize = if (readChunkSize > 0) {
             readChunkSize
         } else {
             4096
         }
+        let readAttempts = if (maxReadAttempts > 0) {
+            maxReadAttempts
+        } else {
+            1
+        }
         let recordAccumulator = JinguiAcceptedTransportRecordWireAccumulator()
         let frameAccumulator = JinguiAcceptedTransportH2FrameWireAccumulator()
         { =>
-            let buf = Array<UInt8>(chunkSize, repeat: 0)
-            let n = acceptedSocket.read(buf)
-            if (n > 0) {
+            let out = ArrayList<JinguiAcceptedTransportH2FrameWireSnapshot>()
+            var attempt: Int64 = 0
+            while (attempt < readAttempts && out.size == 0) {
+                let buf = Array<UInt8>(chunkSize, repeat: 0)
+                let n = acceptedSocket.read(buf)
+                if (n <= 0) {
+                    break
+                }
                 recordAccumulator.append(
                     serverEngineUInt8ToByteArray(buf[..n])
                 )
@@ -58883,11 +58894,17 @@ public class ServerEngineListenOption {
                         )
                     )
                 }
+                let filtered =
+                    filterJinguiAcceptedTransportH2SocketPeerWindowUpdateFrames(
+                        streamId,
+                        frameAccumulator.drainCompleteFrames()
+                    )
+                for (frame in filtered) {
+                    out.add(frame)
+                }
+                attempt += 1
             }
-            filterJinguiAcceptedTransportH2SocketPeerWindowUpdateFrames(
-                streamId,
-                frameAccumulator.drainCompleteFrames()
-            )
+            out.toArray()
         }
     }
 
