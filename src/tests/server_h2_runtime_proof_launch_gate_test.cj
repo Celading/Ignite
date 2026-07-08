@@ -398,6 +398,108 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
     }
+
+    @TestCase
+    public func testH2ProductionQueueMutationGateBlocksRejectedCommitBoundary(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationGateBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationGateEvidence(
+                    buildHq0741RejectedH2CommitBoundaryBridge(),
+                    buildHq0741AcceptedProductionQueueMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-queue-commit-boundary-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-runtime-queue-commit-boundary-before-production-queue-mutation-gate"
+        )
+        @Assert(bridge.h2ProductionQueueMutationGateAccepted, false)
+        @Assert(bridge.h2RuntimeQueueCommitBoundaryAccepted, false)
+        @Assert(bridge.boundedProductionQueueMutationGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_QUEUE_COMMIT_BOUNDARY:blocked-runtime-queue-commit-boundary-receipt"
+        )
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ProductionQueueMutationGateBlocksRejectedMutationGate(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationGateBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationGateEvidence(
+                    buildHq0741AcceptedH2CommitBoundaryBridge(),
+                    buildHq0741BlockedProductionQueueMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-production-queue-mutation-gate-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-production-queue-mutation-gate-before-h2-mutation-dry-run"
+        )
+        @Assert(bridge.h2RuntimeQueueCommitBoundaryAccepted, true)
+        @Assert(bridge.productionQueueMutationGateAccepted, false)
+        @Assert(bridge.productionQueueMutationGateAllowed, false)
+        @Assert(bridge.boundedProductionQueueMutationGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "PRODUCTION_QUEUE_MUTATION_GATE:blocked-production-queue-mutation-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "PRODUCTION_QUEUE_MUTATION_BLOCKER:ACTUAL_PRODUCTION_QUEUE_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ProductionQueueMutationGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationGateBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationGateEvidence(
+                    buildHq0741AcceptedH2CommitBoundaryBridge(),
+                    buildHq0741AcceptedProductionQueueMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-production-queue-mutation-gate-bridge"
+        )
+        @Assert(bridge.h2ProductionQueueMutationGateAccepted, true)
+        @Assert(bridge.h2RuntimeQueueCommitBoundaryAccepted, true)
+        @Assert(bridge.productionQueueMutationGateAccepted, true)
+        @Assert(bridge.productionQueueMutationGateAllowed, true)
+        @Assert(bridge.boundedProductionQueueMutationGateFollowupAllowed, true)
+        @Assert(
+            bridge.productionQueueMutationGateMode,
+            "short-production-queue-mutation-gate"
+        )
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+        @Assert(bridge.handlerInvocationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+        @Assert(bridge.transportCommitAllowed, false)
+        @Assert(bridge.liveServerWiringAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -747,5 +849,87 @@ func buildHq0740BlockedRuntimeQueueCommitBoundaryReceipt(
         ],
         "carry commit boundary id and integration plan snapshot first",
         "QUIC must not consume queue commit boundary receipts from rejected runtime queue integration plans"
+    )
+}
+
+func buildHq0741RejectedH2CommitBoundaryBridge(
+): JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge {
+    buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+        JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence(
+            buildHq0740AcceptedQueueAdmissionBridge(),
+            buildHq0740BlockedRuntimeQueueCommitBoundaryReceipt()
+        )
+    )
+}
+
+func buildHq0741AcceptedH2CommitBoundaryBridge(
+): JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge {
+    buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+        JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence(
+            buildHq0740AcceptedQueueAdmissionBridge(),
+            buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt()
+        )
+    )
+}
+
+func buildHq0741AcceptedProductionQueueMutationGateRequest(
+): IgniteProductionQueueMutationGateRequest {
+    IgniteProductionQueueMutationGateRequest(
+        "h2-production-queue-mutation-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0741BlockedProductionQueueMutationGateRequest(
+): IgniteProductionQueueMutationGateRequest {
+    IgniteProductionQueueMutationGateRequest(
+        "h2-production-queue-mutation-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0741AcceptedProductionQueueMutationGateReceipt(
+): IgniteProductionQueueMutationGateReceipt {
+    buildIgniteProductionQueueMutationGateReceipt(
+        buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt(),
+        buildHq0741AcceptedProductionQueueMutationGateRequest()
+    )
+}
+
+func buildHq0741BlockedProductionQueueMutationGateReceipt(
+): IgniteProductionQueueMutationGateReceipt {
+    buildIgniteProductionQueueMutationGateReceipt(
+        buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt(),
+        buildHq0741BlockedProductionQueueMutationGateRequest()
     )
 }
