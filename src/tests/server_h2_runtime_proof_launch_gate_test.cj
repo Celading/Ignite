@@ -130,6 +130,84 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(launchGate.closureMissingProofs[3], "H2SPEC_PROOF")
         @Assert(launchGate.nonClaims[2], "NO_H2_RUNTIME_CLOSURE_CLAIM")
     }
+
+    @TestCase
+    public func testSchedulerIntakeBlocksWhenH2LaunchGateNotReady(): Unit {
+        let gate =
+            buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+                JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence(
+                    buildHq0738BlockedH2RuntimeLaunchGate(),
+                    buildHq0738AcceptedRequestSchedulerReceipt()
+                )
+            )
+
+        @Assert(gate.status, "blocked-h2-runtime-proof-launch-not-ready")
+        @Assert(
+            gate.decision,
+            "complete-h2-runtime-proof-launch-before-scheduler-intake"
+        )
+        @Assert(gate.schedulerIntakeAllowed, false)
+        @Assert(gate.boundedSchedulerFollowupAllowed, false)
+        @Assert(gate.h2RuntimeClosureClaimAllowed, false)
+        @Assert(
+            gate.blockers[0],
+            "H2_LAUNCH_GATE:blocked-h2-response-turn-progress"
+        )
+    }
+
+    @TestCase
+    public func testSchedulerIntakeBlocksWhenRequestSchedulerProofMissing(): Unit {
+        let gate =
+            buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+                JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence(
+                    buildHq0738ReadyH2RuntimeLaunchGate(),
+                    buildHq0738BlockedRequestSchedulerReceipt()
+                )
+            )
+
+        @Assert(gate.status, "blocked-request-scheduler-proof-intake")
+        @Assert(
+            gate.decision,
+            "collect-request-level-scheduler-proof-before-h2-scheduler-intake"
+        )
+        @Assert(gate.schedulerIntakeAllowed, false)
+        @Assert(gate.boundedSchedulerFollowupAllowed, false)
+        @Assert(
+            gate.blockers[0],
+            "REQUEST_SCHEDULER:blocked-request-scheduler-proof-gap"
+        )
+        @Assert(
+            gate.blockers[1],
+            "REQUEST_SCHEDULER_BLOCKER:SCOPE_NOT_REQUEST_LEVEL"
+        )
+    }
+
+    @TestCase
+    public func testSchedulerIntakeAllowsBoundedFollowupWithoutClosureClaim(): Unit {
+        let gate =
+            buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+                JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence(
+                    buildHq0738ReadyH2RuntimeLaunchGate(),
+                    buildHq0738AcceptedRequestSchedulerReceipt()
+                )
+            )
+
+        @Assert(gate.status, "ready-for-h2-runtime-scheduler-intake")
+        @Assert(gate.decision, "open-bounded-h2-runtime-scheduler-followup")
+        @Assert(gate.schedulerIntakeAllowed, true)
+        @Assert(gate.boundedSchedulerFollowupAllowed, true)
+        @Assert(gate.h2RuntimeClosureClaimAllowed, false)
+        @Assert(gate.runtimeNativeClaimAllowed, false)
+        @Assert(
+            gate.runtimeDesignGate.status,
+            "blocked-runtime-native-claim-gap"
+        )
+        @Assert(
+            gate.runtimeDesignGate.missingProofs[0],
+            "LONG_SHORT_TASK_LANE_PROOF"
+        )
+        @Assert(gate.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -214,6 +292,60 @@ func buildHq0737BlockedRuntimeProgressReadoutForLaunchTest(
             5,
             false,
             "h2-response-data-window-update-stall"
+        )
+    )
+}
+
+func buildHq0738ReadyH2RuntimeLaunchGate(
+): JinguiAcceptedTransportH2RuntimeProofLaunchGate {
+    buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
+        JinguiAcceptedTransportH2RuntimeProofLaunchEvidence(
+            buildProviderReadyAttachGate(),
+            true,
+            true,
+            true,
+            true,
+            buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
+        )
+    )
+}
+
+func buildHq0738BlockedH2RuntimeLaunchGate(
+): JinguiAcceptedTransportH2RuntimeProofLaunchGate {
+    buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
+        JinguiAcceptedTransportH2RuntimeProofLaunchEvidence(
+            buildProviderReadyAttachGate(),
+            true,
+            true,
+            true,
+            true,
+            buildHq0737BlockedRuntimeProgressReadoutForLaunchTest()
+        )
+    )
+}
+
+func buildHq0738AcceptedRequestSchedulerReceipt(
+): IgniteRequestSchedulerProofReceipt {
+    buildIgniteRequestSchedulerProofReceipt(
+        IgniteRequestSchedulerProofEvidence(
+            "request-level",
+            true,
+            true,
+            true,
+            true
+        )
+    )
+}
+
+func buildHq0738BlockedRequestSchedulerReceipt(
+): IgniteRequestSchedulerProofReceipt {
+    buildIgniteRequestSchedulerProofReceipt(
+        IgniteRequestSchedulerProofEvidence(
+            "connection-level",
+            false,
+            false,
+            false,
+            false
         )
     )
 }

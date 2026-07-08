@@ -5832,6 +5832,153 @@ func jinguiAcceptedTransportH2RuntimeProofLaunchNonClaims(): Array<String> {
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence {
+    public let launchGate: JinguiAcceptedTransportH2RuntimeProofLaunchGate
+    public let requestSchedulerReceipt: IgniteRequestSchedulerProofReceipt
+
+    public init(
+        launchGate: JinguiAcceptedTransportH2RuntimeProofLaunchGate,
+        requestSchedulerReceipt: IgniteRequestSchedulerProofReceipt
+    ) {
+        this.launchGate = launchGate
+        this.requestSchedulerReceipt = requestSchedulerReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate {
+    public let schedulerIntakeAllowed: Bool
+    public let boundedSchedulerFollowupAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let runtimeNativeClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let runtimeDesignGate: IgniteRuntimeConcurrencyDesignGate
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        schedulerIntakeAllowed: Bool,
+        boundedSchedulerFollowupAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        runtimeNativeClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        runtimeDesignGate: IgniteRuntimeConcurrencyDesignGate,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.schedulerIntakeAllowed = schedulerIntakeAllowed
+        this.boundedSchedulerFollowupAllowed =
+            boundedSchedulerFollowupAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.runtimeNativeClaimAllowed = runtimeNativeClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.runtimeDesignGate = runtimeDesignGate
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+    evidence: JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence
+): JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate {
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeNonClaims()
+    if (!evidence.launchGate.h2RuntimeProofLaunchAllowed) {
+        return JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-runtime-proof-launch-not-ready",
+            "complete-h2-runtime-proof-launch-before-scheduler-intake",
+            jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeLaunchBlockers(
+                evidence.launchGate
+            ),
+            evidence.requestSchedulerReceipt.runtimeDesignGate,
+            nonClaims,
+            "repair H2 runtime proof launch gate before scheduler intake; do not treat diagnostics as scheduler readiness",
+            "QUIC should not start stream scheduler intake before stream runtime launch is accepted"
+        )
+    }
+    if (
+        !evidence.requestSchedulerReceipt.requestLevelSchedulerProofAccepted ||
+        !evidence.requestSchedulerReceipt.handlerIoDecouplingProofAccepted
+    ) {
+        return JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+            false,
+            false,
+            false,
+            false,
+            "blocked-request-scheduler-proof-intake",
+            "collect-request-level-scheduler-proof-before-h2-scheduler-intake",
+            jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeRequestBlockers(
+                evidence.requestSchedulerReceipt
+            ),
+            evidence.requestSchedulerReceipt.runtimeDesignGate,
+            nonClaims,
+            evidence.requestSchedulerReceipt.nextAction,
+            "QUIC must carry stream identity and handler/I-O boundary proof before stream scheduler intake"
+        )
+    }
+    JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+        true,
+        true,
+        false,
+        evidence.requestSchedulerReceipt.runtimeNativeClaimAllowed,
+        "ready-for-h2-runtime-scheduler-intake",
+        "open-bounded-h2-runtime-scheduler-followup",
+        [],
+        evidence.requestSchedulerReceipt.runtimeDesignGate,
+        nonClaims,
+        "open a bounded H2 runtime scheduler follow-up; runtime-native and H2 closure claims still require long/short lane, blocking isolation, fairness/backpressure, browser, and h2spec proof",
+        "QUIC can reuse launch-plus-scheduler-intake before stream scheduler implementation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeLaunchBlockers(
+    launchGate: JinguiAcceptedTransportH2RuntimeProofLaunchGate
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_LAUNCH_GATE:${launchGate.status}")
+    for (blocker in launchGate.blockers) {
+        blockers.add("H2_LAUNCH_BLOCKER:${blocker}")
+    }
+    for (missing in launchGate.missingLaunchProofs) {
+        blockers.add("H2_LAUNCH_MISSING:${missing}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeRequestBlockers(
+    receipt: IgniteRequestSchedulerProofReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("REQUEST_SCHEDULER:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("REQUEST_SCHEDULER_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_SCHEDULER_IMPLEMENTATION",
+        "NO_RUNTIME_NATIVE_CLAIM",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
