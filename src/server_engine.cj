@@ -6188,6 +6188,222 @@ func jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence {
+    public let queueAdmissionBridge:
+        JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge
+    public let runtimeQueueCommitBoundaryReceipt:
+        IgniteRuntimeQueueCommitBoundaryReceipt
+
+    public init(
+        queueAdmissionBridge:
+            JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge,
+        runtimeQueueCommitBoundaryReceipt:
+            IgniteRuntimeQueueCommitBoundaryReceipt
+    ) {
+        this.queueAdmissionBridge = queueAdmissionBridge
+        this.runtimeQueueCommitBoundaryReceipt =
+            runtimeQueueCommitBoundaryReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge {
+    public let h2RuntimeQueueCommitBoundaryAccepted: Bool
+    public let h2RuntimeQueueAdmissionAccepted: Bool
+    public let runtimeQueueCommitBoundaryAccepted: Bool
+    public let runtimeQueueCommitBoundaryAllowed: Bool
+    public let boundedCommitBoundaryFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let liveExecutorEnqueueAllowed: Bool
+    public let runtimeTaskSpawnAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let runtimeQueueCommitBoundaryMode: String
+    public let commitBoundaryId: String
+    public let integrationPlanId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeQueueCommitBoundaryAccepted: Bool,
+        h2RuntimeQueueAdmissionAccepted: Bool,
+        runtimeQueueCommitBoundaryAccepted: Bool,
+        runtimeQueueCommitBoundaryAllowed: Bool,
+        boundedCommitBoundaryFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        liveExecutorEnqueueAllowed: Bool,
+        runtimeTaskSpawnAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        runtimeQueueCommitBoundaryMode: String,
+        commitBoundaryId: String,
+        integrationPlanId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeQueueCommitBoundaryAccepted =
+            h2RuntimeQueueCommitBoundaryAccepted
+        this.h2RuntimeQueueAdmissionAccepted =
+            h2RuntimeQueueAdmissionAccepted
+        this.runtimeQueueCommitBoundaryAccepted =
+            runtimeQueueCommitBoundaryAccepted
+        this.runtimeQueueCommitBoundaryAllowed =
+            runtimeQueueCommitBoundaryAllowed
+        this.boundedCommitBoundaryFollowupAllowed =
+            boundedCommitBoundaryFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.liveExecutorEnqueueAllowed = liveExecutorEnqueueAllowed
+        this.runtimeTaskSpawnAllowed = runtimeTaskSpawnAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.runtimeQueueCommitBoundaryMode =
+            runtimeQueueCommitBoundaryMode
+        this.commitBoundaryId = commitBoundaryId
+        this.integrationPlanId = integrationPlanId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence
+): JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge {
+    let commitReceipt = evidence.runtimeQueueCommitBoundaryReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryNonClaims()
+    if (
+        !evidence.queueAdmissionBridge.h2SchedulerRuntimeQueueAdmissionAccepted ||
+        !evidence.queueAdmissionBridge.boundedRuntimeQueueFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+            false,
+            evidence.queueAdmissionBridge.h2SchedulerRuntimeQueueAdmissionAccepted,
+            commitReceipt.runtimeQueueCommitBoundaryAccepted,
+            commitReceipt.runtimeQueueCommitBoundaryAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            commitReceipt.runtimeQueueCommitBoundaryMode,
+            commitReceipt.commitBoundaryId,
+            commitReceipt.integrationPlanId,
+            commitReceipt.queueDepthBefore,
+            commitReceipt.queueDepthAfter,
+            "blocked-h2-runtime-queue-admission-bridge",
+            "collect-accepted-h2-runtime-queue-admission-before-commit-boundary",
+            jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryAdmissionBlockers(
+                evidence.queueAdmissionBridge
+            ),
+            nonClaims,
+            "repair H2 runtime queue admission before queue commit boundary; do not treat admission planning as commit-boundary readiness",
+            "QUIC must pass stream queue admission before stream queue commit boundary"
+        )
+    }
+    if (
+        !commitReceipt.runtimeQueueCommitBoundaryAccepted ||
+        !commitReceipt.runtimeQueueCommitBoundaryAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+            false,
+            true,
+            commitReceipt.runtimeQueueCommitBoundaryAccepted,
+            commitReceipt.runtimeQueueCommitBoundaryAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            commitReceipt.runtimeQueueCommitBoundaryMode,
+            commitReceipt.commitBoundaryId,
+            commitReceipt.integrationPlanId,
+            commitReceipt.queueDepthBefore,
+            commitReceipt.queueDepthAfter,
+            "blocked-runtime-queue-commit-boundary-receipt",
+            "collect-accepted-runtime-queue-commit-boundary-before-h2-queue-mutation-gate",
+            jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryReceiptBlockers(
+                commitReceipt
+            ),
+            nonClaims,
+            commitReceipt.nextAction,
+            "QUIC must not consume rejected queue commit boundaries for stream queue mutation gates"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+        true,
+        true,
+        true,
+        commitReceipt.runtimeQueueCommitBoundaryAllowed,
+        true,
+        commitReceipt.productionQueueMutationAllowed,
+        commitReceipt.liveExecutorEnqueueAllowed,
+        commitReceipt.runtimeTaskSpawnAllowed,
+        false,
+        commitReceipt.runtimeQueueCommitBoundaryMode,
+        commitReceipt.commitBoundaryId,
+        commitReceipt.integrationPlanId,
+        commitReceipt.queueDepthBefore,
+        commitReceipt.queueDepthAfter,
+        "accepted-h2-runtime-queue-commit-boundary-bridge",
+        "record-h2-runtime-queue-admission-to-commit-boundary-without-production-mutation",
+        [],
+        nonClaims,
+        "next packet may plan an H2 production queue mutation gate; production mutation, live executor enqueue, runtime task spawn, H2 closure, and release flip remain denied",
+        "QUIC can reuse queue admission plus commit boundary before stream queue mutation gates"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryAdmissionBlockers(
+    bridge: JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_QUEUE_ADMISSION:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_QUEUE_ADMISSION_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryReceiptBlockers(
+    receipt: IgniteRuntimeQueueCommitBoundaryReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_QUEUE_COMMIT_BOUNDARY:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_QUEUE_COMMIT_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeQueueCommitBoundaryNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_SCHEDULER_IMPLEMENTATION",
+        "NO_PRODUCTION_QUEUE_MUTATION",
+        "NO_LIVE_EXECUTOR_ENQUEUE",
+        "NO_RUNTIME_TASK_SPAWN",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool

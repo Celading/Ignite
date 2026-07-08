@@ -306,6 +306,98 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
     }
+
+    @TestCase
+    public func testH2QueueCommitBoundaryBlocksRejectedQueueAdmission(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence(
+                    buildHq0739RejectedQueueAdmissionBridge(),
+                    buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt()
+                )
+            )
+
+        @Assert(bridge.status, "blocked-h2-runtime-queue-admission-bridge")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-runtime-queue-admission-before-commit-boundary"
+        )
+        @Assert(bridge.h2RuntimeQueueCommitBoundaryAccepted, false)
+        @Assert(bridge.h2RuntimeQueueAdmissionAccepted, false)
+        @Assert(bridge.boundedCommitBoundaryFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_QUEUE_ADMISSION:blocked-runtime-queue-integration-plan-receipt"
+        )
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+    }
+
+    @TestCase
+    public func testH2QueueCommitBoundaryBlocksRejectedCommitBoundary(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence(
+                    buildHq0740AcceptedQueueAdmissionBridge(),
+                    buildHq0740BlockedRuntimeQueueCommitBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-queue-commit-boundary-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-runtime-queue-commit-boundary-before-h2-queue-mutation-gate"
+        )
+        @Assert(bridge.h2RuntimeQueueAdmissionAccepted, true)
+        @Assert(bridge.runtimeQueueCommitBoundaryAccepted, false)
+        @Assert(bridge.runtimeQueueCommitBoundaryAllowed, false)
+        @Assert(bridge.boundedCommitBoundaryFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_QUEUE_COMMIT_BOUNDARY:blocked-runtime-queue-commit-boundary-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_QUEUE_COMMIT_BLOCKER:COMMIT_BOUNDARY_ID_NOT_CARRIED"
+        )
+    }
+
+    @TestCase
+    public func testH2QueueCommitBoundaryAllowsBoundedCommitFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeQueueCommitBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeQueueCommitBoundaryEvidence(
+                    buildHq0740AcceptedQueueAdmissionBridge(),
+                    buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-queue-commit-boundary-bridge"
+        )
+        @Assert(bridge.h2RuntimeQueueCommitBoundaryAccepted, true)
+        @Assert(bridge.h2RuntimeQueueAdmissionAccepted, true)
+        @Assert(bridge.runtimeQueueCommitBoundaryAccepted, true)
+        @Assert(bridge.runtimeQueueCommitBoundaryAllowed, true)
+        @Assert(bridge.boundedCommitBoundaryFollowupAllowed, true)
+        @Assert(
+            bridge.runtimeQueueCommitBoundaryMode,
+            "short-runtime-queue-commit-boundary"
+        )
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.integrationPlanId, "runtime-queue-integration-plan-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -544,5 +636,116 @@ func buildHq0739BlockedRuntimeQueueIntegrationPlanReceipt(
         ],
         "carry integration plan id and queue-write snapshot first",
         "QUIC must not consume runtime queue integration plans from rejected controlled queue writes"
+    )
+}
+
+func buildHq0739RejectedQueueAdmissionBridge(
+): JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge {
+    buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+        JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence(
+            buildHq0739AcceptedSchedulerIntakeGate(),
+            buildHq0739BlockedRuntimeQueueIntegrationPlanReceipt()
+        )
+    )
+}
+
+func buildHq0740AcceptedQueueAdmissionBridge(
+): JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge {
+    buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+        JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence(
+            buildHq0739AcceptedSchedulerIntakeGate(),
+            buildHq0739AcceptedRuntimeQueueIntegrationPlanReceipt()
+        )
+    )
+}
+
+func buildHq0740AcceptedRuntimeQueueCommitBoundaryReceipt(
+): IgniteRuntimeQueueCommitBoundaryReceipt {
+    IgniteRuntimeQueueCommitBoundaryReceipt(
+        true,
+        true,
+        "short-runtime-queue-integration-plan",
+        "short-runtime-queue-commit-boundary",
+        "runtime-queue-commit-boundary-1",
+        "runtime-queue-integration-plan-1",
+        "controlled-executor-queue-write-1",
+        2,
+        3,
+        true,
+        "record-runtime-queue-commit-boundary-receipt",
+        "accepted-runtime-queue-commit-boundary-receipt",
+        "record-runtime-queue-commit-boundary-without-production-queue-mutation",
+        [],
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        [
+            "NO_PRODUCTION_QUEUE_MUTATION",
+            "NO_LIVE_SERVER_WIRING",
+            "NO_LIVE_EXECUTOR_ENQUEUE",
+            "NO_HANDLER_INVOCATION",
+            "NO_REQUEST_CONTEXT_MUTATION",
+            "NO_RUNTIME_TASK_SPAWN",
+            "NO_RESPONSE_WRITE",
+            "NO_TRANSPORT_COMMIT",
+            "NO_PUBLIC_API",
+            "NO_PERFORMANCE_CLAIM",
+            "NO_H2_QUIC_RUNTIME_CLOSURE_CLAIM",
+        ],
+        "next packet may gate production queue mutation without invoking user handlers or spawning production tasks",
+        "QUIC can reuse lane-specific runtime queue commit boundary modes before live stream task queue mutation"
+    )
+}
+
+func buildHq0740BlockedRuntimeQueueCommitBoundaryReceipt(
+): IgniteRuntimeQueueCommitBoundaryReceipt {
+    IgniteRuntimeQueueCommitBoundaryReceipt(
+        false,
+        true,
+        "short-runtime-queue-integration-plan",
+        "short-runtime-queue-commit-boundary",
+        "",
+        "runtime-queue-integration-plan-1",
+        "controlled-executor-queue-write-1",
+        2,
+        3,
+        false,
+        "block",
+        "blocked-runtime-queue-commit-boundary-input",
+        "fix-runtime-queue-commit-boundary-before-production-queue-mutation-gate",
+        [
+            "COMMIT_BOUNDARY_ID_NOT_CARRIED",
+            "INTEGRATION_PLAN_SNAPSHOT_NOT_CARRIED",
+        ],
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        [
+            "NO_PRODUCTION_QUEUE_MUTATION",
+            "NO_LIVE_SERVER_WIRING",
+            "NO_LIVE_EXECUTOR_ENQUEUE",
+            "NO_HANDLER_INVOCATION",
+            "NO_REQUEST_CONTEXT_MUTATION",
+            "NO_RUNTIME_TASK_SPAWN",
+            "NO_RESPONSE_WRITE",
+            "NO_TRANSPORT_COMMIT",
+            "NO_PUBLIC_API",
+            "NO_PERFORMANCE_CLAIM",
+            "NO_H2_QUIC_RUNTIME_CLOSURE_CLAIM",
+        ],
+        "carry commit boundary id and integration plan snapshot first",
+        "QUIC must not consume queue commit boundary receipts from rejected runtime queue integration plans"
     )
 }
