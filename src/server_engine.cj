@@ -5979,6 +5979,215 @@ func jinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence {
+    public let schedulerIntakeGate:
+        JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate
+    public let runtimeQueueIntegrationPlanReceipt:
+        IgniteRuntimeQueueIntegrationPlanReceipt
+
+    public init(
+        schedulerIntakeGate:
+            JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate,
+        runtimeQueueIntegrationPlanReceipt:
+            IgniteRuntimeQueueIntegrationPlanReceipt
+    ) {
+        this.schedulerIntakeGate = schedulerIntakeGate
+        this.runtimeQueueIntegrationPlanReceipt =
+            runtimeQueueIntegrationPlanReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge {
+    public let h2SchedulerRuntimeQueueAdmissionAccepted: Bool
+    public let schedulerIntakeAllowed: Bool
+    public let runtimeQueueIntegrationPlanAccepted: Bool
+    public let runtimeQueueIntegrationPlanAllowed: Bool
+    public let boundedRuntimeQueueFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let liveExecutorEnqueueAllowed: Bool
+    public let runtimeTaskSpawnAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let runtimeQueueIntegrationPlanMode: String
+    public let integrationPlanId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2SchedulerRuntimeQueueAdmissionAccepted: Bool,
+        schedulerIntakeAllowed: Bool,
+        runtimeQueueIntegrationPlanAccepted: Bool,
+        runtimeQueueIntegrationPlanAllowed: Bool,
+        boundedRuntimeQueueFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        liveExecutorEnqueueAllowed: Bool,
+        runtimeTaskSpawnAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        runtimeQueueIntegrationPlanMode: String,
+        integrationPlanId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2SchedulerRuntimeQueueAdmissionAccepted =
+            h2SchedulerRuntimeQueueAdmissionAccepted
+        this.schedulerIntakeAllowed = schedulerIntakeAllowed
+        this.runtimeQueueIntegrationPlanAccepted =
+            runtimeQueueIntegrationPlanAccepted
+        this.runtimeQueueIntegrationPlanAllowed =
+            runtimeQueueIntegrationPlanAllowed
+        this.boundedRuntimeQueueFollowupAllowed =
+            boundedRuntimeQueueFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.liveExecutorEnqueueAllowed = liveExecutorEnqueueAllowed
+        this.runtimeTaskSpawnAllowed = runtimeTaskSpawnAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.runtimeQueueIntegrationPlanMode =
+            runtimeQueueIntegrationPlanMode
+        this.integrationPlanId = integrationPlanId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+    evidence: JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence
+): JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge {
+    let planReceipt = evidence.runtimeQueueIntegrationPlanReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionNonClaims()
+    if (
+        !evidence.schedulerIntakeGate.schedulerIntakeAllowed ||
+        !evidence.schedulerIntakeGate.boundedSchedulerFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+            false,
+            evidence.schedulerIntakeGate.schedulerIntakeAllowed,
+            planReceipt.runtimeQueueIntegrationPlanAccepted,
+            planReceipt.runtimeQueueIntegrationPlanAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            planReceipt.runtimeQueueIntegrationPlanMode,
+            planReceipt.integrationPlanId,
+            planReceipt.queueDepthBefore,
+            planReceipt.queueDepthAfter,
+            "blocked-h2-runtime-scheduler-intake",
+            "collect-accepted-h2-scheduler-intake-before-runtime-queue-admission",
+            jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionIntakeBlockers(
+                evidence.schedulerIntakeGate
+            ),
+            nonClaims,
+            "repair H2 scheduler intake before runtime queue admission; do not treat H2 launch readiness as queue admission readiness",
+            "QUIC must pass stream scheduler intake before stream runtime queue admission"
+        )
+    }
+    if (
+        !planReceipt.runtimeQueueIntegrationPlanAccepted ||
+        !planReceipt.runtimeQueueIntegrationPlanAllowed
+    ) {
+        return JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+            false,
+            true,
+            planReceipt.runtimeQueueIntegrationPlanAccepted,
+            planReceipt.runtimeQueueIntegrationPlanAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            planReceipt.runtimeQueueIntegrationPlanMode,
+            planReceipt.integrationPlanId,
+            planReceipt.queueDepthBefore,
+            planReceipt.queueDepthAfter,
+            "blocked-runtime-queue-integration-plan-receipt",
+            "collect-accepted-runtime-queue-integration-plan-before-h2-queue-admission",
+            jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionPlanBlockers(
+                planReceipt
+            ),
+            nonClaims,
+            planReceipt.nextAction,
+            "QUIC must not consume rejected runtime queue integration plans for stream queue admission"
+        )
+    }
+
+    JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+        true,
+        true,
+        true,
+        planReceipt.runtimeQueueIntegrationPlanAllowed,
+        true,
+        planReceipt.productionQueueMutationAllowed,
+        planReceipt.liveExecutorEnqueueAllowed,
+        planReceipt.runtimeTaskSpawnAllowed,
+        false,
+        planReceipt.runtimeQueueIntegrationPlanMode,
+        planReceipt.integrationPlanId,
+        planReceipt.queueDepthBefore,
+        planReceipt.queueDepthAfter,
+        "accepted-h2-scheduler-runtime-queue-admission-bridge",
+        "record-h2-scheduler-intake-to-runtime-queue-admission-without-runtime-task-spawn",
+        [],
+        nonClaims,
+        "next packet may plan H2 runtime queue commit boundaries; production mutation, live executor enqueue, runtime task spawn, H2 closure, and release flip remain denied",
+        "QUIC can reuse scheduler-intake plus runtime queue admission before stream queue commit boundaries"
+    )
+}
+
+func jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionIntakeBlockers(
+    gate: JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_SCHEDULER_INTAKE:${gate.status}")
+    for (blocker in gate.blockers) {
+        blockers.add("H2_SCHEDULER_INTAKE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionPlanBlockers(
+    receipt: IgniteRuntimeQueueIntegrationPlanReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_QUEUE_INTEGRATION_PLAN:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_QUEUE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_SCHEDULER_IMPLEMENTATION",
+        "NO_PRODUCTION_QUEUE_MUTATION",
+        "NO_LIVE_EXECUTOR_ENQUEUE",
+        "NO_RUNTIME_TASK_SPAWN",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool

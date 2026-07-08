@@ -208,6 +208,104 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         )
         @Assert(gate.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
     }
+
+    @TestCase
+    public func testH2RuntimeQueueAdmissionBlocksRejectedSchedulerIntake(): Unit {
+        let schedulerIntakeGate =
+            buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+                JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence(
+                    buildHq0738BlockedH2RuntimeLaunchGate(),
+                    buildHq0738AcceptedRequestSchedulerReceipt()
+                )
+            )
+        let bridge =
+            buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+                JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence(
+                    schedulerIntakeGate,
+                    buildHq0739AcceptedRuntimeQueueIntegrationPlanReceipt()
+                )
+            )
+
+        @Assert(bridge.status, "blocked-h2-runtime-scheduler-intake")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-scheduler-intake-before-runtime-queue-admission"
+        )
+        @Assert(bridge.h2SchedulerRuntimeQueueAdmissionAccepted, false)
+        @Assert(bridge.schedulerIntakeAllowed, false)
+        @Assert(bridge.boundedRuntimeQueueFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_SCHEDULER_INTAKE:blocked-h2-runtime-proof-launch-not-ready"
+        )
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RuntimeQueueAdmissionBlocksRejectedRuntimeQueuePlan(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+                JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence(
+                    buildHq0739AcceptedSchedulerIntakeGate(),
+                    buildHq0739BlockedRuntimeQueueIntegrationPlanReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-queue-integration-plan-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-runtime-queue-integration-plan-before-h2-queue-admission"
+        )
+        @Assert(bridge.schedulerIntakeAllowed, true)
+        @Assert(bridge.runtimeQueueIntegrationPlanAccepted, false)
+        @Assert(bridge.runtimeQueueIntegrationPlanAllowed, false)
+        @Assert(bridge.boundedRuntimeQueueFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_QUEUE_INTEGRATION_PLAN:blocked-runtime-queue-integration-plan-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_QUEUE_BLOCKER:INTEGRATION_PLAN_ID_NOT_CARRIED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeQueueAdmissionAllowsBoundedQueueFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionBridge(
+                JinguiAcceptedTransportH2SchedulerRuntimeQueueAdmissionEvidence(
+                    buildHq0739AcceptedSchedulerIntakeGate(),
+                    buildHq0739AcceptedRuntimeQueueIntegrationPlanReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-scheduler-runtime-queue-admission-bridge"
+        )
+        @Assert(bridge.h2SchedulerRuntimeQueueAdmissionAccepted, true)
+        @Assert(bridge.schedulerIntakeAllowed, true)
+        @Assert(bridge.runtimeQueueIntegrationPlanAccepted, true)
+        @Assert(bridge.runtimeQueueIntegrationPlanAllowed, true)
+        @Assert(bridge.boundedRuntimeQueueFollowupAllowed, true)
+        @Assert(
+            bridge.runtimeQueueIntegrationPlanMode,
+            "short-runtime-queue-integration-plan"
+        )
+        @Assert(bridge.integrationPlanId, "runtime-queue-integration-plan-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -347,5 +445,104 @@ func buildHq0738BlockedRequestSchedulerReceipt(
             false,
             false
         )
+    )
+}
+
+func buildHq0739AcceptedSchedulerIntakeGate(
+): JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate {
+    buildJinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeGate(
+        JinguiAcceptedTransportH2RuntimeLaunchSchedulerIntakeEvidence(
+            buildHq0738ReadyH2RuntimeLaunchGate(),
+            buildHq0738AcceptedRequestSchedulerReceipt()
+        )
+    )
+}
+
+func buildHq0739AcceptedRuntimeQueueIntegrationPlanReceipt(
+): IgniteRuntimeQueueIntegrationPlanReceipt {
+    IgniteRuntimeQueueIntegrationPlanReceipt(
+        true,
+        true,
+        "short-controlled-executor-queue-write",
+        "short-runtime-queue-integration-plan",
+        "runtime-queue-integration-plan-1",
+        "controlled-executor-queue-write-1",
+        2,
+        3,
+        true,
+        "record-runtime-queue-integration-plan-receipt",
+        "accepted-runtime-queue-integration-plan-receipt",
+        "record-runtime-queue-integration-plan-without-production-queue-mutation",
+        [],
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        [
+            "NO_PRODUCTION_QUEUE_MUTATION",
+            "NO_LIVE_SERVER_WIRING",
+            "NO_LIVE_EXECUTOR_ENQUEUE",
+            "NO_HANDLER_INVOCATION",
+            "NO_REQUEST_CONTEXT_MUTATION",
+            "NO_RUNTIME_TASK_SPAWN",
+            "NO_RESPONSE_WRITE",
+            "NO_TRANSPORT_COMMIT",
+            "NO_PUBLIC_API",
+            "NO_PERFORMANCE_CLAIM",
+            "NO_H2_QUIC_RUNTIME_CLOSURE_CLAIM",
+        ],
+        "next packet may plan queue commit boundaries without invoking user handlers or spawning production tasks",
+        "QUIC can reuse lane-specific runtime queue integration modes before live stream task queue commit"
+    )
+}
+
+func buildHq0739BlockedRuntimeQueueIntegrationPlanReceipt(
+): IgniteRuntimeQueueIntegrationPlanReceipt {
+    IgniteRuntimeQueueIntegrationPlanReceipt(
+        false,
+        true,
+        "short-controlled-executor-queue-write",
+        "short-runtime-queue-integration-plan",
+        "",
+        "controlled-executor-queue-write-1",
+        2,
+        3,
+        false,
+        "block",
+        "blocked-runtime-queue-integration-plan-input",
+        "fix-runtime-queue-integration-plan-before-queue-commit-boundary",
+        [
+            "INTEGRATION_PLAN_ID_NOT_CARRIED",
+            "QUEUE_WRITE_SNAPSHOT_NOT_CARRIED",
+        ],
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        [
+            "NO_PRODUCTION_QUEUE_MUTATION",
+            "NO_LIVE_SERVER_WIRING",
+            "NO_LIVE_EXECUTOR_ENQUEUE",
+            "NO_HANDLER_INVOCATION",
+            "NO_REQUEST_CONTEXT_MUTATION",
+            "NO_RUNTIME_TASK_SPAWN",
+            "NO_RESPONSE_WRITE",
+            "NO_TRANSPORT_COMMIT",
+            "NO_PUBLIC_API",
+            "NO_PERFORMANCE_CLAIM",
+            "NO_H2_QUIC_RUNTIME_CLOSURE_CLAIM",
+        ],
+        "carry integration plan id and queue-write snapshot first",
+        "QUIC must not consume runtime queue integration plans from rejected controlled queue writes"
     )
 }
