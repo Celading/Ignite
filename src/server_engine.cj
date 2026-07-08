@@ -6663,6 +6663,271 @@ func jinguiAcceptedTransportH2ProductionQueueMutationGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2ProductionQueueMutationDryRunEvidence {
+    public let h2ProductionQueueMutationGateBridge:
+        JinguiAcceptedTransportH2ProductionQueueMutationGateBridge
+    public let productionQueueMutationDryRunReceipt:
+        IgniteProductionQueueMutationDryRunReceipt
+
+    public init(
+        h2ProductionQueueMutationGateBridge:
+            JinguiAcceptedTransportH2ProductionQueueMutationGateBridge,
+        productionQueueMutationDryRunReceipt:
+            IgniteProductionQueueMutationDryRunReceipt
+    ) {
+        this.h2ProductionQueueMutationGateBridge =
+            h2ProductionQueueMutationGateBridge
+        this.productionQueueMutationDryRunReceipt =
+            productionQueueMutationDryRunReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge {
+    public let h2ProductionQueueMutationDryRunAccepted: Bool
+    public let h2ProductionQueueMutationGateAccepted: Bool
+    public let productionQueueMutationDryRunAccepted: Bool
+    public let productionQueueMutationDryRunAllowed: Bool
+    public let boundedProductionQueueMutationDryRunFollowupAllowed: Bool
+    public let actualProductionQueueMutationAllowed: Bool
+    public let liveExecutorEnqueueAllowed: Bool
+    public let runtimeTaskSpawnAllowed: Bool
+    public let handlerInvocationAllowed: Bool
+    public let requestContextMutationAllowed: Bool
+    public let responseWriteAllowed: Bool
+    public let transportCommitAllowed: Bool
+    public let liveServerWiringAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let productionQueueMutationDryRunMode: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ProductionQueueMutationDryRunAccepted: Bool,
+        h2ProductionQueueMutationGateAccepted: Bool,
+        productionQueueMutationDryRunAccepted: Bool,
+        productionQueueMutationDryRunAllowed: Bool,
+        boundedProductionQueueMutationDryRunFollowupAllowed: Bool,
+        actualProductionQueueMutationAllowed: Bool,
+        liveExecutorEnqueueAllowed: Bool,
+        runtimeTaskSpawnAllowed: Bool,
+        handlerInvocationAllowed: Bool,
+        requestContextMutationAllowed: Bool,
+        responseWriteAllowed: Bool,
+        transportCommitAllowed: Bool,
+        liveServerWiringAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        productionQueueMutationDryRunMode: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ProductionQueueMutationDryRunAccepted =
+            h2ProductionQueueMutationDryRunAccepted
+        this.h2ProductionQueueMutationGateAccepted =
+            h2ProductionQueueMutationGateAccepted
+        this.productionQueueMutationDryRunAccepted =
+            productionQueueMutationDryRunAccepted
+        this.productionQueueMutationDryRunAllowed =
+            productionQueueMutationDryRunAllowed
+        this.boundedProductionQueueMutationDryRunFollowupAllowed =
+            boundedProductionQueueMutationDryRunFollowupAllowed
+        this.actualProductionQueueMutationAllowed =
+            actualProductionQueueMutationAllowed
+        this.liveExecutorEnqueueAllowed = liveExecutorEnqueueAllowed
+        this.runtimeTaskSpawnAllowed = runtimeTaskSpawnAllowed
+        this.handlerInvocationAllowed = handlerInvocationAllowed
+        this.requestContextMutationAllowed = requestContextMutationAllowed
+        this.responseWriteAllowed = responseWriteAllowed
+        this.transportCommitAllowed = transportCommitAllowed
+        this.liveServerWiringAllowed = liveServerWiringAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.productionQueueMutationDryRunMode =
+            productionQueueMutationDryRunMode
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+    evidence: JinguiAcceptedTransportH2ProductionQueueMutationDryRunEvidence
+): JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge {
+    let h2GateBridge = evidence.h2ProductionQueueMutationGateBridge
+    let dryRunReceipt = evidence.productionQueueMutationDryRunReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2ProductionQueueMutationDryRunNonClaims()
+    if (
+        !h2GateBridge.h2ProductionQueueMutationGateAccepted ||
+        !h2GateBridge.boundedProductionQueueMutationGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+            false,
+            h2GateBridge.h2ProductionQueueMutationGateAccepted,
+            dryRunReceipt.productionQueueMutationDryRunAccepted,
+            dryRunReceipt.productionQueueMutationDryRunAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            dryRunReceipt.productionQueueMutationDryRunMode,
+            dryRunReceipt.mutationDryRunId,
+            h2GateBridge.mutationGateId,
+            h2GateBridge.commitBoundaryId,
+            h2GateBridge.queueWriteId,
+            h2GateBridge.queueDepthBefore,
+            h2GateBridge.queueDepthAfter,
+            "blocked-h2-production-queue-mutation-gate-bridge",
+            "collect-accepted-h2-production-queue-mutation-gate-before-dry-run",
+            jinguiAcceptedTransportH2ProductionQueueMutationDryRunGateBlockers(
+                h2GateBridge
+            ),
+            nonClaims,
+            "repair H2 production queue mutation gate before dry-run; do not treat generic dry-run receipts as H2 runtime readiness",
+            "QUIC must pass stream mutation gates before stream mutation dry-runs"
+        )
+    }
+    if (
+        !dryRunReceipt.productionQueueMutationDryRunAccepted ||
+        !dryRunReceipt.productionQueueMutationDryRunAllowed
+    ) {
+        return JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+            false,
+            true,
+            dryRunReceipt.productionQueueMutationDryRunAccepted,
+            dryRunReceipt.productionQueueMutationDryRunAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            dryRunReceipt.productionQueueMutationDryRunMode,
+            dryRunReceipt.mutationDryRunId,
+            dryRunReceipt.mutationGateId,
+            dryRunReceipt.commitBoundaryId,
+            dryRunReceipt.queueWriteId,
+            dryRunReceipt.queueDepthBefore,
+            dryRunReceipt.queueDepthAfter,
+            "blocked-production-queue-mutation-dry-run-receipt",
+            "collect-accepted-production-queue-mutation-dry-run-before-h2-commit-plan",
+            jinguiAcceptedTransportH2ProductionQueueMutationDryRunReceiptBlockers(
+                dryRunReceipt
+            ),
+            nonClaims,
+            dryRunReceipt.nextAction,
+            "QUIC must not consume rejected production mutation dry-runs for stream mutation commit plans"
+        )
+    }
+
+    JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+        true,
+        true,
+        true,
+        dryRunReceipt.productionQueueMutationDryRunAllowed,
+        true,
+        dryRunReceipt.actualProductionQueueMutationAllowed,
+        dryRunReceipt.liveExecutorEnqueueAllowed,
+        dryRunReceipt.runtimeTaskSpawnAllowed,
+        dryRunReceipt.handlerInvocationAllowed,
+        dryRunReceipt.requestContextMutationAllowed,
+        dryRunReceipt.responseWriteAllowed,
+        dryRunReceipt.transportCommitAllowed,
+        dryRunReceipt.liveServerWiringAllowed,
+        false,
+        dryRunReceipt.productionQueueMutationDryRunMode,
+        dryRunReceipt.mutationDryRunId,
+        dryRunReceipt.mutationGateId,
+        dryRunReceipt.commitBoundaryId,
+        dryRunReceipt.queueWriteId,
+        dryRunReceipt.queueDepthBefore,
+        dryRunReceipt.queueDepthAfter,
+        "accepted-h2-production-queue-mutation-dry-run-bridge",
+        "record-h2-production-queue-mutation-dry-run-without-actual-mutation",
+        [],
+        nonClaims,
+        "next packet may plan an H2 production queue mutation commit-plan; actual mutation, live executor enqueue, runtime task spawn, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style mutation gate plus dry-run separation before stream queue mutation commit plans"
+    )
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationDryRunGateBlockers(
+    bridge: JinguiAcceptedTransportH2ProductionQueueMutationGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_PRODUCTION_QUEUE_MUTATION_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_PRODUCTION_QUEUE_MUTATION_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationDryRunReceiptBlockers(
+    receipt: IgniteProductionQueueMutationDryRunReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("PRODUCTION_QUEUE_MUTATION_DRY_RUN:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("PRODUCTION_QUEUE_MUTATION_DRY_RUN_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationDryRunNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_PRODUCTION_QUEUE_MUTATION",
+        "NO_LIVE_EXECUTOR_ENQUEUE",
+        "NO_RUNTIME_TASK_SPAWN",
+        "NO_HANDLER_INVOCATION",
+        "NO_REQUEST_CONTEXT_MUTATION",
+        "NO_RESPONSE_WRITE",
+        "NO_TRANSPORT_COMMIT",
+        "NO_LIVE_SERVER_WIRING",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
