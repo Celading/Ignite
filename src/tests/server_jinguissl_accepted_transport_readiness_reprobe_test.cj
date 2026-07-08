@@ -60,7 +60,8 @@ public class ServerJinguiAcceptedTransportReadinessReprobeTestSuite {
                 true,
                 true,
                 true,
-                true
+                true,
+                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
             )
         )
         @Assert(launchGate.status, "diagnostic-only-provider-blocker-carried")

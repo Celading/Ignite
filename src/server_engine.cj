@@ -5580,19 +5580,24 @@ public class JinguiAcceptedTransportH2RuntimeProofLaunchEvidence {
     public let flowBudgetWindowUpdateProof: Bool
     public let headerProjectionProof: Bool
     public let wireFixtureProof: Bool
+    public let responseTurnProgressReadout:
+        JinguiAcceptedTransportH2RuntimeProgressReadout
 
     public init(
         providerAttachGate: ServerJinguiAcceptedTransportTlsAttachProofGate,
         streamLifecycleProof: Bool,
         flowBudgetWindowUpdateProof: Bool,
         headerProjectionProof: Bool,
-        wireFixtureProof: Bool
+        wireFixtureProof: Bool,
+        responseTurnProgressReadout:
+            JinguiAcceptedTransportH2RuntimeProgressReadout
     ) {
         this.providerAttachGate = providerAttachGate
         this.streamLifecycleProof = streamLifecycleProof
         this.flowBudgetWindowUpdateProof = flowBudgetWindowUpdateProof
         this.headerProjectionProof = headerProjectionProof
         this.wireFixtureProof = wireFixtureProof
+        this.responseTurnProgressReadout = responseTurnProgressReadout
     }
 }
 
@@ -5682,6 +5687,27 @@ public func buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
             "QUIC should not start runtime proof while provider attach proof is blocked"
         )
     }
+    if (
+        jinguiAcceptedTransportH2RuntimeProofLaunchResponseTurnProgressBlocked(
+            evidence.responseTurnProgressReadout
+        )
+    ) {
+        return JinguiAcceptedTransportH2RuntimeProofLaunchGate(
+            false,
+            false,
+            false,
+            "blocked-h2-response-turn-progress",
+            "repair-response-turn-progress-before-runtime-launch",
+            jinguiAcceptedTransportH2RuntimeProofLaunchProgressBlockers(
+                evidence.responseTurnProgressReadout
+            ),
+            missingLaunchProofs,
+            closureMissingProofs,
+            nonClaims,
+            evidence.responseTurnProgressReadout.nextAction,
+            "QUIC should consume accepted stream progress before runtime proof launch"
+        )
+    }
     if (missingLaunchProofs.size > 0) {
         return JinguiAcceptedTransportH2RuntimeProofLaunchGate(
             false,
@@ -5730,7 +5756,21 @@ func jinguiAcceptedTransportH2RuntimeProofLaunchMissingProofs(
     if (!evidence.wireFixtureProof) {
         missing.add("H2_WIRE_FIXTURE_PROOF")
     }
+    if (
+        jinguiAcceptedTransportH2RuntimeProofLaunchResponseTurnProgressBlocked(
+            evidence.responseTurnProgressReadout
+        )
+    ) {
+        missing.add("H2_RESPONSE_TURN_PROGRESS_PROOF")
+    }
     missing.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeProofLaunchResponseTurnProgressBlocked(
+    readout: JinguiAcceptedTransportH2RuntimeProgressReadout
+): Bool {
+    !readout.responseTurnProgressAccepted ||
+        !readout.h2RuntimeProofContinuationAllowed
 }
 
 func jinguiAcceptedTransportH2RuntimeProofLaunchProviderBlockers(
@@ -5740,6 +5780,25 @@ func jinguiAcceptedTransportH2RuntimeProofLaunchProviderBlockers(
     blockers.add("PROVIDER_ATTACH_GATE:${providerAttachGate.status}")
     for (blocker in providerAttachGate.blockers) {
         blockers.add("PROVIDER_ATTACH_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeProofLaunchProgressBlockers(
+    readout: JinguiAcceptedTransportH2RuntimeProgressReadout
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RESPONSE_TURN_PROGRESS:${readout.status}")
+    for (blocker in readout.blockers) {
+        blockers.add("RESPONSE_TURN_BLOCKER:${blocker}")
+    }
+    if (readout.closeReason != "") {
+        blockers.add("RESPONSE_TURN_CLOSE_REASON:${readout.closeReason}")
+    }
+    if (readout.remainingBodyByteCount > 0) {
+        blockers.add(
+            "RESPONSE_TURN_REMAINING_BODY_BYTES:${readout.remainingBodyByteCount}"
+        )
     }
     blockers.toArray()
 }

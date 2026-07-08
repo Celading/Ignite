@@ -117,7 +117,8 @@ func buildHq0437LaunchGateFromCurrentProviderBlocker(
             true,
             true,
             true,
-            true
+            true,
+            buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
         )
     )
 }
@@ -140,7 +141,8 @@ func buildHq0437ProviderReadyLaunchGate():
             true,
             true,
             true,
-            true
+            true,
+            buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
         )
     )
 }

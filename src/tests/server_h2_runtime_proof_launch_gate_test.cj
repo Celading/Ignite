@@ -13,7 +13,8 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
                 true,
                 true,
                 true,
-                true
+                true,
+                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
             )
         )
 
@@ -35,7 +36,8 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
                 true,
                 true,
                 true,
-                true
+                true,
+                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
             )
         )
 
@@ -56,7 +58,8 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
                 true,
                 false,
                 true,
-                false
+                false,
+                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
             )
         )
 
@@ -69,6 +72,42 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
     }
 
     @TestCase
+    public func testBlockedRuntimeProgressBlocksLaunchAfterProviderAndModelReady(): Unit {
+        let attachGate = buildProviderReadyAttachGate()
+        let launchGate = buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
+            JinguiAcceptedTransportH2RuntimeProofLaunchEvidence(
+                attachGate,
+                true,
+                true,
+                true,
+                true,
+                buildHq0737BlockedRuntimeProgressReadoutForLaunchTest()
+            )
+        )
+
+        @Assert(launchGate.status, "blocked-h2-response-turn-progress")
+        @Assert(
+            launchGate.decision,
+            "repair-response-turn-progress-before-runtime-launch"
+        )
+        @Assert(launchGate.diagnosticPacketAllowed, false)
+        @Assert(launchGate.h2RuntimeProofLaunchAllowed, false)
+        @Assert(launchGate.h2RuntimeClosureClaimAllowed, false)
+        @Assert(
+            launchGate.missingLaunchProofs[0],
+            "H2_RESPONSE_TURN_PROGRESS_PROOF"
+        )
+        @Assert(
+            launchGate.blockers[0],
+            "RESPONSE_TURN_PROGRESS:blocked-h2-response-turn-progress"
+        )
+        @Assert(
+            launchGate.blockers[1],
+            "RESPONSE_TURN_BLOCKER:RESPONSE_TURN_NOT_COMPLETED"
+        )
+    }
+
+    @TestCase
     public func testProviderReadyAndH2PreconditionsAllowRuntimeLaunchOnly(): Unit {
         let attachGate = buildProviderReadyAttachGate()
         let launchGate = buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
@@ -77,7 +116,8 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
                 true,
                 true,
                 true,
-                true
+                true,
+                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
             )
         )
 
@@ -118,6 +158,62 @@ func buildProviderReadyAttachGate(): ServerJinguiAcceptedTransportTlsAttachProof
             true,
             false,
             false
+        )
+    )
+}
+
+func buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest(
+): JinguiAcceptedTransportH2RuntimeProgressReadout {
+    buildJinguiAcceptedTransportH2RuntimeProgressReadout(
+        JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot(
+            "accepted-socket-h2-response-turn-scheduler",
+            "accepted-socket-response-writer-handoff",
+            "response-window-update-poller",
+            161,
+            1,
+            8,
+            1,
+            1,
+            1,
+            1,
+            0,
+            0,
+            1,
+            1,
+            1,
+            8,
+            1,
+            0,
+            true,
+            ""
+        )
+    )
+}
+
+func buildHq0737BlockedRuntimeProgressReadoutForLaunchTest(
+): JinguiAcceptedTransportH2RuntimeProgressReadout {
+    buildJinguiAcceptedTransportH2RuntimeProgressReadout(
+        JinguiAcceptedTransportH2ResponseTurnSchedulerTraceSnapshot(
+            "accepted-socket-h2-response-turn-scheduler",
+            "accepted-socket-response-writer-handoff",
+            "response-window-update-poller",
+            163,
+            1,
+            8,
+            1,
+            1,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            3,
+            1,
+            5,
+            false,
+            "h2-response-data-window-update-stall"
         )
     )
 }
