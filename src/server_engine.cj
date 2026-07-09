@@ -7768,6 +7768,283 @@ func jinguiAcceptedTransportH2ControlledProductionQueueMutationApplyNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2ExecutorHandoffEvidence {
+    public let h2ControlledProductionQueueMutationApplyBridge:
+        JinguiAcceptedTransportH2ControlledProductionQueueMutationApplyBridge
+    public let executorHandoffReceipt: IgniteExecutorHandoffReceipt
+
+    public init(
+        h2ControlledProductionQueueMutationApplyBridge:
+            JinguiAcceptedTransportH2ControlledProductionQueueMutationApplyBridge,
+        executorHandoffReceipt: IgniteExecutorHandoffReceipt
+    ) {
+        this.h2ControlledProductionQueueMutationApplyBridge =
+            h2ControlledProductionQueueMutationApplyBridge
+        this.executorHandoffReceipt = executorHandoffReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ExecutorHandoffBridge {
+    public let h2ExecutorHandoffAccepted: Bool
+    public let h2ControlledProductionQueueMutationApplyAccepted: Bool
+    public let executorHandoffAccepted: Bool
+    public let executorHandoffAllowed: Bool
+    public let boundedExecutorHandoffFollowupAllowed: Bool
+    public let liveExecutorEnqueueAllowed: Bool
+    public let runtimeTaskSpawnAllowed: Bool
+    public let handlerInvocationAllowed: Bool
+    public let requestContextMutationAllowed: Bool
+    public let responseWriteAllowed: Bool
+    public let transportCommitAllowed: Bool
+    public let liveServerWiringAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let executorHandoffMode: String
+    public let executorHandoffId: String
+    public let controlledMutationApplyId: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ExecutorHandoffAccepted: Bool,
+        h2ControlledProductionQueueMutationApplyAccepted: Bool,
+        executorHandoffAccepted: Bool,
+        executorHandoffAllowed: Bool,
+        boundedExecutorHandoffFollowupAllowed: Bool,
+        liveExecutorEnqueueAllowed: Bool,
+        runtimeTaskSpawnAllowed: Bool,
+        handlerInvocationAllowed: Bool,
+        requestContextMutationAllowed: Bool,
+        responseWriteAllowed: Bool,
+        transportCommitAllowed: Bool,
+        liveServerWiringAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        executorHandoffMode: String,
+        executorHandoffId: String,
+        controlledMutationApplyId: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ExecutorHandoffAccepted = h2ExecutorHandoffAccepted
+        this.h2ControlledProductionQueueMutationApplyAccepted =
+            h2ControlledProductionQueueMutationApplyAccepted
+        this.executorHandoffAccepted = executorHandoffAccepted
+        this.executorHandoffAllowed = executorHandoffAllowed
+        this.boundedExecutorHandoffFollowupAllowed =
+            boundedExecutorHandoffFollowupAllowed
+        this.liveExecutorEnqueueAllowed = liveExecutorEnqueueAllowed
+        this.runtimeTaskSpawnAllowed = runtimeTaskSpawnAllowed
+        this.handlerInvocationAllowed = handlerInvocationAllowed
+        this.requestContextMutationAllowed = requestContextMutationAllowed
+        this.responseWriteAllowed = responseWriteAllowed
+        this.transportCommitAllowed = transportCommitAllowed
+        this.liveServerWiringAllowed = liveServerWiringAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.executorHandoffMode = executorHandoffMode
+        this.executorHandoffId = executorHandoffId
+        this.controlledMutationApplyId = controlledMutationApplyId
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ExecutorHandoffBridge(
+    evidence: JinguiAcceptedTransportH2ExecutorHandoffEvidence
+): JinguiAcceptedTransportH2ExecutorHandoffBridge {
+    let h2ControlledApplyBridge =
+        evidence.h2ControlledProductionQueueMutationApplyBridge
+    let executorHandoffReceipt = evidence.executorHandoffReceipt
+    let nonClaims = jinguiAcceptedTransportH2ExecutorHandoffNonClaims()
+    if (
+        !h2ControlledApplyBridge.h2ControlledProductionQueueMutationApplyAccepted ||
+        !h2ControlledApplyBridge.boundedControlledProductionQueueMutationApplyFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ExecutorHandoffBridge(
+            false,
+            h2ControlledApplyBridge.h2ControlledProductionQueueMutationApplyAccepted,
+            executorHandoffReceipt.executorHandoffAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            executorHandoffReceipt.executorHandoffMode,
+            executorHandoffReceipt.executorHandoffId,
+            h2ControlledApplyBridge.controlledMutationApplyId,
+            h2ControlledApplyBridge.mutationApplyGateId,
+            h2ControlledApplyBridge.mutationCommitPlanId,
+            h2ControlledApplyBridge.mutationDryRunId,
+            h2ControlledApplyBridge.mutationGateId,
+            h2ControlledApplyBridge.commitBoundaryId,
+            h2ControlledApplyBridge.queueWriteId,
+            h2ControlledApplyBridge.queueDepthBefore,
+            h2ControlledApplyBridge.queueDepthAfter,
+            "blocked-h2-controlled-production-queue-mutation-apply-bridge",
+            "collect-accepted-h2-controlled-production-queue-mutation-apply-before-executor-handoff",
+            jinguiAcceptedTransportH2ExecutorHandoffControlledApplyBlockers(
+                h2ControlledApplyBridge
+            ),
+            nonClaims,
+            "repair H2 controlled production queue mutation apply before executor handoff; do not treat generic executor handoff receipts as H2 runtime readiness",
+            "QUIC must pass stream controlled mutation apply before stream executor handoff"
+        )
+    }
+    if (
+        !executorHandoffReceipt.executorHandoffAccepted ||
+        !executorHandoffReceipt.executorHandoffAllowed
+    ) {
+        return JinguiAcceptedTransportH2ExecutorHandoffBridge(
+            false,
+            true,
+            executorHandoffReceipt.executorHandoffAccepted,
+            executorHandoffReceipt.executorHandoffAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            executorHandoffReceipt.executorHandoffMode,
+            executorHandoffReceipt.executorHandoffId,
+            executorHandoffReceipt.controlledMutationApplyId,
+            executorHandoffReceipt.mutationApplyGateId,
+            executorHandoffReceipt.mutationCommitPlanId,
+            executorHandoffReceipt.mutationDryRunId,
+            executorHandoffReceipt.mutationGateId,
+            executorHandoffReceipt.commitBoundaryId,
+            executorHandoffReceipt.queueWriteId,
+            executorHandoffReceipt.queueDepthBefore,
+            executorHandoffReceipt.queueDepthAfter,
+            "blocked-executor-handoff-receipt",
+            "collect-accepted-executor-handoff-before-live-enqueue-proof",
+            jinguiAcceptedTransportH2ExecutorHandoffReceiptBlockers(
+                executorHandoffReceipt
+            ),
+            nonClaims,
+            executorHandoffReceipt.nextAction,
+            "QUIC must not consume rejected executor handoff receipts for stream live enqueue proof"
+        )
+    }
+
+    JinguiAcceptedTransportH2ExecutorHandoffBridge(
+        true,
+        true,
+        true,
+        executorHandoffReceipt.executorHandoffAllowed,
+        true,
+        executorHandoffReceipt.liveExecutorEnqueueAllowed,
+        executorHandoffReceipt.runtimeTaskSpawnAllowed,
+        executorHandoffReceipt.handlerInvocationAllowed,
+        executorHandoffReceipt.requestContextMutationAllowed,
+        executorHandoffReceipt.responseWriteAllowed,
+        executorHandoffReceipt.transportCommitAllowed,
+        executorHandoffReceipt.liveServerWiringAllowed,
+        false,
+        executorHandoffReceipt.executorHandoffMode,
+        executorHandoffReceipt.executorHandoffId,
+        executorHandoffReceipt.controlledMutationApplyId,
+        executorHandoffReceipt.mutationApplyGateId,
+        executorHandoffReceipt.mutationCommitPlanId,
+        executorHandoffReceipt.mutationDryRunId,
+        executorHandoffReceipt.mutationGateId,
+        executorHandoffReceipt.commitBoundaryId,
+        executorHandoffReceipt.queueWriteId,
+        executorHandoffReceipt.queueDepthBefore,
+        executorHandoffReceipt.queueDepthAfter,
+        "accepted-h2-executor-handoff-bridge",
+        "record-h2-executor-handoff-without-live-enqueue",
+        [],
+        nonClaims,
+        "next packet may plan an H2 live executor enqueue proof gate; runtime task spawn, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style controlled-apply plus executor-handoff separation before stream live enqueue proof"
+    )
+}
+
+func jinguiAcceptedTransportH2ExecutorHandoffControlledApplyBlockers(
+    bridge: JinguiAcceptedTransportH2ControlledProductionQueueMutationApplyBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "H2_CONTROLLED_PRODUCTION_QUEUE_MUTATION_APPLY:${bridge.status}"
+    )
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_CONTROLLED_PRODUCTION_QUEUE_MUTATION_APPLY_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ExecutorHandoffReceiptBlockers(
+    receipt: IgniteExecutorHandoffReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("EXECUTOR_HANDOFF:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("EXECUTOR_HANDOFF_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ExecutorHandoffNonClaims(): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_LIVE_EXECUTOR_ENQUEUE",
+        "NO_RUNTIME_TASK_SPAWN",
+        "NO_HANDLER_INVOCATION",
+        "NO_REQUEST_CONTEXT_MUTATION",
+        "NO_RESPONSE_WRITE",
+        "NO_TRANSPORT_COMMIT",
+        "NO_LIVE_SERVER_WIRING",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
