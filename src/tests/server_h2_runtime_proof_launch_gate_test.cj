@@ -1895,6 +1895,109 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[6], "NO_ACTUAL_LIVE_SERVER_WIRING")
     }
+
+    @TestCase
+    public func testH2DefaultEngineReadinessGateBlocksRejectedLiveBridge(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineReadinessGateBridge(
+                JinguiAcceptedTransportH2DefaultEngineReadinessGateEvidence(
+                    buildHq0754RejectedH2LiveServerWiringGateBridge(),
+                    buildHq0754AcceptedDefaultEngineReadinessGateReceipt()
+                )
+            )
+
+        @Assert(bridge.status, "blocked-h2-live-server-wiring-gate-bridge")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-live-server-wiring-gate-before-default-engine-readiness-gate"
+        )
+        @Assert(bridge.h2DefaultEngineReadinessGateAccepted, false)
+        @Assert(bridge.h2LiveServerWiringGateAccepted, false)
+        @Assert(bridge.defaultEngineFlipReadinessAccepted, true)
+        @Assert(bridge.boundedDefaultEngineReadinessFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_LIVE_SERVER_WIRING_GATE:blocked-h2-transport-commit-gate-bridge"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.publicReleaseAllowed, false)
+        @Assert(bridge.stdxRemovalAllowed, false)
+    }
+
+    @TestCase
+    public func testH2DefaultEngineReadinessGateBlocksRejectedReadiness(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineReadinessGateBridge(
+                JinguiAcceptedTransportH2DefaultEngineReadinessGateEvidence(
+                    buildHq0754AcceptedH2LiveServerWiringGateBridge(),
+                    buildHq0754BlockedDefaultEngineReadinessGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-default-engine-readiness-gate-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-default-engine-readiness-gate-before-default-engine-apply-gate"
+        )
+        @Assert(bridge.h2LiveServerWiringGateAccepted, true)
+        @Assert(bridge.defaultEngineFlipReadinessAccepted, false)
+        @Assert(bridge.defaultEngineFlipReadinessAllowed, false)
+        @Assert(bridge.boundedDefaultEngineReadinessFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "DEFAULT_ENGINE_READINESS_GATE:blocked-default-engine-flip-readiness-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "DEFAULT_ENGINE_READINESS_GATE_BLOCKER:ACTUAL_DEFAULT_ENGINE_FLIP_REQUESTED"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+    }
+
+    @TestCase
+    public func testH2DefaultEngineReadinessGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineReadinessGateBridge(
+                JinguiAcceptedTransportH2DefaultEngineReadinessGateEvidence(
+                    buildHq0754AcceptedH2LiveServerWiringGateBridge(),
+                    buildHq0754AcceptedDefaultEngineReadinessGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-default-engine-readiness-gate-bridge"
+        )
+        @Assert(bridge.h2DefaultEngineReadinessGateAccepted, true)
+        @Assert(bridge.h2LiveServerWiringGateAccepted, true)
+        @Assert(bridge.defaultEngineFlipReadinessAccepted, true)
+        @Assert(bridge.defaultEngineFlipReadinessAllowed, true)
+        @Assert(bridge.boundedDefaultEngineReadinessFollowupAllowed, true)
+        @Assert(
+            bridge.defaultEngineFlipReadinessMode,
+            "short-default-engine-flip-readiness-gate"
+        )
+        @Assert(
+            bridge.defaultEngineFlipReadinessGateId,
+            "h2-default-engine-readiness-gate-1"
+        )
+        @Assert(bridge.liveServerWiringGateId, "h2-live-server-wiring-gate-1")
+        @Assert(bridge.transportCommitGateId, "h2-transport-commit-gate-1")
+        @Assert(bridge.responseWriteGateId, "h2-response-write-gate-1")
+        @Assert(
+            bridge.requestContextMutationGateId,
+            "h2-request-context-mutation-gate-1"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.publicReleaseAllowed, false)
+        @Assert(bridge.stdxRemovalAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_ACTUAL_DEFAULT_ENGINE_FLIP")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -3308,5 +3411,91 @@ func buildHq0753BlockedLiveServerWiringGateReceipt(
     buildIgniteLiveServerWiringGateReceipt(
         buildHq0752AcceptedTransportCommitGateReceipt(),
         buildHq0753BlockedLiveServerWiringGateRequest()
+    )
+}
+
+func buildHq0754RejectedH2LiveServerWiringGateBridge(
+): JinguiAcceptedTransportH2LiveServerWiringGateBridge {
+    buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+        JinguiAcceptedTransportH2LiveServerWiringGateEvidence(
+            buildHq0753RejectedH2TransportCommitGateBridge(),
+            buildHq0753AcceptedLiveServerWiringGateReceipt()
+        )
+    )
+}
+
+func buildHq0754AcceptedH2LiveServerWiringGateBridge(
+): JinguiAcceptedTransportH2LiveServerWiringGateBridge {
+    buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+        JinguiAcceptedTransportH2LiveServerWiringGateEvidence(
+            buildHq0753AcceptedH2TransportCommitGateBridge(),
+            buildHq0753AcceptedLiveServerWiringGateReceipt()
+        )
+    )
+}
+
+func buildHq0754AcceptedDefaultEngineReadinessGateRequest(
+): IgniteDefaultEngineFlipReadinessGateRequest {
+    IgniteDefaultEngineFlipReadinessGateRequest(
+        "h2-default-engine-readiness-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0754BlockedDefaultEngineReadinessGateRequest(
+): IgniteDefaultEngineFlipReadinessGateRequest {
+    IgniteDefaultEngineFlipReadinessGateRequest(
+        "h2-default-engine-readiness-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0754AcceptedDefaultEngineReadinessGateReceipt(
+): IgniteDefaultEngineFlipReadinessGateReceipt {
+    buildIgniteDefaultEngineFlipReadinessGateReceipt(
+        buildHq0753AcceptedLiveServerWiringGateReceipt(),
+        buildHq0754AcceptedDefaultEngineReadinessGateRequest()
+    )
+}
+
+func buildHq0754BlockedDefaultEngineReadinessGateReceipt(
+): IgniteDefaultEngineFlipReadinessGateReceipt {
+    buildIgniteDefaultEngineFlipReadinessGateReceipt(
+        buildHq0753AcceptedLiveServerWiringGateReceipt(),
+        buildHq0754BlockedDefaultEngineReadinessGateRequest()
     )
 }
