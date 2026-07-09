@@ -1316,6 +1316,114 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[1], "NO_ACTUAL_RUNTIME_TASK_SPAWN")
     }
+
+    @TestCase
+    public func testH2HandlerInvocationGateBlocksRejectedRuntimeBridge(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2HandlerInvocationGateBridge(
+            JinguiAcceptedTransportH2HandlerInvocationGateEvidence(
+                buildHq0749RejectedH2RuntimeTaskSpawnGateBridge(),
+                buildHq0749AcceptedHandlerInvocationGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "blocked-h2-runtime-task-spawn-gate-bridge")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-runtime-task-spawn-gate-before-handler-invocation-gate"
+        )
+        @Assert(bridge.h2HandlerInvocationGateAccepted, false)
+        @Assert(bridge.h2RuntimeTaskSpawnGateAccepted, false)
+        @Assert(bridge.boundedHandlerInvocationGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_TASK_SPAWN_GATE:blocked-runtime-task-spawn-gate-receipt"
+        )
+        @Assert(bridge.handlerInvocationGateAllowed, false)
+        @Assert(bridge.actualHandlerInvocationAllowed, false)
+        @Assert(bridge.requestContextMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2HandlerInvocationGateBlocksRejectedHandlerGate(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2HandlerInvocationGateBridge(
+            JinguiAcceptedTransportH2HandlerInvocationGateEvidence(
+                buildHq0749AcceptedH2RuntimeTaskSpawnGateBridge(),
+                buildHq0749BlockedHandlerInvocationGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "blocked-handler-invocation-gate-receipt")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-handler-invocation-gate-before-request-context-mutation-gate"
+        )
+        @Assert(bridge.h2RuntimeTaskSpawnGateAccepted, true)
+        @Assert(bridge.handlerInvocationGateAccepted, false)
+        @Assert(bridge.handlerInvocationGateAllowed, false)
+        @Assert(
+            bridge.boundedHandlerInvocationGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "HANDLER_INVOCATION_GATE:blocked-handler-invocation-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "HANDLER_INVOCATION_GATE_BLOCKER:ACTUAL_HANDLER_INVOCATION_REQUESTED"
+        )
+        @Assert(bridge.actualHandlerInvocationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2HandlerInvocationGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2HandlerInvocationGateBridge(
+            JinguiAcceptedTransportH2HandlerInvocationGateEvidence(
+                buildHq0749AcceptedH2RuntimeTaskSpawnGateBridge(),
+                buildHq0749AcceptedHandlerInvocationGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "accepted-h2-handler-invocation-gate-bridge")
+        @Assert(bridge.h2HandlerInvocationGateAccepted, true)
+        @Assert(bridge.h2RuntimeTaskSpawnGateAccepted, true)
+        @Assert(bridge.handlerInvocationGateAccepted, true)
+        @Assert(bridge.handlerInvocationGateAllowed, true)
+        @Assert(bridge.boundedHandlerInvocationGateFollowupAllowed, true)
+        @Assert(bridge.handlerInvocationGateMode, "short-handler-invocation-gate")
+        @Assert(bridge.handlerInvocationGateId, "h2-handler-invocation-gate-1")
+        @Assert(bridge.runtimeSpawnGateId, "h2-runtime-spawn-gate-1")
+        @Assert(bridge.liveEnqueueProofId, "h2-live-enqueue-proof-1")
+        @Assert(bridge.executorHandoffId, "h2-executor-handoff-1")
+        @Assert(
+            bridge.controlledMutationApplyId,
+            "h2-controlled-production-queue-mutation-apply-1"
+        )
+        @Assert(
+            bridge.mutationApplyGateId,
+            "h2-production-queue-mutation-apply-gate-1"
+        )
+        @Assert(
+            bridge.mutationCommitPlanId,
+            "h2-production-queue-mutation-commit-plan-1"
+        )
+        @Assert(bridge.mutationDryRunId, "h2-production-queue-mutation-dry-run-1")
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+        @Assert(bridge.actualHandlerInvocationAllowed, false)
+        @Assert(bridge.requestContextMutationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+        @Assert(bridge.transportCommitAllowed, false)
+        @Assert(bridge.liveServerWiringAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[2], "NO_ACTUAL_HANDLER_INVOCATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -2325,5 +2433,87 @@ func buildHq0748BlockedRuntimeTaskSpawnGateReceipt(
     buildIgniteRuntimeTaskSpawnGateReceipt(
         buildHq0747AcceptedLiveExecutorEnqueueProofGateReceipt(),
         buildHq0748BlockedRuntimeTaskSpawnGateRequest()
+    )
+}
+
+func buildHq0749RejectedH2RuntimeTaskSpawnGateBridge(
+): JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+        JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence(
+            buildHq0748AcceptedH2LiveExecutorEnqueueProofGateBridge(),
+            buildHq0748BlockedRuntimeTaskSpawnGateReceipt()
+        )
+    )
+}
+
+func buildHq0749AcceptedH2RuntimeTaskSpawnGateBridge(
+): JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+        JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence(
+            buildHq0748AcceptedH2LiveExecutorEnqueueProofGateBridge(),
+            buildHq0748AcceptedRuntimeTaskSpawnGateReceipt()
+        )
+    )
+}
+
+func buildHq0749AcceptedHandlerInvocationGateRequest(
+): IgniteHandlerInvocationGateRequest {
+    IgniteHandlerInvocationGateRequest(
+        "h2-handler-invocation-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0749BlockedHandlerInvocationGateRequest(
+): IgniteHandlerInvocationGateRequest {
+    IgniteHandlerInvocationGateRequest(
+        "h2-handler-invocation-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0749AcceptedHandlerInvocationGateReceipt(
+): IgniteHandlerInvocationGateReceipt {
+    buildIgniteHandlerInvocationGateReceipt(
+        buildHq0748AcceptedRuntimeTaskSpawnGateReceipt(),
+        buildHq0749AcceptedHandlerInvocationGateRequest()
+    )
+}
+
+func buildHq0749BlockedHandlerInvocationGateReceipt(
+): IgniteHandlerInvocationGateReceipt {
+    buildIgniteHandlerInvocationGateReceipt(
+        buildHq0748AcceptedRuntimeTaskSpawnGateReceipt(),
+        buildHq0749BlockedHandlerInvocationGateRequest()
     )
 }
