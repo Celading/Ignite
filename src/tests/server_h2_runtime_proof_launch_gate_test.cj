@@ -1207,6 +1207,115 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[1], "NO_PRODUCTION_QUEUE_MUTATION")
     }
+
+    @TestCase
+    public func testH2RuntimeTaskSpawnGateBlocksRejectedLiveEnqueueBridge(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+            JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence(
+                buildHq0748RejectedH2LiveExecutorEnqueueProofGateBridge(),
+                buildHq0748AcceptedRuntimeTaskSpawnGateReceipt()
+            )
+        )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-live-executor-enqueue-proof-gate-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-live-enqueue-proof-gate-before-runtime-task-spawn-gate"
+        )
+        @Assert(bridge.h2RuntimeTaskSpawnGateAccepted, false)
+        @Assert(bridge.h2LiveExecutorEnqueueProofGateAccepted, false)
+        @Assert(bridge.boundedRuntimeTaskSpawnGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_LIVE_EXECUTOR_ENQUEUE_PROOF_GATE:blocked-live-executor-enqueue-proof-gate-receipt"
+        )
+        @Assert(bridge.runtimeTaskSpawnGateAllowed, false)
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+        @Assert(bridge.handlerInvocationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RuntimeTaskSpawnGateBlocksRejectedRuntimeGate(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+            JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence(
+                buildHq0748AcceptedH2LiveExecutorEnqueueProofGateBridge(),
+                buildHq0748BlockedRuntimeTaskSpawnGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "blocked-runtime-task-spawn-gate-receipt")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-runtime-task-spawn-gate-before-handler-invocation-gate"
+        )
+        @Assert(bridge.h2LiveExecutorEnqueueProofGateAccepted, true)
+        @Assert(bridge.runtimeTaskSpawnGateAccepted, false)
+        @Assert(bridge.runtimeTaskSpawnGateAllowed, false)
+        @Assert(
+            bridge.boundedRuntimeTaskSpawnGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_TASK_SPAWN_GATE:blocked-runtime-task-spawn-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_TASK_SPAWN_GATE_BLOCKER:ACTUAL_RUNTIME_TASK_SPAWN_REQUESTED"
+        )
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RuntimeTaskSpawnGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+            JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence(
+                buildHq0748AcceptedH2LiveExecutorEnqueueProofGateBridge(),
+                buildHq0748AcceptedRuntimeTaskSpawnGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "accepted-h2-runtime-task-spawn-gate-bridge")
+        @Assert(bridge.h2RuntimeTaskSpawnGateAccepted, true)
+        @Assert(bridge.h2LiveExecutorEnqueueProofGateAccepted, true)
+        @Assert(bridge.runtimeTaskSpawnGateAccepted, true)
+        @Assert(bridge.runtimeTaskSpawnGateAllowed, true)
+        @Assert(bridge.boundedRuntimeTaskSpawnGateFollowupAllowed, true)
+        @Assert(bridge.runtimeTaskSpawnGateMode, "short-runtime-task-spawn-gate")
+        @Assert(bridge.runtimeSpawnGateId, "h2-runtime-spawn-gate-1")
+        @Assert(bridge.liveEnqueueProofId, "h2-live-enqueue-proof-1")
+        @Assert(bridge.executorHandoffId, "h2-executor-handoff-1")
+        @Assert(
+            bridge.controlledMutationApplyId,
+            "h2-controlled-production-queue-mutation-apply-1"
+        )
+        @Assert(
+            bridge.mutationApplyGateId,
+            "h2-production-queue-mutation-apply-gate-1"
+        )
+        @Assert(
+            bridge.mutationCommitPlanId,
+            "h2-production-queue-mutation-commit-plan-1"
+        )
+        @Assert(bridge.mutationDryRunId, "h2-production-queue-mutation-dry-run-1")
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+        @Assert(bridge.handlerInvocationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+        @Assert(bridge.transportCommitAllowed, false)
+        @Assert(bridge.liveServerWiringAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_ACTUAL_RUNTIME_TASK_SPAWN")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -2134,5 +2243,87 @@ func buildHq0747BlockedLiveExecutorEnqueueProofGateReceipt(
     buildIgniteLiveExecutorEnqueueProofGateReceipt(
         buildHq0746AcceptedExecutorHandoffReceipt(),
         buildHq0747BlockedLiveExecutorEnqueueProofGateRequest()
+    )
+}
+
+func buildHq0748RejectedH2LiveExecutorEnqueueProofGateBridge(
+): JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge {
+    buildJinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge(
+        JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateEvidence(
+            buildHq0747AcceptedH2ExecutorHandoffBridge(),
+            buildHq0747BlockedLiveExecutorEnqueueProofGateReceipt()
+        )
+    )
+}
+
+func buildHq0748AcceptedH2LiveExecutorEnqueueProofGateBridge(
+): JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge {
+    buildJinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge(
+        JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateEvidence(
+            buildHq0747AcceptedH2ExecutorHandoffBridge(),
+            buildHq0747AcceptedLiveExecutorEnqueueProofGateReceipt()
+        )
+    )
+}
+
+func buildHq0748AcceptedRuntimeTaskSpawnGateRequest(
+): IgniteRuntimeTaskSpawnGateRequest {
+    IgniteRuntimeTaskSpawnGateRequest(
+        "h2-runtime-spawn-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0748BlockedRuntimeTaskSpawnGateRequest(
+): IgniteRuntimeTaskSpawnGateRequest {
+    IgniteRuntimeTaskSpawnGateRequest(
+        "h2-runtime-spawn-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0748AcceptedRuntimeTaskSpawnGateReceipt(
+): IgniteRuntimeTaskSpawnGateReceipt {
+    buildIgniteRuntimeTaskSpawnGateReceipt(
+        buildHq0747AcceptedLiveExecutorEnqueueProofGateReceipt(),
+        buildHq0748AcceptedRuntimeTaskSpawnGateRequest()
+    )
+}
+
+func buildHq0748BlockedRuntimeTaskSpawnGateReceipt(
+): IgniteRuntimeTaskSpawnGateReceipt {
+    buildIgniteRuntimeTaskSpawnGateReceipt(
+        buildHq0747AcceptedLiveExecutorEnqueueProofGateReceipt(),
+        buildHq0748BlockedRuntimeTaskSpawnGateRequest()
     )
 }

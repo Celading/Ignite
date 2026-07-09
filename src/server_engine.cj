@@ -8330,6 +8330,291 @@ func jinguiAcceptedTransportH2LiveExecutorEnqueueProofGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence {
+    public let h2LiveExecutorEnqueueProofGateBridge:
+        JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge
+    public let runtimeTaskSpawnGateReceipt:
+        IgniteRuntimeTaskSpawnGateReceipt
+
+    public init(
+        h2LiveExecutorEnqueueProofGateBridge:
+            JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge,
+        runtimeTaskSpawnGateReceipt: IgniteRuntimeTaskSpawnGateReceipt
+    ) {
+        this.h2LiveExecutorEnqueueProofGateBridge =
+            h2LiveExecutorEnqueueProofGateBridge
+        this.runtimeTaskSpawnGateReceipt = runtimeTaskSpawnGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge {
+    public let h2RuntimeTaskSpawnGateAccepted: Bool
+    public let h2LiveExecutorEnqueueProofGateAccepted: Bool
+    public let runtimeTaskSpawnGateAccepted: Bool
+    public let runtimeTaskSpawnGateAllowed: Bool
+    public let boundedRuntimeTaskSpawnGateFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let handlerInvocationAllowed: Bool
+    public let requestContextMutationAllowed: Bool
+    public let responseWriteAllowed: Bool
+    public let transportCommitAllowed: Bool
+    public let liveServerWiringAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let runtimeTaskSpawnGateMode: String
+    public let runtimeSpawnGateId: String
+    public let liveEnqueueProofId: String
+    public let executorHandoffId: String
+    public let controlledMutationApplyId: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeTaskSpawnGateAccepted: Bool,
+        h2LiveExecutorEnqueueProofGateAccepted: Bool,
+        runtimeTaskSpawnGateAccepted: Bool,
+        runtimeTaskSpawnGateAllowed: Bool,
+        boundedRuntimeTaskSpawnGateFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        handlerInvocationAllowed: Bool,
+        requestContextMutationAllowed: Bool,
+        responseWriteAllowed: Bool,
+        transportCommitAllowed: Bool,
+        liveServerWiringAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        runtimeTaskSpawnGateMode: String,
+        runtimeSpawnGateId: String,
+        liveEnqueueProofId: String,
+        executorHandoffId: String,
+        controlledMutationApplyId: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeTaskSpawnGateAccepted = h2RuntimeTaskSpawnGateAccepted
+        this.h2LiveExecutorEnqueueProofGateAccepted =
+            h2LiveExecutorEnqueueProofGateAccepted
+        this.runtimeTaskSpawnGateAccepted = runtimeTaskSpawnGateAccepted
+        this.runtimeTaskSpawnGateAllowed = runtimeTaskSpawnGateAllowed
+        this.boundedRuntimeTaskSpawnGateFollowupAllowed =
+            boundedRuntimeTaskSpawnGateFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.handlerInvocationAllowed = handlerInvocationAllowed
+        this.requestContextMutationAllowed = requestContextMutationAllowed
+        this.responseWriteAllowed = responseWriteAllowed
+        this.transportCommitAllowed = transportCommitAllowed
+        this.liveServerWiringAllowed = liveServerWiringAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.runtimeTaskSpawnGateMode = runtimeTaskSpawnGateMode
+        this.runtimeSpawnGateId = runtimeSpawnGateId
+        this.liveEnqueueProofId = liveEnqueueProofId
+        this.executorHandoffId = executorHandoffId
+        this.controlledMutationApplyId = controlledMutationApplyId
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeTaskSpawnGateEvidence
+): JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge {
+    let h2LiveEnqueueBridge = evidence.h2LiveExecutorEnqueueProofGateBridge
+    let runtimeTaskSpawnGateReceipt = evidence.runtimeTaskSpawnGateReceipt
+    let nonClaims = jinguiAcceptedTransportH2RuntimeTaskSpawnGateNonClaims()
+    if (
+        !h2LiveEnqueueBridge.h2LiveExecutorEnqueueProofGateAccepted ||
+        !h2LiveEnqueueBridge.boundedLiveExecutorEnqueueProofGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+            false,
+            h2LiveEnqueueBridge.h2LiveExecutorEnqueueProofGateAccepted,
+            runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateMode,
+            runtimeTaskSpawnGateReceipt.runtimeSpawnGateId,
+            h2LiveEnqueueBridge.liveEnqueueProofId,
+            h2LiveEnqueueBridge.executorHandoffId,
+            h2LiveEnqueueBridge.controlledMutationApplyId,
+            h2LiveEnqueueBridge.mutationApplyGateId,
+            h2LiveEnqueueBridge.mutationCommitPlanId,
+            h2LiveEnqueueBridge.mutationDryRunId,
+            h2LiveEnqueueBridge.mutationGateId,
+            h2LiveEnqueueBridge.commitBoundaryId,
+            h2LiveEnqueueBridge.queueWriteId,
+            h2LiveEnqueueBridge.queueDepthBefore,
+            h2LiveEnqueueBridge.queueDepthAfter,
+            "blocked-h2-live-executor-enqueue-proof-gate-bridge",
+            "collect-accepted-h2-live-enqueue-proof-gate-before-runtime-task-spawn-gate",
+            jinguiAcceptedTransportH2RuntimeTaskSpawnGateLiveEnqueueBlockers(
+                h2LiveEnqueueBridge
+            ),
+            nonClaims,
+            "repair H2 live enqueue proof gate before runtime task spawn gate; do not treat generic runtime spawn gate receipts as H2 runtime readiness",
+            "QUIC must pass stream live enqueue proof gate before stream runtime task spawn gate"
+        )
+    }
+    if (
+        !runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAccepted ||
+        !runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+            false,
+            true,
+            runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAccepted,
+            runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateMode,
+            runtimeTaskSpawnGateReceipt.runtimeSpawnGateId,
+            runtimeTaskSpawnGateReceipt.liveEnqueueProofId,
+            runtimeTaskSpawnGateReceipt.executorHandoffId,
+            runtimeTaskSpawnGateReceipt.controlledMutationApplyId,
+            runtimeTaskSpawnGateReceipt.mutationApplyGateId,
+            runtimeTaskSpawnGateReceipt.mutationCommitPlanId,
+            runtimeTaskSpawnGateReceipt.mutationDryRunId,
+            runtimeTaskSpawnGateReceipt.mutationGateId,
+            runtimeTaskSpawnGateReceipt.commitBoundaryId,
+            runtimeTaskSpawnGateReceipt.queueWriteId,
+            runtimeTaskSpawnGateReceipt.queueDepthBefore,
+            runtimeTaskSpawnGateReceipt.queueDepthAfter,
+            "blocked-runtime-task-spawn-gate-receipt",
+            "collect-accepted-runtime-task-spawn-gate-before-handler-invocation-gate",
+            jinguiAcceptedTransportH2RuntimeTaskSpawnGateReceiptBlockers(
+                runtimeTaskSpawnGateReceipt
+            ),
+            nonClaims,
+            runtimeTaskSpawnGateReceipt.nextAction,
+            "QUIC must not consume rejected runtime task spawn gate receipts for stream handler invocation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeTaskSpawnGateBridge(
+        true,
+        true,
+        true,
+        runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateAllowed,
+        true,
+        runtimeTaskSpawnGateReceipt.productionQueueMutationAllowed,
+        runtimeTaskSpawnGateReceipt.actualRuntimeTaskSpawnAllowed,
+        runtimeTaskSpawnGateReceipt.handlerInvocationAllowed,
+        runtimeTaskSpawnGateReceipt.requestContextMutationAllowed,
+        runtimeTaskSpawnGateReceipt.responseWriteAllowed,
+        runtimeTaskSpawnGateReceipt.transportCommitAllowed,
+        runtimeTaskSpawnGateReceipt.liveServerWiringAllowed,
+        false,
+        runtimeTaskSpawnGateReceipt.runtimeTaskSpawnGateMode,
+        runtimeTaskSpawnGateReceipt.runtimeSpawnGateId,
+        runtimeTaskSpawnGateReceipt.liveEnqueueProofId,
+        runtimeTaskSpawnGateReceipt.executorHandoffId,
+        runtimeTaskSpawnGateReceipt.controlledMutationApplyId,
+        runtimeTaskSpawnGateReceipt.mutationApplyGateId,
+        runtimeTaskSpawnGateReceipt.mutationCommitPlanId,
+        runtimeTaskSpawnGateReceipt.mutationDryRunId,
+        runtimeTaskSpawnGateReceipt.mutationGateId,
+        runtimeTaskSpawnGateReceipt.commitBoundaryId,
+        runtimeTaskSpawnGateReceipt.queueWriteId,
+        runtimeTaskSpawnGateReceipt.queueDepthBefore,
+        runtimeTaskSpawnGateReceipt.queueDepthAfter,
+        "accepted-h2-runtime-task-spawn-gate-bridge",
+        "record-h2-runtime-task-spawn-gate-without-actual-task-spawn",
+        [],
+        nonClaims,
+        "next packet may plan an H2 handler invocation gate; actual spawn, response write, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style live-enqueue-proof plus runtime-spawn-gate separation before stream handler invocation gate"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeTaskSpawnGateLiveEnqueueBlockers(
+    bridge: JinguiAcceptedTransportH2LiveExecutorEnqueueProofGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_LIVE_EXECUTOR_ENQUEUE_PROOF_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_LIVE_EXECUTOR_ENQUEUE_PROOF_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeTaskSpawnGateReceiptBlockers(
+    receipt: IgniteRuntimeTaskSpawnGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_TASK_SPAWN_GATE:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_TASK_SPAWN_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeTaskSpawnGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_RUNTIME_TASK_SPAWN",
+        "NO_HANDLER_INVOCATION",
+        "NO_REQUEST_CONTEXT_MUTATION",
+        "NO_RESPONSE_WRITE",
+        "NO_TRANSPORT_COMMIT",
+        "NO_LIVE_SERVER_WIRING",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
