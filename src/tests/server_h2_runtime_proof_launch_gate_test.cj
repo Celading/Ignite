@@ -3219,6 +3219,324 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitDryRunBlocksRejectedCommitPlanBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunEvidence(
+                    buildHq0764RejectedH2RuntimeDefaultPathMutationCommitPlanBridge(),
+                    buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-commit-plan-bridge"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitDryRunAccepted, false)
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitPlanAccepted,
+            false
+        )
+        @Assert(bridge.runtimeDefaultPathMutationCommitDryRunAccepted, true)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCommitDryRunFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_PLAN:blocked-h2-controlled-runtime-default-path-mutation-apply-bridge"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitDryRunBlocksRejectedDryRunReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitPlanBridge(),
+                    buildHq0764BlockedRuntimeDefaultPathMutationCommitDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-commit-dry-run-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitPlanAccepted,
+            true
+        )
+        @Assert(bridge.runtimeDefaultPathMutationCommitDryRunAccepted, false)
+        @Assert(bridge.runtimeDefaultPathMutationCommitDryRunAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_DRY_RUN:blocked-runtime-default-path-mutation-commit-dry-run-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_DRY_RUN_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitDryRunAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitPlanBridge(),
+                    buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-commit-dry-run-bridge"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitDryRunAccepted, true)
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitPlanAccepted,
+            true
+        )
+        @Assert(bridge.runtimeDefaultPathMutationCommitDryRunAccepted, true)
+        @Assert(bridge.runtimeDefaultPathMutationCommitDryRunAllowed, true)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCommitDryRunFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCommitDryRunMode,
+            "short-runtime-default-path-mutation-commit-dry-run"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCommitDryRunId,
+            "h2-runtime-default-path-mutation-commit-dry-run-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitApplyGateBlocksRejectedCommitDryRunBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateEvidence(
+                    buildHq0764RejectedH2RuntimeDefaultPathMutationCommitDryRunBridge(),
+                    buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-commit-dry-run-bridge"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitApplyGateAccepted, false)
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitDryRunAccepted, false)
+        @Assert(
+            bridge.runtimeDefaultPathMutationCommitApplyGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCommitApplyGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_DRY_RUN:blocked-h2-runtime-default-path-mutation-commit-plan-bridge"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitApplyGateBlocksRejectedApplyGateReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitDryRunBridge(),
+                    buildHq0764BlockedRuntimeDefaultPathMutationCommitApplyGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-commit-apply-gate-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitDryRunAccepted,
+            true
+        )
+        @Assert(bridge.runtimeDefaultPathMutationCommitApplyGateAccepted, false)
+        @Assert(bridge.runtimeDefaultPathMutationCommitApplyGateAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_APPLY_GATE:blocked-runtime-default-path-mutation-commit-apply-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_APPLY_GATE_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCommitApplyGateAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitDryRunBridge(),
+                    buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-commit-apply-gate-bridge"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitApplyGateAccepted, true)
+        @Assert(bridge.h2RuntimeDefaultPathMutationCommitDryRunAccepted, true)
+        @Assert(bridge.runtimeDefaultPathMutationCommitApplyGateAccepted, true)
+        @Assert(bridge.runtimeDefaultPathMutationCommitApplyGateAllowed, true)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCommitApplyGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCommitApplyGateMode,
+            "short-runtime-default-path-mutation-commit-apply-gate"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCommitApplyGateId,
+            "h2-runtime-default-path-mutation-commit-apply-gate-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationCommitApplyBlocksRejectedApplyGateBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyEvidence(
+                    buildHq0764RejectedH2RuntimeDefaultPathMutationCommitApplyGateBridge(),
+                    buildHq0764AcceptedControlledRuntimeDefaultPathMutationCommitApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-commit-apply-gate-bridge"
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationCommitApplyAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitApplyGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationCommitApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedControlledRuntimeDefaultPathMutationCommitApplyFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_APPLY_GATE:blocked-h2-runtime-default-path-mutation-commit-dry-run-bridge"
+        )
+    }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationCommitApplyBlocksRejectedControlledApplyReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitApplyGateBridge(),
+                    buildHq0764BlockedControlledRuntimeDefaultPathMutationCommitApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-controlled-runtime-default-path-mutation-commit-apply-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitApplyGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationCommitApplyAccepted,
+            false
+        )
+        @Assert(bridge.controlledRuntimeDefaultPathMutationCommitApplyAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_APPLY:blocked-controlled-runtime-default-path-mutation-commit-apply-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_APPLY_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationCommitApplyAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationCommitApplyEvidence(
+                    buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitApplyGateBridge(),
+                    buildHq0764AcceptedControlledRuntimeDefaultPathMutationCommitApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-controlled-runtime-default-path-mutation-commit-apply-bridge"
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationCommitApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCommitApplyGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationCommitApplyAccepted,
+            true
+        )
+        @Assert(bridge.controlledRuntimeDefaultPathMutationCommitApplyAllowed, true)
+        @Assert(
+            bridge.boundedControlledRuntimeDefaultPathMutationCommitApplyFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationCommitApplyMode,
+            "short-controlled-runtime-default-path-mutation-commit-apply"
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationCommitApplyId,
+            "h2-controlled-runtime-default-path-mutation-commit-apply-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -5720,5 +6038,275 @@ func buildHq0763BlockedRuntimeDefaultPathMutationCommitPlanReceipt(
     buildIgniteRuntimeDefaultPathMutationCommitPlanReceipt(
         buildHq0763AcceptedControlledRuntimeDefaultPathMutationApplyReceipt(),
         buildHq0763BlockedRuntimeDefaultPathMutationCommitPlanRequest()
+    )
+}
+
+func buildHq0764RejectedH2RuntimeDefaultPathMutationCommitPlanBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanEvidence(
+            buildHq0763RejectedH2ControlledRuntimeDefaultPathMutationApplyBridge(),
+            buildHq0763AcceptedRuntimeDefaultPathMutationCommitPlanReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitPlanBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanEvidence(
+            buildHq0763AcceptedH2ControlledRuntimeDefaultPathMutationApplyBridge(),
+            buildHq0763AcceptedRuntimeDefaultPathMutationCommitPlanReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunRequest(
+): IgniteRuntimeDefaultPathMutationCommitDryRunRequest {
+    IgniteRuntimeDefaultPathMutationCommitDryRunRequest(
+        "h2-runtime-default-path-mutation-commit-dry-run-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764BlockedRuntimeDefaultPathMutationCommitDryRunRequest(
+): IgniteRuntimeDefaultPathMutationCommitDryRunRequest {
+    IgniteRuntimeDefaultPathMutationCommitDryRunRequest(
+        "h2-runtime-default-path-mutation-commit-dry-run-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt(
+): IgniteRuntimeDefaultPathMutationCommitDryRunReceipt {
+    buildIgniteRuntimeDefaultPathMutationCommitDryRunReceipt(
+        buildHq0763AcceptedRuntimeDefaultPathMutationCommitPlanReceipt(),
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunRequest()
+    )
+}
+
+func buildHq0764BlockedRuntimeDefaultPathMutationCommitDryRunReceipt(
+): IgniteRuntimeDefaultPathMutationCommitDryRunReceipt {
+    buildIgniteRuntimeDefaultPathMutationCommitDryRunReceipt(
+        buildHq0763AcceptedRuntimeDefaultPathMutationCommitPlanReceipt(),
+        buildHq0764BlockedRuntimeDefaultPathMutationCommitDryRunRequest()
+    )
+}
+
+func buildHq0764RejectedH2RuntimeDefaultPathMutationCommitDryRunBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunEvidence(
+            buildHq0764RejectedH2RuntimeDefaultPathMutationCommitPlanBridge(),
+            buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitDryRunBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitDryRunEvidence(
+            buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitPlanBridge(),
+            buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateRequest(
+): IgniteRuntimeDefaultPathMutationCommitApplyGateRequest {
+    IgniteRuntimeDefaultPathMutationCommitApplyGateRequest(
+        "h2-runtime-default-path-mutation-commit-apply-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764BlockedRuntimeDefaultPathMutationCommitApplyGateRequest(
+): IgniteRuntimeDefaultPathMutationCommitApplyGateRequest {
+    IgniteRuntimeDefaultPathMutationCommitApplyGateRequest(
+        "h2-runtime-default-path-mutation-commit-apply-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt(
+): IgniteRuntimeDefaultPathMutationCommitApplyGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationCommitApplyGateReceipt(
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt(),
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateRequest()
+    )
+}
+
+func buildHq0764BlockedRuntimeDefaultPathMutationCommitApplyGateReceipt(
+): IgniteRuntimeDefaultPathMutationCommitApplyGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationCommitApplyGateReceipt(
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitDryRunReceipt(),
+        buildHq0764BlockedRuntimeDefaultPathMutationCommitApplyGateRequest()
+    )
+}
+
+func buildHq0764RejectedH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateEvidence(
+            buildHq0764RejectedH2RuntimeDefaultPathMutationCommitDryRunBridge(),
+            buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitApplyGateEvidence(
+            buildHq0764AcceptedH2RuntimeDefaultPathMutationCommitDryRunBridge(),
+            buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt()
+        )
+    )
+}
+
+func buildHq0764AcceptedControlledRuntimeDefaultPathMutationCommitApplyRequest(
+): IgniteControlledRuntimeDefaultPathMutationCommitApplyRequest {
+    IgniteControlledRuntimeDefaultPathMutationCommitApplyRequest(
+        "h2-controlled-runtime-default-path-mutation-commit-apply-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764BlockedControlledRuntimeDefaultPathMutationCommitApplyRequest(
+): IgniteControlledRuntimeDefaultPathMutationCommitApplyRequest {
+    IgniteControlledRuntimeDefaultPathMutationCommitApplyRequest(
+        "h2-controlled-runtime-default-path-mutation-commit-apply-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0764AcceptedControlledRuntimeDefaultPathMutationCommitApplyReceipt(
+): IgniteControlledRuntimeDefaultPathMutationCommitApplyReceipt {
+    buildIgniteControlledRuntimeDefaultPathMutationCommitApplyReceipt(
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt(),
+        buildHq0764AcceptedControlledRuntimeDefaultPathMutationCommitApplyRequest()
+    )
+}
+
+func buildHq0764BlockedControlledRuntimeDefaultPathMutationCommitApplyReceipt(
+): IgniteControlledRuntimeDefaultPathMutationCommitApplyReceipt {
+    buildIgniteControlledRuntimeDefaultPathMutationCommitApplyReceipt(
+        buildHq0764AcceptedRuntimeDefaultPathMutationCommitApplyGateReceipt(),
+        buildHq0764BlockedControlledRuntimeDefaultPathMutationCommitApplyRequest()
     )
 }
