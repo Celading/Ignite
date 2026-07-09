@@ -1424,6 +1424,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[2], "NO_ACTUAL_HANDLER_INVOCATION")
     }
+
+    @TestCase
+    public func testH2RequestContextMutationGateBlocksRejectedHandlerBridge(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RequestContextMutationGateBridge(
+                JinguiAcceptedTransportH2RequestContextMutationGateEvidence(
+                    buildHq0750RejectedH2HandlerInvocationGateBridge(),
+                    buildHq0750AcceptedRequestContextMutationGateReceipt()
+                )
+            )
+
+        @Assert(bridge.status, "blocked-h2-handler-invocation-gate-bridge")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-handler-invocation-gate-before-request-context-mutation-gate"
+        )
+        @Assert(bridge.h2RequestContextMutationGateAccepted, false)
+        @Assert(bridge.h2HandlerInvocationGateAccepted, false)
+        @Assert(
+            bridge.boundedRequestContextMutationGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_HANDLER_INVOCATION_GATE:blocked-handler-invocation-gate-receipt"
+        )
+        @Assert(bridge.requestContextMutationGateAllowed, false)
+        @Assert(bridge.actualRequestContextMutationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RequestContextMutationGateBlocksRejectedContextGate(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RequestContextMutationGateBridge(
+                JinguiAcceptedTransportH2RequestContextMutationGateEvidence(
+                    buildHq0750AcceptedH2HandlerInvocationGateBridge(),
+                    buildHq0750BlockedRequestContextMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-request-context-mutation-gate-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-request-context-mutation-gate-before-response-write-gate"
+        )
+        @Assert(bridge.h2HandlerInvocationGateAccepted, true)
+        @Assert(bridge.requestContextMutationGateAccepted, false)
+        @Assert(bridge.requestContextMutationGateAllowed, false)
+        @Assert(
+            bridge.boundedRequestContextMutationGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "REQUEST_CONTEXT_MUTATION_GATE:blocked-request-context-mutation-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "REQUEST_CONTEXT_MUTATION_GATE_BLOCKER:ACTUAL_REQUEST_CONTEXT_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.actualRequestContextMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RequestContextMutationGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RequestContextMutationGateBridge(
+                JinguiAcceptedTransportH2RequestContextMutationGateEvidence(
+                    buildHq0750AcceptedH2HandlerInvocationGateBridge(),
+                    buildHq0750AcceptedRequestContextMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-request-context-mutation-gate-bridge"
+        )
+        @Assert(bridge.h2RequestContextMutationGateAccepted, true)
+        @Assert(bridge.h2HandlerInvocationGateAccepted, true)
+        @Assert(bridge.requestContextMutationGateAccepted, true)
+        @Assert(bridge.requestContextMutationGateAllowed, true)
+        @Assert(
+            bridge.boundedRequestContextMutationGateFollowupAllowed,
+            true
+        )
+        @Assert(bridge.handlerInvocationGateMode, "short-handler-invocation-gate")
+        @Assert(
+            bridge.requestContextMutationGateMode,
+            "short-request-context-mutation-gate"
+        )
+        @Assert(
+            bridge.requestContextMutationGateId,
+            "h2-request-context-mutation-gate-1"
+        )
+        @Assert(bridge.handlerInvocationGateId, "h2-handler-invocation-gate-1")
+        @Assert(bridge.runtimeSpawnGateId, "h2-runtime-spawn-gate-1")
+        @Assert(bridge.liveEnqueueProofId, "h2-live-enqueue-proof-1")
+        @Assert(bridge.executorHandoffId, "h2-executor-handoff-1")
+        @Assert(
+            bridge.controlledMutationApplyId,
+            "h2-controlled-production-queue-mutation-apply-1"
+        )
+        @Assert(
+            bridge.mutationApplyGateId,
+            "h2-production-queue-mutation-apply-gate-1"
+        )
+        @Assert(
+            bridge.mutationCommitPlanId,
+            "h2-production-queue-mutation-commit-plan-1"
+        )
+        @Assert(bridge.mutationDryRunId, "h2-production-queue-mutation-dry-run-1")
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+        @Assert(bridge.actualHandlerInvocationAllowed, false)
+        @Assert(bridge.actualRequestContextMutationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+        @Assert(bridge.transportCommitAllowed, false)
+        @Assert(bridge.liveServerWiringAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[3], "NO_ACTUAL_REQUEST_CONTEXT_MUTATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -2515,5 +2646,87 @@ func buildHq0749BlockedHandlerInvocationGateReceipt(
     buildIgniteHandlerInvocationGateReceipt(
         buildHq0748AcceptedRuntimeTaskSpawnGateReceipt(),
         buildHq0749BlockedHandlerInvocationGateRequest()
+    )
+}
+
+func buildHq0750RejectedH2HandlerInvocationGateBridge(
+): JinguiAcceptedTransportH2HandlerInvocationGateBridge {
+    buildJinguiAcceptedTransportH2HandlerInvocationGateBridge(
+        JinguiAcceptedTransportH2HandlerInvocationGateEvidence(
+            buildHq0749AcceptedH2RuntimeTaskSpawnGateBridge(),
+            buildHq0749BlockedHandlerInvocationGateReceipt()
+        )
+    )
+}
+
+func buildHq0750AcceptedH2HandlerInvocationGateBridge(
+): JinguiAcceptedTransportH2HandlerInvocationGateBridge {
+    buildJinguiAcceptedTransportH2HandlerInvocationGateBridge(
+        JinguiAcceptedTransportH2HandlerInvocationGateEvidence(
+            buildHq0749AcceptedH2RuntimeTaskSpawnGateBridge(),
+            buildHq0749AcceptedHandlerInvocationGateReceipt()
+        )
+    )
+}
+
+func buildHq0750AcceptedRequestContextMutationGateRequest(
+): IgniteRequestContextMutationGateRequest {
+    IgniteRequestContextMutationGateRequest(
+        "h2-request-context-mutation-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0750BlockedRequestContextMutationGateRequest(
+): IgniteRequestContextMutationGateRequest {
+    IgniteRequestContextMutationGateRequest(
+        "h2-request-context-mutation-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0750AcceptedRequestContextMutationGateReceipt(
+): IgniteRequestContextMutationGateReceipt {
+    buildIgniteRequestContextMutationGateReceipt(
+        buildHq0749AcceptedHandlerInvocationGateReceipt(),
+        buildHq0750AcceptedRequestContextMutationGateRequest()
+    )
+}
+
+func buildHq0750BlockedRequestContextMutationGateReceipt(
+): IgniteRequestContextMutationGateReceipt {
+    buildIgniteRequestContextMutationGateReceipt(
+        buildHq0749AcceptedHandlerInvocationGateReceipt(),
+        buildHq0750BlockedRequestContextMutationGateRequest()
     )
 }
