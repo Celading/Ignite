@@ -12847,6 +12847,315 @@ func jinguiAcceptedTransportH2RuntimeDefaultPathMutationGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunEvidence {
+    public let h2RuntimeDefaultPathMutationGateBridge:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge
+    public let runtimeDefaultPathMutationDryRunReceipt:
+        IgniteRuntimeDefaultPathMutationDryRunReceipt
+
+    public init(
+        h2RuntimeDefaultPathMutationGateBridge:
+            JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge,
+        runtimeDefaultPathMutationDryRunReceipt:
+            IgniteRuntimeDefaultPathMutationDryRunReceipt
+    ) {
+        this.h2RuntimeDefaultPathMutationGateBridge =
+            h2RuntimeDefaultPathMutationGateBridge
+        this.runtimeDefaultPathMutationDryRunReceipt =
+            runtimeDefaultPathMutationDryRunReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge {
+    public let h2RuntimeDefaultPathMutationDryRunAccepted: Bool
+    public let h2RuntimeDefaultPathMutationGateAccepted: Bool
+    public let runtimeDefaultPathMutationDryRunAccepted: Bool
+    public let runtimeDefaultPathMutationDryRunAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationDryRunFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let actualTransportCommitAllowed: Bool
+    public let actualLiveServerWiringAllowed: Bool
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let runtimeDefaultPathMutationDryRunMode: String
+    public let runtimeDefaultPathMutationDryRunId: String
+    public let runtimeDefaultPathMutationGateMode: String
+    public let runtimeDefaultPathMutationGateId: String
+    public let controlledDefaultEngineMutationApplyId: String
+    public let defaultEngineMutationApplyGateId: String
+    public let defaultEngineMutationDryRunId: String
+    public let defaultEngineMutationCommitPlanId: String
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationDryRunAccepted: Bool,
+        h2RuntimeDefaultPathMutationGateAccepted: Bool,
+        runtimeDefaultPathMutationDryRunAccepted: Bool,
+        runtimeDefaultPathMutationDryRunAllowed: Bool,
+        boundedRuntimeDefaultPathMutationDryRunFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        actualTransportCommitAllowed: Bool,
+        actualLiveServerWiringAllowed: Bool,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        runtimeDefaultPathMutationDryRunMode: String,
+        runtimeDefaultPathMutationDryRunId: String,
+        runtimeDefaultPathMutationGateMode: String,
+        runtimeDefaultPathMutationGateId: String,
+        controlledDefaultEngineMutationApplyId: String,
+        defaultEngineMutationApplyGateId: String,
+        defaultEngineMutationDryRunId: String,
+        defaultEngineMutationCommitPlanId: String,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationDryRunAccepted =
+            h2RuntimeDefaultPathMutationDryRunAccepted
+        this.h2RuntimeDefaultPathMutationGateAccepted =
+            h2RuntimeDefaultPathMutationGateAccepted
+        this.runtimeDefaultPathMutationDryRunAccepted =
+            runtimeDefaultPathMutationDryRunAccepted
+        this.runtimeDefaultPathMutationDryRunAllowed =
+            runtimeDefaultPathMutationDryRunAllowed
+        this.boundedRuntimeDefaultPathMutationDryRunFollowupAllowed =
+            boundedRuntimeDefaultPathMutationDryRunFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.actualTransportCommitAllowed = actualTransportCommitAllowed
+        this.actualLiveServerWiringAllowed = actualLiveServerWiringAllowed
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.runtimeDefaultPathMutationDryRunMode =
+            runtimeDefaultPathMutationDryRunMode
+        this.runtimeDefaultPathMutationDryRunId =
+            runtimeDefaultPathMutationDryRunId
+        this.runtimeDefaultPathMutationGateMode =
+            runtimeDefaultPathMutationGateMode
+        this.runtimeDefaultPathMutationGateId =
+            runtimeDefaultPathMutationGateId
+        this.controlledDefaultEngineMutationApplyId =
+            controlledDefaultEngineMutationApplyId
+        this.defaultEngineMutationApplyGateId =
+            defaultEngineMutationApplyGateId
+        this.defaultEngineMutationDryRunId = defaultEngineMutationDryRunId
+        this.defaultEngineMutationCommitPlanId =
+            defaultEngineMutationCommitPlanId
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge {
+    let h2RuntimeGateBridge =
+        evidence.h2RuntimeDefaultPathMutationGateBridge
+    let runtimeDryRunReceipt = evidence.runtimeDefaultPathMutationDryRunReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunNonClaims()
+    if (
+        !h2RuntimeGateBridge.h2RuntimeDefaultPathMutationGateAccepted ||
+        !h2RuntimeGateBridge.boundedRuntimeDefaultPathMutationGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge(
+            false,
+            h2RuntimeGateBridge.h2RuntimeDefaultPathMutationGateAccepted,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunMode,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunId,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationGateMode,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationGateId,
+            h2RuntimeGateBridge.controlledDefaultEngineMutationApplyId,
+            h2RuntimeGateBridge.defaultEngineMutationApplyGateId,
+            h2RuntimeGateBridge.defaultEngineMutationDryRunId,
+            h2RuntimeGateBridge.defaultEngineMutationCommitPlanId,
+            "blocked-h2-runtime-default-path-mutation-gate-bridge",
+            "collect-accepted-h2-runtime-default-path-mutation-gate-before-runtime-default-path-mutation-dry-run",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunGateBlockers(
+                h2RuntimeGateBridge
+            ),
+            nonClaims,
+            "repair H2 runtime default-path mutation gate bridge before dry-run; do not treat generic dry-run receipts as H2 runtime mutation",
+            "QUIC must pass runtime default-path mutation gate before stream default mutation dry-run"
+        )
+    }
+    if (
+        !runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAccepted ||
+        !runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge(
+            false,
+            true,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAccepted,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunMode,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunId,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationGateMode,
+            runtimeDryRunReceipt.runtimeDefaultPathMutationGateId,
+            runtimeDryRunReceipt.controlledDefaultEngineMutationApplyId,
+            runtimeDryRunReceipt.defaultEngineMutationApplyGateId,
+            runtimeDryRunReceipt.defaultEngineMutationDryRunId,
+            runtimeDryRunReceipt.defaultEngineMutationCommitPlanId,
+            "blocked-runtime-default-path-mutation-dry-run-receipt",
+            "collect-accepted-runtime-default-path-mutation-dry-run-before-runtime-default-path-mutation-apply-gate",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunReceiptBlockers(
+                runtimeDryRunReceipt
+            ),
+            nonClaims,
+            runtimeDryRunReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation dry-run receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge(
+        true,
+        true,
+        true,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunAllowed,
+        true,
+        runtimeDryRunReceipt.productionQueueMutationAllowed,
+        runtimeDryRunReceipt.actualRuntimeTaskSpawnAllowed,
+        runtimeDryRunReceipt.actualHandlerInvocationAllowed,
+        runtimeDryRunReceipt.actualRequestContextMutationAllowed,
+        runtimeDryRunReceipt.actualResponseWriteAllowed,
+        runtimeDryRunReceipt.actualTransportCommitAllowed,
+        runtimeDryRunReceipt.actualLiveServerWiringAllowed,
+        runtimeDryRunReceipt.actualDefaultEngineFlipAllowed,
+        runtimeDryRunReceipt.defaultEngineConfigMutationAllowed,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationAllowed,
+        runtimeDryRunReceipt.publicReleaseAllowed,
+        runtimeDryRunReceipt.stdxRemovalAllowed,
+        false,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunMode,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationDryRunId,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationGateMode,
+        runtimeDryRunReceipt.runtimeDefaultPathMutationGateId,
+        runtimeDryRunReceipt.controlledDefaultEngineMutationApplyId,
+        runtimeDryRunReceipt.defaultEngineMutationApplyGateId,
+        runtimeDryRunReceipt.defaultEngineMutationDryRunId,
+        runtimeDryRunReceipt.defaultEngineMutationCommitPlanId,
+        "accepted-h2-runtime-default-path-mutation-dry-run-bridge",
+        "record-h2-runtime-default-path-mutation-dry-run-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 runtime default-path mutation apply-gate; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style runtime gate plus generic dry-run separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunGateBlockers(
+    bridge: JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_RUNTIME_DEFAULT_PATH_MUTATION_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_RUNTIME_DEFAULT_PATH_MUTATION_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationDryRunReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_DRY_RUN:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_DRY_RUN_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_GATE",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_ACTUAL_LIVE_SERVER_WIRING",
+        "NO_ACTUAL_RESPONSE_WRITE",
+        "NO_ACTUAL_TRANSPORT_COMMIT",
+        "NO_ACTUAL_REQUEST_CONTEXT_MUTATION",
+        "NO_ACTUAL_HANDLER_INVOCATION",
+        "NO_ACTUAL_RUNTIME_TASK_SPAWN",
+        "NO_PRODUCTION_QUEUE_MUTATION",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
