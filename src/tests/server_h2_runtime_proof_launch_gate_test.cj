@@ -4178,6 +4178,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY"
         )
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationAcceptanceBoundaryBlocksRejectedHandoffGateBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryEvidence(
+                    buildHq0770RejectedH2RuntimeDefaultPathMutationHandoffGateBridge(),
+                    buildHq0770AcceptedRuntimeDefaultPathMutationAcceptanceBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-handoff-gate-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE:blocked-runtime-default-path-mutation-handoff-gate-receipt"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationAcceptanceBoundaryBlocksRejectedAcceptanceBoundaryReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryEvidence(
+                    buildHq0770AcceptedH2RuntimeDefaultPathMutationHandoffGateBridge(),
+                    buildHq0770BlockedRuntimeDefaultPathMutationAcceptanceBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-acceptance-boundary-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY:blocked-runtime-default-path-mutation-acceptance-boundary-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationAcceptanceBoundaryAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryEvidence(
+                    buildHq0770AcceptedH2RuntimeDefaultPathMutationHandoffGateBridge(),
+                    buildHq0770AcceptedRuntimeDefaultPathMutationAcceptanceBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-acceptance-boundary-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryMode,
+            "short-runtime-default-path-mutation-acceptance-boundary"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationAcceptanceBoundaryId,
+            "h2-runtime-default-path-mutation-acceptance-boundary-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_BOUNDARY"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -7399,5 +7530,97 @@ func buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateReceipt(
     buildIgniteRuntimeDefaultPathMutationHandoffGateReceipt(
         buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt(),
         buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateRequest()
+    )
+}
+
+func buildHq0770RejectedH2RuntimeDefaultPathMutationHandoffGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence(
+            buildHq0769AcceptedH2RuntimeDefaultPathMutationCloseoutGateBridge(),
+            buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateReceipt()
+        )
+    )
+}
+
+func buildHq0770AcceptedH2RuntimeDefaultPathMutationHandoffGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence(
+            buildHq0769AcceptedH2RuntimeDefaultPathMutationCloseoutGateBridge(),
+            buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt()
+        )
+    )
+}
+
+func buildHq0770AcceptedRuntimeDefaultPathMutationAcceptanceBoundaryRequest(
+): IgniteRuntimeDefaultPathMutationAcceptanceBoundaryRequest {
+    IgniteRuntimeDefaultPathMutationAcceptanceBoundaryRequest(
+        "h2-runtime-default-path-mutation-acceptance-boundary-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0770BlockedRuntimeDefaultPathMutationAcceptanceBoundaryRequest(
+): IgniteRuntimeDefaultPathMutationAcceptanceBoundaryRequest {
+    IgniteRuntimeDefaultPathMutationAcceptanceBoundaryRequest(
+        "h2-runtime-default-path-mutation-acceptance-boundary-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0770AcceptedRuntimeDefaultPathMutationAcceptanceBoundaryReceipt(
+): IgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt {
+    buildIgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt(
+        buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt(),
+        buildHq0770AcceptedRuntimeDefaultPathMutationAcceptanceBoundaryRequest()
+    )
+}
+
+func buildHq0770BlockedRuntimeDefaultPathMutationAcceptanceBoundaryReceipt(
+): IgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt {
+    buildIgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt(
+        buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt(),
+        buildHq0770BlockedRuntimeDefaultPathMutationAcceptanceBoundaryRequest()
     )
 }

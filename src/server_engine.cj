@@ -16578,6 +16578,290 @@ func jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryEvidence {
+    public let h2RuntimeDefaultPathMutationHandoffGateBridge:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge
+    public let runtimeDefaultPathMutationAcceptanceBoundaryReceipt:
+        IgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt
+
+    public init(
+        h2RuntimeDefaultPathMutationHandoffGateBridge:
+            JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge,
+        runtimeDefaultPathMutationAcceptanceBoundaryReceipt:
+            IgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt
+    ) {
+        this.h2RuntimeDefaultPathMutationHandoffGateBridge =
+            h2RuntimeDefaultPathMutationHandoffGateBridge
+        this.runtimeDefaultPathMutationAcceptanceBoundaryReceipt =
+            runtimeDefaultPathMutationAcceptanceBoundaryReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge {
+    public let h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted: Bool
+    public let h2RuntimeDefaultPathMutationHandoffGateAccepted: Bool
+    public let runtimeDefaultPathMutationAcceptanceBoundaryAccepted: Bool
+    public let runtimeDefaultPathMutationAcceptanceBoundaryAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed: Bool
+    public let runtimeDefaultPathMutationAcceptanceBoundaryMode: String
+    public let runtimeDefaultPathMutationAcceptanceBoundaryId: String
+    public let runtimeDefaultPathMutationHandoffGateId: String
+    public let runtimeDefaultPathMutationCloseoutGateId: String
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let actualTransportCommitAllowed: Bool
+    public let actualLiveServerWiringAllowed: Bool
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted: Bool,
+        h2RuntimeDefaultPathMutationHandoffGateAccepted: Bool,
+        runtimeDefaultPathMutationAcceptanceBoundaryAccepted: Bool,
+        runtimeDefaultPathMutationAcceptanceBoundaryAllowed: Bool,
+        boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed: Bool,
+        runtimeDefaultPathMutationAcceptanceBoundaryMode: String,
+        runtimeDefaultPathMutationAcceptanceBoundaryId: String,
+        runtimeDefaultPathMutationHandoffGateId: String,
+        runtimeDefaultPathMutationCloseoutGateId: String,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        actualTransportCommitAllowed: Bool,
+        actualLiveServerWiringAllowed: Bool,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted =
+            h2RuntimeDefaultPathMutationAcceptanceBoundaryAccepted
+        this.h2RuntimeDefaultPathMutationHandoffGateAccepted =
+            h2RuntimeDefaultPathMutationHandoffGateAccepted
+        this.runtimeDefaultPathMutationAcceptanceBoundaryAccepted =
+            runtimeDefaultPathMutationAcceptanceBoundaryAccepted
+        this.runtimeDefaultPathMutationAcceptanceBoundaryAllowed =
+            runtimeDefaultPathMutationAcceptanceBoundaryAllowed
+        this.boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed =
+            boundedRuntimeDefaultPathMutationAcceptanceBoundaryFollowupAllowed
+        this.runtimeDefaultPathMutationAcceptanceBoundaryMode =
+            runtimeDefaultPathMutationAcceptanceBoundaryMode
+        this.runtimeDefaultPathMutationAcceptanceBoundaryId =
+            runtimeDefaultPathMutationAcceptanceBoundaryId
+        this.runtimeDefaultPathMutationHandoffGateId =
+            runtimeDefaultPathMutationHandoffGateId
+        this.runtimeDefaultPathMutationCloseoutGateId =
+            runtimeDefaultPathMutationCloseoutGateId
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.actualTransportCommitAllowed = actualTransportCommitAllowed
+        this.actualLiveServerWiringAllowed = actualLiveServerWiringAllowed
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge {
+    let h2HandoffGateBridge =
+        evidence.h2RuntimeDefaultPathMutationHandoffGateBridge
+    let acceptanceBoundaryReceipt =
+        evidence.runtimeDefaultPathMutationAcceptanceBoundaryReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryNonClaims()
+    if (
+        !h2HandoffGateBridge.h2RuntimeDefaultPathMutationHandoffGateAccepted ||
+        !h2HandoffGateBridge.boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+            false,
+            h2HandoffGateBridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            false,
+            false,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryMode,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationHandoffGateId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationCloseoutGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-runtime-default-path-mutation-handoff-gate-bridge",
+            "collect-accepted-h2-runtime-default-path-mutation-handoff-gate-before-acceptance-boundary",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryHandoffBlockers(
+                h2HandoffGateBridge
+            ),
+            nonClaims,
+            "repair H2 runtime default-path mutation handoff-gate bridge before acceptance boundary; do not treat generic acceptance receipts as H2 runtime mutation",
+            "QUIC must pass stream default mutation handoff gate before runtime default mutation acceptance boundary"
+        )
+    }
+    if (
+        !acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAccepted ||
+        !acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+            false,
+            true,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAccepted,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAllowed,
+            false,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryMode,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationHandoffGateId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationCloseoutGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-runtime-default-path-mutation-acceptance-boundary-receipt",
+            "collect-accepted-runtime-default-path-mutation-acceptance-boundary-before-apply-boundary",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryReceiptBlockers(
+                acceptanceBoundaryReceipt
+            ),
+            nonClaims,
+            acceptanceBoundaryReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation acceptance-boundary receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryBridge(
+        true,
+        true,
+        true,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryAllowed,
+        true,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryMode,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationAcceptanceBoundaryId,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationHandoffGateId,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationCloseoutGateId,
+        acceptanceBoundaryReceipt.productionQueueMutationAllowed,
+        acceptanceBoundaryReceipt.actualRuntimeTaskSpawnAllowed,
+        acceptanceBoundaryReceipt.actualHandlerInvocationAllowed,
+        acceptanceBoundaryReceipt.actualRequestContextMutationAllowed,
+        acceptanceBoundaryReceipt.actualResponseWriteAllowed,
+        acceptanceBoundaryReceipt.actualTransportCommitAllowed,
+        acceptanceBoundaryReceipt.actualLiveServerWiringAllowed,
+        acceptanceBoundaryReceipt.actualDefaultEngineFlipAllowed,
+        acceptanceBoundaryReceipt.defaultEngineConfigMutationAllowed,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationAllowed,
+        acceptanceBoundaryReceipt.publicReleaseAllowed,
+        acceptanceBoundaryReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-runtime-default-path-mutation-acceptance-boundary-bridge",
+        "record-h2-runtime-default-path-mutation-acceptance-boundary-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 runtime default-path mutation apply boundary; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style handoff-gate plus generic acceptance-boundary separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryHandoffBlockers(
+    bridge: JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "H2_RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE:${bridge.status}"
+    )
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationAcceptanceBoundaryReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY:${receipt.status}"
+    )
+    for (blocker in receipt.blockers) {
+        blockers.add(
+            "RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationAcceptanceBoundaryNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_BOUNDARY",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
