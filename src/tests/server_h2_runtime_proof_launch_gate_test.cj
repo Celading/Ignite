@@ -1781,6 +1781,120 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[5], "NO_ACTUAL_TRANSPORT_COMMIT")
     }
+
+    @TestCase
+    public func testH2LiveServerWiringGateBlocksRejectedTransportBridge(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+            JinguiAcceptedTransportH2LiveServerWiringGateEvidence(
+                buildHq0753RejectedH2TransportCommitGateBridge(),
+                buildHq0753AcceptedLiveServerWiringGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "blocked-h2-transport-commit-gate-bridge")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-transport-commit-gate-before-live-server-wiring-gate"
+        )
+        @Assert(bridge.h2LiveServerWiringGateAccepted, false)
+        @Assert(bridge.h2TransportCommitGateAccepted, false)
+        @Assert(bridge.boundedLiveServerWiringGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "H2_TRANSPORT_COMMIT_GATE:blocked-transport-commit-gate-receipt"
+        )
+        @Assert(bridge.liveServerWiringGateAllowed, false)
+        @Assert(bridge.actualLiveServerWiringAllowed, false)
+        @Assert(bridge.defaultEngineFlipAllowed, false)
+    }
+
+    @TestCase
+    public func testH2LiveServerWiringGateBlocksRejectedLiveGate(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+            JinguiAcceptedTransportH2LiveServerWiringGateEvidence(
+                buildHq0753AcceptedH2TransportCommitGateBridge(),
+                buildHq0753BlockedLiveServerWiringGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "blocked-live-server-wiring-gate-receipt")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-live-server-wiring-gate-before-default-engine-readiness-gate"
+        )
+        @Assert(bridge.h2TransportCommitGateAccepted, true)
+        @Assert(bridge.liveServerWiringGateAccepted, false)
+        @Assert(bridge.liveServerWiringGateAllowed, false)
+        @Assert(bridge.boundedLiveServerWiringGateFollowupAllowed, false)
+        @Assert(
+            bridge.blockers[0],
+            "LIVE_SERVER_WIRING_GATE:blocked-live-server-wiring-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "LIVE_SERVER_WIRING_GATE_BLOCKER:ACTUAL_LIVE_SERVER_WIRING_REQUESTED"
+        )
+        @Assert(bridge.actualLiveServerWiringAllowed, false)
+    }
+
+    @TestCase
+    public func testH2LiveServerWiringGateAllowsBoundedFollowupOnly(): Unit {
+        let bridge = buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+            JinguiAcceptedTransportH2LiveServerWiringGateEvidence(
+                buildHq0753AcceptedH2TransportCommitGateBridge(),
+                buildHq0753AcceptedLiveServerWiringGateReceipt()
+            )
+        )
+
+        @Assert(bridge.status, "accepted-h2-live-server-wiring-gate-bridge")
+        @Assert(bridge.h2LiveServerWiringGateAccepted, true)
+        @Assert(bridge.h2TransportCommitGateAccepted, true)
+        @Assert(bridge.liveServerWiringGateAccepted, true)
+        @Assert(bridge.liveServerWiringGateAllowed, true)
+        @Assert(bridge.boundedLiveServerWiringGateFollowupAllowed, true)
+        @Assert(bridge.transportCommitGateMode, "short-transport-commit-gate")
+        @Assert(bridge.liveServerWiringGateMode, "short-live-server-wiring-gate")
+        @Assert(bridge.liveServerWiringGateId, "h2-live-server-wiring-gate-1")
+        @Assert(bridge.transportCommitGateId, "h2-transport-commit-gate-1")
+        @Assert(bridge.responseWriteGateId, "h2-response-write-gate-1")
+        @Assert(
+            bridge.requestContextMutationGateId,
+            "h2-request-context-mutation-gate-1"
+        )
+        @Assert(bridge.handlerInvocationGateId, "h2-handler-invocation-gate-1")
+        @Assert(bridge.runtimeSpawnGateId, "h2-runtime-spawn-gate-1")
+        @Assert(bridge.liveEnqueueProofId, "h2-live-enqueue-proof-1")
+        @Assert(bridge.executorHandoffId, "h2-executor-handoff-1")
+        @Assert(
+            bridge.controlledMutationApplyId,
+            "h2-controlled-production-queue-mutation-apply-1"
+        )
+        @Assert(
+            bridge.mutationApplyGateId,
+            "h2-production-queue-mutation-apply-gate-1"
+        )
+        @Assert(
+            bridge.mutationCommitPlanId,
+            "h2-production-queue-mutation-commit-plan-1"
+        )
+        @Assert(bridge.mutationDryRunId, "h2-production-queue-mutation-dry-run-1")
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.productionQueueMutationAllowed, false)
+        @Assert(bridge.actualRuntimeTaskSpawnAllowed, false)
+        @Assert(bridge.actualHandlerInvocationAllowed, false)
+        @Assert(bridge.actualRequestContextMutationAllowed, false)
+        @Assert(bridge.actualResponseWriteAllowed, false)
+        @Assert(bridge.actualTransportCommitAllowed, false)
+        @Assert(bridge.actualLiveServerWiringAllowed, false)
+        @Assert(bridge.defaultEngineFlipAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[6], "NO_ACTUAL_LIVE_SERVER_WIRING")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -3114,5 +3228,85 @@ func buildHq0752BlockedTransportCommitGateReceipt(
     buildIgniteTransportCommitGateReceipt(
         buildHq0751AcceptedResponseWriteGateReceipt(),
         buildHq0752BlockedTransportCommitGateRequest()
+    )
+}
+
+func buildHq0753RejectedH2TransportCommitGateBridge(
+): JinguiAcceptedTransportH2TransportCommitGateBridge {
+    buildJinguiAcceptedTransportH2TransportCommitGateBridge(
+        JinguiAcceptedTransportH2TransportCommitGateEvidence(
+            buildHq0752AcceptedH2ResponseWriteGateBridge(),
+            buildHq0752BlockedTransportCommitGateReceipt()
+        )
+    )
+}
+
+func buildHq0753AcceptedH2TransportCommitGateBridge(
+): JinguiAcceptedTransportH2TransportCommitGateBridge {
+    buildJinguiAcceptedTransportH2TransportCommitGateBridge(
+        JinguiAcceptedTransportH2TransportCommitGateEvidence(
+            buildHq0752AcceptedH2ResponseWriteGateBridge(),
+            buildHq0752AcceptedTransportCommitGateReceipt()
+        )
+    )
+}
+
+func buildHq0753AcceptedLiveServerWiringGateRequest(
+): IgniteLiveServerWiringGateRequest {
+    IgniteLiveServerWiringGateRequest(
+        "h2-live-server-wiring-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0753BlockedLiveServerWiringGateRequest(
+): IgniteLiveServerWiringGateRequest {
+    IgniteLiveServerWiringGateRequest(
+        "h2-live-server-wiring-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+    )
+}
+
+func buildHq0753AcceptedLiveServerWiringGateReceipt(
+): IgniteLiveServerWiringGateReceipt {
+    buildIgniteLiveServerWiringGateReceipt(
+        buildHq0752AcceptedTransportCommitGateReceipt(),
+        buildHq0753AcceptedLiveServerWiringGateRequest()
+    )
+}
+
+func buildHq0753BlockedLiveServerWiringGateReceipt(
+): IgniteLiveServerWiringGateReceipt {
+    buildIgniteLiveServerWiringGateReceipt(
+        buildHq0752AcceptedTransportCommitGateReceipt(),
+        buildHq0753BlockedLiveServerWiringGateRequest()
     )
 }

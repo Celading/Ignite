@@ -9842,6 +9842,332 @@ func jinguiAcceptedTransportH2TransportCommitGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2LiveServerWiringGateEvidence {
+    public let h2TransportCommitGateBridge:
+        JinguiAcceptedTransportH2TransportCommitGateBridge
+    public let liveServerWiringGateReceipt: IgniteLiveServerWiringGateReceipt
+
+    public init(
+        h2TransportCommitGateBridge:
+            JinguiAcceptedTransportH2TransportCommitGateBridge,
+        liveServerWiringGateReceipt: IgniteLiveServerWiringGateReceipt
+    ) {
+        this.h2TransportCommitGateBridge = h2TransportCommitGateBridge
+        this.liveServerWiringGateReceipt = liveServerWiringGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2LiveServerWiringGateBridge {
+    public let h2LiveServerWiringGateAccepted: Bool
+    public let h2TransportCommitGateAccepted: Bool
+    public let liveServerWiringGateAccepted: Bool
+    public let liveServerWiringGateAllowed: Bool
+    public let boundedLiveServerWiringGateFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let actualTransportCommitAllowed: Bool
+    public let actualLiveServerWiringAllowed: Bool
+    public let defaultEngineFlipAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let transportCommitGateMode: String
+    public let liveServerWiringGateMode: String
+    public let liveServerWiringGateId: String
+    public let transportCommitGateId: String
+    public let responseWriteGateId: String
+    public let requestContextMutationGateId: String
+    public let handlerInvocationGateId: String
+    public let runtimeSpawnGateId: String
+    public let liveEnqueueProofId: String
+    public let executorHandoffId: String
+    public let controlledMutationApplyId: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2LiveServerWiringGateAccepted: Bool,
+        h2TransportCommitGateAccepted: Bool,
+        liveServerWiringGateAccepted: Bool,
+        liveServerWiringGateAllowed: Bool,
+        boundedLiveServerWiringGateFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        actualTransportCommitAllowed: Bool,
+        actualLiveServerWiringAllowed: Bool,
+        defaultEngineFlipAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        transportCommitGateMode: String,
+        liveServerWiringGateMode: String,
+        liveServerWiringGateId: String,
+        transportCommitGateId: String,
+        responseWriteGateId: String,
+        requestContextMutationGateId: String,
+        handlerInvocationGateId: String,
+        runtimeSpawnGateId: String,
+        liveEnqueueProofId: String,
+        executorHandoffId: String,
+        controlledMutationApplyId: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2LiveServerWiringGateAccepted = h2LiveServerWiringGateAccepted
+        this.h2TransportCommitGateAccepted = h2TransportCommitGateAccepted
+        this.liveServerWiringGateAccepted = liveServerWiringGateAccepted
+        this.liveServerWiringGateAllowed = liveServerWiringGateAllowed
+        this.boundedLiveServerWiringGateFollowupAllowed =
+            boundedLiveServerWiringGateFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.actualTransportCommitAllowed = actualTransportCommitAllowed
+        this.actualLiveServerWiringAllowed = actualLiveServerWiringAllowed
+        this.defaultEngineFlipAllowed = defaultEngineFlipAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.transportCommitGateMode = transportCommitGateMode
+        this.liveServerWiringGateMode = liveServerWiringGateMode
+        this.liveServerWiringGateId = liveServerWiringGateId
+        this.transportCommitGateId = transportCommitGateId
+        this.responseWriteGateId = responseWriteGateId
+        this.requestContextMutationGateId = requestContextMutationGateId
+        this.handlerInvocationGateId = handlerInvocationGateId
+        this.runtimeSpawnGateId = runtimeSpawnGateId
+        this.liveEnqueueProofId = liveEnqueueProofId
+        this.executorHandoffId = executorHandoffId
+        this.controlledMutationApplyId = controlledMutationApplyId
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2LiveServerWiringGateBridge(
+    evidence: JinguiAcceptedTransportH2LiveServerWiringGateEvidence
+): JinguiAcceptedTransportH2LiveServerWiringGateBridge {
+    let h2TransportCommitBridge = evidence.h2TransportCommitGateBridge
+    let liveServerWiringGateReceipt = evidence.liveServerWiringGateReceipt
+    let nonClaims = jinguiAcceptedTransportH2LiveServerWiringGateNonClaims()
+    if (
+        !h2TransportCommitBridge.h2TransportCommitGateAccepted ||
+        !h2TransportCommitBridge.boundedTransportCommitGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2LiveServerWiringGateBridge(
+            false,
+            h2TransportCommitBridge.h2TransportCommitGateAccepted,
+            liveServerWiringGateReceipt.liveServerWiringGateAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            liveServerWiringGateReceipt.transportCommitGateMode,
+            liveServerWiringGateReceipt.liveServerWiringGateMode,
+            liveServerWiringGateReceipt.liveServerWiringGateId,
+            h2TransportCommitBridge.transportCommitGateId,
+            h2TransportCommitBridge.responseWriteGateId,
+            h2TransportCommitBridge.requestContextMutationGateId,
+            h2TransportCommitBridge.handlerInvocationGateId,
+            h2TransportCommitBridge.runtimeSpawnGateId,
+            h2TransportCommitBridge.liveEnqueueProofId,
+            h2TransportCommitBridge.executorHandoffId,
+            h2TransportCommitBridge.controlledMutationApplyId,
+            h2TransportCommitBridge.mutationApplyGateId,
+            h2TransportCommitBridge.mutationCommitPlanId,
+            h2TransportCommitBridge.mutationDryRunId,
+            h2TransportCommitBridge.mutationGateId,
+            h2TransportCommitBridge.commitBoundaryId,
+            h2TransportCommitBridge.queueWriteId,
+            h2TransportCommitBridge.queueDepthBefore,
+            h2TransportCommitBridge.queueDepthAfter,
+            "blocked-h2-transport-commit-gate-bridge",
+            "collect-accepted-h2-transport-commit-gate-before-live-server-wiring-gate",
+            jinguiAcceptedTransportH2LiveServerWiringGateTransportBlockers(
+                h2TransportCommitBridge
+            ),
+            nonClaims,
+            "repair H2 transport commit gate before live server wiring gate; do not treat generic live wiring receipts as H2 runtime readiness",
+            "QUIC must pass stream transport commit gate before live stream wiring gate"
+        )
+    }
+    if (
+        !liveServerWiringGateReceipt.liveServerWiringGateAccepted ||
+        !liveServerWiringGateReceipt.liveServerWiringGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2LiveServerWiringGateBridge(
+            false,
+            true,
+            liveServerWiringGateReceipt.liveServerWiringGateAccepted,
+            liveServerWiringGateReceipt.liveServerWiringGateAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            liveServerWiringGateReceipt.transportCommitGateMode,
+            liveServerWiringGateReceipt.liveServerWiringGateMode,
+            liveServerWiringGateReceipt.liveServerWiringGateId,
+            liveServerWiringGateReceipt.transportCommitGateId,
+            liveServerWiringGateReceipt.responseWriteGateId,
+            liveServerWiringGateReceipt.requestContextMutationGateId,
+            liveServerWiringGateReceipt.handlerInvocationGateId,
+            liveServerWiringGateReceipt.runtimeSpawnGateId,
+            liveServerWiringGateReceipt.liveEnqueueProofId,
+            liveServerWiringGateReceipt.executorHandoffId,
+            liveServerWiringGateReceipt.controlledMutationApplyId,
+            liveServerWiringGateReceipt.mutationApplyGateId,
+            liveServerWiringGateReceipt.mutationCommitPlanId,
+            liveServerWiringGateReceipt.mutationDryRunId,
+            liveServerWiringGateReceipt.mutationGateId,
+            liveServerWiringGateReceipt.commitBoundaryId,
+            liveServerWiringGateReceipt.queueWriteId,
+            liveServerWiringGateReceipt.queueDepthBefore,
+            liveServerWiringGateReceipt.queueDepthAfter,
+            "blocked-live-server-wiring-gate-receipt",
+            "collect-accepted-live-server-wiring-gate-before-default-engine-readiness-gate",
+            jinguiAcceptedTransportH2LiveServerWiringGateReceiptBlockers(
+                liveServerWiringGateReceipt
+            ),
+            nonClaims,
+            liveServerWiringGateReceipt.nextAction,
+            "QUIC must not consume rejected live server wiring gate receipts for default stream runtime flip"
+        )
+    }
+
+    JinguiAcceptedTransportH2LiveServerWiringGateBridge(
+        true,
+        true,
+        true,
+        liveServerWiringGateReceipt.liveServerWiringGateAllowed,
+        true,
+        liveServerWiringGateReceipt.productionQueueMutationAllowed,
+        liveServerWiringGateReceipt.actualRuntimeTaskSpawnAllowed,
+        liveServerWiringGateReceipt.actualHandlerInvocationAllowed,
+        liveServerWiringGateReceipt.actualRequestContextMutationAllowed,
+        liveServerWiringGateReceipt.actualResponseWriteAllowed,
+        liveServerWiringGateReceipt.actualTransportCommitAllowed,
+        liveServerWiringGateReceipt.actualLiveServerWiringAllowed,
+        liveServerWiringGateReceipt.defaultEngineFlipAllowed,
+        false,
+        liveServerWiringGateReceipt.transportCommitGateMode,
+        liveServerWiringGateReceipt.liveServerWiringGateMode,
+        liveServerWiringGateReceipt.liveServerWiringGateId,
+        liveServerWiringGateReceipt.transportCommitGateId,
+        liveServerWiringGateReceipt.responseWriteGateId,
+        liveServerWiringGateReceipt.requestContextMutationGateId,
+        liveServerWiringGateReceipt.handlerInvocationGateId,
+        liveServerWiringGateReceipt.runtimeSpawnGateId,
+        liveServerWiringGateReceipt.liveEnqueueProofId,
+        liveServerWiringGateReceipt.executorHandoffId,
+        liveServerWiringGateReceipt.controlledMutationApplyId,
+        liveServerWiringGateReceipt.mutationApplyGateId,
+        liveServerWiringGateReceipt.mutationCommitPlanId,
+        liveServerWiringGateReceipt.mutationDryRunId,
+        liveServerWiringGateReceipt.mutationGateId,
+        liveServerWiringGateReceipt.commitBoundaryId,
+        liveServerWiringGateReceipt.queueWriteId,
+        liveServerWiringGateReceipt.queueDepthBefore,
+        liveServerWiringGateReceipt.queueDepthAfter,
+        "accepted-h2-live-server-wiring-gate-bridge",
+        "record-h2-live-server-wiring-gate-without-actual-live-wiring",
+        [],
+        nonClaims,
+        "next packet may plan H2 default-engine readiness; actual live wiring, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style transport-commit-gate plus live-wiring-gate separation before runtime default flip"
+    )
+}
+
+func jinguiAcceptedTransportH2LiveServerWiringGateTransportBlockers(
+    bridge: JinguiAcceptedTransportH2TransportCommitGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_TRANSPORT_COMMIT_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_TRANSPORT_COMMIT_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2LiveServerWiringGateReceiptBlockers(
+    receipt: IgniteLiveServerWiringGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("LIVE_SERVER_WIRING_GATE:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("LIVE_SERVER_WIRING_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2LiveServerWiringGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_RUNTIME_TASK_SPAWN",
+        "NO_ACTUAL_HANDLER_INVOCATION",
+        "NO_ACTUAL_REQUEST_CONTEXT_MUTATION",
+        "NO_ACTUAL_RESPONSE_WRITE",
+        "NO_ACTUAL_TRANSPORT_COMMIT",
+        "NO_ACTUAL_LIVE_SERVER_WIRING",
+        "NO_DEFAULT_ENGINE_FLIP",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
