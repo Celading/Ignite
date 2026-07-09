@@ -13156,6 +13156,752 @@ func jinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateEvidence {
+    public let h2RuntimeDefaultPathMutationDryRunBridge:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge
+    public let runtimeDefaultPathMutationApplyGateReceipt:
+        IgniteRuntimeDefaultPathMutationApplyGateReceipt
+
+    public init(
+        h2RuntimeDefaultPathMutationDryRunBridge:
+            JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge,
+        runtimeDefaultPathMutationApplyGateReceipt:
+            IgniteRuntimeDefaultPathMutationApplyGateReceipt
+    ) {
+        this.h2RuntimeDefaultPathMutationDryRunBridge =
+            h2RuntimeDefaultPathMutationDryRunBridge
+        this.runtimeDefaultPathMutationApplyGateReceipt =
+            runtimeDefaultPathMutationApplyGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge {
+    public let h2RuntimeDefaultPathMutationApplyGateAccepted: Bool
+    public let h2RuntimeDefaultPathMutationDryRunAccepted: Bool
+    public let runtimeDefaultPathMutationApplyGateAccepted: Bool
+    public let runtimeDefaultPathMutationApplyGateAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationApplyGateFollowupAllowed: Bool
+    public let runtimeDefaultPathMutationApplyGateMode: String
+    public let runtimeDefaultPathMutationApplyGateId: String
+    public let runtimeDefaultPathMutationDryRunMode: String
+    public let runtimeDefaultPathMutationDryRunId: String
+    public let runtimeDefaultPathMutationGateId: String
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationApplyGateAccepted: Bool,
+        h2RuntimeDefaultPathMutationDryRunAccepted: Bool,
+        runtimeDefaultPathMutationApplyGateAccepted: Bool,
+        runtimeDefaultPathMutationApplyGateAllowed: Bool,
+        boundedRuntimeDefaultPathMutationApplyGateFollowupAllowed: Bool,
+        runtimeDefaultPathMutationApplyGateMode: String,
+        runtimeDefaultPathMutationApplyGateId: String,
+        runtimeDefaultPathMutationDryRunMode: String,
+        runtimeDefaultPathMutationDryRunId: String,
+        runtimeDefaultPathMutationGateId: String,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationApplyGateAccepted =
+            h2RuntimeDefaultPathMutationApplyGateAccepted
+        this.h2RuntimeDefaultPathMutationDryRunAccepted =
+            h2RuntimeDefaultPathMutationDryRunAccepted
+        this.runtimeDefaultPathMutationApplyGateAccepted =
+            runtimeDefaultPathMutationApplyGateAccepted
+        this.runtimeDefaultPathMutationApplyGateAllowed =
+            runtimeDefaultPathMutationApplyGateAllowed
+        this.boundedRuntimeDefaultPathMutationApplyGateFollowupAllowed =
+            boundedRuntimeDefaultPathMutationApplyGateFollowupAllowed
+        this.runtimeDefaultPathMutationApplyGateMode =
+            runtimeDefaultPathMutationApplyGateMode
+        this.runtimeDefaultPathMutationApplyGateId =
+            runtimeDefaultPathMutationApplyGateId
+        this.runtimeDefaultPathMutationDryRunMode =
+            runtimeDefaultPathMutationDryRunMode
+        this.runtimeDefaultPathMutationDryRunId =
+            runtimeDefaultPathMutationDryRunId
+        this.runtimeDefaultPathMutationGateId =
+            runtimeDefaultPathMutationGateId
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge {
+    let h2DryRunBridge = evidence.h2RuntimeDefaultPathMutationDryRunBridge
+    let applyGateReceipt = evidence.runtimeDefaultPathMutationApplyGateReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateNonClaims()
+    if (
+        !h2DryRunBridge.h2RuntimeDefaultPathMutationDryRunAccepted ||
+        !h2DryRunBridge.boundedRuntimeDefaultPathMutationDryRunFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge(
+            false,
+            h2DryRunBridge.h2RuntimeDefaultPathMutationDryRunAccepted,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateAccepted,
+            false,
+            false,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateMode,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateId,
+            applyGateReceipt.runtimeDefaultPathMutationDryRunMode,
+            applyGateReceipt.runtimeDefaultPathMutationDryRunId,
+            applyGateReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-runtime-default-path-mutation-dry-run-bridge",
+            "collect-accepted-h2-runtime-default-path-mutation-dry-run-before-runtime-default-path-mutation-apply-gate",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateDryRunBlockers(
+                h2DryRunBridge
+            ),
+            nonClaims,
+            "repair H2 runtime default-path mutation dry-run bridge before apply-gate; do not treat generic apply-gate receipts as H2 runtime mutation",
+            "QUIC must pass runtime default-path mutation dry-run before stream default mutation apply-gate"
+        )
+    }
+    if (
+        !applyGateReceipt.runtimeDefaultPathMutationApplyGateAccepted ||
+        !applyGateReceipt.runtimeDefaultPathMutationApplyGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge(
+            false,
+            true,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateAccepted,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateAllowed,
+            false,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateMode,
+            applyGateReceipt.runtimeDefaultPathMutationApplyGateId,
+            applyGateReceipt.runtimeDefaultPathMutationDryRunMode,
+            applyGateReceipt.runtimeDefaultPathMutationDryRunId,
+            applyGateReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-runtime-default-path-mutation-apply-gate-receipt",
+            "collect-accepted-runtime-default-path-mutation-apply-gate-before-controlled-runtime-default-path-mutation-apply",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateReceiptBlockers(
+                applyGateReceipt
+            ),
+            nonClaims,
+            applyGateReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation apply-gate receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge(
+        true,
+        true,
+        true,
+        applyGateReceipt.runtimeDefaultPathMutationApplyGateAllowed,
+        true,
+        applyGateReceipt.runtimeDefaultPathMutationApplyGateMode,
+        applyGateReceipt.runtimeDefaultPathMutationApplyGateId,
+        applyGateReceipt.runtimeDefaultPathMutationDryRunMode,
+        applyGateReceipt.runtimeDefaultPathMutationDryRunId,
+        applyGateReceipt.runtimeDefaultPathMutationGateId,
+        applyGateReceipt.actualDefaultEngineFlipAllowed,
+        applyGateReceipt.defaultEngineConfigMutationAllowed,
+        applyGateReceipt.runtimeDefaultPathMutationAllowed,
+        applyGateReceipt.publicReleaseAllowed,
+        applyGateReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-runtime-default-path-mutation-apply-gate-bridge",
+        "record-h2-runtime-default-path-mutation-apply-gate-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 controlled runtime default-path mutation apply; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style dry-run plus generic apply-gate separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateDryRunBlockers(
+    bridge: JinguiAcceptedTransportH2RuntimeDefaultPathMutationDryRunBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_RUNTIME_DEFAULT_PATH_MUTATION_DRY_RUN:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_RUNTIME_DEFAULT_PATH_MUTATION_DRY_RUN_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationApplyGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_APPLY_GATE:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_APPLY_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
+public class JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyEvidence {
+    public let h2RuntimeDefaultPathMutationApplyGateBridge:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge
+    public let controlledRuntimeDefaultPathMutationApplyReceipt:
+        IgniteControlledRuntimeDefaultPathMutationApplyReceipt
+
+    public init(
+        h2RuntimeDefaultPathMutationApplyGateBridge:
+            JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge,
+        controlledRuntimeDefaultPathMutationApplyReceipt:
+            IgniteControlledRuntimeDefaultPathMutationApplyReceipt
+    ) {
+        this.h2RuntimeDefaultPathMutationApplyGateBridge =
+            h2RuntimeDefaultPathMutationApplyGateBridge
+        this.controlledRuntimeDefaultPathMutationApplyReceipt =
+            controlledRuntimeDefaultPathMutationApplyReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge {
+    public let h2ControlledRuntimeDefaultPathMutationApplyAccepted: Bool
+    public let h2RuntimeDefaultPathMutationApplyGateAccepted: Bool
+    public let controlledRuntimeDefaultPathMutationApplyAccepted: Bool
+    public let controlledRuntimeDefaultPathMutationApplyAllowed: Bool
+    public let boundedControlledRuntimeDefaultPathMutationApplyFollowupAllowed: Bool
+    public let controlledRuntimeDefaultPathMutationApplyMode: String
+    public let controlledRuntimeDefaultPathMutationApplyId: String
+    public let runtimeDefaultPathMutationApplyGateMode: String
+    public let runtimeDefaultPathMutationApplyGateId: String
+    public let runtimeDefaultPathMutationDryRunId: String
+    public let runtimeDefaultPathMutationGateId: String
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ControlledRuntimeDefaultPathMutationApplyAccepted: Bool,
+        h2RuntimeDefaultPathMutationApplyGateAccepted: Bool,
+        controlledRuntimeDefaultPathMutationApplyAccepted: Bool,
+        controlledRuntimeDefaultPathMutationApplyAllowed: Bool,
+        boundedControlledRuntimeDefaultPathMutationApplyFollowupAllowed: Bool,
+        controlledRuntimeDefaultPathMutationApplyMode: String,
+        controlledRuntimeDefaultPathMutationApplyId: String,
+        runtimeDefaultPathMutationApplyGateMode: String,
+        runtimeDefaultPathMutationApplyGateId: String,
+        runtimeDefaultPathMutationDryRunId: String,
+        runtimeDefaultPathMutationGateId: String,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ControlledRuntimeDefaultPathMutationApplyAccepted =
+            h2ControlledRuntimeDefaultPathMutationApplyAccepted
+        this.h2RuntimeDefaultPathMutationApplyGateAccepted =
+            h2RuntimeDefaultPathMutationApplyGateAccepted
+        this.controlledRuntimeDefaultPathMutationApplyAccepted =
+            controlledRuntimeDefaultPathMutationApplyAccepted
+        this.controlledRuntimeDefaultPathMutationApplyAllowed =
+            controlledRuntimeDefaultPathMutationApplyAllowed
+        this.boundedControlledRuntimeDefaultPathMutationApplyFollowupAllowed =
+            boundedControlledRuntimeDefaultPathMutationApplyFollowupAllowed
+        this.controlledRuntimeDefaultPathMutationApplyMode =
+            controlledRuntimeDefaultPathMutationApplyMode
+        this.controlledRuntimeDefaultPathMutationApplyId =
+            controlledRuntimeDefaultPathMutationApplyId
+        this.runtimeDefaultPathMutationApplyGateMode =
+            runtimeDefaultPathMutationApplyGateMode
+        this.runtimeDefaultPathMutationApplyGateId =
+            runtimeDefaultPathMutationApplyGateId
+        this.runtimeDefaultPathMutationDryRunId =
+            runtimeDefaultPathMutationDryRunId
+        this.runtimeDefaultPathMutationGateId =
+            runtimeDefaultPathMutationGateId
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge(
+    evidence: JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyEvidence
+): JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge {
+    let h2ApplyGateBridge =
+        evidence.h2RuntimeDefaultPathMutationApplyGateBridge
+    let controlledApplyReceipt =
+        evidence.controlledRuntimeDefaultPathMutationApplyReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyNonClaims()
+    if (
+        !h2ApplyGateBridge.h2RuntimeDefaultPathMutationApplyGateAccepted ||
+        !h2ApplyGateBridge.boundedRuntimeDefaultPathMutationApplyGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge(
+            false,
+            h2ApplyGateBridge.h2RuntimeDefaultPathMutationApplyGateAccepted,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAccepted,
+            false,
+            false,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            controlledApplyReceipt.runtimeDefaultPathMutationApplyGateMode,
+            controlledApplyReceipt.runtimeDefaultPathMutationApplyGateId,
+            controlledApplyReceipt.runtimeDefaultPathMutationDryRunId,
+            controlledApplyReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-runtime-default-path-mutation-apply-gate-bridge",
+            "collect-accepted-h2-runtime-default-path-mutation-apply-gate-before-controlled-runtime-default-path-mutation-apply",
+            jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyGateBlockers(
+                h2ApplyGateBridge
+            ),
+            nonClaims,
+            "repair H2 runtime default-path mutation apply-gate bridge before controlled apply; do not treat generic controlled apply receipts as H2 runtime mutation",
+            "QUIC must pass runtime default-path mutation apply-gate before controlled stream default mutation apply"
+        )
+    }
+    if (
+        !controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAccepted ||
+        !controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAllowed
+    ) {
+        return JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge(
+            false,
+            true,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAccepted,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAllowed,
+            false,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+            controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            controlledApplyReceipt.runtimeDefaultPathMutationApplyGateMode,
+            controlledApplyReceipt.runtimeDefaultPathMutationApplyGateId,
+            controlledApplyReceipt.runtimeDefaultPathMutationDryRunId,
+            controlledApplyReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-controlled-runtime-default-path-mutation-apply-receipt",
+            "collect-accepted-controlled-runtime-default-path-mutation-apply-before-runtime-default-path-mutation-commit-plan",
+            jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyReceiptBlockers(
+                controlledApplyReceipt
+            ),
+            nonClaims,
+            controlledApplyReceipt.nextAction,
+            "QUIC must not consume rejected controlled runtime default-path mutation apply receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge(
+        true,
+        true,
+        true,
+        controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyAllowed,
+        true,
+        controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+        controlledApplyReceipt.controlledRuntimeDefaultPathMutationApplyId,
+        controlledApplyReceipt.runtimeDefaultPathMutationApplyGateMode,
+        controlledApplyReceipt.runtimeDefaultPathMutationApplyGateId,
+        controlledApplyReceipt.runtimeDefaultPathMutationDryRunId,
+        controlledApplyReceipt.runtimeDefaultPathMutationGateId,
+        controlledApplyReceipt.actualDefaultEngineFlipAllowed,
+        controlledApplyReceipt.defaultEngineConfigMutationAllowed,
+        controlledApplyReceipt.runtimeDefaultPathMutationAllowed,
+        controlledApplyReceipt.publicReleaseAllowed,
+        controlledApplyReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-controlled-runtime-default-path-mutation-apply-bridge",
+        "record-h2-controlled-runtime-default-path-mutation-apply-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 runtime default-path mutation commit-plan; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style apply-gate plus generic controlled-apply separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyGateBlockers(
+    bridge: JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_GATE_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyReceiptBlockers(
+    receipt: IgniteControlledRuntimeDefaultPathMutationApplyReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add(
+            "CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_PLAN",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanEvidence {
+    public let h2ControlledRuntimeDefaultPathMutationApplyBridge:
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge
+    public let runtimeDefaultPathMutationCommitPlanReceipt:
+        IgniteRuntimeDefaultPathMutationCommitPlanReceipt
+
+    public init(
+        h2ControlledRuntimeDefaultPathMutationApplyBridge:
+            JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge,
+        runtimeDefaultPathMutationCommitPlanReceipt:
+            IgniteRuntimeDefaultPathMutationCommitPlanReceipt
+    ) {
+        this.h2ControlledRuntimeDefaultPathMutationApplyBridge =
+            h2ControlledRuntimeDefaultPathMutationApplyBridge
+        this.runtimeDefaultPathMutationCommitPlanReceipt =
+            runtimeDefaultPathMutationCommitPlanReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge {
+    public let h2RuntimeDefaultPathMutationCommitPlanAccepted: Bool
+    public let h2ControlledRuntimeDefaultPathMutationApplyAccepted: Bool
+    public let runtimeDefaultPathMutationCommitPlanAccepted: Bool
+    public let runtimeDefaultPathMutationCommitPlanAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationCommitPlanFollowupAllowed: Bool
+    public let runtimeDefaultPathMutationCommitPlanMode: String
+    public let runtimeDefaultPathMutationCommitPlanId: String
+    public let controlledRuntimeDefaultPathMutationApplyMode: String
+    public let controlledRuntimeDefaultPathMutationApplyId: String
+    public let runtimeDefaultPathMutationApplyGateId: String
+    public let runtimeDefaultPathMutationDryRunId: String
+    public let runtimeDefaultPathMutationGateId: String
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationCommitPlanAccepted: Bool,
+        h2ControlledRuntimeDefaultPathMutationApplyAccepted: Bool,
+        runtimeDefaultPathMutationCommitPlanAccepted: Bool,
+        runtimeDefaultPathMutationCommitPlanAllowed: Bool,
+        boundedRuntimeDefaultPathMutationCommitPlanFollowupAllowed: Bool,
+        runtimeDefaultPathMutationCommitPlanMode: String,
+        runtimeDefaultPathMutationCommitPlanId: String,
+        controlledRuntimeDefaultPathMutationApplyMode: String,
+        controlledRuntimeDefaultPathMutationApplyId: String,
+        runtimeDefaultPathMutationApplyGateId: String,
+        runtimeDefaultPathMutationDryRunId: String,
+        runtimeDefaultPathMutationGateId: String,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationCommitPlanAccepted =
+            h2RuntimeDefaultPathMutationCommitPlanAccepted
+        this.h2ControlledRuntimeDefaultPathMutationApplyAccepted =
+            h2ControlledRuntimeDefaultPathMutationApplyAccepted
+        this.runtimeDefaultPathMutationCommitPlanAccepted =
+            runtimeDefaultPathMutationCommitPlanAccepted
+        this.runtimeDefaultPathMutationCommitPlanAllowed =
+            runtimeDefaultPathMutationCommitPlanAllowed
+        this.boundedRuntimeDefaultPathMutationCommitPlanFollowupAllowed =
+            boundedRuntimeDefaultPathMutationCommitPlanFollowupAllowed
+        this.runtimeDefaultPathMutationCommitPlanMode =
+            runtimeDefaultPathMutationCommitPlanMode
+        this.runtimeDefaultPathMutationCommitPlanId =
+            runtimeDefaultPathMutationCommitPlanId
+        this.controlledRuntimeDefaultPathMutationApplyMode =
+            controlledRuntimeDefaultPathMutationApplyMode
+        this.controlledRuntimeDefaultPathMutationApplyId =
+            controlledRuntimeDefaultPathMutationApplyId
+        this.runtimeDefaultPathMutationApplyGateId =
+            runtimeDefaultPathMutationApplyGateId
+        this.runtimeDefaultPathMutationDryRunId =
+            runtimeDefaultPathMutationDryRunId
+        this.runtimeDefaultPathMutationGateId =
+            runtimeDefaultPathMutationGateId
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge {
+    let h2ControlledApplyBridge =
+        evidence.h2ControlledRuntimeDefaultPathMutationApplyBridge
+    let commitPlanReceipt =
+        evidence.runtimeDefaultPathMutationCommitPlanReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanNonClaims()
+    if (
+        !h2ControlledApplyBridge.h2ControlledRuntimeDefaultPathMutationApplyAccepted ||
+        !h2ControlledApplyBridge.boundedControlledRuntimeDefaultPathMutationApplyFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+            false,
+            h2ControlledApplyBridge.h2ControlledRuntimeDefaultPathMutationApplyAccepted,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAccepted,
+            false,
+            false,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanMode,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanId,
+            commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+            commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            commitPlanReceipt.runtimeDefaultPathMutationApplyGateId,
+            commitPlanReceipt.runtimeDefaultPathMutationDryRunId,
+            commitPlanReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-controlled-runtime-default-path-mutation-apply-bridge",
+            "collect-accepted-h2-controlled-runtime-default-path-mutation-apply-before-runtime-default-path-mutation-commit-plan",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanControlledApplyBlockers(
+                h2ControlledApplyBridge
+            ),
+            nonClaims,
+            "repair H2 controlled runtime default-path mutation apply bridge before commit-plan; do not treat generic commit-plan receipts as H2 runtime mutation",
+            "QUIC must pass controlled stream default mutation apply before runtime default-path mutation commit-plan"
+        )
+    }
+    if (
+        !commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAccepted ||
+        !commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+            false,
+            true,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAccepted,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAllowed,
+            false,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanMode,
+            commitPlanReceipt.runtimeDefaultPathMutationCommitPlanId,
+            commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+            commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            commitPlanReceipt.runtimeDefaultPathMutationApplyGateId,
+            commitPlanReceipt.runtimeDefaultPathMutationDryRunId,
+            commitPlanReceipt.runtimeDefaultPathMutationGateId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-runtime-default-path-mutation-commit-plan-receipt",
+            "collect-accepted-runtime-default-path-mutation-commit-plan-before-runtime-default-path-mutation-commit-dry-run",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanReceiptBlockers(
+                commitPlanReceipt
+            ),
+            nonClaims,
+            commitPlanReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation commit-plan receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanBridge(
+        true,
+        true,
+        true,
+        commitPlanReceipt.runtimeDefaultPathMutationCommitPlanAllowed,
+        true,
+        commitPlanReceipt.runtimeDefaultPathMutationCommitPlanMode,
+        commitPlanReceipt.runtimeDefaultPathMutationCommitPlanId,
+        commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyMode,
+        commitPlanReceipt.controlledRuntimeDefaultPathMutationApplyId,
+        commitPlanReceipt.runtimeDefaultPathMutationApplyGateId,
+        commitPlanReceipt.runtimeDefaultPathMutationDryRunId,
+        commitPlanReceipt.runtimeDefaultPathMutationGateId,
+        commitPlanReceipt.actualDefaultEngineFlipAllowed,
+        commitPlanReceipt.defaultEngineConfigMutationAllowed,
+        commitPlanReceipt.runtimeDefaultPathMutationAllowed,
+        commitPlanReceipt.publicReleaseAllowed,
+        commitPlanReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-runtime-default-path-mutation-commit-plan-bridge",
+        "record-h2-runtime-default-path-mutation-commit-plan-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 runtime default-path mutation commit-dry-run; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style controlled-apply plus generic commit-plan separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanControlledApplyBlockers(
+    bridge:
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationCommitPlanReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_PLAN:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_PLAN_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationCommitPlanNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_COMMIT_DRY_RUN",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
