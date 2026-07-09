@@ -7199,6 +7199,293 @@ func jinguiAcceptedTransportH2ProductionQueueMutationCommitPlanNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2ProductionQueueMutationApplyGateEvidence {
+    public let h2ProductionQueueMutationCommitPlanBridge:
+        JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge
+    public let productionQueueMutationApplyGateReceipt:
+        IgniteProductionQueueMutationApplyGateReceipt
+
+    public init(
+        h2ProductionQueueMutationCommitPlanBridge:
+            JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge,
+        productionQueueMutationApplyGateReceipt:
+            IgniteProductionQueueMutationApplyGateReceipt
+    ) {
+        this.h2ProductionQueueMutationCommitPlanBridge =
+            h2ProductionQueueMutationCommitPlanBridge
+        this.productionQueueMutationApplyGateReceipt =
+            productionQueueMutationApplyGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge {
+    public let h2ProductionQueueMutationApplyGateAccepted: Bool
+    public let h2ProductionQueueMutationCommitPlanAccepted: Bool
+    public let productionQueueMutationApplyGateAccepted: Bool
+    public let productionQueueMutationApplyGateAllowed: Bool
+    public let boundedProductionQueueMutationApplyGateFollowupAllowed: Bool
+    public let actualProductionQueueMutationAllowed: Bool
+    public let controlledProductionQueueMutationApplyAllowed: Bool
+    public let liveExecutorEnqueueAllowed: Bool
+    public let runtimeTaskSpawnAllowed: Bool
+    public let handlerInvocationAllowed: Bool
+    public let requestContextMutationAllowed: Bool
+    public let responseWriteAllowed: Bool
+    public let transportCommitAllowed: Bool
+    public let liveServerWiringAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let productionQueueMutationApplyGateMode: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ProductionQueueMutationApplyGateAccepted: Bool,
+        h2ProductionQueueMutationCommitPlanAccepted: Bool,
+        productionQueueMutationApplyGateAccepted: Bool,
+        productionQueueMutationApplyGateAllowed: Bool,
+        boundedProductionQueueMutationApplyGateFollowupAllowed: Bool,
+        actualProductionQueueMutationAllowed: Bool,
+        controlledProductionQueueMutationApplyAllowed: Bool,
+        liveExecutorEnqueueAllowed: Bool,
+        runtimeTaskSpawnAllowed: Bool,
+        handlerInvocationAllowed: Bool,
+        requestContextMutationAllowed: Bool,
+        responseWriteAllowed: Bool,
+        transportCommitAllowed: Bool,
+        liveServerWiringAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        productionQueueMutationApplyGateMode: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ProductionQueueMutationApplyGateAccepted =
+            h2ProductionQueueMutationApplyGateAccepted
+        this.h2ProductionQueueMutationCommitPlanAccepted =
+            h2ProductionQueueMutationCommitPlanAccepted
+        this.productionQueueMutationApplyGateAccepted =
+            productionQueueMutationApplyGateAccepted
+        this.productionQueueMutationApplyGateAllowed =
+            productionQueueMutationApplyGateAllowed
+        this.boundedProductionQueueMutationApplyGateFollowupAllowed =
+            boundedProductionQueueMutationApplyGateFollowupAllowed
+        this.actualProductionQueueMutationAllowed =
+            actualProductionQueueMutationAllowed
+        this.controlledProductionQueueMutationApplyAllowed =
+            controlledProductionQueueMutationApplyAllowed
+        this.liveExecutorEnqueueAllowed = liveExecutorEnqueueAllowed
+        this.runtimeTaskSpawnAllowed = runtimeTaskSpawnAllowed
+        this.handlerInvocationAllowed = handlerInvocationAllowed
+        this.requestContextMutationAllowed = requestContextMutationAllowed
+        this.responseWriteAllowed = responseWriteAllowed
+        this.transportCommitAllowed = transportCommitAllowed
+        this.liveServerWiringAllowed = liveServerWiringAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.productionQueueMutationApplyGateMode =
+            productionQueueMutationApplyGateMode
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge(
+    evidence: JinguiAcceptedTransportH2ProductionQueueMutationApplyGateEvidence
+): JinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge {
+    let h2CommitPlanBridge = evidence.h2ProductionQueueMutationCommitPlanBridge
+    let applyGateReceipt = evidence.productionQueueMutationApplyGateReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2ProductionQueueMutationApplyGateNonClaims()
+    if (
+        !h2CommitPlanBridge.h2ProductionQueueMutationCommitPlanAccepted ||
+        !h2CommitPlanBridge.boundedProductionQueueMutationCommitPlanFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge(
+            false,
+            h2CommitPlanBridge.h2ProductionQueueMutationCommitPlanAccepted,
+            applyGateReceipt.productionQueueMutationApplyGateAccepted,
+            applyGateReceipt.productionQueueMutationApplyGateAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            applyGateReceipt.productionQueueMutationApplyGateMode,
+            applyGateReceipt.mutationApplyGateId,
+            h2CommitPlanBridge.mutationCommitPlanId,
+            h2CommitPlanBridge.mutationDryRunId,
+            h2CommitPlanBridge.mutationGateId,
+            h2CommitPlanBridge.commitBoundaryId,
+            h2CommitPlanBridge.queueWriteId,
+            h2CommitPlanBridge.queueDepthBefore,
+            h2CommitPlanBridge.queueDepthAfter,
+            "blocked-h2-production-queue-mutation-commit-plan-bridge",
+            "collect-accepted-h2-production-queue-mutation-commit-plan-before-apply-gate",
+            jinguiAcceptedTransportH2ProductionQueueMutationApplyGateCommitPlanBlockers(
+                h2CommitPlanBridge
+            ),
+            nonClaims,
+            "repair H2 production queue mutation commit-plan before apply-gate; do not treat generic apply-gate receipts as H2 runtime readiness",
+            "QUIC must pass stream mutation commit-plans before stream mutation apply gates"
+        )
+    }
+    if (
+        !applyGateReceipt.productionQueueMutationApplyGateAccepted ||
+        !applyGateReceipt.productionQueueMutationApplyGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge(
+            false,
+            true,
+            applyGateReceipt.productionQueueMutationApplyGateAccepted,
+            applyGateReceipt.productionQueueMutationApplyGateAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            applyGateReceipt.productionQueueMutationApplyGateMode,
+            applyGateReceipt.mutationApplyGateId,
+            applyGateReceipt.mutationCommitPlanId,
+            applyGateReceipt.mutationDryRunId,
+            applyGateReceipt.mutationGateId,
+            applyGateReceipt.commitBoundaryId,
+            applyGateReceipt.queueWriteId,
+            applyGateReceipt.queueDepthBefore,
+            applyGateReceipt.queueDepthAfter,
+            "blocked-production-queue-mutation-apply-gate-receipt",
+            "collect-accepted-production-queue-mutation-apply-gate-before-h2-controlled-apply",
+            jinguiAcceptedTransportH2ProductionQueueMutationApplyGateReceiptBlockers(
+                applyGateReceipt
+            ),
+            nonClaims,
+            applyGateReceipt.nextAction,
+            "QUIC must not consume rejected production mutation apply-gates for stream mutation controlled apply"
+        )
+    }
+
+    JinguiAcceptedTransportH2ProductionQueueMutationApplyGateBridge(
+        true,
+        true,
+        true,
+        applyGateReceipt.productionQueueMutationApplyGateAllowed,
+        true,
+        applyGateReceipt.actualProductionQueueMutationAllowed,
+        false,
+        applyGateReceipt.liveExecutorEnqueueAllowed,
+        applyGateReceipt.runtimeTaskSpawnAllowed,
+        applyGateReceipt.handlerInvocationAllowed,
+        applyGateReceipt.requestContextMutationAllowed,
+        applyGateReceipt.responseWriteAllowed,
+        applyGateReceipt.transportCommitAllowed,
+        applyGateReceipt.liveServerWiringAllowed,
+        false,
+        applyGateReceipt.productionQueueMutationApplyGateMode,
+        applyGateReceipt.mutationApplyGateId,
+        applyGateReceipt.mutationCommitPlanId,
+        applyGateReceipt.mutationDryRunId,
+        applyGateReceipt.mutationGateId,
+        applyGateReceipt.commitBoundaryId,
+        applyGateReceipt.queueWriteId,
+        applyGateReceipt.queueDepthBefore,
+        applyGateReceipt.queueDepthAfter,
+        "accepted-h2-production-queue-mutation-apply-gate-bridge",
+        "record-h2-production-queue-mutation-apply-gate-without-controlled-apply",
+        [],
+        nonClaims,
+        "next packet may plan an H2 controlled production queue mutation apply; actual mutation, live executor enqueue, runtime task spawn, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style commit-plan plus apply-gate separation before stream queue mutation controlled apply"
+    )
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationApplyGateCommitPlanBlockers(
+    bridge: JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_PRODUCTION_QUEUE_MUTATION_COMMIT_PLAN:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_PRODUCTION_QUEUE_MUTATION_COMMIT_PLAN_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationApplyGateReceiptBlockers(
+    receipt: IgniteProductionQueueMutationApplyGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("PRODUCTION_QUEUE_MUTATION_APPLY_GATE:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("PRODUCTION_QUEUE_MUTATION_APPLY_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ProductionQueueMutationApplyGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_PRODUCTION_QUEUE_MUTATION",
+        "NO_CONTROLLED_PRODUCTION_QUEUE_MUTATION_APPLY",
+        "NO_LIVE_EXECUTOR_ENQUEUE",
+        "NO_RUNTIME_TASK_SPAWN",
+        "NO_HANDLER_INVOCATION",
+        "NO_REQUEST_CONTEXT_MUTATION",
+        "NO_RESPONSE_WRITE",
+        "NO_TRANSPORT_COMMIT",
+        "NO_LIVE_SERVER_WIRING",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
