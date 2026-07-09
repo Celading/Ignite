@@ -2324,6 +2324,123 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[3], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
     }
+
+    @TestCase
+    public func testH2DefaultEngineMutationDryRunBlocksRejectedCommitPlan(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineMutationDryRunBridge(
+                JinguiAcceptedTransportH2DefaultEngineMutationDryRunEvidence(
+                    buildHq0758RejectedH2DefaultEngineMutationCommitPlanBridge(),
+                    buildHq0758AcceptedDefaultEngineMutationDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-default-engine-mutation-commit-plan-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-default-engine-mutation-commit-plan-before-default-engine-mutation-dry-run"
+        )
+        @Assert(bridge.h2DefaultEngineMutationDryRunAccepted, false)
+        @Assert(bridge.h2DefaultEngineMutationCommitPlanAccepted, false)
+        @Assert(bridge.defaultEngineMutationDryRunAccepted, true)
+        @Assert(
+            bridge.boundedDefaultEngineMutationDryRunFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_DEFAULT_ENGINE_MUTATION_COMMIT_PLAN:blocked-h2-controlled-default-engine-apply-bridge"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2DefaultEngineMutationDryRunBlocksRejectedDryRun(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineMutationDryRunBridge(
+                JinguiAcceptedTransportH2DefaultEngineMutationDryRunEvidence(
+                    buildHq0758AcceptedH2DefaultEngineMutationCommitPlanBridge(),
+                    buildHq0758BlockedDefaultEngineMutationDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-default-engine-mutation-dry-run-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-default-engine-mutation-dry-run-before-default-engine-mutation-apply-gate"
+        )
+        @Assert(bridge.h2DefaultEngineMutationCommitPlanAccepted, true)
+        @Assert(bridge.defaultEngineMutationDryRunAccepted, false)
+        @Assert(bridge.defaultEngineMutationDryRunAllowed, false)
+        @Assert(
+            bridge.boundedDefaultEngineMutationDryRunFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "DEFAULT_ENGINE_MUTATION_DRY_RUN:blocked-default-engine-mutation-dry-run-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "DEFAULT_ENGINE_MUTATION_DRY_RUN_BLOCKER:DEFAULT_ENGINE_CONFIG_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2DefaultEngineMutationDryRunAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2DefaultEngineMutationDryRunBridge(
+                JinguiAcceptedTransportH2DefaultEngineMutationDryRunEvidence(
+                    buildHq0758AcceptedH2DefaultEngineMutationCommitPlanBridge(),
+                    buildHq0758AcceptedDefaultEngineMutationDryRunReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-default-engine-mutation-dry-run-bridge"
+        )
+        @Assert(bridge.h2DefaultEngineMutationDryRunAccepted, true)
+        @Assert(bridge.h2DefaultEngineMutationCommitPlanAccepted, true)
+        @Assert(bridge.defaultEngineMutationDryRunAccepted, true)
+        @Assert(bridge.defaultEngineMutationDryRunAllowed, true)
+        @Assert(
+            bridge.boundedDefaultEngineMutationDryRunFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.defaultEngineMutationDryRunMode,
+            "short-default-engine-mutation-dry-run"
+        )
+        @Assert(
+            bridge.defaultEngineMutationDryRunId,
+            "h2-default-engine-mutation-dry-run-1"
+        )
+        @Assert(
+            bridge.defaultEngineMutationCommitPlanId,
+            "h2-default-engine-mutation-commit-plan-1"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.publicReleaseAllowed, false)
+        @Assert(bridge.stdxRemovalAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[3], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -4093,5 +4210,99 @@ func buildHq0757BlockedDefaultEngineMutationCommitPlanReceipt(
     buildIgniteDefaultEngineMutationCommitPlanReceipt(
         buildHq0756AcceptedControlledDefaultEngineFlipApplyReceipt(),
         buildHq0757BlockedDefaultEngineMutationCommitPlanRequest()
+    )
+}
+
+func buildHq0758RejectedH2DefaultEngineMutationCommitPlanBridge(
+): JinguiAcceptedTransportH2DefaultEngineMutationCommitPlanBridge {
+    buildJinguiAcceptedTransportH2DefaultEngineMutationCommitPlanBridge(
+        JinguiAcceptedTransportH2DefaultEngineMutationCommitPlanEvidence(
+            buildHq0757RejectedH2ControlledDefaultEngineApplyBridge(),
+            buildHq0757AcceptedDefaultEngineMutationCommitPlanReceipt()
+        )
+    )
+}
+
+func buildHq0758AcceptedH2DefaultEngineMutationCommitPlanBridge(
+): JinguiAcceptedTransportH2DefaultEngineMutationCommitPlanBridge {
+    buildJinguiAcceptedTransportH2DefaultEngineMutationCommitPlanBridge(
+        JinguiAcceptedTransportH2DefaultEngineMutationCommitPlanEvidence(
+            buildHq0757AcceptedH2ControlledDefaultEngineApplyBridge(),
+            buildHq0757AcceptedDefaultEngineMutationCommitPlanReceipt()
+        )
+    )
+}
+
+func buildHq0758AcceptedDefaultEngineMutationDryRunRequest(
+): IgniteDefaultEngineMutationDryRunRequest {
+    IgniteDefaultEngineMutationDryRunRequest(
+        "h2-default-engine-mutation-dry-run-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0758BlockedDefaultEngineMutationDryRunRequest(
+): IgniteDefaultEngineMutationDryRunRequest {
+    IgniteDefaultEngineMutationDryRunRequest(
+        "h2-default-engine-mutation-dry-run-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0758AcceptedDefaultEngineMutationDryRunReceipt(
+): IgniteDefaultEngineMutationDryRunReceipt {
+    buildIgniteDefaultEngineMutationDryRunReceipt(
+        buildHq0757AcceptedDefaultEngineMutationCommitPlanReceipt(),
+        buildHq0758AcceptedDefaultEngineMutationDryRunRequest()
+    )
+}
+
+func buildHq0758BlockedDefaultEngineMutationDryRunReceipt(
+): IgniteDefaultEngineMutationDryRunReceipt {
+    buildIgniteDefaultEngineMutationDryRunReceipt(
+        buildHq0757AcceptedDefaultEngineMutationCommitPlanReceipt(),
+        buildHq0758BlockedDefaultEngineMutationDryRunRequest()
     )
 }
