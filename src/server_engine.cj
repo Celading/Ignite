@@ -10894,6 +10894,400 @@ func jinguiAcceptedTransportH2DefaultEngineApplyGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2ControlledDefaultEngineApplyEvidence {
+    public let h2DefaultEngineApplyGateBridge:
+        JinguiAcceptedTransportH2DefaultEngineApplyGateBridge
+    public let controlledDefaultEngineFlipApplyReceipt:
+        IgniteControlledDefaultEngineFlipApplyReceipt
+
+    public init(
+        h2DefaultEngineApplyGateBridge:
+            JinguiAcceptedTransportH2DefaultEngineApplyGateBridge,
+        controlledDefaultEngineFlipApplyReceipt:
+            IgniteControlledDefaultEngineFlipApplyReceipt
+    ) {
+        this.h2DefaultEngineApplyGateBridge =
+            h2DefaultEngineApplyGateBridge
+        this.controlledDefaultEngineFlipApplyReceipt =
+            controlledDefaultEngineFlipApplyReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge {
+    public let h2ControlledDefaultEngineApplyAccepted: Bool
+    public let h2DefaultEngineApplyGateAccepted: Bool
+    public let controlledDefaultEngineFlipApplyAccepted: Bool
+    public let controlledDefaultEngineFlipApplyAllowed: Bool
+    public let boundedControlledDefaultEngineApplyFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let actualTransportCommitAllowed: Bool
+    public let actualLiveServerWiringAllowed: Bool
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let defaultEngineFlipReadinessMode: String
+    public let defaultEngineFlipApplyGateMode: String
+    public let controlledDefaultEngineFlipApplyMode: String
+    public let controlledDefaultEngineFlipApplyId: String
+    public let defaultEngineFlipApplyGateId: String
+    public let defaultEngineFlipReadinessGateId: String
+    public let liveServerWiringGateId: String
+    public let transportCommitGateId: String
+    public let responseWriteGateId: String
+    public let requestContextMutationGateId: String
+    public let handlerInvocationGateId: String
+    public let runtimeSpawnGateId: String
+    public let liveEnqueueProofId: String
+    public let executorHandoffId: String
+    public let controlledMutationApplyId: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ControlledDefaultEngineApplyAccepted: Bool,
+        h2DefaultEngineApplyGateAccepted: Bool,
+        controlledDefaultEngineFlipApplyAccepted: Bool,
+        controlledDefaultEngineFlipApplyAllowed: Bool,
+        boundedControlledDefaultEngineApplyFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        actualTransportCommitAllowed: Bool,
+        actualLiveServerWiringAllowed: Bool,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        defaultEngineFlipReadinessMode: String,
+        defaultEngineFlipApplyGateMode: String,
+        controlledDefaultEngineFlipApplyMode: String,
+        controlledDefaultEngineFlipApplyId: String,
+        defaultEngineFlipApplyGateId: String,
+        defaultEngineFlipReadinessGateId: String,
+        liveServerWiringGateId: String,
+        transportCommitGateId: String,
+        responseWriteGateId: String,
+        requestContextMutationGateId: String,
+        handlerInvocationGateId: String,
+        runtimeSpawnGateId: String,
+        liveEnqueueProofId: String,
+        executorHandoffId: String,
+        controlledMutationApplyId: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ControlledDefaultEngineApplyAccepted =
+            h2ControlledDefaultEngineApplyAccepted
+        this.h2DefaultEngineApplyGateAccepted =
+            h2DefaultEngineApplyGateAccepted
+        this.controlledDefaultEngineFlipApplyAccepted =
+            controlledDefaultEngineFlipApplyAccepted
+        this.controlledDefaultEngineFlipApplyAllowed =
+            controlledDefaultEngineFlipApplyAllowed
+        this.boundedControlledDefaultEngineApplyFollowupAllowed =
+            boundedControlledDefaultEngineApplyFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.actualTransportCommitAllowed = actualTransportCommitAllowed
+        this.actualLiveServerWiringAllowed = actualLiveServerWiringAllowed
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.defaultEngineFlipReadinessMode =
+            defaultEngineFlipReadinessMode
+        this.defaultEngineFlipApplyGateMode = defaultEngineFlipApplyGateMode
+        this.controlledDefaultEngineFlipApplyMode =
+            controlledDefaultEngineFlipApplyMode
+        this.controlledDefaultEngineFlipApplyId =
+            controlledDefaultEngineFlipApplyId
+        this.defaultEngineFlipApplyGateId = defaultEngineFlipApplyGateId
+        this.defaultEngineFlipReadinessGateId =
+            defaultEngineFlipReadinessGateId
+        this.liveServerWiringGateId = liveServerWiringGateId
+        this.transportCommitGateId = transportCommitGateId
+        this.responseWriteGateId = responseWriteGateId
+        this.requestContextMutationGateId = requestContextMutationGateId
+        this.handlerInvocationGateId = handlerInvocationGateId
+        this.runtimeSpawnGateId = runtimeSpawnGateId
+        this.liveEnqueueProofId = liveEnqueueProofId
+        this.executorHandoffId = executorHandoffId
+        this.controlledMutationApplyId = controlledMutationApplyId
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+    evidence: JinguiAcceptedTransportH2ControlledDefaultEngineApplyEvidence
+): JinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge {
+    let h2ApplyBridge = evidence.h2DefaultEngineApplyGateBridge
+    let controlledReceipt = evidence.controlledDefaultEngineFlipApplyReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2ControlledDefaultEngineApplyNonClaims()
+    if (
+        !h2ApplyBridge.h2DefaultEngineApplyGateAccepted ||
+        !h2ApplyBridge.boundedDefaultEngineApplyGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+            false,
+            h2ApplyBridge.h2DefaultEngineApplyGateAccepted,
+            controlledReceipt.controlledDefaultEngineFlipApplyAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            h2ApplyBridge.defaultEngineFlipReadinessMode,
+            h2ApplyBridge.defaultEngineFlipApplyGateMode,
+            controlledReceipt.controlledDefaultEngineFlipApplyMode,
+            controlledReceipt.controlledDefaultEngineFlipApplyId,
+            h2ApplyBridge.defaultEngineFlipApplyGateId,
+            h2ApplyBridge.defaultEngineFlipReadinessGateId,
+            h2ApplyBridge.liveServerWiringGateId,
+            h2ApplyBridge.transportCommitGateId,
+            h2ApplyBridge.responseWriteGateId,
+            h2ApplyBridge.requestContextMutationGateId,
+            h2ApplyBridge.handlerInvocationGateId,
+            h2ApplyBridge.runtimeSpawnGateId,
+            h2ApplyBridge.liveEnqueueProofId,
+            h2ApplyBridge.executorHandoffId,
+            h2ApplyBridge.controlledMutationApplyId,
+            h2ApplyBridge.mutationApplyGateId,
+            h2ApplyBridge.mutationCommitPlanId,
+            h2ApplyBridge.mutationDryRunId,
+            h2ApplyBridge.mutationGateId,
+            h2ApplyBridge.commitBoundaryId,
+            h2ApplyBridge.queueWriteId,
+            h2ApplyBridge.queueDepthBefore,
+            h2ApplyBridge.queueDepthAfter,
+            "blocked-h2-default-engine-apply-gate-bridge",
+            "collect-accepted-h2-default-engine-apply-gate-before-controlled-default-apply",
+            jinguiAcceptedTransportH2ControlledDefaultEngineApplyBridgeBlockers(
+                h2ApplyBridge
+            ),
+            nonClaims,
+            "repair H2 default-engine apply gate before controlled default apply; do not treat generic controlled apply receipts as H2 runtime mutation",
+            "QUIC must pass default stream apply gate before controlled runtime apply"
+        )
+    }
+    if (
+        !controlledReceipt.controlledDefaultEngineFlipApplyAccepted ||
+        !controlledReceipt.controlledDefaultEngineFlipApplyAllowed
+    ) {
+        return JinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+            false,
+            true,
+            controlledReceipt.controlledDefaultEngineFlipApplyAccepted,
+            controlledReceipt.controlledDefaultEngineFlipApplyAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            h2ApplyBridge.defaultEngineFlipReadinessMode,
+            controlledReceipt.defaultEngineFlipApplyGateMode,
+            controlledReceipt.controlledDefaultEngineFlipApplyMode,
+            controlledReceipt.controlledDefaultEngineFlipApplyId,
+            controlledReceipt.defaultEngineFlipApplyGateId,
+            controlledReceipt.defaultEngineFlipReadinessGateId,
+            controlledReceipt.liveServerWiringGateId,
+            controlledReceipt.transportCommitGateId,
+            controlledReceipt.responseWriteGateId,
+            controlledReceipt.requestContextMutationGateId,
+            controlledReceipt.handlerInvocationGateId,
+            controlledReceipt.runtimeSpawnGateId,
+            controlledReceipt.liveEnqueueProofId,
+            controlledReceipt.executorHandoffId,
+            controlledReceipt.controlledMutationApplyId,
+            controlledReceipt.mutationApplyGateId,
+            controlledReceipt.mutationCommitPlanId,
+            controlledReceipt.mutationDryRunId,
+            controlledReceipt.mutationGateId,
+            controlledReceipt.commitBoundaryId,
+            controlledReceipt.queueWriteId,
+            controlledReceipt.queueDepthBefore,
+            controlledReceipt.queueDepthAfter,
+            "blocked-controlled-default-engine-apply-receipt",
+            "collect-accepted-controlled-default-engine-apply-before-default-mutation-plan",
+            jinguiAcceptedTransportH2ControlledDefaultEngineApplyReceiptBlockers(
+                controlledReceipt
+            ),
+            nonClaims,
+            controlledReceipt.nextAction,
+            "QUIC must not consume rejected controlled apply receipts for default stream runtime mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+        true,
+        true,
+        true,
+        controlledReceipt.controlledDefaultEngineFlipApplyAllowed,
+        true,
+        controlledReceipt.productionQueueMutationAllowed,
+        controlledReceipt.actualRuntimeTaskSpawnAllowed,
+        controlledReceipt.actualHandlerInvocationAllowed,
+        controlledReceipt.actualRequestContextMutationAllowed,
+        controlledReceipt.actualResponseWriteAllowed,
+        controlledReceipt.actualTransportCommitAllowed,
+        controlledReceipt.actualLiveServerWiringAllowed,
+        controlledReceipt.actualDefaultEngineFlipAllowed,
+        controlledReceipt.defaultEngineConfigMutationAllowed,
+        controlledReceipt.runtimeDefaultPathMutationAllowed,
+        controlledReceipt.publicReleaseAllowed,
+        controlledReceipt.stdxRemovalAllowed,
+        false,
+        h2ApplyBridge.defaultEngineFlipReadinessMode,
+        controlledReceipt.defaultEngineFlipApplyGateMode,
+        controlledReceipt.controlledDefaultEngineFlipApplyMode,
+        controlledReceipt.controlledDefaultEngineFlipApplyId,
+        controlledReceipt.defaultEngineFlipApplyGateId,
+        controlledReceipt.defaultEngineFlipReadinessGateId,
+        controlledReceipt.liveServerWiringGateId,
+        controlledReceipt.transportCommitGateId,
+        controlledReceipt.responseWriteGateId,
+        controlledReceipt.requestContextMutationGateId,
+        controlledReceipt.handlerInvocationGateId,
+        controlledReceipt.runtimeSpawnGateId,
+        controlledReceipt.liveEnqueueProofId,
+        controlledReceipt.executorHandoffId,
+        controlledReceipt.controlledMutationApplyId,
+        controlledReceipt.mutationApplyGateId,
+        controlledReceipt.mutationCommitPlanId,
+        controlledReceipt.mutationDryRunId,
+        controlledReceipt.mutationGateId,
+        controlledReceipt.commitBoundaryId,
+        controlledReceipt.queueWriteId,
+        controlledReceipt.queueDepthBefore,
+        controlledReceipt.queueDepthAfter,
+        "accepted-h2-controlled-default-engine-apply-bridge",
+        "record-h2-controlled-default-engine-apply-without-default-mutation",
+        [],
+        nonClaims,
+        "next packet may plan H2 default-engine mutation commit-plan; actual default flip, config mutation, runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style apply gate plus controlled apply separation before runtime mutation planning"
+    )
+}
+
+func jinguiAcceptedTransportH2ControlledDefaultEngineApplyBridgeBlockers(
+    bridge: JinguiAcceptedTransportH2DefaultEngineApplyGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_DEFAULT_ENGINE_APPLY_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_DEFAULT_ENGINE_APPLY_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ControlledDefaultEngineApplyReceiptBlockers(
+    receipt: IgniteControlledDefaultEngineFlipApplyReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("CONTROLLED_DEFAULT_ENGINE_APPLY:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("CONTROLLED_DEFAULT_ENGINE_APPLY_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ControlledDefaultEngineApplyNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_ACTUAL_LIVE_SERVER_WIRING",
+        "NO_ACTUAL_RESPONSE_WRITE",
+        "NO_ACTUAL_TRANSPORT_COMMIT",
+        "NO_ACTUAL_REQUEST_CONTEXT_MUTATION",
+        "NO_ACTUAL_HANDLER_INVOCATION",
+        "NO_ACTUAL_RUNTIME_TASK_SPAWN",
+        "NO_PRODUCTION_QUEUE_MUTATION",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool

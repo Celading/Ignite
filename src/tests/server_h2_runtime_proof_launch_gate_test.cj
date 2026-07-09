@@ -2094,6 +2094,119 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[2], "NO_DEFAULT_ENGINE_CONFIG_MUTATION")
     }
+
+    @TestCase
+    public func testH2ControlledDefaultEngineApplyBlocksRejectedApplyBridge(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+                JinguiAcceptedTransportH2ControlledDefaultEngineApplyEvidence(
+                    buildHq0756RejectedH2DefaultEngineApplyGateBridge(),
+                    buildHq0756AcceptedControlledDefaultEngineFlipApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-default-engine-apply-gate-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-default-engine-apply-gate-before-controlled-default-apply"
+        )
+        @Assert(bridge.h2ControlledDefaultEngineApplyAccepted, false)
+        @Assert(bridge.h2DefaultEngineApplyGateAccepted, false)
+        @Assert(bridge.controlledDefaultEngineFlipApplyAccepted, true)
+        @Assert(
+            bridge.boundedControlledDefaultEngineApplyFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_DEFAULT_ENGINE_APPLY_GATE:blocked-h2-default-engine-readiness-gate-bridge"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ControlledDefaultEngineApplyBlocksRejectedControlledApply(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+                JinguiAcceptedTransportH2ControlledDefaultEngineApplyEvidence(
+                    buildHq0756AcceptedH2DefaultEngineApplyGateBridge(),
+                    buildHq0756BlockedControlledDefaultEngineFlipApplyReceipt()
+                )
+            )
+
+        @Assert(bridge.status, "blocked-controlled-default-engine-apply-receipt")
+        @Assert(
+            bridge.decision,
+            "collect-accepted-controlled-default-engine-apply-before-default-mutation-plan"
+        )
+        @Assert(bridge.h2DefaultEngineApplyGateAccepted, true)
+        @Assert(bridge.controlledDefaultEngineFlipApplyAccepted, false)
+        @Assert(bridge.controlledDefaultEngineFlipApplyAllowed, false)
+        @Assert(
+            bridge.boundedControlledDefaultEngineApplyFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "CONTROLLED_DEFAULT_ENGINE_APPLY:blocked-controlled-default-engine-flip-apply-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "CONTROLLED_DEFAULT_ENGINE_APPLY_BLOCKER:DEFAULT_ENGINE_CONFIG_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ControlledDefaultEngineApplyAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledDefaultEngineApplyBridge(
+                JinguiAcceptedTransportH2ControlledDefaultEngineApplyEvidence(
+                    buildHq0756AcceptedH2DefaultEngineApplyGateBridge(),
+                    buildHq0756AcceptedControlledDefaultEngineFlipApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-controlled-default-engine-apply-bridge"
+        )
+        @Assert(bridge.h2ControlledDefaultEngineApplyAccepted, true)
+        @Assert(bridge.h2DefaultEngineApplyGateAccepted, true)
+        @Assert(bridge.controlledDefaultEngineFlipApplyAccepted, true)
+        @Assert(bridge.controlledDefaultEngineFlipApplyAllowed, true)
+        @Assert(
+            bridge.boundedControlledDefaultEngineApplyFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.controlledDefaultEngineFlipApplyMode,
+            "short-controlled-default-engine-flip-apply"
+        )
+        @Assert(
+            bridge.controlledDefaultEngineFlipApplyId,
+            "h2-controlled-default-engine-apply-1"
+        )
+        @Assert(
+            bridge.defaultEngineFlipApplyGateId,
+            "h2-default-engine-apply-gate-1"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.publicReleaseAllowed, false)
+        @Assert(bridge.stdxRemovalAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[3], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -3681,5 +3794,95 @@ func buildHq0755BlockedDefaultEngineApplyGateReceipt(
     buildIgniteDefaultEngineFlipApplyGateReceipt(
         buildHq0754AcceptedDefaultEngineReadinessGateReceipt(),
         buildHq0755BlockedDefaultEngineApplyGateRequest()
+    )
+}
+
+func buildHq0756RejectedH2DefaultEngineApplyGateBridge(
+): JinguiAcceptedTransportH2DefaultEngineApplyGateBridge {
+    buildJinguiAcceptedTransportH2DefaultEngineApplyGateBridge(
+        JinguiAcceptedTransportH2DefaultEngineApplyGateEvidence(
+            buildHq0755RejectedH2DefaultEngineReadinessGateBridge(),
+            buildHq0755AcceptedDefaultEngineApplyGateReceipt()
+        )
+    )
+}
+
+func buildHq0756AcceptedH2DefaultEngineApplyGateBridge(
+): JinguiAcceptedTransportH2DefaultEngineApplyGateBridge {
+    buildJinguiAcceptedTransportH2DefaultEngineApplyGateBridge(
+        JinguiAcceptedTransportH2DefaultEngineApplyGateEvidence(
+            buildHq0755AcceptedH2DefaultEngineReadinessGateBridge(),
+            buildHq0755AcceptedDefaultEngineApplyGateReceipt()
+        )
+    )
+}
+
+func buildHq0756AcceptedControlledDefaultEngineFlipApplyRequest(
+): IgniteControlledDefaultEngineFlipApplyRequest {
+    IgniteControlledDefaultEngineFlipApplyRequest(
+        "h2-controlled-default-engine-apply-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0756BlockedControlledDefaultEngineFlipApplyRequest(
+): IgniteControlledDefaultEngineFlipApplyRequest {
+    IgniteControlledDefaultEngineFlipApplyRequest(
+        "h2-controlled-default-engine-apply-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0756AcceptedControlledDefaultEngineFlipApplyReceipt(
+): IgniteControlledDefaultEngineFlipApplyReceipt {
+    buildIgniteControlledDefaultEngineFlipApplyReceipt(
+        buildHq0755AcceptedDefaultEngineApplyGateReceipt(),
+        buildHq0756AcceptedControlledDefaultEngineFlipApplyRequest()
+    )
+}
+
+func buildHq0756BlockedControlledDefaultEngineFlipApplyReceipt(
+): IgniteControlledDefaultEngineFlipApplyReceipt {
+    buildIgniteControlledDefaultEngineFlipApplyReceipt(
+        buildHq0755AcceptedDefaultEngineApplyGateReceipt(),
+        buildHq0756BlockedControlledDefaultEngineFlipApplyRequest()
     )
 }
