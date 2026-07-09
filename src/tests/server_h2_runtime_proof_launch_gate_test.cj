@@ -2675,6 +2675,131 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
         @Assert(bridge.nonClaims[3], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationGateBlocksRejectedControlledApplyBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateEvidence(
+                    buildHq0761RejectedH2ControlledDefaultEngineMutationApplyBridge(),
+                    buildHq0761AcceptedRuntimeDefaultPathMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-controlled-default-engine-mutation-apply-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-controlled-default-engine-mutation-apply-before-runtime-default-path-mutation-gate"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationGateAccepted, false)
+        @Assert(
+            bridge.h2ControlledDefaultEngineMutationApplyAccepted,
+            false
+        )
+        @Assert(bridge.runtimeDefaultPathMutationGateAccepted, true)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_CONTROLLED_DEFAULT_ENGINE_MUTATION_APPLY:blocked-h2-default-engine-mutation-apply-gate-bridge"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationGateBlocksRejectedRuntimeGate(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateEvidence(
+                    buildHq0761AcceptedH2ControlledDefaultEngineMutationApplyBridge(),
+                    buildHq0761BlockedRuntimeDefaultPathMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-gate-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-runtime-default-path-mutation-gate-before-runtime-default-path-mutation-dry-run"
+        )
+        @Assert(
+            bridge.h2ControlledDefaultEngineMutationApplyAccepted,
+            true
+        )
+        @Assert(bridge.runtimeDefaultPathMutationGateAccepted, false)
+        @Assert(bridge.runtimeDefaultPathMutationGateAllowed, false)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_GATE:blocked-runtime-default-path-mutation-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_GATE_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationGateAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationGateEvidence(
+                    buildHq0761AcceptedH2ControlledDefaultEngineMutationApplyBridge(),
+                    buildHq0761AcceptedRuntimeDefaultPathMutationGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-gate-bridge"
+        )
+        @Assert(bridge.h2RuntimeDefaultPathMutationGateAccepted, true)
+        @Assert(
+            bridge.h2ControlledDefaultEngineMutationApplyAccepted,
+            true
+        )
+        @Assert(bridge.runtimeDefaultPathMutationGateAccepted, true)
+        @Assert(bridge.runtimeDefaultPathMutationGateAllowed, true)
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationGateMode,
+            "short-runtime-default-path-mutation-gate"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationGateId,
+            "h2-runtime-default-path-mutation-gate-1"
+        )
+        @Assert(
+            bridge.controlledDefaultEngineMutationApplyId,
+            "h2-controlled-default-engine-mutation-apply-1"
+        )
+        @Assert(bridge.actualDefaultEngineFlipAllowed, false)
+        @Assert(bridge.defaultEngineConfigMutationAllowed, false)
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.publicReleaseAllowed, false)
+        @Assert(bridge.stdxRemovalAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -4720,5 +4845,97 @@ func buildHq0760BlockedControlledDefaultEngineMutationApplyReceipt(
     buildIgniteControlledDefaultEngineMutationApplyReceipt(
         buildHq0759AcceptedDefaultEngineMutationApplyGateReceipt(),
         buildHq0760BlockedControlledDefaultEngineMutationApplyRequest()
+    )
+}
+
+func buildHq0761RejectedH2ControlledDefaultEngineMutationApplyBridge(
+): JinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyBridge {
+    buildJinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyBridge(
+        JinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyEvidence(
+            buildHq0760RejectedH2DefaultEngineMutationApplyGateBridge(),
+            buildHq0760AcceptedControlledDefaultEngineMutationApplyReceipt()
+        )
+    )
+}
+
+func buildHq0761AcceptedH2ControlledDefaultEngineMutationApplyBridge(
+): JinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyBridge {
+    buildJinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyBridge(
+        JinguiAcceptedTransportH2ControlledDefaultEngineMutationApplyEvidence(
+            buildHq0760AcceptedH2DefaultEngineMutationApplyGateBridge(),
+            buildHq0760AcceptedControlledDefaultEngineMutationApplyReceipt()
+        )
+    )
+}
+
+func buildHq0761AcceptedRuntimeDefaultPathMutationGateRequest(
+): IgniteRuntimeDefaultPathMutationGateRequest {
+    IgniteRuntimeDefaultPathMutationGateRequest(
+        "h2-runtime-default-path-mutation-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0761BlockedRuntimeDefaultPathMutationGateRequest(
+): IgniteRuntimeDefaultPathMutationGateRequest {
+    IgniteRuntimeDefaultPathMutationGateRequest(
+        "h2-runtime-default-path-mutation-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0761AcceptedRuntimeDefaultPathMutationGateReceipt(
+): IgniteRuntimeDefaultPathMutationGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationGateReceipt(
+        buildHq0760AcceptedControlledDefaultEngineMutationApplyReceipt(),
+        buildHq0761AcceptedRuntimeDefaultPathMutationGateRequest()
+    )
+}
+
+func buildHq0761BlockedRuntimeDefaultPathMutationGateReceipt(
+): IgniteRuntimeDefaultPathMutationGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationGateReceipt(
+        buildHq0760AcceptedControlledDefaultEngineMutationApplyReceipt(),
+        buildHq0761BlockedRuntimeDefaultPathMutationGateRequest()
     )
 }
