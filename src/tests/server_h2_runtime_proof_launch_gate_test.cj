@@ -3916,6 +3916,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE"
         )
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCloseoutGateBlocksRejectedControlledFinalizationApplyBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateEvidence(
+                    buildHq0768RejectedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(),
+                    buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-controlled-runtime-default-path-mutation-finalization-apply-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCloseoutGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_FINALIZATION_APPLY:blocked-controlled-runtime-default-path-mutation-finalization-apply-receipt"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCloseoutGateBlocksRejectedCloseoutGateReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateEvidence(
+                    buildHq0768AcceptedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(),
+                    buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-closeout-gate-receipt"
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCloseoutGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE:blocked-runtime-default-path-mutation-closeout-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationCloseoutGateAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateEvidence(
+                    buildHq0768AcceptedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(),
+                    buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-closeout-gate-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationCloseoutGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateMode,
+            "short-runtime-default-path-mutation-closeout-gate"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationCloseoutGateId,
+            "h2-runtime-default-path-mutation-closeout-gate-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -6953,5 +7084,97 @@ func buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyRece
     buildIgniteControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(
         buildHq0766AcceptedRuntimeDefaultPathMutationFinalizationGateReceipt(),
         buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyRequest()
+    )
+}
+
+func buildHq0768RejectedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+): JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge {
+    buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyEvidence(
+            buildHq0767AcceptedH2RuntimeDefaultPathMutationFinalizationGateBridge(),
+            buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt()
+        )
+    )
+}
+
+func buildHq0768AcceptedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+): JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge {
+    buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyEvidence(
+            buildHq0767AcceptedH2RuntimeDefaultPathMutationFinalizationGateBridge(),
+            buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt()
+        )
+    )
+}
+
+func buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateRequest(
+): IgniteRuntimeDefaultPathMutationCloseoutGateRequest {
+    IgniteRuntimeDefaultPathMutationCloseoutGateRequest(
+        "h2-runtime-default-path-mutation-closeout-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateRequest(
+): IgniteRuntimeDefaultPathMutationCloseoutGateRequest {
+    IgniteRuntimeDefaultPathMutationCloseoutGateRequest(
+        "h2-runtime-default-path-mutation-closeout-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt(
+): IgniteRuntimeDefaultPathMutationCloseoutGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationCloseoutGateReceipt(
+        buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(),
+        buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateRequest()
+    )
+}
+
+func buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateReceipt(
+): IgniteRuntimeDefaultPathMutationCloseoutGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationCloseoutGateReceipt(
+        buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(),
+        buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateRequest()
     )
 }
