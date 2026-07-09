@@ -16190,6 +16190,394 @@ func jinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence {
+    public let h2RuntimeDefaultPathMutationCloseoutGateBridge:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge
+    public let runtimeDefaultPathMutationHandoffGateReceipt:
+        IgniteRuntimeDefaultPathMutationHandoffGateReceipt
+
+    public init(
+        h2RuntimeDefaultPathMutationCloseoutGateBridge:
+            JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge,
+        runtimeDefaultPathMutationHandoffGateReceipt:
+            IgniteRuntimeDefaultPathMutationHandoffGateReceipt
+    ) {
+        this.h2RuntimeDefaultPathMutationCloseoutGateBridge =
+            h2RuntimeDefaultPathMutationCloseoutGateBridge
+        this.runtimeDefaultPathMutationHandoffGateReceipt =
+            runtimeDefaultPathMutationHandoffGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge {
+    public let h2RuntimeDefaultPathMutationHandoffGateAccepted: Bool
+    public let h2RuntimeDefaultPathMutationCloseoutGateAccepted: Bool
+    public let runtimeDefaultPathMutationHandoffGateAccepted: Bool
+    public let runtimeDefaultPathMutationHandoffGateAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed: Bool
+    public let runtimeDefaultPathMutationCloseoutGateMode: String
+    public let runtimeDefaultPathMutationHandoffGateMode: String
+    public let runtimeDefaultPathMutationHandoffGateId: String
+    public let runtimeDefaultPathMutationCloseoutGateId: String
+    public let controlledRuntimeDefaultPathMutationFinalizationApplyId: String
+    public let runtimeDefaultPathMutationFinalizationGateId: String
+    public let runtimeDefaultPathMutationCommitBoundaryId: String
+    public let controlledRuntimeDefaultPathMutationCommitApplyId: String
+    public let runtimeDefaultPathMutationCommitApplyGateId: String
+    public let runtimeDefaultPathMutationCommitDryRunId: String
+    public let runtimeDefaultPathMutationCommitPlanId: String
+    public let controlledRuntimeDefaultPathMutationApplyId: String
+    public let runtimeDefaultPathMutationApplyGateId: String
+    public let runtimeDefaultPathMutationDryRunId: String
+    public let runtimeDefaultPathMutationGateId: String
+    public let controlledDefaultEngineMutationApplyId: String
+    public let defaultEngineMutationApplyGateId: String
+    public let defaultEngineMutationDryRunId: String
+    public let defaultEngineMutationCommitPlanId: String
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let actualTransportCommitAllowed: Bool
+    public let actualLiveServerWiringAllowed: Bool
+    public let actualDefaultEngineFlipAllowed: Bool
+    public let defaultEngineConfigMutationAllowed: Bool
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationHandoffGateAccepted: Bool,
+        h2RuntimeDefaultPathMutationCloseoutGateAccepted: Bool,
+        runtimeDefaultPathMutationHandoffGateAccepted: Bool,
+        runtimeDefaultPathMutationHandoffGateAllowed: Bool,
+        boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed: Bool,
+        runtimeDefaultPathMutationCloseoutGateMode: String,
+        runtimeDefaultPathMutationHandoffGateMode: String,
+        runtimeDefaultPathMutationHandoffGateId: String,
+        runtimeDefaultPathMutationCloseoutGateId: String,
+        controlledRuntimeDefaultPathMutationFinalizationApplyId: String,
+        runtimeDefaultPathMutationFinalizationGateId: String,
+        runtimeDefaultPathMutationCommitBoundaryId: String,
+        controlledRuntimeDefaultPathMutationCommitApplyId: String,
+        runtimeDefaultPathMutationCommitApplyGateId: String,
+        runtimeDefaultPathMutationCommitDryRunId: String,
+        runtimeDefaultPathMutationCommitPlanId: String,
+        controlledRuntimeDefaultPathMutationApplyId: String,
+        runtimeDefaultPathMutationApplyGateId: String,
+        runtimeDefaultPathMutationDryRunId: String,
+        runtimeDefaultPathMutationGateId: String,
+        controlledDefaultEngineMutationApplyId: String,
+        defaultEngineMutationApplyGateId: String,
+        defaultEngineMutationDryRunId: String,
+        defaultEngineMutationCommitPlanId: String,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        actualTransportCommitAllowed: Bool,
+        actualLiveServerWiringAllowed: Bool,
+        actualDefaultEngineFlipAllowed: Bool,
+        defaultEngineConfigMutationAllowed: Bool,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationHandoffGateAccepted =
+            h2RuntimeDefaultPathMutationHandoffGateAccepted
+        this.h2RuntimeDefaultPathMutationCloseoutGateAccepted =
+            h2RuntimeDefaultPathMutationCloseoutGateAccepted
+        this.runtimeDefaultPathMutationHandoffGateAccepted =
+            runtimeDefaultPathMutationHandoffGateAccepted
+        this.runtimeDefaultPathMutationHandoffGateAllowed =
+            runtimeDefaultPathMutationHandoffGateAllowed
+        this.boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed =
+            boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed
+        this.runtimeDefaultPathMutationCloseoutGateMode =
+            runtimeDefaultPathMutationCloseoutGateMode
+        this.runtimeDefaultPathMutationHandoffGateMode =
+            runtimeDefaultPathMutationHandoffGateMode
+        this.runtimeDefaultPathMutationHandoffGateId =
+            runtimeDefaultPathMutationHandoffGateId
+        this.runtimeDefaultPathMutationCloseoutGateId =
+            runtimeDefaultPathMutationCloseoutGateId
+        this.controlledRuntimeDefaultPathMutationFinalizationApplyId =
+            controlledRuntimeDefaultPathMutationFinalizationApplyId
+        this.runtimeDefaultPathMutationFinalizationGateId =
+            runtimeDefaultPathMutationFinalizationGateId
+        this.runtimeDefaultPathMutationCommitBoundaryId =
+            runtimeDefaultPathMutationCommitBoundaryId
+        this.controlledRuntimeDefaultPathMutationCommitApplyId =
+            controlledRuntimeDefaultPathMutationCommitApplyId
+        this.runtimeDefaultPathMutationCommitApplyGateId =
+            runtimeDefaultPathMutationCommitApplyGateId
+        this.runtimeDefaultPathMutationCommitDryRunId =
+            runtimeDefaultPathMutationCommitDryRunId
+        this.runtimeDefaultPathMutationCommitPlanId =
+            runtimeDefaultPathMutationCommitPlanId
+        this.controlledRuntimeDefaultPathMutationApplyId =
+            controlledRuntimeDefaultPathMutationApplyId
+        this.runtimeDefaultPathMutationApplyGateId =
+            runtimeDefaultPathMutationApplyGateId
+        this.runtimeDefaultPathMutationDryRunId =
+            runtimeDefaultPathMutationDryRunId
+        this.runtimeDefaultPathMutationGateId =
+            runtimeDefaultPathMutationGateId
+        this.controlledDefaultEngineMutationApplyId =
+            controlledDefaultEngineMutationApplyId
+        this.defaultEngineMutationApplyGateId =
+            defaultEngineMutationApplyGateId
+        this.defaultEngineMutationDryRunId = defaultEngineMutationDryRunId
+        this.defaultEngineMutationCommitPlanId =
+            defaultEngineMutationCommitPlanId
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.actualTransportCommitAllowed = actualTransportCommitAllowed
+        this.actualLiveServerWiringAllowed = actualLiveServerWiringAllowed
+        this.actualDefaultEngineFlipAllowed = actualDefaultEngineFlipAllowed
+        this.defaultEngineConfigMutationAllowed =
+            defaultEngineConfigMutationAllowed
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+    evidence: JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge {
+    let h2CloseoutGateBridge =
+        evidence.h2RuntimeDefaultPathMutationCloseoutGateBridge
+    let handoffGateReceipt =
+        evidence.runtimeDefaultPathMutationHandoffGateReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateNonClaims()
+    if (
+        !h2CloseoutGateBridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted ||
+        !h2CloseoutGateBridge.boundedRuntimeDefaultPathMutationCloseoutGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+            false,
+            h2CloseoutGateBridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAccepted,
+            false,
+            false,
+            handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateMode,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateMode,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationFinalizationApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationFinalizationGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitBoundaryId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationCommitApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitApplyGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitDryRunId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitPlanId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationApplyGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationDryRunId,
+            handoffGateReceipt.runtimeDefaultPathMutationGateId,
+            handoffGateReceipt.controlledDefaultEngineMutationApplyId,
+            handoffGateReceipt.defaultEngineMutationApplyGateId,
+            handoffGateReceipt.defaultEngineMutationDryRunId,
+            handoffGateReceipt.defaultEngineMutationCommitPlanId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-runtime-default-path-mutation-closeout-gate-bridge",
+            "collect-accepted-h2-runtime-default-path-mutation-closeout-gate-before-handoff-gate",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateCloseoutBlockers(
+                h2CloseoutGateBridge
+            ),
+            nonClaims,
+            "repair H2 runtime default-path mutation closeout-gate bridge before handoff gate; do not treat generic handoff receipts as H2 runtime mutation",
+            "QUIC must pass stream default mutation closeout gate before runtime default mutation handoff gate"
+        )
+    }
+    if (
+        !handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAccepted ||
+        !handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+            false,
+            true,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAccepted,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAllowed,
+            false,
+            handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateMode,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateMode,
+            handoffGateReceipt.runtimeDefaultPathMutationHandoffGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationFinalizationApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationFinalizationGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitBoundaryId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationCommitApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitApplyGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitDryRunId,
+            handoffGateReceipt.runtimeDefaultPathMutationCommitPlanId,
+            handoffGateReceipt.controlledRuntimeDefaultPathMutationApplyId,
+            handoffGateReceipt.runtimeDefaultPathMutationApplyGateId,
+            handoffGateReceipt.runtimeDefaultPathMutationDryRunId,
+            handoffGateReceipt.runtimeDefaultPathMutationGateId,
+            handoffGateReceipt.controlledDefaultEngineMutationApplyId,
+            handoffGateReceipt.defaultEngineMutationApplyGateId,
+            handoffGateReceipt.defaultEngineMutationDryRunId,
+            handoffGateReceipt.defaultEngineMutationCommitPlanId,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            "blocked-runtime-default-path-mutation-handoff-gate-receipt",
+            "collect-accepted-runtime-default-path-mutation-handoff-gate-before-acceptance-boundary",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateReceiptBlockers(
+                handoffGateReceipt
+            ),
+            nonClaims,
+            handoffGateReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation handoff-gate receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+        true,
+        true,
+        true,
+        handoffGateReceipt.runtimeDefaultPathMutationHandoffGateAllowed,
+        true,
+        handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateMode,
+        handoffGateReceipt.runtimeDefaultPathMutationHandoffGateMode,
+        handoffGateReceipt.runtimeDefaultPathMutationHandoffGateId,
+        handoffGateReceipt.runtimeDefaultPathMutationCloseoutGateId,
+        handoffGateReceipt.controlledRuntimeDefaultPathMutationFinalizationApplyId,
+        handoffGateReceipt.runtimeDefaultPathMutationFinalizationGateId,
+        handoffGateReceipt.runtimeDefaultPathMutationCommitBoundaryId,
+        handoffGateReceipt.controlledRuntimeDefaultPathMutationCommitApplyId,
+        handoffGateReceipt.runtimeDefaultPathMutationCommitApplyGateId,
+        handoffGateReceipt.runtimeDefaultPathMutationCommitDryRunId,
+        handoffGateReceipt.runtimeDefaultPathMutationCommitPlanId,
+        handoffGateReceipt.controlledRuntimeDefaultPathMutationApplyId,
+        handoffGateReceipt.runtimeDefaultPathMutationApplyGateId,
+        handoffGateReceipt.runtimeDefaultPathMutationDryRunId,
+        handoffGateReceipt.runtimeDefaultPathMutationGateId,
+        handoffGateReceipt.controlledDefaultEngineMutationApplyId,
+        handoffGateReceipt.defaultEngineMutationApplyGateId,
+        handoffGateReceipt.defaultEngineMutationDryRunId,
+        handoffGateReceipt.defaultEngineMutationCommitPlanId,
+        handoffGateReceipt.productionQueueMutationAllowed,
+        handoffGateReceipt.actualRuntimeTaskSpawnAllowed,
+        handoffGateReceipt.actualHandlerInvocationAllowed,
+        handoffGateReceipt.actualRequestContextMutationAllowed,
+        handoffGateReceipt.actualResponseWriteAllowed,
+        handoffGateReceipt.actualTransportCommitAllowed,
+        handoffGateReceipt.actualLiveServerWiringAllowed,
+        handoffGateReceipt.actualDefaultEngineFlipAllowed,
+        handoffGateReceipt.defaultEngineConfigMutationAllowed,
+        handoffGateReceipt.runtimeDefaultPathMutationAllowed,
+        handoffGateReceipt.publicReleaseAllowed,
+        handoffGateReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-runtime-default-path-mutation-handoff-gate-bridge",
+        "record-h2-runtime-default-path-mutation-handoff-gate-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove H2 runtime default-path mutation acceptance boundary; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style closeout-gate plus generic handoff-gate separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateCloseoutBlockers(
+    bridge: JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "H2_RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE:${bridge.status}"
+    )
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationHandoffGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE:${receipt.status}"
+    )
+    for (blocker in receipt.blockers) {
+        blockers.add(
+            "RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool

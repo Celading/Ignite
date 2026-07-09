@@ -4047,6 +4047,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE"
         )
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationHandoffGateBlocksRejectedCloseoutGateBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence(
+                    buildHq0769RejectedH2RuntimeDefaultPathMutationCloseoutGateBridge(),
+                    buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-closeout-gate-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE:blocked-runtime-default-path-mutation-closeout-gate-receipt"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationHandoffGateBlocksRejectedHandoffGateReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence(
+                    buildHq0769AcceptedH2RuntimeDefaultPathMutationCloseoutGateBridge(),
+                    buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-handoff-gate-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE:blocked-runtime-default-path-mutation-handoff-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_HANDOFF_GATE_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationHandoffGateAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationHandoffGateEvidence(
+                    buildHq0769AcceptedH2RuntimeDefaultPathMutationCloseoutGateBridge(),
+                    buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-handoff-gate-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationHandoffGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationCloseoutGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationHandoffGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateMode,
+            "short-runtime-default-path-mutation-handoff-gate"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationHandoffGateId,
+            "h2-runtime-default-path-mutation-handoff-gate-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_RUNTIME_DEFAULT_PATH_MUTATION_ACCEPTANCE_BOUNDARY"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -7176,5 +7307,97 @@ func buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateReceipt(
     buildIgniteRuntimeDefaultPathMutationCloseoutGateReceipt(
         buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(),
         buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateRequest()
+    )
+}
+
+func buildHq0769RejectedH2RuntimeDefaultPathMutationCloseoutGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateEvidence(
+            buildHq0768AcceptedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(),
+            buildHq0768BlockedRuntimeDefaultPathMutationCloseoutGateReceipt()
+        )
+    )
+}
+
+func buildHq0769AcceptedH2RuntimeDefaultPathMutationCloseoutGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationCloseoutGateEvidence(
+            buildHq0768AcceptedH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(),
+            buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt()
+        )
+    )
+}
+
+func buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateRequest(
+): IgniteRuntimeDefaultPathMutationHandoffGateRequest {
+    IgniteRuntimeDefaultPathMutationHandoffGateRequest(
+        "h2-runtime-default-path-mutation-handoff-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateRequest(
+): IgniteRuntimeDefaultPathMutationHandoffGateRequest {
+    IgniteRuntimeDefaultPathMutationHandoffGateRequest(
+        "h2-runtime-default-path-mutation-handoff-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateReceipt(
+): IgniteRuntimeDefaultPathMutationHandoffGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationHandoffGateReceipt(
+        buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt(),
+        buildHq0769AcceptedRuntimeDefaultPathMutationHandoffGateRequest()
+    )
+}
+
+func buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateReceipt(
+): IgniteRuntimeDefaultPathMutationHandoffGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationHandoffGateReceipt(
+        buildHq0768AcceptedRuntimeDefaultPathMutationCloseoutGateReceipt(),
+        buildHq0769BlockedRuntimeDefaultPathMutationHandoffGateRequest()
     )
 }
