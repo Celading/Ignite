@@ -3785,6 +3785,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_FINALIZATION_APPLY"
         )
     }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationFinalizationApplyBlocksRejectedFinalizationGateBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyEvidence(
+                    buildHq0767RejectedH2RuntimeDefaultPathMutationFinalizationGateBridge(),
+                    buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-finalization-gate-bridge"
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationFinalizationGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedControlledRuntimeDefaultPathMutationFinalizationApplyFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_FINALIZATION_GATE:blocked-h2-runtime-default-path-mutation-commit-boundary-bridge"
+        )
+    }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationFinalizationApplyBlocksRejectedControlledApplyReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyEvidence(
+                    buildHq0767AcceptedH2RuntimeDefaultPathMutationFinalizationGateBridge(),
+                    buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-controlled-runtime-default-path-mutation-finalization-apply-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationFinalizationGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            false
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedControlledRuntimeDefaultPathMutationFinalizationApplyFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_FINALIZATION_APPLY:blocked-controlled-runtime-default-path-mutation-finalization-apply-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_FINALIZATION_APPLY_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2ControlledRuntimeDefaultPathMutationFinalizationApplyAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyBridge(
+                JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationFinalizationApplyEvidence(
+                    buildHq0767AcceptedH2RuntimeDefaultPathMutationFinalizationGateBridge(),
+                    buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-controlled-runtime-default-path-mutation-finalization-apply-bridge"
+        )
+        @Assert(
+            bridge.h2ControlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationFinalizationGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyAccepted,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedControlledRuntimeDefaultPathMutationFinalizationApplyFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyMode,
+            "short-controlled-runtime-default-path-mutation-finalization-apply"
+        )
+        @Assert(
+            bridge.controlledRuntimeDefaultPathMutationFinalizationApplyId,
+            "h2-controlled-runtime-default-path-mutation-finalization-apply-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_RUNTIME_DEFAULT_PATH_MUTATION_CLOSEOUT_GATE"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -6732,5 +6863,95 @@ func buildHq0766BlockedRuntimeDefaultPathMutationFinalizationGateReceipt(
     buildIgniteRuntimeDefaultPathMutationFinalizationGateReceipt(
         buildHq0765AcceptedRuntimeDefaultPathMutationCommitBoundaryReceipt(),
         buildHq0766BlockedRuntimeDefaultPathMutationFinalizationGateRequest()
+    )
+}
+
+func buildHq0767RejectedH2RuntimeDefaultPathMutationFinalizationGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateEvidence(
+            buildHq0766RejectedH2RuntimeDefaultPathMutationCommitBoundaryBridge(),
+            buildHq0766AcceptedRuntimeDefaultPathMutationFinalizationGateReceipt()
+        )
+    )
+}
+
+func buildHq0767AcceptedH2RuntimeDefaultPathMutationFinalizationGateBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationFinalizationGateEvidence(
+            buildHq0766AcceptedH2RuntimeDefaultPathMutationCommitBoundaryBridge(),
+            buildHq0766AcceptedRuntimeDefaultPathMutationFinalizationGateReceipt()
+        )
+    )
+}
+
+func buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyRequest(
+): IgniteControlledRuntimeDefaultPathMutationFinalizationApplyRequest {
+    IgniteControlledRuntimeDefaultPathMutationFinalizationApplyRequest(
+        "h2-controlled-runtime-default-path-mutation-finalization-apply-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyRequest(
+): IgniteControlledRuntimeDefaultPathMutationFinalizationApplyRequest {
+    IgniteControlledRuntimeDefaultPathMutationFinalizationApplyRequest(
+        "h2-controlled-runtime-default-path-mutation-finalization-apply-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(
+): IgniteControlledRuntimeDefaultPathMutationFinalizationApplyReceipt {
+    buildIgniteControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(
+        buildHq0766AcceptedRuntimeDefaultPathMutationFinalizationGateReceipt(),
+        buildHq0767AcceptedControlledRuntimeDefaultPathMutationFinalizationApplyRequest()
+    )
+}
+
+func buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(
+): IgniteControlledRuntimeDefaultPathMutationFinalizationApplyReceipt {
+    buildIgniteControlledRuntimeDefaultPathMutationFinalizationApplyReceipt(
+        buildHq0766AcceptedRuntimeDefaultPathMutationFinalizationGateReceipt(),
+        buildHq0767BlockedControlledRuntimeDefaultPathMutationFinalizationApplyRequest()
     )
 }
