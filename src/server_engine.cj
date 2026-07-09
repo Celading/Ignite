@@ -9219,6 +9219,316 @@ func jinguiAcceptedTransportH2RequestContextMutationGateNonClaims(
     ]
 }
 
+public class JinguiAcceptedTransportH2ResponseWriteGateEvidence {
+    public let h2RequestContextMutationGateBridge:
+        JinguiAcceptedTransportH2RequestContextMutationGateBridge
+    public let responseWriteGateReceipt: IgniteResponseWriteGateReceipt
+
+    public init(
+        h2RequestContextMutationGateBridge:
+            JinguiAcceptedTransportH2RequestContextMutationGateBridge,
+        responseWriteGateReceipt: IgniteResponseWriteGateReceipt
+    ) {
+        this.h2RequestContextMutationGateBridge =
+            h2RequestContextMutationGateBridge
+        this.responseWriteGateReceipt = responseWriteGateReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2ResponseWriteGateBridge {
+    public let h2ResponseWriteGateAccepted: Bool
+    public let h2RequestContextMutationGateAccepted: Bool
+    public let responseWriteGateAccepted: Bool
+    public let responseWriteGateAllowed: Bool
+    public let boundedResponseWriteGateFollowupAllowed: Bool
+    public let productionQueueMutationAllowed: Bool
+    public let actualRuntimeTaskSpawnAllowed: Bool
+    public let actualHandlerInvocationAllowed: Bool
+    public let actualRequestContextMutationAllowed: Bool
+    public let actualResponseWriteAllowed: Bool
+    public let transportCommitAllowed: Bool
+    public let liveServerWiringAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let requestContextMutationGateMode: String
+    public let responseWriteGateMode: String
+    public let responseWriteGateId: String
+    public let requestContextMutationGateId: String
+    public let handlerInvocationGateId: String
+    public let runtimeSpawnGateId: String
+    public let liveEnqueueProofId: String
+    public let executorHandoffId: String
+    public let controlledMutationApplyId: String
+    public let mutationApplyGateId: String
+    public let mutationCommitPlanId: String
+    public let mutationDryRunId: String
+    public let mutationGateId: String
+    public let commitBoundaryId: String
+    public let queueWriteId: String
+    public let queueDepthBefore: Int64
+    public let queueDepthAfter: Int64
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2ResponseWriteGateAccepted: Bool,
+        h2RequestContextMutationGateAccepted: Bool,
+        responseWriteGateAccepted: Bool,
+        responseWriteGateAllowed: Bool,
+        boundedResponseWriteGateFollowupAllowed: Bool,
+        productionQueueMutationAllowed: Bool,
+        actualRuntimeTaskSpawnAllowed: Bool,
+        actualHandlerInvocationAllowed: Bool,
+        actualRequestContextMutationAllowed: Bool,
+        actualResponseWriteAllowed: Bool,
+        transportCommitAllowed: Bool,
+        liveServerWiringAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        requestContextMutationGateMode: String,
+        responseWriteGateMode: String,
+        responseWriteGateId: String,
+        requestContextMutationGateId: String,
+        handlerInvocationGateId: String,
+        runtimeSpawnGateId: String,
+        liveEnqueueProofId: String,
+        executorHandoffId: String,
+        controlledMutationApplyId: String,
+        mutationApplyGateId: String,
+        mutationCommitPlanId: String,
+        mutationDryRunId: String,
+        mutationGateId: String,
+        commitBoundaryId: String,
+        queueWriteId: String,
+        queueDepthBefore: Int64,
+        queueDepthAfter: Int64,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2ResponseWriteGateAccepted = h2ResponseWriteGateAccepted
+        this.h2RequestContextMutationGateAccepted =
+            h2RequestContextMutationGateAccepted
+        this.responseWriteGateAccepted = responseWriteGateAccepted
+        this.responseWriteGateAllowed = responseWriteGateAllowed
+        this.boundedResponseWriteGateFollowupAllowed =
+            boundedResponseWriteGateFollowupAllowed
+        this.productionQueueMutationAllowed = productionQueueMutationAllowed
+        this.actualRuntimeTaskSpawnAllowed = actualRuntimeTaskSpawnAllowed
+        this.actualHandlerInvocationAllowed = actualHandlerInvocationAllowed
+        this.actualRequestContextMutationAllowed =
+            actualRequestContextMutationAllowed
+        this.actualResponseWriteAllowed = actualResponseWriteAllowed
+        this.transportCommitAllowed = transportCommitAllowed
+        this.liveServerWiringAllowed = liveServerWiringAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.requestContextMutationGateMode =
+            requestContextMutationGateMode
+        this.responseWriteGateMode = responseWriteGateMode
+        this.responseWriteGateId = responseWriteGateId
+        this.requestContextMutationGateId = requestContextMutationGateId
+        this.handlerInvocationGateId = handlerInvocationGateId
+        this.runtimeSpawnGateId = runtimeSpawnGateId
+        this.liveEnqueueProofId = liveEnqueueProofId
+        this.executorHandoffId = executorHandoffId
+        this.controlledMutationApplyId = controlledMutationApplyId
+        this.mutationApplyGateId = mutationApplyGateId
+        this.mutationCommitPlanId = mutationCommitPlanId
+        this.mutationDryRunId = mutationDryRunId
+        this.mutationGateId = mutationGateId
+        this.commitBoundaryId = commitBoundaryId
+        this.queueWriteId = queueWriteId
+        this.queueDepthBefore = queueDepthBefore
+        this.queueDepthAfter = queueDepthAfter
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2ResponseWriteGateBridge(
+    evidence: JinguiAcceptedTransportH2ResponseWriteGateEvidence
+): JinguiAcceptedTransportH2ResponseWriteGateBridge {
+    let h2ContextBridge = evidence.h2RequestContextMutationGateBridge
+    let responseWriteGateReceipt = evidence.responseWriteGateReceipt
+    let nonClaims = jinguiAcceptedTransportH2ResponseWriteGateNonClaims()
+    if (
+        !h2ContextBridge.h2RequestContextMutationGateAccepted ||
+        !h2ContextBridge.boundedRequestContextMutationGateFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2ResponseWriteGateBridge(
+            false,
+            h2ContextBridge.h2RequestContextMutationGateAccepted,
+            responseWriteGateReceipt.responseWriteGateAccepted,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            responseWriteGateReceipt.requestContextMutationGateMode,
+            responseWriteGateReceipt.responseWriteGateMode,
+            responseWriteGateReceipt.responseWriteGateId,
+            h2ContextBridge.requestContextMutationGateId,
+            h2ContextBridge.handlerInvocationGateId,
+            h2ContextBridge.runtimeSpawnGateId,
+            h2ContextBridge.liveEnqueueProofId,
+            h2ContextBridge.executorHandoffId,
+            h2ContextBridge.controlledMutationApplyId,
+            h2ContextBridge.mutationApplyGateId,
+            h2ContextBridge.mutationCommitPlanId,
+            h2ContextBridge.mutationDryRunId,
+            h2ContextBridge.mutationGateId,
+            h2ContextBridge.commitBoundaryId,
+            h2ContextBridge.queueWriteId,
+            h2ContextBridge.queueDepthBefore,
+            h2ContextBridge.queueDepthAfter,
+            "blocked-h2-request-context-mutation-gate-bridge",
+            "collect-accepted-h2-request-context-mutation-gate-before-response-write-gate",
+            jinguiAcceptedTransportH2ResponseWriteGateContextBlockers(
+                h2ContextBridge
+            ),
+            nonClaims,
+            "repair H2 request context mutation gate before response write gate; do not treat generic response write receipts as H2 runtime readiness",
+            "QUIC must pass stream context mutation gate before stream response write gate"
+        )
+    }
+    if (
+        !responseWriteGateReceipt.responseWriteGateAccepted ||
+        !responseWriteGateReceipt.responseWriteGateAllowed
+    ) {
+        return JinguiAcceptedTransportH2ResponseWriteGateBridge(
+            false,
+            true,
+            responseWriteGateReceipt.responseWriteGateAccepted,
+            responseWriteGateReceipt.responseWriteGateAllowed,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            responseWriteGateReceipt.requestContextMutationGateMode,
+            responseWriteGateReceipt.responseWriteGateMode,
+            responseWriteGateReceipt.responseWriteGateId,
+            responseWriteGateReceipt.requestContextMutationGateId,
+            responseWriteGateReceipt.handlerInvocationGateId,
+            responseWriteGateReceipt.runtimeSpawnGateId,
+            responseWriteGateReceipt.liveEnqueueProofId,
+            responseWriteGateReceipt.executorHandoffId,
+            responseWriteGateReceipt.controlledMutationApplyId,
+            responseWriteGateReceipt.mutationApplyGateId,
+            responseWriteGateReceipt.mutationCommitPlanId,
+            responseWriteGateReceipt.mutationDryRunId,
+            responseWriteGateReceipt.mutationGateId,
+            responseWriteGateReceipt.commitBoundaryId,
+            responseWriteGateReceipt.queueWriteId,
+            responseWriteGateReceipt.queueDepthBefore,
+            responseWriteGateReceipt.queueDepthAfter,
+            "blocked-response-write-gate-receipt",
+            "collect-accepted-response-write-gate-before-transport-commit-gate",
+            jinguiAcceptedTransportH2ResponseWriteGateReceiptBlockers(
+                responseWriteGateReceipt
+            ),
+            nonClaims,
+            responseWriteGateReceipt.nextAction,
+            "QUIC must not consume rejected response write gate receipts for stream transport commit"
+        )
+    }
+
+    JinguiAcceptedTransportH2ResponseWriteGateBridge(
+        true,
+        true,
+        true,
+        responseWriteGateReceipt.responseWriteGateAllowed,
+        true,
+        responseWriteGateReceipt.productionQueueMutationAllowed,
+        responseWriteGateReceipt.actualRuntimeTaskSpawnAllowed,
+        responseWriteGateReceipt.actualHandlerInvocationAllowed,
+        responseWriteGateReceipt.actualRequestContextMutationAllowed,
+        responseWriteGateReceipt.actualResponseWriteAllowed,
+        responseWriteGateReceipt.transportCommitAllowed,
+        responseWriteGateReceipt.liveServerWiringAllowed,
+        false,
+        responseWriteGateReceipt.requestContextMutationGateMode,
+        responseWriteGateReceipt.responseWriteGateMode,
+        responseWriteGateReceipt.responseWriteGateId,
+        responseWriteGateReceipt.requestContextMutationGateId,
+        responseWriteGateReceipt.handlerInvocationGateId,
+        responseWriteGateReceipt.runtimeSpawnGateId,
+        responseWriteGateReceipt.liveEnqueueProofId,
+        responseWriteGateReceipt.executorHandoffId,
+        responseWriteGateReceipt.controlledMutationApplyId,
+        responseWriteGateReceipt.mutationApplyGateId,
+        responseWriteGateReceipt.mutationCommitPlanId,
+        responseWriteGateReceipt.mutationDryRunId,
+        responseWriteGateReceipt.mutationGateId,
+        responseWriteGateReceipt.commitBoundaryId,
+        responseWriteGateReceipt.queueWriteId,
+        responseWriteGateReceipt.queueDepthBefore,
+        responseWriteGateReceipt.queueDepthAfter,
+        "accepted-h2-response-write-gate-bridge",
+        "record-h2-response-write-gate-without-actual-response-write",
+        [],
+        nonClaims,
+        "next packet may plan an H2 transport commit gate; actual response write, H2 closure, and release flip remain denied",
+        "QUIC can reuse H2-style context-mutation-gate plus response-write-gate separation before stream transport commit gate"
+    )
+}
+
+func jinguiAcceptedTransportH2ResponseWriteGateContextBlockers(
+    bridge: JinguiAcceptedTransportH2RequestContextMutationGateBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("H2_REQUEST_CONTEXT_MUTATION_GATE:${bridge.status}")
+    for (blocker in bridge.blockers) {
+        blockers.add("H2_REQUEST_CONTEXT_MUTATION_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ResponseWriteGateReceiptBlockers(
+    receipt: IgniteResponseWriteGateReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add("RESPONSE_WRITE_GATE:${receipt.status}")
+    for (blocker in receipt.blockers) {
+        blockers.add("RESPONSE_WRITE_GATE_BLOCKER:${blocker}")
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2ResponseWriteGateNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_ACTUAL_RUNTIME_TASK_SPAWN",
+        "NO_ACTUAL_HANDLER_INVOCATION",
+        "NO_ACTUAL_REQUEST_CONTEXT_MUTATION",
+        "NO_ACTUAL_RESPONSE_WRITE",
+        "NO_TRANSPORT_COMMIT",
+        "NO_LIVE_SERVER_WIRING",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
