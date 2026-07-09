@@ -603,6 +603,122 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
         @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
         @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
     }
+
+    @TestCase
+    public func testH2ProductionQueueMutationCommitPlanBlocksRejectedDryRun(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanEvidence(
+                    buildHq0743RejectedH2DryRunBridge(),
+                    buildHq0743AcceptedProductionQueueMutationCommitPlanReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-production-queue-mutation-dry-run-bridge"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-h2-production-queue-mutation-dry-run-before-commit-plan"
+        )
+        @Assert(bridge.h2ProductionQueueMutationCommitPlanAccepted, false)
+        @Assert(bridge.h2ProductionQueueMutationDryRunAccepted, false)
+        @Assert(
+            bridge.boundedProductionQueueMutationCommitPlanFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_PRODUCTION_QUEUE_MUTATION_DRY_RUN:blocked-production-queue-mutation-dry-run-receipt"
+        )
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ProductionQueueMutationCommitPlanBlocksRejectedCommitPlan(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanEvidence(
+                    buildHq0743AcceptedH2DryRunBridge(),
+                    buildHq0743BlockedProductionQueueMutationCommitPlanReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-production-queue-mutation-commit-plan-receipt"
+        )
+        @Assert(
+            bridge.decision,
+            "collect-accepted-production-queue-mutation-commit-plan-before-h2-apply-gate"
+        )
+        @Assert(bridge.h2ProductionQueueMutationDryRunAccepted, true)
+        @Assert(bridge.productionQueueMutationCommitPlanAccepted, false)
+        @Assert(bridge.productionQueueMutationCommitPlanAllowed, false)
+        @Assert(
+            bridge.boundedProductionQueueMutationCommitPlanFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "PRODUCTION_QUEUE_MUTATION_COMMIT_PLAN:blocked-production-queue-mutation-commit-plan-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "PRODUCTION_QUEUE_MUTATION_COMMIT_PLAN_BLOCKER:ACTUAL_PRODUCTION_QUEUE_MUTATION_REQUESTED"
+        )
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+    }
+
+    @TestCase
+    public func testH2ProductionQueueMutationCommitPlanAllowsBoundedFollowupOnly(): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2ProductionQueueMutationCommitPlanBridge(
+                JinguiAcceptedTransportH2ProductionQueueMutationCommitPlanEvidence(
+                    buildHq0743AcceptedH2DryRunBridge(),
+                    buildHq0743AcceptedProductionQueueMutationCommitPlanReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-production-queue-mutation-commit-plan-bridge"
+        )
+        @Assert(bridge.h2ProductionQueueMutationCommitPlanAccepted, true)
+        @Assert(bridge.h2ProductionQueueMutationDryRunAccepted, true)
+        @Assert(bridge.productionQueueMutationCommitPlanAccepted, true)
+        @Assert(bridge.productionQueueMutationCommitPlanAllowed, true)
+        @Assert(
+            bridge.boundedProductionQueueMutationCommitPlanFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.productionQueueMutationCommitPlanMode,
+            "short-production-queue-mutation-commit-plan"
+        )
+        @Assert(
+            bridge.mutationCommitPlanId,
+            "h2-production-queue-mutation-commit-plan-1"
+        )
+        @Assert(bridge.mutationDryRunId, "h2-production-queue-mutation-dry-run-1")
+        @Assert(bridge.mutationGateId, "h2-production-queue-mutation-gate-1")
+        @Assert(bridge.commitBoundaryId, "runtime-queue-commit-boundary-1")
+        @Assert(bridge.queueWriteId, "controlled-executor-queue-write-1")
+        @Assert(bridge.queueDepthBefore, 2)
+        @Assert(bridge.queueDepthAfter, 3)
+        @Assert(bridge.actualProductionQueueMutationAllowed, false)
+        @Assert(bridge.liveExecutorEnqueueAllowed, false)
+        @Assert(bridge.runtimeTaskSpawnAllowed, false)
+        @Assert(bridge.handlerInvocationAllowed, false)
+        @Assert(bridge.responseWriteAllowed, false)
+        @Assert(bridge.transportCommitAllowed, false)
+        @Assert(bridge.liveServerWiringAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -1118,5 +1234,89 @@ func buildHq0742BlockedProductionQueueMutationDryRunReceipt(
     buildIgniteProductionQueueMutationDryRunReceipt(
         buildHq0741AcceptedProductionQueueMutationGateReceipt(),
         buildHq0742BlockedProductionQueueMutationDryRunRequest()
+    )
+}
+
+func buildHq0743RejectedH2DryRunBridge(
+): JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge {
+    buildJinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+        JinguiAcceptedTransportH2ProductionQueueMutationDryRunEvidence(
+            buildHq0742AcceptedH2MutationGateBridge(),
+            buildHq0742BlockedProductionQueueMutationDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0743AcceptedH2DryRunBridge(
+): JinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge {
+    buildJinguiAcceptedTransportH2ProductionQueueMutationDryRunBridge(
+        JinguiAcceptedTransportH2ProductionQueueMutationDryRunEvidence(
+            buildHq0742AcceptedH2MutationGateBridge(),
+            buildHq0742AcceptedProductionQueueMutationDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0743AcceptedProductionQueueMutationCommitPlanRequest(
+): IgniteProductionQueueMutationCommitPlanRequest {
+    IgniteProductionQueueMutationCommitPlanRequest(
+        "h2-production-queue-mutation-commit-plan-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0743BlockedProductionQueueMutationCommitPlanRequest(
+): IgniteProductionQueueMutationCommitPlanRequest {
+    IgniteProductionQueueMutationCommitPlanRequest(
+        "h2-production-queue-mutation-commit-plan-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0743AcceptedProductionQueueMutationCommitPlanReceipt(
+): IgniteProductionQueueMutationCommitPlanReceipt {
+    buildIgniteProductionQueueMutationCommitPlanReceipt(
+        buildHq0742AcceptedProductionQueueMutationDryRunReceipt(),
+        buildHq0743AcceptedProductionQueueMutationCommitPlanRequest()
+    )
+}
+
+func buildHq0743BlockedProductionQueueMutationCommitPlanReceipt(
+): IgniteProductionQueueMutationCommitPlanReceipt {
+    buildIgniteProductionQueueMutationCommitPlanReceipt(
+        buildHq0742AcceptedProductionQueueMutationDryRunReceipt(),
+        buildHq0743BlockedProductionQueueMutationCommitPlanRequest()
     )
 }
