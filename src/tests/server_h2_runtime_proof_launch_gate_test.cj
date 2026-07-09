@@ -4571,6 +4571,137 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_GATE"
         )
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateBlocksRejectedApplyDryRunBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateEvidence(
+                    buildHq0773RejectedH2RuntimeDefaultPathMutationApplyDryRunBridge(),
+                    buildHq0773AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-apply-dry-run-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN:blocked-runtime-default-path-mutation-apply-dry-run-receipt"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateBlocksRejectedAcceptanceGateReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateEvidence(
+                    buildHq0773AcceptedH2RuntimeDefaultPathMutationApplyDryRunBridge(),
+                    buildHq0773BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-apply-dry-run-acceptance-gate-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_GATE:blocked-runtime-default-path-mutation-apply-dry-run-acceptance-gate-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_GATE_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateAllowsBoundedFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateEvidence(
+                    buildHq0773AcceptedH2RuntimeDefaultPathMutationApplyDryRunBridge(),
+                    buildHq0773AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-apply-dry-run-acceptance-gate-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateMode,
+            "short-runtime-default-path-mutation-apply-dry-run-acceptance-gate"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceGateId,
+            "h2-runtime-default-path-mutation-apply-dry-run-acceptance-gate-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -8068,5 +8199,97 @@ func buildHq0772BlockedRuntimeDefaultPathMutationApplyDryRunReceipt(
     buildIgniteRuntimeDefaultPathMutationApplyDryRunReceipt(
         buildHq0771AcceptedRuntimeDefaultPathMutationApplyBoundaryReceipt(),
         buildHq0772BlockedRuntimeDefaultPathMutationApplyDryRunRequest()
+    )
+}
+
+func buildHq0773RejectedH2RuntimeDefaultPathMutationApplyDryRunBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunEvidence(
+            buildHq0772AcceptedH2RuntimeDefaultPathMutationApplyBoundaryBridge(),
+            buildHq0772BlockedRuntimeDefaultPathMutationApplyDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0773AcceptedH2RuntimeDefaultPathMutationApplyDryRunBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunEvidence(
+            buildHq0772AcceptedH2RuntimeDefaultPathMutationApplyBoundaryBridge(),
+            buildHq0772AcceptedRuntimeDefaultPathMutationApplyDryRunReceipt()
+        )
+    )
+}
+
+func buildHq0773AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest {
+    IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest(
+        "h2-runtime-default-path-mutation-apply-dry-run-acceptance-gate-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0773BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest {
+    IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest(
+        "h2-runtime-default-path-mutation-apply-dry-run-acceptance-gate-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0773AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt(
+        buildHq0772AcceptedRuntimeDefaultPathMutationApplyDryRunReceipt(),
+        buildHq0773AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest()
+    )
+}
+
+func buildHq0773BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt {
+    buildIgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceGateReceipt(
+        buildHq0772AcceptedRuntimeDefaultPathMutationApplyDryRunReceipt(),
+        buildHq0773BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceGateRequest()
     )
 }
