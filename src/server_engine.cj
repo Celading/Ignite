@@ -18583,6 +18583,277 @@ func jinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyDryRunAcc
     ]
 }
 
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryEvidence {
+    public let h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge:
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt:
+        IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt
+
+    public init(
+        h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge:
+            JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt:
+            IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt
+    ) {
+        this.h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge =
+            h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt
+    }
+}
+
+public class JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge {
+    public let h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted: Bool
+    public let h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted: Bool
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted: Bool
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed: Bool
+    public let boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryFollowupAllowed: Bool
+    public let controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode: String
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode: String
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId: String
+    public let controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId: String
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId: String
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId: String
+    public let controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId: String
+    public let runtimeDefaultPathMutationApplyDryRunAcceptanceGateId: String
+    public let runtimeDefaultPathMutationApplyDryRunId: String
+    public let runtimeDefaultPathMutationAllowed: Bool
+    public let publicReleaseAllowed: Bool
+    public let stdxRemovalAllowed: Bool
+    public let h2RuntimeClosureClaimAllowed: Bool
+    public let status: String
+    public let decision: String
+    public let blockers: Array<String>
+    public let nonClaims: Array<String>
+    public let nextAction: String
+    public let quicReuseHook: String
+
+    public init(
+        h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted: Bool,
+        h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted: Bool,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted: Bool,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed: Bool,
+        boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryFollowupAllowed: Bool,
+        controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode: String,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode: String,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId: String,
+        controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId: String,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId: String,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId: String,
+        controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId: String,
+        runtimeDefaultPathMutationApplyDryRunAcceptanceGateId: String,
+        runtimeDefaultPathMutationApplyDryRunId: String,
+        runtimeDefaultPathMutationAllowed: Bool,
+        publicReleaseAllowed: Bool,
+        stdxRemovalAllowed: Bool,
+        h2RuntimeClosureClaimAllowed: Bool,
+        status: String,
+        decision: String,
+        blockers: Array<String>,
+        nonClaims: Array<String>,
+        nextAction: String,
+        quicReuseHook: String
+    ) {
+        this.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted =
+            h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted
+        this.h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted =
+            h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed
+        this.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryFollowupAllowed =
+            boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryFollowupAllowed
+        this.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode =
+            controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId
+        this.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId =
+            controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId
+        this.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId =
+            controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId
+        this.runtimeDefaultPathMutationApplyDryRunAcceptanceGateId =
+            runtimeDefaultPathMutationApplyDryRunAcceptanceGateId
+        this.runtimeDefaultPathMutationApplyDryRunId =
+            runtimeDefaultPathMutationApplyDryRunId
+        this.runtimeDefaultPathMutationAllowed =
+            runtimeDefaultPathMutationAllowed
+        this.publicReleaseAllowed = publicReleaseAllowed
+        this.stdxRemovalAllowed = stdxRemovalAllowed
+        this.h2RuntimeClosureClaimAllowed = h2RuntimeClosureClaimAllowed
+        this.status = status
+        this.decision = decision
+        this.blockers = blockers.clone()
+        this.nonClaims = nonClaims.clone()
+        this.nextAction = nextAction
+        this.quicReuseHook = quicReuseHook
+    }
+}
+
+public func buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+    evidence:
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryEvidence
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge {
+    let h2ControlledHandoffBridge =
+        evidence.h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge
+    let handoffBoundaryReceipt =
+        evidence.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt
+    let controlledHandoffReceipt =
+        handoffBoundaryReceipt.controlledApplyDryRunAcceptanceHandoffReceipt
+    let closeoutGateReceipt =
+        controlledHandoffReceipt.applyDryRunAcceptanceCloseoutGateReceipt
+    let acceptanceBoundaryReceipt =
+        closeoutGateReceipt.applyDryRunAcceptanceBoundaryReceipt
+    let nonClaims =
+        jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryNonClaims()
+    if (
+        !h2ControlledHandoffBridge.h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted ||
+        !h2ControlledHandoffBridge.boundedControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffFollowupAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+            false,
+            h2ControlledHandoffBridge.h2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffAccepted,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted,
+            false,
+            false,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceGateId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunId,
+            false,
+            false,
+            false,
+            false,
+            "blocked-h2-controlled-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-bridge",
+            "collect-accepted-h2-controlled-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-before-handoff-boundary",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryControlledHandoffBlockers(
+                h2ControlledHandoffBridge
+            ),
+            nonClaims,
+            "repair H2 controlled runtime default-path mutation apply-dry-run acceptance handoff bridge before handoff-boundary; do not treat generic handoff-boundary receipts as H2 runtime mutation",
+            "QUIC must pass stream controlled handoff before runtime default mutation handoff-boundary proof"
+        )
+    }
+    if (
+        !handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted ||
+        !handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed
+    ) {
+        return JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+            false,
+            true,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed,
+            false,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId,
+            handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId,
+            handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceGateId,
+            acceptanceBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunId,
+            false,
+            false,
+            false,
+            false,
+            "blocked-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-receipt",
+            "collect-accepted-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-before-apply-boundary",
+            jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceiptBlockers(
+                handoffBoundaryReceipt
+            ),
+            nonClaims,
+            handoffBoundaryReceipt.nextAction,
+            "QUIC must not consume rejected runtime default-path mutation apply-dry-run acceptance handoff-boundary receipts for stream default mutation"
+        )
+    }
+
+    JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+        true,
+        true,
+        true,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAllowed,
+        true,
+        handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffMode,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId,
+        handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffId,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceCloseoutGateId,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceBoundaryId,
+        handoffBoundaryReceipt.controlledRuntimeDefaultPathMutationApplyDryRunAcceptanceId,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunAcceptanceGateId,
+        acceptanceBoundaryReceipt.runtimeDefaultPathMutationApplyDryRunId,
+        handoffBoundaryReceipt.runtimeDefaultPathMutationAllowed,
+        handoffBoundaryReceipt.publicReleaseAllowed,
+        handoffBoundaryReceipt.stdxRemovalAllowed,
+        false,
+        "accepted-h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-bridge",
+        "record-h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-without-runtime-default-mutation",
+        [],
+        nonClaims,
+        "next packet may prove runtime default-path mutation apply-dry-run acceptance handoff apply-boundary or stdx claim separation; actual runtime default-path mutation, release, stdx removal, and H2 closure remain denied",
+        "QUIC can reuse H2-style controlled-handoff plus generic handoff-boundary separation before runtime default mutation"
+    )
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryControlledHandoffBlockers(
+    bridge:
+        JinguiAcceptedTransportH2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "H2_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF:${bridge.status}"
+    )
+    for (blocker in bridge.blockers) {
+        blockers.add(
+            "H2_CONTROLLED_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceiptBlockers(
+    receipt: IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt
+): Array<String> {
+    var blockers = ArrayList<String>()
+    blockers.add(
+        "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_BOUNDARY:${receipt.status}"
+    )
+    for (blocker in receipt.blockers) {
+        blockers.add(
+            "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_BOUNDARY_BLOCKER:${blocker}"
+        )
+    }
+    blockers.toArray()
+}
+
+func jinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryNonClaims(
+): Array<String> {
+    [
+        "NO_H2_RUNTIME_CLOSURE_CLAIM",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION",
+        "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_APPLY_BOUNDARY",
+        "NO_ACTUAL_DEFAULT_ENGINE_FLIP",
+        "NO_DEFAULT_ENGINE_CONFIG_MUTATION",
+        "NO_PUBLIC_RELEASE_READINESS",
+        "NO_STDX_REMOVAL",
+        "NO_BROWSER_OR_H2SPEC_CLAIM",
+        "NO_PERFORMANCE_CLAIM",
+        "NO_RELEASE_DEFAULT_FLIP",
+    ]
+}
+
 public class IgniteRuntimeConcurrencyDesignEvidence {
     public let requestLevelSchedulerProof: Bool
     public let handlerIoDecouplingProof: Bool
