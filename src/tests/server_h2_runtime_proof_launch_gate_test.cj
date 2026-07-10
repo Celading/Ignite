@@ -5365,6 +5365,149 @@ public class ServerH2RuntimeProofLaunchGateTestSuite {
             "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_APPLY_BOUNDARY"
         )
     }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryBlocksRejectedHandoffBoundaryBridge(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryEvidence(
+                    buildHq0779RejectedH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(),
+                    buildHq0779AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAccepted,
+            false
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "H2_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_BOUNDARY:blocked-h2-controlled-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-bridge"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryBlocksRejectedGenericApplyBoundaryReceipt(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryEvidence(
+                    buildHq0779AcceptedH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(),
+                    buildHq0779BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "blocked-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-receipt"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAccepted,
+            false
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAllowed,
+            false
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryGateFollowupAllowed,
+            false
+        )
+        @Assert(
+            bridge.blockers[0],
+            "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_APPLY_BOUNDARY:blocked-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-input"
+        )
+        @Assert(
+            bridge.blockers[1],
+            "RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_APPLY_BOUNDARY_BLOCKER:RUNTIME_DEFAULT_PATH_MUTATION_REQUESTED"
+        )
+    }
+
+    @TestCase
+    public func testH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAllowsBoundedGateFollowupOnly(
+    ): Unit {
+        let bridge =
+            buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryBridge(
+                JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryEvidence(
+                    buildHq0779AcceptedH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(),
+                    buildHq0779AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt()
+                )
+            )
+
+        @Assert(
+            bridge.status,
+            "accepted-h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-bridge"
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.h2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAccepted,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryAllowed,
+            true
+        )
+        @Assert(
+            bridge.boundedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryGateFollowupAllowed,
+            true
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryMode,
+            "short-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryMode,
+            "short-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryId,
+            "h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-1"
+        )
+        @Assert(
+            bridge.runtimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryId,
+            "h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-boundary-1"
+        )
+        @Assert(bridge.runtimeDefaultPathMutationAllowed, false)
+        @Assert(bridge.h2RuntimeClosureClaimAllowed, false)
+        @Assert(bridge.nonClaims[0], "NO_H2_RUNTIME_CLOSURE_CLAIM")
+        @Assert(bridge.nonClaims[1], "NO_RUNTIME_DEFAULT_PATH_MUTATION")
+        @Assert(
+            bridge.nonClaims[2],
+            "NO_RUNTIME_DEFAULT_PATH_MUTATION_APPLY_DRY_RUN_ACCEPTANCE_HANDOFF_APPLY_BOUNDARY_GATE"
+        )
+    }
 }
 
 func buildCurrentProviderBlockedAttachGate(
@@ -9414,5 +9557,97 @@ func buildHq0778BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBou
     buildIgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt(
         buildHq0777AcceptedControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffReceipt(),
         buildHq0778BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryRequest()
+    )
+}
+
+func buildHq0779RejectedH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryEvidence(
+            buildHq0778RejectedH2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge(),
+            buildHq0778AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt()
+        )
+    )
+}
+
+func buildHq0779AcceptedH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+): JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge {
+    buildJinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryBridge(
+        JinguiAcceptedTransportH2RuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryEvidence(
+            buildHq0778AcceptedH2ControlledRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBridge(),
+            buildHq0778AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt()
+        )
+    )
+}
+
+func buildHq0779AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest {
+    IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest(
+        "h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-1",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0779BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest {
+    IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest(
+        "h2-runtime-default-path-mutation-apply-dry-run-acceptance-handoff-apply-boundary-2",
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+    )
+}
+
+func buildHq0779AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt {
+    buildIgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt(
+        buildHq0778AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt(),
+        buildHq0779AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest()
+    )
+}
+
+func buildHq0779BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt(
+): IgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt {
+    buildIgniteRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryReceipt(
+        buildHq0778AcceptedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffBoundaryReceipt(),
+        buildHq0779BlockedRuntimeDefaultPathMutationApplyDryRunAcceptanceHandoffApplyBoundaryRequest()
     )
 }
