@@ -295,7 +295,7 @@ func serveSocketServerEngineShellTurns(
                 serveSocketServerEngineShellAcceptedConnection(
                     accepted,
                     app,
-                    option.maxRequestBodySize
+                    option
                 )
             }
         } catch (e: Exception) {
@@ -357,13 +357,14 @@ func socketServerEngineShellParsePositiveInt64(text: String): ?Int64 {
 func serveSocketServerEngineShellAcceptedConnection(
     accepted: TcpSocket,
     app: App,
-    maxRequestBodySize: Int64
+    option: ServerEngineListenOption
 ): Unit {
     try {
+        accepted.writeTimeout = Some(option.writeTimeout)
         serveSocketServerEngineShellSocketTurns(
             accepted,
             app,
-            maxRequestBodySize
+            option
         )
     } finally {
         if (!accepted.isClosed()) {
@@ -375,13 +376,15 @@ func serveSocketServerEngineShellAcceptedConnection(
 func serveSocketServerEngineShellSocketTurns(
     socket: TcpSocket,
     app: App,
-    maxRequestBodySize: Int64
+    option: ServerEngineListenOption
 ): Unit {
     var moreTurns = true
     while (moreTurns) {
         try {
+            socket.readTimeout = Some(option.readHeaderTimeout)
             let requestWire = readSocketServerEngineShellRequestWire(socket)
             let request = openSocketServerEngineShellRequest(requestWire)
+            socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
             let seed = buildSocketHttp11DispatchSeed(request)
@@ -389,7 +392,7 @@ func serveSocketServerEngineShellSocketTurns(
                 readSocketServerEngineShellRequestBodyBytes(
                     socket,
                     request,
-                    maxRequestBodySize
+                    option.maxRequestBodySize
                 )
             } catch (e: BufferedRequestBodyTooLargeException) {
                 writeSocketServerEngineShellPayloadTooLargeResponse(

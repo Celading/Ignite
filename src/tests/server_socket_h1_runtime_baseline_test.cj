@@ -1,6 +1,7 @@
 package ignite.tests
 
 import ignite.*
+import std.net.{IPSocketAddress, TcpSocket}
 import std.sync.Mutex
 import std.time.MonoTime
 
@@ -138,6 +139,53 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             )
 
             @Assert(socketH1RuntimeBaselineContains(rejected, "HTTP/1.1 413 Payload Too Large"), true)
+            @Assert(socketH1RuntimeBaselineContains(accepted, "HTTP/1.1 200 OK"), true)
+            @Assert(socketH1RuntimeBaselineContains(accepted, "\r\n\r\nalive"), true)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testDefaultNativeH1AppliesHeaderTimeoutWithoutStoppingAcceptLoop(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        var config = Config(enableNetworkChangeNotice: false)
+        config.readHeaderTimeout = Duration.millisecond * 100
+        let app = App(config: config)
+        app.get("/after-header-timeout", { ctx =>
+            let _ = ctx.sendString("alive")
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let stalled = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            stalled.connect()
+            try {
+                stalled.readTimeout = Some(Duration.second)
+                stalled.write("GET /never-finished HTTP/1.1\r\nHost: example.com".toArray())
+                sleep(Duration.millisecond * 250)
+                let buf = Array<UInt8>(16, repeat: 0)
+                var closedAfterTimeout = false
+                try {
+                    closedAfterTimeout = stalled.read(buf) <= 0
+                } catch (_: Exception) {
+                    closedAfterTimeout = true
+                }
+                @Assert(closedAfterTimeout, true)
+            } finally {
+                if (!stalled.isClosed()) {
+                    stalled.close()
+                }
+            }
+
+            let accepted = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /after-header-timeout HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
             @Assert(socketH1RuntimeBaselineContains(accepted, "HTTP/1.1 200 OK"), true)
             @Assert(socketH1RuntimeBaselineContains(accepted, "\r\n\r\nalive"), true)
         } finally {
