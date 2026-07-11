@@ -84,9 +84,13 @@ class NativeH2ClientResponseStream {
 class NativeH2ClientConnectionState {
     let streams = HashMap<Int64, NativeH2ClientResponseStream>()
     let orderedStreamIds = ArrayList<Int64>()
-    var nextStreamId: Int64 = 1
+    var nextStreamId: Int64
     var completedStreams: Int64 = 0
     var consumedConnectionFlowCredit: Int64 = 0
+
+    init(nextStreamId: Int64) {
+        this.nextStreamId = nextStreamId
+    }
 
     func openStream(): NativeH2ClientResponseStream {
         if (streams.size >= NATIVE_H2_MAX_CONCURRENT_STREAMS) {
@@ -97,6 +101,58 @@ class NativeH2ClientConnectionState {
         orderedStreamIds.add(stream.streamId)
         nextStreamId += 2
         stream
+    }
+}
+
+/// Owns H2 protocol state while the caller continues to own the socket.
+public class NativeH2ClientConnection {
+    let socket: TcpSocket
+    var initialized = false
+    var finished = false
+    var nextStreamId: Int64 = 1
+
+    public init(socket: TcpSocket) {
+        this.socket = socket
+    }
+
+    public func send(request: NativeH2ClientRequest): NativeH2ClientResponse {
+        sendBatch([request])[0]
+    }
+
+    public func sendBatch(
+        requests: Array<NativeH2ClientRequest>
+    ): Array<NativeH2ClientResponse> {
+        if (finished) {
+            throw Exception("native H2 client connection is finished")
+        }
+        let (responses, followingStreamId) = nativeH2ClientSendBatch(
+            socket,
+            requests,
+            nextStreamId,
+            !initialized
+        )
+        initialized = true
+        nextStreamId = followingStreamId
+        responses
+    }
+
+    /// Emits NO_ERROR GOAWAY but leaves physical socket close to the caller.
+    public func finish(): Unit {
+        if (finished) {
+            return
+        }
+        if (initialized) {
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(
+                    UInt8(0x7),
+                    UInt8(0),
+                    0,
+                    nativeH2GoAwayPayload(nextStreamId - 2, NATIVE_H2_ERROR_NO_ERROR)
+                )
+            )
+        }
+        finished = true
     }
 }
 
@@ -120,8 +176,17 @@ public func sendNativeH2Requests(
     socket: TcpSocket,
     requests: Array<NativeH2ClientRequest>
 ): Array<NativeH2ClientResponse> {
+    NativeH2ClientConnection(socket).sendBatch(requests)
+}
+
+func nativeH2ClientSendBatch(
+    socket: TcpSocket,
+    requests: Array<NativeH2ClientRequest>,
+    initialStreamId: Int64,
+    completeHandshake: Bool
+): (Array<NativeH2ClientResponse>, Int64) {
     if (requests.size == 0) {
-        return Array<NativeH2ClientResponse>()
+        return (Array<NativeH2ClientResponse>(), initialStreamId)
     }
     if (requests.size > NATIVE_H2_MAX_CONCURRENT_STREAMS) {
         throw Exception("native H2 client request batch exceeds concurrent stream limit")
@@ -137,11 +202,13 @@ public func sendNativeH2Requests(
         throw Exception("native H2 first client request batch exceeds connection flow window")
     }
 
-    socket.write(NATIVE_H2_PREFACE)
-    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
-    nativeH2ClientCompleteSettingsHandshake(socket)
+    if (completeHandshake) {
+        socket.write(NATIVE_H2_PREFACE)
+        nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+        nativeH2ClientCompleteSettingsHandshake(socket)
+    }
 
-    let connection = NativeH2ClientConnectionState()
+    let connection = NativeH2ClientConnectionState(initialStreamId)
     for (request in requests) {
         let stream = connection.openStream()
         nativeH2ClientWriteRequest(socket, stream.streamId, request)
@@ -242,7 +309,7 @@ public func sendNativeH2Requests(
             throw Exception("native H2 client response stream disappeared")
         responses.add(stream.response())
     }
-    responses.toArray()
+    (responses.toArray(), connection.nextStreamId)
 }
 
 func nativeH2ClientWriteRequest(

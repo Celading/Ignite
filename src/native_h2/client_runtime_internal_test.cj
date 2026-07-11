@@ -122,4 +122,50 @@ public class NativeH2ClientRuntimeInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testNativeClientReusesConnectionAcrossSequentialBatches(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 client test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(accepted, { request =>
+                    NativeH2SingleStreamResponse(
+                        status: 200,
+                        headers: [NativeH2Header("x-stream-id", request.streamId.toString())],
+                        body: request.path.toArray()
+                    )
+                })
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 2)
+            socket.writeTimeout = Some(Duration.second * 2)
+            let connection = NativeH2ClientConnection(socket)
+            let first = connection.send(
+                NativeH2ClientRequest("GET", "http", "localhost", "/first")
+            )
+            let second = connection.send(
+                NativeH2ClientRequest("GET", "http", "localhost", "/second")
+            )
+            connection.finish()
+
+            @Assert(first.header("x-stream-id") ?? "", "1")
+            @Assert(String.fromUtf8(first.body), "/first")
+            @Assert(second.header("x-stream-id") ?? "", "3")
+            @Assert(String.fromUtf8(second.body), "/second")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
 }
