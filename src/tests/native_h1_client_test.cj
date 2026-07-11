@@ -432,6 +432,40 @@ public class NativeH1ClientTestSuite {
         }
     }
 
+    @TestCase
+    public func testExplicitNativeH1ClientUsesBracketedIpv6AuthorityOnWire(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("[::1]:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H1 IPv6 test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let n = accepted.read(request)
+                let requestText = String.fromUtf8(nativeH1TestByteSlice(request, n))
+                let expectedHost = "Host: [::1]:${port}\r\n"
+                let body = if (nativeH1TestContains(requestText, expectedHost)) { "ipv6-ok" } else { "bad-host" }
+                accepted.write(
+                    ("HTTP/1.1 200 OK\r\nContent-Length: ${body.size}\r\n" +
+                    "Connection: close\r\n\r\n" + body).toArray()
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeH1TestClient()
+        try {
+            let response = client.get("http://[::1]:${port}/ipv6")
+            @Assert(response.status, 200)
+            @Assert(response.body(), "ipv6-ok")
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 2)
+        }
+    }
+
     func nativeH1TestClient(): RestClient {
         RestClient(
             readTimeout: Duration.second * 2,
@@ -448,4 +482,39 @@ public class NativeH1ClientTestSuite {
         }
         "missing"
     }
+}
+
+func nativeH1TestByteSlice(input: Array<UInt8>, length: Int64): Array<UInt8> {
+    let out = Array<UInt8>(length, repeat: 0)
+    var i: Int64 = 0
+    while (i < length) {
+        out[i] = input[i]
+        i += 1
+    }
+    out
+}
+
+func nativeH1TestContains(text: String, target: String): Bool {
+    let input = text.toRuneArray()
+    let expected = target.toRuneArray()
+    if (expected.size == 0) {
+        return true
+    }
+    var i: Int64 = 0
+    while (i + expected.size <= input.size) {
+        var matched = true
+        var j: Int64 = 0
+        while (j < expected.size) {
+            if (input[i + j] != expected[j]) {
+                matched = false
+                break
+            }
+            j += 1
+        }
+        if (matched) {
+            return true
+        }
+        i += 1
+    }
+    false
 }

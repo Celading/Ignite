@@ -456,15 +456,31 @@ func parseNativeH1Target(rawUrl: String): NativeH1ClientTarget {
 
     var host = authority
     var port: UInt16 = 80
-    let colon = nativeH1LastIndexOf(authority, ":")
-    if (colon > 0) {
-        let portText = nativeH1RuneSlice(authority.toRuneArray(), colon + 1, authority.toRuneArray().size)
-        let parsedPort = parseNativeH1Decimal(portText)
-        if (parsedPort <= 0 || parsedPort > 65535) {
-            throw Exception("native H1 client URL port is invalid")
+    if (nativeH1StartsWith(authority, "[")) {
+        let closing = nativeH1IndexOf(authority, "]")
+        if (closing <= 1) {
+            throw Exception("native H1 client IPv6 authority is invalid")
         }
-        host = nativeH1RuneSlice(authority.toRuneArray(), 0, colon)
-        port = UInt16(parsedPort)
+        let authorityRunes = authority.toRuneArray()
+        host = nativeH1RuneSlice(authorityRunes, 1, closing)
+        if (closing + 1 < authorityRunes.size) {
+            if (authorityRunes[closing + 1] != r':') {
+                throw Exception("native H1 client IPv6 authority suffix is invalid")
+            }
+            let portText = nativeH1RuneSlice(authorityRunes, closing + 2, authorityRunes.size)
+            port = parseNativeH1Port(portText)
+        }
+    } else {
+        let colon = nativeH1LastIndexOf(authority, ":")
+        if (colon > 0) {
+            if (nativeH1IndexOf(authority, ":") != colon) {
+                throw Exception("native H1 client IPv6 URL must use brackets")
+            }
+            let authorityRunes = authority.toRuneArray()
+            let portText = nativeH1RuneSlice(authorityRunes, colon + 1, authorityRunes.size)
+            port = parseNativeH1Port(portText)
+            host = nativeH1RuneSlice(authorityRunes, 0, colon)
+        }
     }
     if (host.size == 0) {
         throw Exception("native H1 client URL host is empty")
@@ -666,7 +682,19 @@ func settleNativeH1BodylessSocket(
 }
 
 func nativeH1PoolOrigin(target: NativeH1ClientTarget): String {
-    target.host.toAsciiLower() + ":" + target.port.toString()
+    let host = target.host.toAsciiLower()
+    if (nativeH1IndexOf(host, ":") >= 0) {
+        return "[" + host + "]:" + target.port.toString()
+    }
+    host + ":" + target.port.toString()
+}
+
+func parseNativeH1Port(portText: String): UInt16 {
+    let parsedPort = parseNativeH1Decimal(portText)
+    if (parsedPort <= 0 || parsedPort > 65535) {
+        throw Exception("native H1 client URL port is invalid")
+    }
+    UInt16(parsedPort)
 }
 
 func closeNativeH1Socket(socket: TcpSocket): Unit {
