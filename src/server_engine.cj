@@ -75745,6 +75745,7 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             app,
             onReady,
             _runtimeControl,
+            socketServerEngineShellAcceptedConnectionLimit(_selectionLabel),
             tlsAcceptedSessionReadyHook: _tlsAcceptedSessionReadyHook
         )
     }

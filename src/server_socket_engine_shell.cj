@@ -55,6 +55,7 @@ func runSocketServerEngineShellListen(
     app: App,
     onReady: ?((ServerEngineReadySignal) -> Unit),
     control: SocketServerEngineShellRuntimeControl,
+    acceptedConnectionLimit: Int64,
     tlsAcceptedSessionReadyHook!:
         ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
 ): Unit {
@@ -64,6 +65,7 @@ func runSocketServerEngineShellListen(
             app,
             onReady,
             control,
+            acceptedConnectionLimit,
             tlsAcceptedSessionReadyHook
         )
         return
@@ -77,8 +79,9 @@ func runSocketServerEngineShellListen(
         }
         serveSocketServerEngineShellTurns(
             listener,
+            option,
             app,
-            socketServerEngineShellAcceptedConnectionLimit(),
+            acceptedConnectionLimit,
             control
         )
     } finally {
@@ -104,6 +107,7 @@ func runSocketServerEngineShellTlsListen(
     app: App,
     onReady: ?((ServerEngineReadySignal) -> Unit),
     control: SocketServerEngineShellRuntimeControl,
+    acceptedConnectionLimit: Int64,
     tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
 ): Unit {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${option.addr}:${option.port}"))
@@ -118,7 +122,7 @@ func runSocketServerEngineShellTlsListen(
             listener,
             option,
             app,
-            socketServerEngineShellAcceptedConnectionLimit(),
+            acceptedConnectionLimit,
             control,
             tlsAcceptedSessionReadyHook
         )
@@ -140,7 +144,10 @@ func serveSocketServerEngineShellTlsTurns(
 ): Unit {
     var acceptedConnectionCount: Int64 = 0
     while (
-        acceptedConnectionCount < acceptedConnectionLimit &&
+        socketServerEngineShellAcceptLoopShouldContinue(
+            acceptedConnectionCount,
+            acceptedConnectionLimit
+        ) &&
         !control.shutdownRequested()
     ) {
         try {
@@ -268,18 +275,29 @@ func socketServerEngineShellExperimentalServerKeyExchangePrivate(): Array<Byte> 
 
 func serveSocketServerEngineShellTurns(
     listener: TcpServerSocket,
+    option: ServerEngineListenOption,
     app: App,
     acceptedConnectionLimit: Int64,
     control: SocketServerEngineShellRuntimeControl
 ): Unit {
     var acceptedConnectionCount: Int64 = 0
     while (
-        acceptedConnectionCount < acceptedConnectionLimit &&
+        socketServerEngineShellAcceptLoopShouldContinue(
+            acceptedConnectionCount,
+            acceptedConnectionLimit
+        ) &&
         !control.shutdownRequested()
     ) {
         try {
-            serveSocketServerEngineShellTurn(listener, app)
+            let accepted = listener.accept()
             acceptedConnectionCount += 1
+            spawn {
+                serveSocketServerEngineShellAcceptedConnection(
+                    accepted,
+                    app,
+                    option.maxRequestBodySize
+                )
+            }
         } catch (e: Exception) {
             if (control.shutdownRequested()) {
                 break
@@ -289,7 +307,17 @@ func serveSocketServerEngineShellTurns(
     }
 }
 
-func socketServerEngineShellAcceptedConnectionLimit(): Int64 {
+func socketServerEngineShellAcceptLoopShouldContinue(
+    acceptedConnectionCount: Int64,
+    acceptedConnectionLimit: Int64
+): Bool {
+    acceptedConnectionLimit <= 0 ||
+        acceptedConnectionCount < acceptedConnectionLimit
+}
+
+func socketServerEngineShellAcceptedConnectionLimit(
+    selectionLabel: String
+): Int64 {
     match (getVariable(SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV)) {
         case Some(raw) =>
             let parsed = socketServerEngineShellParsePositiveInt64(raw.trimAscii())
@@ -299,7 +327,12 @@ func socketServerEngineShellAcceptedConnectionLimit(): Int64 {
             throw SocketServerEngineShellException(
                 "${SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV} must be a positive decimal integer"
             )
-        case None => 1
+        case None =>
+            if (selectionLabel == "manual-opt-in") {
+                1
+            } else {
+                0
+            }
     }
 }
 
@@ -321,13 +354,17 @@ func socketServerEngineShellParsePositiveInt64(text: String): ?Int64 {
     Some(value)
 }
 
-func serveSocketServerEngineShellTurn(
-    listener: TcpServerSocket,
-    app: App
+func serveSocketServerEngineShellAcceptedConnection(
+    accepted: TcpSocket,
+    app: App,
+    maxRequestBodySize: Int64
 ): Unit {
-    let accepted = listener.accept()
     try {
-        serveSocketServerEngineShellSocketTurns(accepted, app)
+        serveSocketServerEngineShellSocketTurns(
+            accepted,
+            app,
+            maxRequestBodySize
+        )
     } finally {
         if (!accepted.isClosed()) {
             accepted.close()
@@ -337,7 +374,8 @@ func serveSocketServerEngineShellTurn(
 
 func serveSocketServerEngineShellSocketTurns(
     socket: TcpSocket,
-    app: App
+    app: App,
+    maxRequestBodySize: Int64
 ): Unit {
     var moreTurns = true
     while (moreTurns) {
@@ -346,9 +384,23 @@ func serveSocketServerEngineShellSocketTurns(
             let request = openSocketServerEngineShellRequest(requestWire)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
-            let requestBodyBytes =
-                readSocketServerEngineShellRequestBodyBytes(socket, request)
             let seed = buildSocketHttp11DispatchSeed(request)
+            let requestBodyBytes = try {
+                readSocketServerEngineShellRequestBodyBytes(
+                    socket,
+                    request,
+                    maxRequestBodySize
+                )
+            } catch (e: BufferedRequestBodyTooLargeException) {
+                writeSocketServerEngineShellPayloadTooLargeResponse(
+                    socket,
+                    request,
+                    seed,
+                    socket.remoteAddress.toString()
+                )
+                moreTurns = false
+                continue
+            }
             let carrier = SocketServerEngineShellCurrentRequestCarrier(
                 request,
                 seed,
@@ -445,9 +497,14 @@ func readSocketServerEngineShellRequestWire(socket: TcpSocket): Array<UInt8> {
 
 func readSocketServerEngineShellRequestBodyBytes(
     socket: TcpSocket,
-    request: SocketHttp11SessionRequest
+    request: SocketHttp11SessionRequest,
+    maxRequestBodySize: Int64
 ): Array<UInt8> {
     let prefetched = socketServerEngineShellCloneBytes(request.bodyPlan.prefetchedBodyBytes)
+    socketServerEngineShellEnsureRequestBodyWithinLimit(
+        maxRequestBodySize,
+        prefetched.size
+    )
     if (!request.bodyPlan.requiresBodyStage) {
         return prefetched
     }
@@ -458,6 +515,11 @@ func readSocketServerEngineShellRequestBodyBytes(
             )
         }
         let remaining = request.bodyPlan.remainingNetworkBodyBytes
+        socketServerEngineShellEnsureRemainingRequestBodyWithinLimit(
+            maxRequestBodySize,
+            prefetched.size,
+            remaining
+        )
         if (remaining <= 0) {
             return prefetched
         }
@@ -473,11 +535,51 @@ func readSocketServerEngineShellRequestBodyBytes(
         return out.toArray()
     }
     if (request.bodyPlan.framing == SocketHttp11RequestBodyFraming.Chunked) {
-        return socketServerEngineShellDecodeChunkedBody(socket, prefetched)
+        return socketServerEngineShellDecodeChunkedBody(
+            socket,
+            prefetched,
+            maxRequestBodySize
+        )
     }
     throw SocketServerEngineShellException(
         "socket server engine shell request body-stage first cut supports only Content-Length and chunked framing"
     )
+}
+
+func socketServerEngineShellEnsureRequestBodyWithinLimit(
+    maxRequestBodySize: Int64,
+    attemptedBytes: Int64
+): Unit {
+    if (maxRequestBodySize > 0 && attemptedBytes > maxRequestBodySize) {
+        throw BufferedRequestBodyTooLargeException(
+            maxRequestBodySize,
+            attemptedBytes,
+            "request body read ${attemptedBytes} bytes which exceeds limit ${maxRequestBodySize}"
+        )
+    }
+}
+
+func socketServerEngineShellEnsureRemainingRequestBodyWithinLimit(
+    maxRequestBodySize: Int64,
+    prefetchedBytes: Int64,
+    remainingBytes: Int64
+): Unit {
+    if (maxRequestBodySize <= 0 || remainingBytes <= 0) {
+        return
+    }
+    let remainingBudget = maxRequestBodySize - prefetchedBytes
+    if (remainingBytes > remainingBudget) {
+        let attemptedBytes = if (remainingBytes > maxRequestBodySize) {
+            remainingBytes
+        } else {
+            prefetchedBytes + remainingBytes
+        }
+        throw BufferedRequestBodyTooLargeException(
+            maxRequestBodySize,
+            attemptedBytes,
+            "request body read ${attemptedBytes} bytes which exceeds limit ${maxRequestBodySize}"
+        )
+    }
 }
 
 func socketServerEngineShellReadExactBytes(socket: TcpSocket, expectedBytes: Int64): Array<UInt8> {
@@ -499,7 +601,8 @@ func socketServerEngineShellReadExactBytes(socket: TcpSocket, expectedBytes: Int
 
 func socketServerEngineShellDecodeChunkedBody(
     socket: TcpSocket,
-    prefetched: Array<UInt8>
+    prefetched: Array<UInt8>,
+    maxRequestBodySize: Int64
 ): Array<UInt8> {
     let network = ArrayList<UInt8>()
     appendSocketServerEngineShellBytes(network, prefetched)
@@ -518,6 +621,11 @@ func socketServerEngineShellDecodeChunkedBody(
             }
             return decoded.toArray()
         }
+        socketServerEngineShellEnsureRemainingRequestBodyWithinLimit(
+            maxRequestBodySize,
+            decoded.size,
+            chunkSize
+        )
         socketServerEngineShellEnsureBufferedBytes(socket, network, cursor + chunkSize + 2)
         var i: Int64 = 0
         while (i < chunkSize) {
@@ -535,6 +643,31 @@ func socketServerEngineShellDecodeChunkedBody(
     throw SocketServerEngineShellException(
         "socket server engine shell chunked body-stage first cut reached an unreachable decoder state"
     )
+}
+
+func writeSocketServerEngineShellPayloadTooLargeResponse(
+    socket: TcpSocket,
+    request: SocketHttp11SessionRequest,
+    seed: SocketHttp11DispatchSeed,
+    remoteAddress: String
+): Unit {
+    let carrier = SocketServerEngineShellCurrentRequestCarrier(
+        request,
+        seed,
+        remoteAddress,
+        Array<UInt8>(0, repeat: 0)
+    )
+    carrier.setResponseStatus(413)
+    carrier.setResponseHeader("content-type", "text/plain; charset=utf-8")
+    carrier.setResponseString("Payload Too Large")
+    let responseWire = buildSocketServerEngineShellResponseWire(
+        request,
+        carrier,
+        true
+    )
+    if (responseWire.size > 0) {
+        socket.write(responseWire)
+    }
 }
 
 func socketServerEngineShellConsumeChunkedTrailers(
