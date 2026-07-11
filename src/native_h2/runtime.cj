@@ -34,11 +34,27 @@ public class NativeH2SingleStreamRequest {
 
 public class NativeH2SingleStreamResponse {
     public let status: UInt16
+    public let headers: Array<NativeH2Header>
     public let body: Array<UInt8>
 
-    public init(status!: UInt16 = 200, body!: Array<UInt8> = Array<UInt8>()) {
+    public init(
+        status!: UInt16 = 200,
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>(),
+        body!: Array<UInt8> = Array<UInt8>()
+    ) {
         this.status = status
+        this.headers = nativeH2CloneHeaders(headers)
         this.body = nativeH2Clone(body)
+    }
+}
+
+public class NativeH2Header {
+    public let name: String
+    public let value: String
+
+    public init(name: String, value: String) {
+        this.name = name.trimAscii().toAsciiLower()
+        this.value = value.trimAscii()
     }
 }
 
@@ -144,7 +160,7 @@ public func serveNativeH2SingleStream(
             UInt8(0x1),
             UInt8(0x4),
             headers.streamId,
-            nativeH2EncodeStatus(response.status)
+            nativeH2EncodeResponseHead(response.status, response.headers)
         )
     )
     nativeH2WriteResponseData(socket, headers.streamId, response.body)
@@ -317,7 +333,48 @@ func nativeH2EncodeStatus(status: UInt16): Array<UInt8> {
         case 400 => [UInt8(0x8c)]
         case 404 => [UInt8(0x8d)]
         case 500 => [UInt8(0x8e)]
-        case _ => throw Exception("native H2 first-slice response status is unsupported")
+        case _ =>
+            let numeric = Int64(status)
+            if (numeric < 200 || numeric > 999) {
+                throw Exception("native H2 first-slice response status must be between 200 and 999")
+            }
+            let value = status.toString().toArray()
+            [UInt8(0x08), UInt8(value.size), value[0], value[1], value[2]]
+    }
+}
+
+func nativeH2EncodeResponseHead(
+    status: UInt16,
+    headers: Array<NativeH2Header>
+): Array<UInt8> {
+    let out = ArrayList<UInt8>()
+    nativeH2AppendBytes(out, nativeH2EncodeStatus(status))
+    for (header in headers) {
+        let name = header.name
+        if (name == "connection" || name == "keep-alive" || name == "proxy-connection" ||
+            name == "transfer-encoding" || name == "upgrade" || name == "te") {
+            continue
+        }
+        let nameBytes = name.toArray()
+        let valueBytes = header.value.toArray()
+        if (nameBytes.size == 0 || nameBytes.size >= 127 || valueBytes.size >= 127) {
+            throw Exception("native H2 first-slice response header exceeds single-byte HPACK limits")
+        }
+        if (nameBytes[0] == UInt8(0x3a)) {
+            throw Exception("native H2 application response headers cannot add pseudo-headers")
+        }
+        out.add(UInt8(0))
+        out.add(UInt8(nameBytes.size))
+        nativeH2AppendBytes(out, nameBytes)
+        out.add(UInt8(valueBytes.size))
+        nativeH2AppendBytes(out, valueBytes)
+    }
+    out.toArray()
+}
+
+func nativeH2AppendBytes(out: ArrayList<UInt8>, input: Array<UInt8>): Unit {
+    for (value in input) {
+        out.add(value)
     }
 }
 
@@ -333,6 +390,14 @@ func nativeH2Slice(input: Array<UInt8>, start: Int64, end: Int64): Array<UInt8> 
 
 func nativeH2Clone(input: Array<UInt8>): Array<UInt8> {
     nativeH2Slice(input, 0, input.size)
+}
+
+func nativeH2CloneHeaders(input: Array<NativeH2Header>): Array<NativeH2Header> {
+    let out = ArrayList<NativeH2Header>()
+    for (header in input) {
+        out.add(NativeH2Header(header.name, header.value))
+    }
+    out.toArray()
 }
 
 func nativeH2BytesEqual(left: Array<UInt8>, right: Array<UInt8>): Bool {
