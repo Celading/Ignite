@@ -1,11 +1,12 @@
 package ignite.native_h2
 
-import std.collection.ArrayList
+import std.collection.{ArrayList, HashMap}
 import std.net.TcpSocket
 
 let NATIVE_H2_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".toArray()
 let NATIVE_H2_MAX_FIRST_SLICE_BODY: Int64 = 1024 * 1024
 let NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD: Int64 = 16384
+let NATIVE_H2_MAX_CONCURRENT_STREAMS: Int64 = 100
 
 public class NativeH2SingleStreamRequest {
     public let streamId: Int64
@@ -89,6 +90,37 @@ class NativeH2DecodedRequestHead {
     }
 }
 
+class NativeH2InboundStream {
+    let streamId: Int64
+    let head: NativeH2DecodedRequestHead
+    let body = ArrayList<UInt8>()
+
+    init(streamId: Int64, head: NativeH2DecodedRequestHead) {
+        this.streamId = streamId
+        this.head = head
+    }
+
+    func appendData(payload: Array<UInt8>): Unit {
+        if (body.size + payload.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
+            throw Exception("native H2 request body exceeds 1 MiB")
+        }
+        for (value in payload) {
+            body.add(value)
+        }
+    }
+
+    func request(): NativeH2SingleStreamRequest {
+        NativeH2SingleStreamRequest(
+            streamId,
+            head.method,
+            head.scheme,
+            head.authority,
+            head.path,
+            body.toArray()
+        )
+    }
+}
+
 /// Serves one bounded HTTP/2 stream on an already accepted cleartext socket.
 ///
 /// This first AP2 slice owns the real preface/SETTINGS/frame lifecycle but
@@ -98,6 +130,22 @@ public func serveNativeH2SingleStream(
     socket: TcpSocket,
     handler: NativeH2SingleStreamHandler
 ): Unit {
+    serveNativeH2Connection(socket, handler, maxCompletedStreams: 1)
+}
+
+/// Serves a bounded or socket-lifetime HTTP/2 connection.
+///
+/// A positive `maxCompletedStreams` is useful for bounded embedding and wire
+/// fixtures. Zero keeps reading until the peer closes or a protocol error is
+/// raised. Flow-control accounting is added by the next AP3 stage.
+public func serveNativeH2Connection(
+    socket: TcpSocket,
+    handler: NativeH2SingleStreamHandler,
+    maxCompletedStreams!: Int64 = 0
+): Unit {
+    if (maxCompletedStreams < 0) {
+        throw Exception("native H2 maxCompletedStreams cannot be negative")
+    }
     let preface = nativeH2ReadExactly(socket, NATIVE_H2_PREFACE.size)
     if (!nativeH2BytesEqual(preface, NATIVE_H2_PREFACE)) {
         throw Exception("native H2 client preface is invalid")
@@ -111,59 +159,101 @@ public func serveNativeH2SingleStream(
     if (clientSettings.payload.size % 6 != 0) {
         throw Exception("native H2 SETTINGS payload must contain 6-byte entries")
     }
-    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+    nativeH2WriteFrame(
+        socket,
+        NativeH2Frame(UInt8(0x4), UInt8(0), 0, nativeH2ServerSettingsPayload())
+    )
     nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 
-    let headers = nativeH2ReadFrame(socket)
-    if (headers.frameType != UInt8(0x1) || headers.streamId <= 0 ||
-        headers.streamId % 2 != 1 ||
-        (headers.flags & UInt8(0x4)) == UInt8(0)) {
-        throw Exception("native H2 first slice requires one client-initiated END_HEADERS HEADERS frame")
+    let streams = HashMap<Int64, NativeH2InboundStream>()
+    var lastOpenedStreamId: Int64 = 0
+    var completedStreams: Int64 = 0
+    while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams) {
+        let frame = nativeH2ReadFrame(socket)
+        if (frame.frameType == UInt8(0x4)) {
+            nativeH2HandleSettingsFrame(socket, frame)
+            continue
+        }
+        if (frame.frameType == UInt8(0x1)) {
+            if (frame.streamId <= 0 || frame.streamId % 2 != 1 ||
+                frame.streamId <= lastOpenedStreamId ||
+                (frame.flags & UInt8(0x4)) == UInt8(0)) {
+                throw Exception("native H2 requires increasing client-initiated END_HEADERS streams")
+            }
+            if ((frame.flags & UInt8(0x8)) != UInt8(0) ||
+                (frame.flags & UInt8(0x20)) != UInt8(0)) {
+                throw Exception("native H2 does not support PADDED or PRIORITY HEADERS")
+            }
+            if (streams.size >= NATIVE_H2_MAX_CONCURRENT_STREAMS) {
+                throw Exception("native H2 concurrent stream limit exceeded")
+            }
+            let stream = NativeH2InboundStream(frame.streamId, nativeH2DecodeRequestHead(frame.payload))
+            streams.add(frame.streamId, stream)
+            lastOpenedStreamId = frame.streamId
+            if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+                nativeH2DispatchCompletedStream(socket, streams, stream, handler)
+                completedStreams += 1
+            }
+            continue
+        }
+        if (frame.frameType == UInt8(0x0)) {
+            if ((frame.flags & UInt8(0x8)) != UInt8(0)) {
+                throw Exception("native H2 does not support PADDED DATA")
+            }
+            let stream = streams.get(frame.streamId) ??
+                throw Exception("native H2 DATA references an unknown stream")
+            stream.appendData(frame.payload)
+            if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+                nativeH2DispatchCompletedStream(socket, streams, stream, handler)
+                completedStreams += 1
+            }
+            continue
+        }
+        throw Exception("native H2 connection received an unsupported frame type")
     }
-    if ((headers.flags & UInt8(0x8)) != UInt8(0) ||
-        (headers.flags & UInt8(0x20)) != UInt8(0)) {
-        throw Exception("native H2 first slice does not support PADDED or PRIORITY HEADERS")
-    }
-    let decoded = nativeH2DecodeRequestHead(headers.payload)
-    let body = ArrayList<UInt8>()
-    var endStream = (headers.flags & UInt8(0x1)) != UInt8(0)
-    while (!endStream) {
-        let data = nativeH2ReadFrame(socket)
-        if (data.frameType != UInt8(0x0) || data.streamId != headers.streamId) {
-            throw Exception("native H2 first slice requires same-stream DATA after HEADERS")
-        }
-        if ((data.flags & UInt8(0x8)) != UInt8(0)) {
-            throw Exception("native H2 first slice does not support PADDED DATA")
-        }
-        if (body.size + data.payload.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
-            throw Exception("native H2 first-slice request body exceeds 1 MiB")
-        }
-        for (value in data.payload) {
-            body.add(value)
-        }
-        endStream = (data.flags & UInt8(0x1)) != UInt8(0)
-    }
+}
 
-    let response = handler(
-        NativeH2SingleStreamRequest(
-            headers.streamId,
-            decoded.method,
-            decoded.scheme,
-            decoded.authority,
-            decoded.path,
-            body.toArray()
-        )
-    )
+func nativeH2ServerSettingsPayload(): Array<UInt8> {
+    [
+        UInt8(0), UInt8(0x3),
+        UInt8(0), UInt8(0), UInt8(0), UInt8(NATIVE_H2_MAX_CONCURRENT_STREAMS)
+    ]
+}
+
+func nativeH2DispatchCompletedStream(
+    socket: TcpSocket,
+    streams: HashMap<Int64, NativeH2InboundStream>,
+    stream: NativeH2InboundStream,
+    handler: NativeH2SingleStreamHandler
+): Unit {
+    let response = handler(stream.request())
     nativeH2WriteFrame(
         socket,
         NativeH2Frame(
             UInt8(0x1),
             UInt8(0x4),
-            headers.streamId,
+            stream.streamId,
             nativeH2EncodeResponseHead(response.status, response.headers)
         )
     )
-    nativeH2WriteResponseData(socket, headers.streamId, response.body)
+    nativeH2WriteResponseData(socket, stream.streamId, response.body)
+    let _ = streams.remove(stream.streamId)
+}
+
+func nativeH2HandleSettingsFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
+    if (frame.streamId != 0) {
+        throw Exception("native H2 SETTINGS must use stream 0")
+    }
+    if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+        if (frame.payload.size != 0) {
+            throw Exception("native H2 SETTINGS ACK must have an empty payload")
+        }
+        return
+    }
+    if (frame.payload.size % 6 != 0) {
+        throw Exception("native H2 SETTINGS payload must contain 6-byte entries")
+    }
+    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 }
 
 func nativeH2ReadFrame(socket: TcpSocket): NativeH2Frame {

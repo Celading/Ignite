@@ -19,6 +19,20 @@ public func serveNativeH2SingleStreamApp(
     })
 }
 
+/// Serves multiple native H2 streams through the existing Ignite App dispatch.
+public func serveNativeH2AppConnection(
+    socket: TcpSocket,
+    app: App,
+    remoteAddress!: String = "",
+    maxCompletedStreams!: Int64 = 0
+): Unit {
+    serveNativeH2Connection(socket, { request =>
+        let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
+        app.handleRequest(carrier)
+        carrier.response()
+    }, maxCompletedStreams: maxCompletedStreams)
+}
+
 class NativeH2AppBytesInputStream <: InputStream {
     let bytes: Array<UInt8>
     var offset: Int64 = 0

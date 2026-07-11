@@ -118,6 +118,96 @@ public class NativeH2RuntimeInternalTestSuite {
             let _ = serverFuture.get(Duration.second * 2)
         }
     }
+
+    @TestCase
+    public func testConnectionKeepsInterleavedStreamsIndependent(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 multiplex test could not reserve loopback port")
+        let app = App()
+        app.post("/mux/one", { ctx =>
+            let _ = ctx.sendString("one:" + ctx.bodyString())
+        })
+        app.post("/mux/two", { ctx =>
+            let _ = ctx.sendString("two:" + ctx.bodyString())
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(
+                    accepted,
+                    app,
+                    remoteAddress: "127.0.0.1",
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x4), 1, nativeH2TestRequestHeaders("/mux/one"))
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x4), 3, nativeH2TestRequestHeaders("/mux/two"))
+            )
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x0), UInt8(0x1), 3, "B".toArray()))
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x0), UInt8(0x1), 1, "A".toArray()))
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let streamThreeHeaders = nativeH2ReadFrame(client)
+            let streamThreeData = nativeH2ReadFrame(client)
+            let streamOneHeaders = nativeH2ReadFrame(client)
+            let streamOneData = nativeH2ReadFrame(client)
+
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(streamThreeHeaders.streamId, 3)
+            @Assert(streamThreeData.streamId, 3)
+            @Assert(String.fromUtf8(streamThreeData.payload), "two:B")
+            @Assert(streamOneHeaders.streamId, 1)
+            @Assert(streamOneData.streamId, 1)
+            @Assert(String.fromUtf8(streamOneData.payload), "one:A")
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 2)
+        }
+    }
+}
+
+func nativeH2TestRequestHeaders(path: String): Array<UInt8> {
+    let authority = "localhost"
+    let payload = Array<UInt8>(6 + authority.size + path.size, repeat: 0)
+    payload[0] = UInt8(0x83)
+    payload[1] = UInt8(0x86)
+    payload[2] = UInt8(0x01)
+    payload[3] = UInt8(authority.size)
+    let authorityBytes = authority.toArray()
+    var i: Int64 = 0
+    while (i < authorityBytes.size) {
+        payload[4 + i] = authorityBytes[i]
+        i += 1
+    }
+    let pathOffset = 4 + authorityBytes.size
+    payload[pathOffset] = UInt8(0x04)
+    payload[pathOffset + 1] = UInt8(path.size)
+    let pathBytes = path.toArray()
+    i = 0
+    while (i < pathBytes.size) {
+        payload[pathOffset + 2 + i] = pathBytes[i]
+        i += 1
+    }
+    payload
 }
 
 func nativeH2ContainsBytes(input: Array<UInt8>, target: Array<UInt8>): Bool {
