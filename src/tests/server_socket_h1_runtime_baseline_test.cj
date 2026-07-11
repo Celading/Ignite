@@ -1,6 +1,8 @@
 package ignite.tests
 
 import ignite.*
+import std.collection.ArrayList
+import std.io.InputStream
 import std.net.{IPSocketAddress, TcpSocket}
 import std.sync.Mutex
 import std.time.MonoTime
@@ -19,6 +21,61 @@ class SocketH1RuntimeBaselineGate {
         synchronized(mtx) {
             entered
         }
+    }
+}
+
+class SocketH1RuntimeBaselineDelayedStream <: InputStream & Resource {
+    let mtx = Mutex()
+    var turn: Int64 = 0
+    var released: Bool = false
+    public var closed: Bool = false
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (turn == 0) {
+            turn = 1
+            return writeText(outBuf, "first-")
+        }
+        if (turn == 1) {
+            while (!isReleased()) {
+                sleep(Duration.millisecond * 5)
+            }
+            turn = 2
+            return writeText(outBuf, "second")
+        }
+        0
+    }
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        synchronized(mtx) {
+            released
+        }
+    }
+
+    public func close(): Unit {
+        closed = true
+    }
+
+    public func isClosed(): Bool {
+        closed
+    }
+
+    func writeText(outBuf: Array<Byte>, text: String): Int64 {
+        let bytes = text.toArray()
+        if (outBuf.size < bytes.size) {
+            throw Exception("delayed stream output buffer is too small")
+        }
+        var i: Int64 = 0
+        while (i < bytes.size) {
+            outBuf[i] = bytes[i]
+            i += 1
+        }
+        bytes.size
     }
 }
 
@@ -192,6 +249,56 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testDefaultNativeH1StreamsFirstChunkBeforeInputCompletes(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let stream = SocketH1RuntimeBaselineDelayedStream()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/delayed-stream", { ctx =>
+            let _ = ctx.sendStream(
+                stream,
+                contentType: "text/plain; charset=utf-8"
+            )
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            socket.connect()
+            try {
+                socket.readTimeout = Some(Duration.second)
+                socket.write(
+                    "GET /delayed-stream HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".toArray()
+                )
+                let firstWire = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "first-",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "HTTP/1.1 200 OK"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "transfer-encoding: chunked"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "first-"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "second"), false)
+                @Assert(stream.closed, false)
+
+                stream.release()
+                let remainingWire = readSocketServerEngineShellResponseWire(socket)
+                @Assert(socketH1RuntimeBaselineContains(remainingWire, "second"), true)
+                @Assert(stream.closed, true)
+            } finally {
+                stream.release()
+                if (!socket.isClosed()) {
+                    socket.close()
+                }
+            }
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
 }
 
 func waitForSocketH1RuntimeBaselineGate(gate: SocketH1RuntimeBaselineGate): Unit {
@@ -232,4 +339,30 @@ func socketH1RuntimeBaselineContains(text: String, target: String): Bool {
         start += 1
     }
     false
+}
+
+func readSocketH1RuntimeBaselineUntil(
+    socket: TcpSocket,
+    target: String,
+    timeout: Duration
+): String {
+    let startedAt = MonoTime.now()
+    let out = ArrayList<UInt8>()
+    let buf = Array<UInt8>(4096, repeat: 0)
+    while ((MonoTime.now() - startedAt) < timeout) {
+        let n = socket.read(buf)
+        if (n <= 0) {
+            break
+        }
+        var i: Int64 = 0
+        while (i < n) {
+            out.add(buf[i])
+            i += 1
+        }
+        let text = String.fromUtf8(out.toArray())
+        if (socketH1RuntimeBaselineContains(text, target)) {
+            return text
+        }
+    }
+    String.fromUtf8(out.toArray())
 }

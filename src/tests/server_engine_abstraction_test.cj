@@ -12047,7 +12047,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(contains(responseText, "stream-204-should-not-appear"), false)
         @Assert(httpPayloadSizeAfterHeaderTerminator(responseText), 0)
         @Assert(tracked.closed, true)
-        @Assert(tracked.bytesRead(), Int64(28))
+        @Assert(tracked.bytesRead(), Int64(0))
     }
 
     @TestCase
@@ -12084,7 +12084,7 @@ public class ServerEngineAbstractionTestSuite {
         @Assert(contains(responseText, "stream-304-should-not-appear"), false)
         @Assert(httpPayloadSizeAfterHeaderTerminator(responseText), 0)
         @Assert(tracked.closed, true)
-        @Assert(tracked.bytesRead(), Int64(28))
+        @Assert(tracked.bytesRead(), Int64(0))
     }
 
     @TestCase

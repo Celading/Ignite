@@ -412,14 +412,12 @@ func serveSocketServerEngineShellSocketTurns(
             )
             app.handleRequest(carrier)
             let closeAfterWrite = !keepAliveAfterWrite
-            let responseWire = buildSocketServerEngineShellResponseWire(
+            writeSocketServerEngineShellResponse(
+                socket,
                 request,
                 carrier,
                 closeAfterWrite
             )
-            if (responseWire.size > 0) {
-                socket.write(responseWire)
-            }
             if (!keepAliveAfterWrite) {
                 moreTurns = false
             }
@@ -920,6 +918,113 @@ func buildSocketServerEngineShellResponseWire(
     out.toArray()
 }
 
+func writeSocketServerEngineShellResponse(
+    socket: TcpSocket,
+    request: SocketHttp11SessionRequest,
+    carrier: SocketServerEngineShellCurrentRequestCarrier,
+    closeAfterWrite: Bool
+): Unit {
+    match (carrier.takeResponseBodyStream()) {
+        case Some(stream) =>
+            writeSocketServerEngineShellStreamResponse(
+                socket,
+                request,
+                carrier,
+                stream,
+                closeAfterWrite
+            )
+        case None =>
+            let responseWire = buildSocketServerEngineShellResponseWire(
+                request,
+                carrier,
+                closeAfterWrite
+            )
+            if (responseWire.size > 0) {
+                socket.write(responseWire)
+            }
+    }
+}
+
+func writeSocketServerEngineShellStreamResponse(
+    socket: TcpSocket,
+    request: SocketHttp11SessionRequest,
+    carrier: SocketServerEngineShellCurrentRequestCarrier,
+    stream: InputStream,
+    closeAfterWrite: Bool
+): Unit {
+    try {
+        let responseHeaders = carrier.responseHeadersForSocket()
+        let responseHasChunkedTransfer =
+            carrier.responseHeader("transfer-encoding") ?? ""
+        let responseContentLength = carrier.responseHeader("content-length") ?? ""
+        let statusCode = Int64(carrier.responseStatusCode())
+        let bodyMode = if (isSocketHttp11ResponseBodyForbiddenStatus(statusCode)) {
+            SocketHttp11ResponseBodyMode.Bodyless
+        } else if (responseHasChunkedTransfer.toAsciiLower() == "chunked") {
+            SocketHttp11ResponseBodyMode.UnknownLength
+        } else {
+            SocketHttp11ResponseBodyMode.KnownLength
+        }
+        let declaredBodyBytes = if (bodyMode == SocketHttp11ResponseBodyMode.KnownLength) {
+            socketServerEngineShellDeclaredStreamLength(responseContentLength)
+        } else {
+            0
+        }
+        let plan = buildSocketHttp11ResponseWritePlan(
+            request,
+            statusCode,
+            responseHeaders,
+            bodyMode,
+            declaredBodyBytes: declaredBodyBytes,
+            option: SocketHttp11ResponseWriteOption(closeAfterWrite: closeAfterWrite)
+        )
+        let writer = SocketHttp11ResponseWriterLifecycle(plan)
+        let head = writer.takeHeadBytes()
+        if (head.size > 0) {
+            socket.write(head)
+        }
+        if (plan.writesPayloadBody()) {
+            let buf = Array<Byte>(4096, repeat: 0)
+            while (true) {
+                let n = stream.read(buf)
+                if (n <= 0) {
+                    break
+                }
+                let chunk = Array<UInt8>(n, repeat: 0)
+                var i: Int64 = 0
+                while (i < n) {
+                    chunk[i] = UInt8(buf[i])
+                    i += 1
+                }
+                let wire = writer.writeBodyChunk(chunk)
+                if (wire.size > 0) {
+                    socket.write(wire)
+                }
+            }
+        }
+        let tail = writer.finish()
+        if (tail.size > 0) {
+            socket.write(tail)
+        }
+    } finally {
+        match (stream) {
+            case closable: Resource => closable.close()
+            case _ => ()
+        }
+    }
+}
+
+func socketServerEngineShellDeclaredStreamLength(responseContentLength: String): Int64 {
+    let declared = responseContentLength.trimAscii()
+    match (socketServerEngineShellParseNonNegativeInt64(declared)) {
+        case Some(value) => value
+        case None =>
+            throw SocketServerEngineShellException(
+                "socket server engine shell known-length stream requires a non-negative content-length"
+            )
+    }
+}
+
 func socketServerEngineShellKnownLengthBytesForResponse(
     request: SocketHttp11SessionRequest,
     responseBytesSize: Int64,
@@ -1057,6 +1162,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
     let requestBodyBytesValue: Array<UInt8>
     let responseHeadersValue: HashMap<String, String>
     var responseBodyBytesValue: ArrayList<UInt8> = ArrayList<UInt8>()
+    var responseBodyStreamValue: ?InputStream = None
     var responseStatusCodeValue: UInt16 = 200
 
     init(
@@ -1160,22 +1266,19 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func setResponseString(body: String): Unit {
+        closeResponseBodyStreamIfPresent()
         replaceResponseBodyBytes(body.toArray())
     }
 
     public override func setResponseBytes(data: Array<UInt8>): Unit {
+        closeResponseBodyStreamIfPresent()
         replaceResponseBodyBytes(data)
     }
 
     public override func attachResponseBodyStream(stream: InputStream): Unit {
-        try {
-            replaceResponseBodyBytes(socketServerEngineShellReadInputStream(stream))
-        } finally {
-            match (stream) {
-                case closable: Resource => closable.close()
-                case _ => ()
-            }
-        }
+        closeResponseBodyStreamIfPresent()
+        responseBodyBytesValue = ArrayList<UInt8>()
+        responseBodyStreamValue = Some(stream)
     }
 
     public func responseStatusCode(): UInt16 {
@@ -1208,6 +1311,12 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
         out
     }
 
+    public func takeResponseBodyStream(): ?InputStream {
+        let stream = responseBodyStreamValue
+        responseBodyStreamValue = None
+        stream
+    }
+
     func appendResponseBodyBytes(bytes: Array<UInt8>): Unit {
         for (b in bytes) {
             responseBodyBytesValue.add(b)
@@ -1217,6 +1326,16 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
     func replaceResponseBodyBytes(bytes: Array<UInt8>): Unit {
         responseBodyBytesValue = ArrayList<UInt8>()
         appendResponseBodyBytes(bytes)
+    }
+
+    func closeResponseBodyStreamIfPresent(): Unit {
+        if (let Some(stream) <- responseBodyStreamValue) {
+            match (stream) {
+                case closable: Resource => closable.close()
+                case _ => ()
+            }
+        }
+        responseBodyStreamValue = None
     }
 }
 
