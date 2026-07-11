@@ -6,7 +6,6 @@ import stdx.crypto.common.{Pem, PemEntry, DerBlob, PrivateKey}
 import stdx.net.tls.TlsServerConfig
 import stdx.crypto.x509.X509Certificate
 import jinguissl.contract.{ContractException, contractValidateHttpServerTlsConfigInput}
-import jinguissl_core.crypto.tls.TlsSessionCache
 
 public enum TlsConfigLoadErrorCode <: Equatable<TlsConfigLoadErrorCode> & ToString {
     | BadInput
@@ -429,17 +428,9 @@ func tlsHintForCode(code: TlsConfigLoadErrorCode): String {
     }
 }
 
-// jinguiSSL contract and TLS-session helpers may expose symbols through public ABI edges.
-// Keep explicit type anchors so test linking consistently includes the needed subpackages.
+// Keep the contract exception anchored at the public ABI edge used by TLS precheck.
 func _useContractExceptionType(value!: ?ContractException = None): Bool {
     if (let Some(_error) <- value) {
-        return true
-    }
-    false
-}
-
-func _useTlsSessionCacheType(value!: ?TlsSessionCache = None): Bool {
-    if (let Some(_cache) <- value) {
         return true
     }
     false
