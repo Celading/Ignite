@@ -189,7 +189,10 @@ public func serveNativeH2Connection(
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
     while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams || outbound.size > 0) {
-        let frame = nativeH2ReadFrame(socket)
+        let frame = match (nativeH2ReadFrameOrEof(socket)) {
+            case Some(value) => value
+            case None => return
+        }
         if (frame.frameType == UInt8(0x4)) {
             nativeH2HandleSettingsFrame(socket, frame)
             continue
@@ -251,6 +254,32 @@ public func serveNativeH2Connection(
             connectionSendWindow = nativeH2FlushOutbound(
                 socket, outbound, connectionSendWindow
             )
+            continue
+        }
+        if (frame.frameType == UInt8(0x3)) {
+            if (frame.streamId <= 0 || frame.payload.size != 4) {
+                throw Exception("native H2 RST_STREAM requires a stream and four-byte error code")
+            }
+            let _ = streams.remove(frame.streamId)
+            let _ = outbound.remove(frame.streamId)
+            continue
+        }
+        if (frame.frameType == UInt8(0x7)) {
+            if (frame.streamId != 0 || frame.payload.size < 8) {
+                throw Exception("native H2 GOAWAY requires stream 0 and at least eight payload bytes")
+            }
+            return
+        }
+        if (frame.frameType == UInt8(0x6)) {
+            if (frame.streamId != 0 || frame.payload.size != 8) {
+                throw Exception("native H2 PING requires stream 0 and eight payload bytes")
+            }
+            if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(UInt8(0x6), UInt8(0x1), 0, frame.payload)
+                )
+            }
             continue
         }
         throw Exception("native H2 connection received an unsupported frame type")
@@ -380,7 +409,31 @@ func nativeH2HandleSettingsFrame(socket: TcpSocket, frame: NativeH2Frame): Unit 
 }
 
 func nativeH2ReadFrame(socket: TcpSocket): NativeH2Frame {
-    let header = nativeH2ReadExactly(socket, 9)
+    match (nativeH2ReadFrameOrEof(socket)) {
+        case Some(frame) => frame
+        case None => throw Exception("native H2 socket closed before the next frame")
+    }
+}
+
+func nativeH2ReadFrameOrEof(socket: TcpSocket): ?NativeH2Frame {
+    let header = Array<UInt8>(9, repeat: 0)
+    var offset: Int64 = 0
+    while (offset < header.size) {
+        let chunk = Array<UInt8>(header.size - offset, repeat: 0)
+        let count = socket.read(chunk)
+        if (count <= 0) {
+            if (offset == 0) {
+                return None
+            }
+            throw Exception("native H2 socket closed during a frame header")
+        }
+        var i: Int64 = 0
+        while (i < count) {
+            header[offset + i] = chunk[i]
+            i += 1
+        }
+        offset += count
+    }
     let payloadLength =
         (Int64(header[0]) << 16) + (Int64(header[1]) << 8) + Int64(header[2])
     if (payloadLength > NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD) {
@@ -391,12 +444,12 @@ func nativeH2ReadFrame(socket: TcpSocket): NativeH2Frame {
         (Int64(header[6]) << 16) +
         (Int64(header[7]) << 8) +
         Int64(header[8])
-    NativeH2Frame(
+    Some(NativeH2Frame(
         header[3],
         header[4],
         streamId,
         nativeH2ReadExactly(socket, payloadLength)
-    )
+    ))
 }
 
 func nativeH2WriteFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
