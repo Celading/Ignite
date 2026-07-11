@@ -428,10 +428,12 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
         return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
     }
     if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
+        let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "chunked", -1)
         return ClientResponse(
             UInt16(statusValue),
             headers,
-            NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "chunked", -1)
+            stream,
+            closeHook: { => stream.close() }
         )
     }
     if (let Some(lengthText) <- headers.getFirst("content-length")) {
@@ -445,16 +447,20 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
             }
             return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
         }
+        let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "length", length)
         return ClientResponse(
             UInt16(statusValue),
             headers,
-            NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "length", length)
+            stream,
+            closeHook: { => stream.close() }
         )
     }
+    let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "close", -1)
     ClientResponse(
         UInt16(statusValue),
         headers,
-        NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "close", -1)
+        stream,
+        closeHook: { => stream.close() }
     )
 }
 

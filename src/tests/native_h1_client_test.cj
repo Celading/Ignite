@@ -217,6 +217,32 @@ public class NativeH1ClientTestSuite {
         }
     }
 
+    @TestCase
+    public func testExplicitNativeH1ClientResponseCanCloseWithoutDrainingBody(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let stream = NativeH1ClientDelayedStream()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/native-client-close", { ctx =>
+            let _ = ctx.sendStream(stream, contentType: "text/plain")
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = nativeH1TestClient()
+        try {
+            waitForShellReady(app, port)
+            let response = client.get("http://127.0.0.1:${port}/native-client-close")
+            response.close()
+            response.close()
+            let buf = Array<UInt8>(16, repeat: 0)
+            @Assert(response.bodyStream().read(buf), 0)
+        } finally {
+            stream.release()
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
     func nativeH1TestClient(): RestClient {
         RestClient(
             readTimeout: Duration.second * 2,

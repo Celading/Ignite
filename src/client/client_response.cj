@@ -10,18 +10,27 @@ public class ClientResponse {
     let _status: UInt16
     let _headers: HttpHeaders
     let _body: InputStream
+    let _closeHook: ?(() -> Unit)
     var _bodyCache: ?Array<UInt8> = None
+    var _closed: Bool = false
 
     public init(resp: HttpResponse) {
         _status = resp.status
         _headers = resp.headers
         _body = resp.body
+        _closeHook = None
     }
 
-    init(status: UInt16, headers: HttpHeaders, body: InputStream) {
+    init(
+        status: UInt16,
+        headers: HttpHeaders,
+        body: InputStream,
+        closeHook!: ?(() -> Unit) = None
+    ) {
         _status = status
         _headers = headers
         _body = body
+        _closeHook = closeHook
     }
 
     public prop status: UInt16 {
@@ -103,6 +112,7 @@ public class ClientResponse {
         }
 
         _bodyCache = arr
+        close()
         arr
     }
 
@@ -206,10 +216,28 @@ public class ClientResponse {
     /// by `discard()` — they read from headers, not from the body stream.
     public func discard(): Unit {
         let tmp = Array<UInt8>(16384, repeat: 0)
-        while (true) {
-            if (_body.read(tmp) <= 0) {
-                break
+        try {
+            while (true) {
+                if (_body.read(tmp) <= 0) {
+                    break
+                }
             }
+        } finally {
+            close()
+        }
+    }
+
+    /// Releases transport resources without requiring the response body to be drained.
+    ///
+    /// Native Ignite transports use this to close the owned socket. The current
+    /// stdx-backed response adapter keeps its historical drain-based behavior.
+    public func close(): Unit {
+        if (_closed) {
+            return
+        }
+        _closed = true
+        if (let Some(hook) <- _closeHook) {
+            hook()
         }
     }
 
