@@ -24,13 +24,14 @@ public func serveNativeH2AppConnection(
     socket: TcpSocket,
     app: App,
     remoteAddress!: String = "",
-    maxCompletedStreams!: Int64 = 0
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None
 ): Unit {
     serveNativeH2Connection(socket, { request =>
         let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
         app.handleRequest(carrier)
         carrier.response()
-    }, maxCompletedStreams: maxCompletedStreams)
+    }, maxCompletedStreams: maxCompletedStreams, control: control)
 }
 
 class NativeH2AppBytesInputStream <: InputStream {

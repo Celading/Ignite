@@ -2,6 +2,8 @@ package ignite.native_h2
 
 import std.collection.{ArrayList, HashMap}
 import std.net.{SocketTimeoutException, TcpSocket}
+import std.sync.AtomicBool
+import std.time.MonoTime
 
 let NATIVE_H2_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".toArray()
 let NATIVE_H2_MAX_FIRST_SLICE_BODY: Int64 = 1024 * 1024
@@ -65,6 +67,18 @@ public class NativeH2Header {
 public type NativeH2SingleStreamHandler =
     (NativeH2SingleStreamRequest) -> NativeH2SingleStreamResponse
 
+public class NativeH2ConnectionControl {
+    let closeRequested = AtomicBool(false)
+
+    public func requestClose(): Unit {
+        closeRequested.store(true)
+    }
+
+    public func isCloseRequested(): Bool {
+        closeRequested.load()
+    }
+}
+
 class NativeH2Frame {
     let frameType: UInt8
     let flags: UInt8
@@ -87,6 +101,7 @@ class NativeH2FrameReader {
     var frameType: UInt8 = 0
     var flags: UInt8 = 0
     var streamId: Int64 = 0
+    var bytesRead: Int64 = 0
 
     func readNext(socket: TcpSocket): ?NativeH2Frame {
         while (headerOffset < header.size) {
@@ -104,6 +119,7 @@ class NativeH2FrameReader {
                 i += 1
             }
             headerOffset += count
+            bytesRead += count
         }
         if (payload.size == 0 && payloadOffset == 0) {
             let payloadLength =
@@ -132,6 +148,7 @@ class NativeH2FrameReader {
                 i += 1
             }
             payloadOffset += count
+            bytesRead += count
         }
         let frame = NativeH2Frame(frameType, flags, streamId, payload)
         headerOffset = 0
@@ -239,7 +256,8 @@ public func serveNativeH2SingleStream(
 public func serveNativeH2Connection(
     socket: TcpSocket,
     handler: NativeH2SingleStreamHandler,
-    maxCompletedStreams!: Int64 = 0
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None
 ): Unit {
     if (maxCompletedStreams < 0) {
         throw Exception("native H2 maxCompletedStreams cannot be negative")
@@ -271,6 +289,7 @@ public func serveNativeH2Connection(
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
     let originalReadTimeout = socket.readTimeout
+    var lastSocketProgressAt = MonoTime.now()
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
             handlers.size > 0 || outbound.size > 0) {
@@ -278,26 +297,51 @@ public func serveNativeH2Connection(
             connectionSendWindow = nativeH2FlushOutbound(
                 socket, outbound, connectionSendWindow
             )
+            if (let Some(connectionControl) <- control) {
+                if (connectionControl.isCloseRequested()) {
+                    nativeH2WriteFrame(
+                        socket,
+                        NativeH2Frame(
+                            UInt8(0x7),
+                            UInt8(0),
+                            0,
+                            nativeH2GoAwayPayload(lastOpenedStreamId, 0)
+                        )
+                    )
+                    return
+                }
+            }
             if (maxCompletedStreams > 0 && completedStreams >= maxCompletedStreams &&
                 handlers.size == 0 && outbound.size == 0) {
                 return
             }
 
-            let pollingHandlers = handlers.size > 0
-            socket.readTimeout = if (pollingHandlers) {
-                Some(NATIVE_H2_HANDLER_POLL_INTERVAL)
+            let pollingCoordinator = handlers.size > 0 || control.isSome()
+            socket.readTimeout = if (pollingCoordinator) {
+                Some(nativeH2CoordinatorPollTimeout(originalReadTimeout))
             } else {
                 originalReadTimeout
             }
             var nextFrame: ?NativeH2Frame = None
+            let progressBeforeRead = frameReader.bytesRead
             try {
                 nextFrame = frameReader.readNext(socket)
             } catch (e: SocketTimeoutException) {
-                if (pollingHandlers) {
+                if (pollingCoordinator) {
+                    let now = MonoTime.now()
+                    if (frameReader.bytesRead != progressBeforeRead) {
+                        lastSocketProgressAt = now
+                    }
+                    if (let Some(timeout) <- originalReadTimeout) {
+                        if (now - lastSocketProgressAt >= timeout) {
+                            throw e
+                        }
+                    }
                     continue
                 }
                 throw e
             }
+            lastSocketProgressAt = MonoTime.now()
             let frame = match (nextFrame) {
                 case Some(value) => value
                 case None => return
@@ -414,6 +458,31 @@ func nativeH2ServerSettingsPayload(): Array<UInt8> {
         UInt8(0), UInt8(0x3),
         UInt8(0), UInt8(0), UInt8(0), UInt8(NATIVE_H2_MAX_CONCURRENT_STREAMS)
     ]
+}
+
+func nativeH2CoordinatorPollTimeout(originalReadTimeout: ?Duration): Duration {
+    match (originalReadTimeout) {
+        case Some(timeout) =>
+            if (timeout < NATIVE_H2_HANDLER_POLL_INTERVAL) {
+                timeout
+            } else {
+                NATIVE_H2_HANDLER_POLL_INTERVAL
+            }
+        case None => NATIVE_H2_HANDLER_POLL_INTERVAL
+    }
+}
+
+func nativeH2GoAwayPayload(lastStreamId: Int64, errorCode: Int64): Array<UInt8> {
+    let payload = Array<UInt8>(8, repeat: 0)
+    payload[0] = UInt8((lastStreamId >> 24) & 0x7f)
+    payload[1] = UInt8((lastStreamId >> 16) & 0xff)
+    payload[2] = UInt8((lastStreamId >> 8) & 0xff)
+    payload[3] = UInt8(lastStreamId & 0xff)
+    payload[4] = UInt8((errorCode >> 24) & 0xff)
+    payload[5] = UInt8((errorCode >> 16) & 0xff)
+    payload[6] = UInt8((errorCode >> 8) & 0xff)
+    payload[7] = UInt8(errorCode & 0xff)
+    payload
 }
 
 func nativeH2StartCompletedStream(

@@ -2,6 +2,7 @@ package ignite.native_h2
 
 import ignite.App
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
+import std.sync.AtomicBool
 
 @Test
 public class NativeH2RuntimeInternalTestSuite {
@@ -492,11 +493,16 @@ public class NativeH2RuntimeInternalTestSuite {
         listener.bind()
         let port = (listener.localAddress as IPSocketAddress)?.port ??
             throw Exception("native H2 idle timeout test could not reserve loopback port")
+        let control = NativeH2ConnectionControl()
         let serverFuture = spawn {
             let accepted = listener.accept()
             accepted.readTimeout = Some(Duration.millisecond * 80)
             try {
-                serveNativeH2Connection(accepted, { _ => NativeH2SingleStreamResponse() })
+                serveNativeH2Connection(
+                    accepted,
+                    { _ => NativeH2SingleStreamResponse() },
+                    control: control
+                )
             } finally {
                 try { accepted.close() } catch (_: Exception) {}
             }
@@ -516,6 +522,67 @@ public class NativeH2RuntimeInternalTestSuite {
                 timedOut = true
             }
             @Assert(timedOut, true)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testLocalCloseEmitsGoAwayAndSettlesPendingHandler(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 local close test could not reserve loopback port")
+        let handlerStarted = AtomicBool(false)
+        let control = NativeH2ConnectionControl()
+        let app = App()
+        app.get("/closing", { ctx =>
+            handlerStarted.store(true)
+            sleep(Duration.millisecond * 400)
+            let _ = ctx.sendString("too-late")
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, control: control)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let headers = nativeH2TestRequestHeaders("/closing")
+            headers[0] = UInt8(0x82)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, headers)
+            )
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            var attempts: Int64 = 0
+            while (!handlerStarted.load() && attempts < 200) {
+                sleep(Duration.millisecond * 5)
+                attempts += 1
+            }
+            @Assert(handlerStarted.load(), true)
+            control.requestClose()
+
+            let goAway = nativeH2ReadFrame(client)
+            @Assert(goAway.frameType, UInt8(0x7))
+            @Assert(goAway.streamId, 0)
+            @Assert(goAway.payload.size, 8)
+            @Assert(goAway.payload[3], UInt8(1))
+            @Assert(goAway.payload[4], UInt8(0))
+            @Assert(goAway.payload[5], UInt8(0))
+            @Assert(goAway.payload[6], UInt8(0))
+            @Assert(goAway.payload[7], UInt8(0))
+            let _ = serverFuture.get(Duration.second * 2)
         } finally {
             try { client.close() } catch (_: Exception) {}
             try { listener.close() } catch (_: Exception) {}
