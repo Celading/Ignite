@@ -3,6 +3,7 @@ package ignite.tests
 import ignite.*
 import ignite.client.*
 import std.io.InputStream
+import std.sync.Mutex
 
 class NativeH1ClientTestStream <: InputStream & Resource {
     let body = "chunked-native-client".toArray()
@@ -30,6 +31,58 @@ class NativeH1ClientTestStream <: InputStream & Resource {
 
     public func isClosed(): Bool {
         closed
+    }
+}
+
+class NativeH1ClientDelayedStream <: InputStream & Resource {
+    let mtx = Mutex()
+    var turn: Int64 = 0
+    var released: Bool = false
+    var closed: Bool = false
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (turn == 0) {
+            turn = 1
+            return writeText(outBuf, "first-")
+        }
+        if (turn == 1) {
+            while (!isReleased()) {
+                sleep(Duration.millisecond * 5)
+            }
+            turn = 2
+            return writeText(outBuf, "second")
+        }
+        0
+    }
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        synchronized(mtx) {
+            released
+        }
+    }
+
+    public func close(): Unit {
+        closed = true
+    }
+
+    public func isClosed(): Bool {
+        closed
+    }
+
+    func writeText(outBuf: Array<Byte>, text: String): Int64 {
+        let bytes = text.toArray()
+        var i: Int64 = 0
+        while (i < bytes.size) {
+            outBuf[i] = bytes[i]
+            i += 1
+        }
+        bytes.size
     }
 }
 
@@ -132,6 +185,34 @@ public class NativeH1ClientTestSuite {
         } finally {
             shortClient.close()
             followUpClient.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitNativeH1ClientReturnsAfterHeadersBeforeStreamCompletes(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let stream = NativeH1ClientDelayedStream()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/native-client-delayed-stream", { ctx =>
+            let _ = ctx.sendStream(stream, contentType: "text/plain")
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = nativeH1TestClient()
+        try {
+            waitForShellReady(app, port)
+            let response = client.get("http://127.0.0.1:${port}/native-client-delayed-stream")
+            @Assert(response.status, 200)
+            @Assert(stream.closed, false)
+
+            stream.release()
+            @Assert(response.body(), "first-second")
+            @Assert(stream.closed, true)
+        } finally {
+            stream.release()
+            client.close()
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }

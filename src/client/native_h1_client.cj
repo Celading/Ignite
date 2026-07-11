@@ -45,6 +45,216 @@ class NativeH1ClientBytesInputStream <: InputStream {
     }
 }
 
+class NativeH1ClientHeaderReadResult {
+    let headerBytes: Array<UInt8>
+    let prefetchedBody: Array<UInt8>
+
+    init(headerBytes: Array<UInt8>, prefetchedBody: Array<UInt8>) {
+        this.headerBytes = headerBytes
+        this.prefetchedBody = prefetchedBody
+    }
+}
+
+class NativeH1ClientSocketReader {
+    let socket: TcpSocket
+    let prefetched: Array<UInt8>
+    var prefetchedOffset: Int64 = 0
+
+    init(socket: TcpSocket, prefetched: Array<UInt8>) {
+        this.socket = socket
+        this.prefetched = prefetched
+    }
+
+    func readAtMost(outBuf: Array<Byte>, limit: Int64): Int64 {
+        if (limit <= 0 || outBuf.size == 0) {
+            return 0
+        }
+        let wanted = if (limit < outBuf.size) { limit } else { outBuf.size }
+        var copied: Int64 = 0
+        while (copied < wanted && prefetchedOffset < prefetched.size) {
+            outBuf[copied] = prefetched[prefetchedOffset]
+            copied += 1
+            prefetchedOffset += 1
+        }
+        if (copied == wanted) {
+            return copied
+        }
+        let remaining = wanted - copied
+        let tmp = Array<UInt8>(remaining, repeat: 0)
+        let n = socket.read(tmp)
+        if (n <= 0) {
+            return copied
+        }
+        var i: Int64 = 0
+        while (i < n) {
+            outBuf[copied + i] = tmp[i]
+            i += 1
+        }
+        copied + n
+    }
+
+    func readByte(): Int64 {
+        let one = Array<UInt8>(1, repeat: 0)
+        let n = readAtMost(one, 1)
+        if (n <= 0) {
+            return -1
+        }
+        Int64(one[0])
+    }
+
+    func readLine(): String {
+        let out = ArrayList<UInt8>()
+        while (out.size <= 8192) {
+            let value = readByte()
+            if (value < 0) {
+                throw Exception("native H1 response line is incomplete")
+            }
+            if (value == 13) {
+                if (readByte() != 10) {
+                    throw Exception("native H1 response line terminator is invalid")
+                }
+                return String.fromUtf8(out.toArray())
+            }
+            out.add(UInt8(value))
+        }
+        throw Exception("native H1 response line exceeds 8192 bytes")
+    }
+}
+
+class NativeH1ClientResponseInputStream <: InputStream & Resource {
+    let reader: NativeH1ClientSocketReader
+    let socket: TcpSocket
+    let mode: String
+    var remaining: Int64
+    var chunkRemaining: Int64 = 0
+    var closed: Bool = false
+
+    init(
+        socket: TcpSocket,
+        prefetched: Array<UInt8>,
+        mode: String,
+        remaining: Int64
+    ) {
+        this.socket = socket
+        this.reader = NativeH1ClientSocketReader(socket, prefetched)
+        this.mode = mode
+        this.remaining = remaining
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (closed || outBuf.size == 0) {
+            return 0
+        }
+        try {
+            if (mode == "length") {
+                return readLengthBody(outBuf)
+            }
+            if (mode == "chunked") {
+                return readChunkedBody(outBuf)
+            }
+            readCloseDelimitedBody(outBuf)
+        } catch (e: Exception) {
+            close()
+            throw e
+        }
+    }
+
+    public func close(): Unit {
+        if (closed) {
+            return
+        }
+        closed = true
+        if (!socket.isClosed()) {
+            socket.close()
+        }
+    }
+
+    public func isClosed(): Bool {
+        closed
+    }
+
+    func readLengthBody(outBuf: Array<Byte>): Int64 {
+        if (remaining <= 0) {
+            close()
+            return 0
+        }
+        let n = reader.readAtMost(outBuf, remaining)
+        if (n <= 0) {
+            throw Exception("native H1 response Content-Length is incomplete")
+        }
+        remaining -= n
+        if (remaining == 0) {
+            close()
+        }
+        n
+    }
+
+    func readCloseDelimitedBody(outBuf: Array<Byte>): Int64 {
+        let n = reader.readAtMost(outBuf, outBuf.size)
+        if (n <= 0) {
+            close()
+            return 0
+        }
+        n
+    }
+
+    func readChunkedBody(outBuf: Array<Byte>): Int64 {
+        var total: Int64 = 0
+        while (total < outBuf.size) {
+            if (chunkRemaining == 0) {
+                let sizeLine = reader.readLine().trimAscii()
+                let semicolon = nativeH1IndexOf(sizeLine, ";")
+                let sizeText = if (semicolon >= 0) {
+                    nativeH1RuneSlice(sizeLine.toRuneArray(), 0, semicolon)
+                } else {
+                    sizeLine
+                }
+                chunkRemaining = parseNativeH1Hex(sizeText)
+                if (chunkRemaining < 0) {
+                    throw Exception("native H1 chunk size is invalid")
+                }
+                if (chunkRemaining == 0) {
+                    consumeTrailers()
+                    close()
+                    return total
+                }
+            }
+
+            let wanted = if (chunkRemaining < outBuf.size - total) {
+                chunkRemaining
+            } else {
+                outBuf.size - total
+            }
+            let tmp = Array<UInt8>(wanted, repeat: 0)
+            let n = reader.readAtMost(tmp, wanted)
+            if (n <= 0) {
+                throw Exception("native H1 chunk payload is incomplete")
+            }
+            var i: Int64 = 0
+            while (i < n) {
+                outBuf[total + i] = tmp[i]
+                i += 1
+            }
+            total += n
+            chunkRemaining -= n
+            if (chunkRemaining == 0) {
+                if (reader.readByte() != 13 || reader.readByte() != 10) {
+                    throw Exception("native H1 chunk terminator is invalid")
+                }
+            }
+        }
+        total
+    }
+
+    func consumeTrailers(): Unit {
+        while (true) {
+            if (reader.readLine().size == 0) {
+                return
+            }
+        }
+    }
+}
+
 func sendNativeH1Request(
     method: String,
     url: String,
@@ -58,12 +268,14 @@ func sendNativeH1Request(
     socket.readTimeout = Some(readTimeout)
     socket.writeTimeout = Some(writeTimeout)
     socket.connect(timeout: Some(readTimeout))
+    var transferred = false
     try {
         socket.write(buildNativeH1RequestWire(method, target, headers, body))
-        let responseWire = readNativeH1ResponseWire(socket)
-        parseNativeH1Response(responseWire, method)
+        let response = readNativeH1Response(socket, method)
+        transferred = true
+        response
     } finally {
-        if (!socket.isClosed()) {
+        if (!transferred && !socket.isClosed()) {
             socket.close()
         }
     }
@@ -155,29 +367,34 @@ func buildNativeH1RequestWire(
     out
 }
 
-func readNativeH1ResponseWire(socket: TcpSocket): Array<UInt8> {
+func readNativeH1ResponseHeader(socket: TcpSocket): NativeH1ClientHeaderReadResult {
     let out = ArrayList<UInt8>()
-    let buf = Array<UInt8>(8192, repeat: 0)
-    while (true) {
+    let buf = Array<UInt8>(4096, repeat: 0)
+    while (out.size <= 65536) {
         let n = socket.read(buf)
         if (n <= 0) {
-            break
+            throw Exception("native H1 response closed before headers completed")
         }
         var i: Int64 = 0
         while (i < n) {
             out.add(buf[i])
             i += 1
         }
+        let bytes = out.toArray()
+        let headerEnd = nativeH1IndexOfBytes(bytes, "\r\n\r\n".toArray(), 0)
+        if (headerEnd >= 0) {
+            return NativeH1ClientHeaderReadResult(
+                nativeH1ByteSlice(bytes, 0, headerEnd),
+                nativeH1ByteSlice(bytes, headerEnd + 4, bytes.size)
+            )
+        }
     }
-    out.toArray()
+    throw Exception("native H1 response headers exceed 65536 bytes")
 }
 
-func parseNativeH1Response(wire: Array<UInt8>, method: String): ClientResponse {
-    let headerEnd = nativeH1IndexOfBytes(wire, "\r\n\r\n".toArray(), 0)
-    if (headerEnd < 0) {
-        throw Exception("native H1 response is missing header terminator")
-    }
-    let headerText = String.fromUtf8(nativeH1ByteSlice(wire, 0, headerEnd))
+func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
+    let readResult = readNativeH1ResponseHeader(socket)
+    let headerText = String.fromUtf8(readResult.headerBytes)
     let lines = headerText.split("\r\n")
     if (lines.size == 0) {
         throw Exception("native H1 response is missing status line")
@@ -203,59 +420,42 @@ func parseNativeH1Response(wire: Array<UInt8>, method: String): ClientResponse {
         }
         lineIndex += 1
     }
-    let framedBody = nativeH1ByteSlice(wire, headerEnd + 4, wire.size)
-    let body = if (method.trimAscii().toAsciiUpper() == "HEAD" ||
+    if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {
-        Array<UInt8>()
-    } else if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
-        decodeNativeH1ChunkedBody(framedBody)
-    } else if (let Some(lengthText) <- headers.getFirst("content-length")) {
+        if (!socket.isClosed()) {
+            socket.close()
+        }
+        return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+    }
+    if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
+        return ClientResponse(
+            UInt16(statusValue),
+            headers,
+            NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "chunked", -1)
+        )
+    }
+    if (let Some(lengthText) <- headers.getFirst("content-length")) {
         let length = parseNativeH1Decimal(lengthText)
-        if (length < 0 || framedBody.size < length) {
-            throw Exception("native H1 response Content-Length is incomplete")
+        if (length < 0) {
+            throw Exception("native H1 response Content-Length is invalid")
         }
-        nativeH1ByteSlice(framedBody, 0, length)
-    } else {
-        framedBody
+        if (length == 0) {
+            if (!socket.isClosed()) {
+                socket.close()
+            }
+            return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+        }
+        return ClientResponse(
+            UInt16(statusValue),
+            headers,
+            NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "length", length)
+        )
     }
-    ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(body))
-}
-
-func decodeNativeH1ChunkedBody(wire: Array<UInt8>): Array<UInt8> {
-    let out = ArrayList<UInt8>()
-    var offset: Int64 = 0
-    while (true) {
-        let lineEnd = nativeH1IndexOfBytes(wire, "\r\n".toArray(), offset)
-        if (lineEnd < 0) {
-            throw Exception("native H1 chunk size line is incomplete")
-        }
-        let sizeLine = String.fromUtf8(nativeH1ByteSlice(wire, offset, lineEnd)).trimAscii()
-        let semicolon = nativeH1IndexOf(sizeLine, ";")
-        let sizeText = if (semicolon >= 0) {
-            nativeH1RuneSlice(sizeLine.toRuneArray(), 0, semicolon)
-        } else {
-            sizeLine
-        }
-        let chunkSize = parseNativeH1Hex(sizeText)
-        offset = lineEnd + 2
-        if (chunkSize == 0) {
-            return out.toArray()
-        }
-        if (chunkSize < 0 || offset + chunkSize + 2 > wire.size) {
-            throw Exception("native H1 chunk payload is incomplete")
-        }
-        var i: Int64 = 0
-        while (i < chunkSize) {
-            out.add(wire[offset + i])
-            i += 1
-        }
-        offset += chunkSize
-        if (wire[offset] != UInt8(13) || wire[offset + 1] != UInt8(10)) {
-            throw Exception("native H1 chunk terminator is invalid")
-        }
-        offset += 2
-    }
-    out.toArray()
+    ClientResponse(
+        UInt16(statusValue),
+        headers,
+        NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "close", -1)
+    )
 }
 
 func nativeH1HasHeader(headers: HashMap<String, String>, target: String): Bool {
