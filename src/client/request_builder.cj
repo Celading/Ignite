@@ -39,6 +39,7 @@ public class RequestBuilder {
     var _requestCryptoConfig: ?api2.ClientCryptoConfig = None
     var _transportBackendHintOverride: ?String = None
     var _allowExperimentalTransportOverride: ?Bool = None
+    var _bodySnapshot: Array<UInt8> = Array<UInt8>()
 
     public init(
         client: Client,
@@ -315,6 +316,7 @@ public class RequestBuilder {
 
     public func body(b: String): RequestBuilder {
         _builder.body(b)
+        _bodySnapshot = b.toArray()
         _requestCryptoConfig = None
         this
     }
@@ -322,6 +324,7 @@ public class RequestBuilder {
     public func bodyJson(jsonPayload: String): RequestBuilder {
         setHeader("content-type", "application/json")
         _builder.body(jsonPayload)
+        _bodySnapshot = jsonPayload.toArray()
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
@@ -331,6 +334,7 @@ public class RequestBuilder {
 
     public func bodyBytes(b: Array<UInt8>): RequestBuilder {
         _builder.body(b)
+        _bodySnapshot = cloneNativeH1Bytes(b)
         _requestCryptoConfig = None
         this
     }
@@ -344,6 +348,7 @@ public class RequestBuilder {
         let envelope = api2.encryptJsonToEnvelopeV1(cfg, jsonPayload, aadText: aad)
         setHeader("content-type", "application/json")
         _builder.body(envelope)
+        _bodySnapshot = envelope.toArray()
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
@@ -403,13 +408,15 @@ public class RequestBuilder {
 
         if (let Some(params) <- _formParams) {
             setHeader("content-type", "application/x-www-form-urlencoded")
-            _builder.body(buildFormUrlEncoded(params).toArray())
+            _bodySnapshot = buildFormUrlEncoded(params).toArray()
+            _builder.body(_bodySnapshot)
         }
         if (let Some(fields) <- _multipartFields) {
             if (let Some(files) <- _multipartFiles) {
                 let boundary = randomBoundary()
                 setHeader("content-type", "multipart/form-data; boundary=${boundary}")
-                _builder.body(buildMultipartBody(boundary, fields, files))
+                _bodySnapshot = buildMultipartBody(boundary, fields, files)
+                _builder.body(_bodySnapshot)
             }
         }
 
@@ -502,8 +509,20 @@ public class RequestBuilder {
 
         while (true) {
             try {
-                let req = _builder.build()
-                let resp = ClientResponse(_client.send(req))
+                let resp = if (selectionDecision.selectedBackend == NATIVE_H1_CLIENT_BACKEND) {
+                    if (_requestHooks.size > 0) {
+                        throw Exception("native H1 client first slice does not support HttpRequestBuilder mutation hooks")
+                    }
+                    sendNativeH1Request(
+                        _methodName,
+                        urlForHost,
+                        _headerSnapshot,
+                        _bodySnapshot
+                    )
+                } else {
+                    let req = _builder.build()
+                    ClientResponse(_client.send(req))
+                }
 
                 if (shouldRetryStatus(resp.status, retryCfg, canRetryMethod, attempt)) {
                     try { resp.discard() } catch (_: Exception) {}

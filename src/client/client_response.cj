@@ -7,23 +7,33 @@ import std.io.InputStream
 // ── ClientResponse ──
 
 public class ClientResponse {
-    let _resp: HttpResponse
+    let _status: UInt16
+    let _headers: HttpHeaders
+    let _body: InputStream
     var _bodyCache: ?Array<UInt8> = None
 
     public init(resp: HttpResponse) {
-        _resp = resp
+        _status = resp.status
+        _headers = resp.headers
+        _body = resp.body
+    }
+
+    init(status: UInt16, headers: HttpHeaders, body: InputStream) {
+        _status = status
+        _headers = headers
+        _body = body
     }
 
     public prop status: UInt16 {
-        get() { _resp.status }
+        get() { _status }
     }
 
     public prop headers: HttpHeaders {
-        get() { _resp.headers }
+        get() { _headers }
     }
 
     public func isOk(): Bool {
-        let s = Int64(_resp.status)
+        let s = Int64(_status)
         s >= 200 && s < 300
     }
 
@@ -40,7 +50,7 @@ public class ClientResponse {
     /// If you need repeatable access to the body content, use `bodyBytes()`
     /// instead, which caches on first read.
     public func bodyStream(): InputStream {
-        _resp.body
+        _body
     }
 
     /// Returns the response body as a decoded UTF-8 `String`.
@@ -73,7 +83,7 @@ public class ClientResponse {
         let tmp = Array<UInt8>(16384, repeat: 0)
         var totalSize: Int64 = 0
         while (true) {
-            let n = _resp.body.read(tmp)
+            let n = _body.read(tmp)
             if (n <= 0) { break }
             let chunk = Array<UInt8>(n, repeat: 0)
             for (i in 0..n) {
@@ -101,12 +111,12 @@ public class ClientResponse {
     }
 
     public func header(name: String): ?String {
-        _resp.headers.getFirst(name)
+        _headers.getFirst(name)
     }
 
     public func headerValues(name: String): ArrayList<String> {
         let list = ArrayList<String>()
-        for (v in _resp.headers.get(name)) {
+        for (v in _headers.get(name)) {
             list.add(v)
         }
         list
@@ -197,7 +207,7 @@ public class ClientResponse {
     public func discard(): Unit {
         let tmp = Array<UInt8>(16384, repeat: 0)
         while (true) {
-            if (_resp.body.read(tmp) <= 0) {
+            if (_body.read(tmp) <= 0) {
                 break
             }
         }

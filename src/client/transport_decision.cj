@@ -95,7 +95,11 @@ func buildClientTransportSelectionDecision(
         0,
         "sni=" + extractTransportHost(targetUrl)
     )
-    let contractDecision = api2.selectBackend(contractRequest)
+    let contractDecision = if (preferredBackendHint.trimAscii() == NATIVE_H1_CLIENT_BACKEND) {
+        api2.selectBackend(contractRequest, nativeH1ClientCapabilities())
+    } else {
+        api2.selectBackend(contractRequest)
+    }
     let tlsPlan = api2.buildTlsAttachPlan(contractRequest, contractDecision)
 
     TransportSelectionDecision(
@@ -111,6 +115,41 @@ func buildClientTransportSelectionDecision(
         contractDecision.selectedBackend,
         firstStringOrDash(contractDecision.fallbackChain)
     )
+}
+
+func nativeH1ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
+    [
+        api2.BackendCapabilityRecord(
+            NATIVE_H1_CLIENT_BACKEND,
+            "ignite-native-h1",
+            "cross-platform-socket-baseline",
+            "cj>=1.0.0",
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            false,
+            [],
+            ["CLEAR_TEXT_ONLY", "ONE_REQUEST_PER_CONNECTION", "AP1_FIRST_SLICE"]
+        ),
+        api2.BackendCapabilityRecord(
+            "stdx-default",
+            "stdx",
+            "cross-platform",
+            "cj>=1.0.0",
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+            [],
+            ["CURRENT_STABLE_DEFAULT_PATH"]
+        )
+    ]
 }
 
 func buildSuggestedFallbackDecisionRecord(
