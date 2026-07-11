@@ -27,6 +27,7 @@ public class RestClient {
     var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
     var _readTimeout: Duration = Duration.second * 15
     var _writeTimeout: Duration = Duration.second * 15
+    var _nativeH1Pool = NativeH1ClientConnectionPool(10)
 
     public init() {
         _client = ClientBuilder().build()
@@ -39,6 +40,7 @@ public class RestClient {
     ) {
         _readTimeout = readTimeout
         _writeTimeout = writeTimeout
+        _nativeH1Pool = NativeH1ClientConnectionPool(poolSize)
         _client = ClientBuilder()
             .readTimeout(readTimeout)
             .writeTimeout(writeTimeout)
@@ -366,18 +368,20 @@ public class RestClient {
             _errorHooks,
             _observeHooks,
             _transportTouchpointHooks,
-            _readTimeout,
-            _writeTimeout,
             captureObserveHook: { snapshot =>
                 _lastClientObserveSnapshot = Some(snapshot)
             },
             captureTransportTouchpointHook: { touchpoint =>
                 _lastClientTransportTouchpoint = Some(touchpoint)
-            }
+            },
+            readTimeout: _readTimeout,
+            writeTimeout: _writeTimeout,
+            nativeH1Pool: Some(_nativeH1Pool)
         )
     }
 
     public func close(): Unit {
+        _nativeH1Pool.close()
         _client.close()
     }
 

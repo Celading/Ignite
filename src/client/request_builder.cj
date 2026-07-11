@@ -26,6 +26,7 @@ public class RequestBuilder {
     let _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>
     let _readTimeout: Duration
     let _writeTimeout: Duration
+    let _nativeH1Pool: NativeH1ClientConnectionPool
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
@@ -58,10 +59,11 @@ public class RequestBuilder {
         errorHooks: ArrayList<ClientErrorHook>,
         observeHooks: ArrayList<ClientObserveHook>,
         transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>,
-        readTimeout: Duration,
-        writeTimeout: Duration,
         captureObserveHook!: ?ClientObserveHook = None,
-        captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None
+        captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None,
+        readTimeout!: Duration = Duration.second * 15,
+        writeTimeout!: Duration = Duration.second * 15,
+        nativeH1Pool!: ?NativeH1ClientConnectionPool = None
     ) {
         _client = client
         _baseUrl = baseUrl
@@ -79,6 +81,10 @@ public class RequestBuilder {
         _transportTouchpointHooks = ArrayList<ClientTransportTouchpointHook>()
         _readTimeout = readTimeout
         _writeTimeout = writeTimeout
+        _nativeH1Pool = match (nativeH1Pool) {
+            case Some(pool) => pool
+            case None => NativeH1ClientConnectionPool(0)
+        }
         _captureObserveHook = captureObserveHook
         _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
@@ -525,7 +531,8 @@ public class RequestBuilder {
                         _headerSnapshot,
                         _bodySnapshot,
                         _readTimeout,
-                        _writeTimeout
+                        _writeTimeout,
+                        _nativeH1Pool
                     )
                 } else {
                     let req = _builder.build()

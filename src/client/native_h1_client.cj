@@ -3,6 +3,7 @@ package ignite.client
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
+import std.sync.Mutex
 import stdx.net.http.HttpHeaders
 
 let NATIVE_H1_CLIENT_BACKEND = "ignite-native-h1-client"
@@ -18,6 +19,74 @@ class NativeH1ClientTarget {
         this.port = port
         this.requestTarget = requestTarget
         this.hostHeader = hostHeader
+    }
+}
+
+public class NativeH1ClientConnectionPool {
+    let mtx = Mutex()
+    let maxIdlePerOrigin: Int64
+    var idle = HashMap<String, ArrayList<TcpSocket>>()
+
+    init(maxIdlePerOrigin: Int64) {
+        this.maxIdlePerOrigin = if (maxIdlePerOrigin > 0) { maxIdlePerOrigin } else { 0 }
+    }
+
+    func enabled(): Bool {
+        maxIdlePerOrigin > 0
+    }
+
+    func acquire(origin: String): ?TcpSocket {
+        var selected: ?TcpSocket = None
+        synchronized(mtx) {
+            if (let Some(sockets) <- idle.get(origin)) {
+                while (sockets.size > 0) {
+                    let socket = sockets.remove(at: sockets.size - 1)
+                    if (!socket.isClosed()) {
+                        selected = Some(socket)
+                        break
+                    }
+                }
+                if (sockets.size == 0) {
+                    let _ = idle.remove(origin)
+                }
+            }
+        }
+        selected
+    }
+
+    func release(origin: String, socket: TcpSocket): Unit {
+        if (!enabled() || socket.isClosed()) {
+            closeNativeH1Socket(socket)
+            return
+        }
+        var retained = false
+        synchronized(mtx) {
+            var sockets = if (let Some(existing) <- idle.get(origin)) {
+                existing
+            } else {
+                let created = ArrayList<TcpSocket>()
+                idle.add(origin, created)
+                created
+            }
+            if (sockets.size < maxIdlePerOrigin) {
+                sockets.add(socket)
+                retained = true
+            }
+        }
+        if (!retained) {
+            closeNativeH1Socket(socket)
+        }
+    }
+
+    func close(): Unit {
+        synchronized(mtx) {
+            for ((_origin, sockets) in idle) {
+                for (socket in sockets) {
+                    closeNativeH1Socket(socket)
+                }
+            }
+            idle = HashMap<String, ArrayList<TcpSocket>>()
+        }
     }
 }
 
@@ -119,6 +188,10 @@ class NativeH1ClientSocketReader {
         }
         throw Exception("native H1 response line exceeds 8192 bytes")
     }
+
+    func hasUnreadPrefetched(): Bool {
+        prefetchedOffset < prefetched.size
+    }
 }
 
 class NativeH1ClientResponseInputStream <: InputStream & Resource {
@@ -128,17 +201,26 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
     var remaining: Int64
     var chunkRemaining: Int64 = 0
     var closed: Bool = false
+    let pool: NativeH1ClientConnectionPool
+    let origin: String
+    let reusable: Bool
 
     init(
         socket: TcpSocket,
         prefetched: Array<UInt8>,
         mode: String,
-        remaining: Int64
+        remaining: Int64,
+        pool: NativeH1ClientConnectionPool,
+        origin: String,
+        reusable: Bool
     ) {
         this.socket = socket
         this.reader = NativeH1ClientSocketReader(socket, prefetched)
         this.mode = mode
         this.remaining = remaining
+        this.pool = pool
+        this.origin = origin
+        this.reusable = reusable
     }
 
     public override func read(outBuf: Array<Byte>): Int64 {
@@ -164,9 +246,7 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
             return
         }
         closed = true
-        if (!socket.isClosed()) {
-            socket.close()
-        }
+        closeNativeH1Socket(socket)
     }
 
     public func isClosed(): Bool {
@@ -184,7 +264,7 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
         }
         remaining -= n
         if (remaining == 0) {
-            close()
+            finish()
         }
         n
     }
@@ -192,7 +272,7 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
     func readCloseDelimitedBody(outBuf: Array<Byte>): Int64 {
         let n = reader.readAtMost(outBuf, outBuf.size)
         if (n <= 0) {
-            close()
+            finish()
             return 0
         }
         n
@@ -215,7 +295,7 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
                 }
                 if (chunkRemaining == 0) {
                     consumeTrailers()
-                    close()
+                    finish()
                     return total
                 }
             }
@@ -253,6 +333,18 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
             }
         }
     }
+
+    func finish(): Unit {
+        if (closed) {
+            return
+        }
+        closed = true
+        if (reusable && !reader.hasUnreadPrefetched() && !socket.isClosed()) {
+            pool.release(origin, socket)
+        } else {
+            closeNativeH1Socket(socket)
+        }
+    }
 }
 
 func sendNativeH1Request(
@@ -261,22 +353,37 @@ func sendNativeH1Request(
     headers: HashMap<String, String>,
     body: Array<UInt8>,
     readTimeout: Duration,
-    writeTimeout: Duration
+    writeTimeout: Duration,
+    pool: NativeH1ClientConnectionPool
 ): ClientResponse {
     let target = parseNativeH1Target(url)
-    let socket = TcpSocket(target.host, target.port)
+    let origin = nativeH1PoolOrigin(target)
+    let requestReusable = pool.enabled() && !nativeH1HeaderValueContains(headers, "connection", "close")
+    var pooled: ?TcpSocket = None
+    if (requestReusable) {
+        pooled = pool.acquire(origin)
+    }
+    var reused = false
+    let socket = match (pooled) {
+        case Some(existing) =>
+            reused = true
+            existing
+        case None => TcpSocket(target.host, target.port)
+    }
     socket.readTimeout = Some(readTimeout)
     socket.writeTimeout = Some(writeTimeout)
-    socket.connect(timeout: Some(readTimeout))
+    if (!reused) {
+        socket.connect(timeout: Some(readTimeout))
+    }
     var transferred = false
     try {
-        socket.write(buildNativeH1RequestWire(method, target, headers, body))
-        let response = readNativeH1Response(socket, method)
+        socket.write(buildNativeH1RequestWire(method, target, headers, body, requestReusable))
+        let response = readNativeH1Response(socket, method, pool, origin, requestReusable)
         transferred = true
         response
     } finally {
-        if (!transferred && !socket.isClosed()) {
-            socket.close()
+        if (!transferred) {
+            closeNativeH1Socket(socket)
         }
     }
 }
@@ -335,7 +442,8 @@ func buildNativeH1RequestWire(
     method: String,
     target: NativeH1ClientTarget,
     headers: HashMap<String, String>,
-    body: Array<UInt8>
+    body: Array<UInt8>,
+    requestReusable: Bool
 ): Array<UInt8> {
     var head = method.trimAscii().toAsciiUpper() + " " + target.requestTarget + " HTTP/1.1\r\n"
     if (!nativeH1HasHeader(headers, "host")) {
@@ -345,7 +453,7 @@ func buildNativeH1RequestWire(
         head += name + ": " + value + "\r\n"
     }
     if (!nativeH1HasHeader(headers, "connection")) {
-        head += "Connection: close\r\n"
+        head += if (requestReusable) { "Connection: keep-alive\r\n" } else { "Connection: close\r\n" }
     }
     if (body.size > 0 && !nativeH1HasHeader(headers, "content-length") &&
         !nativeH1HasHeader(headers, "transfer-encoding")) {
@@ -392,7 +500,13 @@ func readNativeH1ResponseHeader(socket: TcpSocket): NativeH1ClientHeaderReadResu
     throw Exception("native H1 response headers exceed 65536 bytes")
 }
 
-func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
+func readNativeH1Response(
+    socket: TcpSocket,
+    method: String,
+    pool: NativeH1ClientConnectionPool,
+    origin: String,
+    requestReusable: Bool
+): ClientResponse {
     let readResult = readNativeH1ResponseHeader(socket)
     let headerText = String.fromUtf8(readResult.headerBytes)
     let lines = headerText.split("\r\n")
@@ -420,15 +534,17 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
         }
         lineIndex += 1
     }
+    let responseReusable = requestReusable && statusParts[0].trimAscii().toAsciiUpper() == "HTTP/1.1" &&
+        !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {
-        if (!socket.isClosed()) {
-            socket.close()
-        }
+        settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
         return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
     }
     if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
-        let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "chunked", -1)
+        let stream = NativeH1ClientResponseInputStream(
+            socket, readResult.prefetchedBody, "chunked", -1, pool, origin, responseReusable
+        )
         return ClientResponse(
             UInt16(statusValue),
             headers,
@@ -442,12 +558,12 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
             throw Exception("native H1 response Content-Length is invalid")
         }
         if (length == 0) {
-            if (!socket.isClosed()) {
-                socket.close()
-            }
+            settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
             return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
         }
-        let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "length", length)
+        let stream = NativeH1ClientResponseInputStream(
+            socket, readResult.prefetchedBody, "length", length, pool, origin, responseReusable
+        )
         return ClientResponse(
             UInt16(statusValue),
             headers,
@@ -455,7 +571,9 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
             closeHook: { => stream.close() }
         )
     }
-    let stream = NativeH1ClientResponseInputStream(socket, readResult.prefetchedBody, "close", -1)
+    let stream = NativeH1ClientResponseInputStream(
+        socket, readResult.prefetchedBody, "close", -1, pool, origin, false
+    )
     ClientResponse(
         UInt16(statusValue),
         headers,
@@ -464,9 +582,49 @@ func readNativeH1Response(socket: TcpSocket, method: String): ClientResponse {
     )
 }
 
+func settleNativeH1BodylessSocket(
+    socket: TcpSocket,
+    pool: NativeH1ClientConnectionPool,
+    origin: String,
+    reusable: Bool,
+    prefetchedBody: Array<UInt8>
+): Unit {
+    if (reusable && prefetchedBody.size == 0 && !socket.isClosed()) {
+        pool.release(origin, socket)
+    } else {
+        closeNativeH1Socket(socket)
+    }
+}
+
+func nativeH1PoolOrigin(target: NativeH1ClientTarget): String {
+    target.host.toAsciiLower() + ":" + target.port.toString()
+}
+
+func closeNativeH1Socket(socket: TcpSocket): Unit {
+    if (!socket.isClosed()) {
+        try {
+            socket.close()
+        } catch (_: Exception) {}
+    }
+}
+
 func nativeH1HasHeader(headers: HashMap<String, String>, target: String): Bool {
     for ((name, _value) in headers) {
         if (name.trimAscii().toAsciiLower() == target) {
+            return true
+        }
+    }
+    false
+}
+
+func nativeH1HeaderValueContains(
+    headers: HashMap<String, String>,
+    name: String,
+    target: String
+): Bool {
+    for ((candidateName, value) in headers) {
+        if (candidateName.trimAscii().toAsciiLower() == name &&
+            nativeH1IndexOf(value.toAsciiLower(), target.toAsciiLower()) >= 0) {
             return true
         }
     }

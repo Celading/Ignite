@@ -243,6 +243,69 @@ public class NativeH1ClientTestSuite {
         }
     }
 
+    @TestCase
+    public func testExplicitNativeH1ClientReusesFullyConsumedSameOriginConnection(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/native-client-pool", { ctx =>
+            let _ = ctx
+                .setHeader("x-native-peer", ctx.ip)
+                .sendString("pool-ok")
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = nativeH1TestClient()
+        try {
+            waitForShellReady(app, port)
+            let url = "http://127.0.0.1:${port}/native-client-pool"
+            let first = client.get(url)
+            let firstPeer = nativeH1TestHeader(first, "x-native-peer")
+            @Assert(first.body(), "pool-ok")
+
+            let second = client.get(url)
+            let secondPeer = nativeH1TestHeader(second, "x-native-peer")
+            @Assert(second.body(), "pool-ok")
+            @Assert(firstPeer == "missing", false)
+            @Assert(secondPeer, firstPeer)
+        } finally {
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitNativeH1ClientDoesNotPoolExplicitlyClosedUnreadResponse(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/native-client-no-pool", { ctx =>
+            let _ = ctx
+                .setHeader("x-native-peer", ctx.ip)
+                .sendString("do-not-reuse-unread")
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = nativeH1TestClient()
+        try {
+            waitForShellReady(app, port)
+            let url = "http://127.0.0.1:${port}/native-client-no-pool"
+            let first = client.get(url)
+            let firstPeer = nativeH1TestHeader(first, "x-native-peer")
+            first.close()
+
+            let second = client.get(url)
+            let secondPeer = nativeH1TestHeader(second, "x-native-peer")
+            @Assert(second.body(), "do-not-reuse-unread")
+            @Assert(firstPeer == "missing", false)
+            @Assert(secondPeer == "missing", false)
+            @Assert(secondPeer == firstPeer, false)
+        } finally {
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
     func nativeH1TestClient(): RestClient {
         RestClient(
             readTimeout: Duration.second * 2,
