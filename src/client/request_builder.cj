@@ -24,6 +24,8 @@ public class RequestBuilder {
     let _errorHooks: ArrayList<ClientErrorHook>
     let _observeHooks: ArrayList<ClientObserveHook>
     let _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>
+    let _readTimeout: Duration
+    let _writeTimeout: Duration
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
@@ -56,6 +58,8 @@ public class RequestBuilder {
         errorHooks: ArrayList<ClientErrorHook>,
         observeHooks: ArrayList<ClientObserveHook>,
         transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook>,
+        readTimeout: Duration,
+        writeTimeout: Duration,
         captureObserveHook!: ?ClientObserveHook = None,
         captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None
     ) {
@@ -73,6 +77,8 @@ public class RequestBuilder {
         _errorHooks = ArrayList<ClientErrorHook>()
         _observeHooks = ArrayList<ClientObserveHook>()
         _transportTouchpointHooks = ArrayList<ClientTransportTouchpointHook>()
+        _readTimeout = readTimeout
+        _writeTimeout = writeTimeout
         _captureObserveHook = captureObserveHook
         _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
@@ -517,7 +523,9 @@ public class RequestBuilder {
                         _methodName,
                         urlForHost,
                         _headerSnapshot,
-                        _bodySnapshot
+                        _bodySnapshot,
+                        _readTimeout,
+                        _writeTimeout
                     )
                 } else {
                     let req = _builder.build()

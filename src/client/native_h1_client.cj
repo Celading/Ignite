@@ -49,11 +49,15 @@ func sendNativeH1Request(
     method: String,
     url: String,
     headers: HashMap<String, String>,
-    body: Array<UInt8>
+    body: Array<UInt8>,
+    readTimeout: Duration,
+    writeTimeout: Duration
 ): ClientResponse {
     let target = parseNativeH1Target(url)
     let socket = TcpSocket(target.host, target.port)
-    socket.connect()
+    socket.readTimeout = Some(readTimeout)
+    socket.writeTimeout = Some(writeTimeout)
+    socket.connect(timeout: Some(readTimeout))
     try {
         socket.write(buildNativeH1RequestWire(method, target, headers, body))
         let responseWire = readNativeH1ResponseWire(socket)

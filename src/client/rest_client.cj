@@ -25,6 +25,8 @@ public class RestClient {
     var _transportTouchpointHooks: ArrayList<ClientTransportTouchpointHook> = ArrayList<ClientTransportTouchpointHook>()
     var _lastClientTransportTouchpoint: ?ClientTransportTouchpoint = None
     var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
+    var _readTimeout: Duration = Duration.second * 15
+    var _writeTimeout: Duration = Duration.second * 15
 
     public init() {
         _client = ClientBuilder().build()
@@ -35,6 +37,8 @@ public class RestClient {
         writeTimeout!: Duration = Duration.second * 15,
         poolSize!: Int64 = 10
     ) {
+        _readTimeout = readTimeout
+        _writeTimeout = writeTimeout
         _client = ClientBuilder()
             .readTimeout(readTimeout)
             .writeTimeout(writeTimeout)
@@ -362,6 +366,8 @@ public class RestClient {
             _errorHooks,
             _observeHooks,
             _transportTouchpointHooks,
+            _readTimeout,
+            _writeTimeout,
             captureObserveHook: { snapshot =>
                 _lastClientObserveSnapshot = Some(snapshot)
             },

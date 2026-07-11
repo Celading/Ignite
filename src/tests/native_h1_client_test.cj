@@ -94,6 +94,48 @@ public class NativeH1ClientTestSuite {
         }
     }
 
+    @TestCase
+    public func testExplicitNativeH1ClientAppliesReadTimeoutAndKeepsServerUsable(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/native-client-slow", { ctx =>
+            sleep(Duration.millisecond * 300)
+            let _ = ctx.sendString("late")
+        })
+        app.get("/native-client-after-timeout", { ctx =>
+            let _ = ctx.sendString("alive")
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let shortClient = RestClient(
+            readTimeout: Duration.millisecond * 80,
+            writeTimeout: Duration.second,
+            poolSize: 1
+        )
+            .allowExperimentalTransport()
+            .preferTransportBackend("ignite-native-h1-client")
+        let followUpClient = nativeH1TestClient()
+        try {
+            waitForShellReady(app, port)
+            var timedOut = false
+            try {
+                let _ = shortClient.get("http://127.0.0.1:${port}/native-client-slow")
+            } catch (_: Exception) {
+                timedOut = true
+            }
+            @Assert(timedOut, true)
+
+            let followUp = followUpClient.get("http://127.0.0.1:${port}/native-client-after-timeout")
+            @Assert(followUp.status, 200)
+            @Assert(followUp.body(), "alive")
+        } finally {
+            shortClient.close()
+            followUpClient.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
     func nativeH1TestClient(): RestClient {
         RestClient(
             readTimeout: Duration.second * 2,
