@@ -2,10 +2,23 @@ package ignite.native_h2
 
 import std.collection.{ArrayList, HashMap}
 import std.convert.*
-import std.net.TcpSocket
+import std.net.{SocketTimeoutException, TcpSocket}
 
 let NATIVE_H2_CLIENT_CONNECTION_REFILL_THRESHOLD: Int64 = 32767
 let NATIVE_H2_CLIENT_STREAM_REFILL_THRESHOLD: Int64 = 65535
+
+public class NativeH2ClientException <: Exception {
+    public let failureKind: String
+    public let streamId: Int64
+    public let errorCode: Int64
+
+    public init(failureKind: String, streamId: Int64, errorCode: Int64, message: String) {
+        super(message)
+        this.failureKind = failureKind
+        this.streamId = streamId
+        this.errorCode = errorCode
+    }
+}
 
 public class NativeH2ClientRequest {
     public let method: String
@@ -215,7 +228,7 @@ func nativeH2ClientSendBatch(
     }
 
     while (connection.completedStreams < requests.size) {
-        let frame = nativeH2ReadFrame(socket)
+        let frame = nativeH2ClientReadFrame(socket)
         if (frame.frameType == UInt8(0x4)) {
             if (frame.streamId != 0) {
                 throw Exception("native H2 client received SETTINGS on a stream")
@@ -241,7 +254,18 @@ func nativeH2ClientSendBatch(
             continue
         }
         if (frame.frameType == UInt8(0x7)) {
-            throw Exception("native H2 client received GOAWAY before response completion")
+            if (frame.streamId != 0 || frame.payload.size < 8) {
+                throw NativeH2ClientException(
+                    "protocol", 0, NATIVE_H2_ERROR_FRAME_SIZE,
+                    "native H2 client received malformed GOAWAY"
+                )
+            }
+            let lastStreamId = nativeH2ClientDecode31Bit(frame.payload, 0)
+            let errorCode = nativeH2ClientDecode32Bit(frame.payload, 4)
+            throw NativeH2ClientException(
+                "goaway", lastStreamId, errorCode,
+                "native H2 client received GOAWAY before response completion"
+            )
         }
         if (frame.frameType == UInt8(0x1)) {
             let stream = connection.streams.get(frame.streamId) ??
@@ -298,7 +322,16 @@ func nativeH2ClientSendBatch(
             continue
         }
         if (frame.frameType == UInt8(0x3) && connection.streams.contains(frame.streamId)) {
-            throw Exception("native H2 client response stream was reset")
+            if (frame.payload.size != 4) {
+                throw NativeH2ClientException(
+                    "protocol", frame.streamId, NATIVE_H2_ERROR_FRAME_SIZE,
+                    "native H2 client received malformed RST_STREAM"
+                )
+            }
+            throw NativeH2ClientException(
+                "reset", frame.streamId, nativeH2ClientDecode32Bit(frame.payload, 0),
+                "native H2 client response stream was reset"
+            )
         }
         // Unknown extension and irrelevant control frames are ignored in this bounded turn.
     }
@@ -310,6 +343,37 @@ func nativeH2ClientSendBatch(
         responses.add(stream.response())
     }
     (responses.toArray(), connection.nextStreamId)
+}
+
+func nativeH2ClientReadFrame(socket: TcpSocket): NativeH2Frame {
+    try {
+        match (nativeH2ReadFrameOrEof(socket)) {
+            case Some(frame) => frame
+            case None => throw NativeH2ClientException(
+                "peer-close", 0, 0,
+                "native H2 peer closed before response completion"
+            )
+        }
+    } catch (e: SocketTimeoutException) {
+        throw NativeH2ClientException(
+            "timeout", 0, 0,
+            "native H2 client timed out while waiting for a response frame"
+        )
+    }
+}
+
+func nativeH2ClientDecode31Bit(payload: Array<UInt8>, offset: Int64): Int64 {
+    ((Int64(payload[offset]) & 0x7f) << 24) +
+        (Int64(payload[offset + 1]) << 16) +
+        (Int64(payload[offset + 2]) << 8) +
+        Int64(payload[offset + 3])
+}
+
+func nativeH2ClientDecode32Bit(payload: Array<UInt8>, offset: Int64): Int64 {
+    (Int64(payload[offset]) << 24) +
+        (Int64(payload[offset + 1]) << 16) +
+        (Int64(payload[offset + 2]) << 8) +
+        Int64(payload[offset + 3])
 }
 
 func nativeH2ClientWriteRequest(

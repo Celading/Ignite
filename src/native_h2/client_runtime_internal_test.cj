@@ -168,4 +168,112 @@ public class NativeH2ClientRuntimeInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testNativeClientClassifiesResetAndGoAway(): Unit {
+        let reset = nativeH2ClientFailureFixture(
+            { socket, streamId =>
+                let payload = Array<UInt8>(4, repeat: 0)
+                payload[3] = UInt8(0x8)
+                nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x3), UInt8(0), streamId, payload))
+            },
+            Duration.second * 2
+        )
+        @Assert(reset.failureKind, "reset")
+        @Assert(reset.streamId, 1)
+        @Assert(reset.errorCode, 8)
+
+        let goAway = nativeH2ClientFailureFixture(
+            { socket, streamId =>
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(
+                        UInt8(0x7), UInt8(0), 0,
+                        nativeH2GoAwayPayload(streamId, NATIVE_H2_ERROR_PROTOCOL)
+                    )
+                )
+            },
+            Duration.second * 2
+        )
+        @Assert(goAway.failureKind, "goaway")
+        @Assert(goAway.streamId, 1)
+        @Assert(goAway.errorCode, NATIVE_H2_ERROR_PROTOCOL)
+    }
+
+    @TestCase
+    public func testNativeClientClassifiesTimeoutAndPeerClose(): Unit {
+        let timeout = nativeH2ClientFailureFixture(
+            { _, _ => sleep(Duration.millisecond * 120) },
+            Duration.millisecond * 30
+        )
+        @Assert(timeout.failureKind, "timeout")
+
+        let peerClose = nativeH2ClientFailureFixture(
+            { _, _ => },
+            Duration.second * 2
+        )
+        @Assert(peerClose.failureKind, "peer-close")
+    }
+}
+
+func nativeH2ClientFailureFixture(
+    serverAction: (TcpSocket, Int64) -> Unit,
+    readTimeout: Duration
+): NativeH2ClientException {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+    listener.bind()
+    let port = (listener.localAddress as IPSocketAddress)?.port ??
+        throw Exception("native H2 client failure test could not reserve loopback port")
+    let serverFuture = spawn {
+        let accepted = listener.accept()
+        try {
+            let streamId = nativeH2ClientTestHandshakeAndReadRequest(accepted)
+            serverAction(accepted, streamId)
+        } finally {
+            try { accepted.close() } catch (_: Exception) {}
+        }
+    }
+
+    let socket = TcpSocket("127.0.0.1", port)
+    var observed: ?NativeH2ClientException = None
+    try {
+        socket.connect(timeout: Some(Duration.second * 2))
+        socket.readTimeout = Some(readTimeout)
+        socket.writeTimeout = Some(Duration.second * 2)
+        try {
+            let _ = sendNativeH2SingleStreamRequest(
+                socket,
+                NativeH2ClientRequest("GET", "http", "localhost", "/failure")
+            )
+        } catch (e: NativeH2ClientException) {
+            observed = Some(e)
+        }
+        let _ = serverFuture.get(Duration.second * 2)
+    } finally {
+        try { socket.close() } catch (_: Exception) {}
+        try { listener.close() } catch (_: Exception) {}
+    }
+    observed ?? throw Exception("native H2 client failure fixture did not fail")
+}
+
+func nativeH2ClientTestHandshakeAndReadRequest(socket: TcpSocket): Int64 {
+    let preface = nativeH2ReadExactly(socket, NATIVE_H2_PREFACE.size)
+    if (!nativeH2BytesEqual(preface, NATIVE_H2_PREFACE)) {
+        throw Exception("native H2 client failure fixture received invalid preface")
+    }
+    let settings = nativeH2ReadFrame(socket)
+    if (settings.frameType != UInt8(0x4) || settings.streamId != 0) {
+        throw Exception("native H2 client failure fixture expected SETTINGS")
+    }
+    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
+    let ack = nativeH2ReadFrame(socket)
+    if (ack.frameType != UInt8(0x4) || (ack.flags & UInt8(0x1)) == UInt8(0)) {
+        throw Exception("native H2 client failure fixture expected SETTINGS ACK")
+    }
+    let request = nativeH2ReadFrame(socket)
+    if (request.frameType != UInt8(0x1)) {
+        throw Exception("native H2 client failure fixture expected request HEADERS")
+    }
+    request.streamId
 }
