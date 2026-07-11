@@ -46,6 +46,42 @@ public class ClientTransportErrorInternalTestSuite {
         @Assert(containsInternalObserveText(snapshot.toLogLine(), "fallbackOutcome=suggested-only"), true)
         @Assert(containsInternalObserveText(snapshot.toJson(), "\"causeCode\":\"tls_handshake_error\""), true)
     }
+
+    @TestCase
+    public func testNativeH1NetworkStagesMapToStableTransportEnvelope(): Unit {
+        let connect = buildTransportErrorEnvelope(
+            Exception("native H1 network connect failed: refused"),
+            "",
+            true
+        )
+        @Assert(connect.family, "NETWORK")
+        @Assert(connect.phase, "connect")
+        @Assert(connect.causeCode, "connection_refused")
+        @Assert(connect.retryable, true)
+        @Assert(connect.connectionConsumed, false)
+
+        let write = buildTransportErrorEnvelope(
+            Exception("native H1 network write failed: socket closed"),
+            "",
+            true
+        )
+        @Assert(write.family, "NETWORK")
+        @Assert(write.phase, "write")
+        @Assert(write.causeCode, "write_error")
+        @Assert(write.retryable, false)
+        @Assert(write.connectionConsumed, true)
+
+        let read = buildTransportErrorEnvelope(
+            Exception("native H1 network read failed: response incomplete"),
+            "",
+            true
+        )
+        @Assert(read.family, "NETWORK")
+        @Assert(read.phase, "read")
+        @Assert(read.causeCode, "read_error")
+        @Assert(read.retryable, false)
+        @Assert(read.connectionConsumed, true)
+    }
 }
 
 func containsInternalObserveText(text: String, target: String): Bool {

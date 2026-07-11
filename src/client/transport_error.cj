@@ -304,6 +304,9 @@ func buildClientObserveSnapshot(
 
 func classifyTransportErrorFamily(origin: Exception): String {
     let msg = origin.message.toAsciiLower()
+    if (containsTransportStr(msg, "native h1 network")) {
+        return "NETWORK"
+    }
     let hasCrypto = containsTransportStr(msg, "crypto")
     let hasDecrypt = containsTransportStr(msg, "decrypt")
     let hasEnvelope = containsTransportStr(msg, "envelope")
@@ -336,6 +339,15 @@ func classifyTransportErrorPhase(origin: Exception, phaseHint: String): String {
         return phaseHint
     }
     let msg = origin.message.toAsciiLower()
+    if (containsTransportStr(msg, "native h1 network connect")) {
+        return "connect"
+    }
+    if (containsTransportStr(msg, "native h1 network write")) {
+        return "write"
+    }
+    if (containsTransportStr(msg, "native h1 network read")) {
+        return "read"
+    }
     if (containsTransportStr(msg, "tls must be configured") || containsTransportStr(msg, "https requests are sent")) {
         return "handshake"
     }
@@ -406,6 +418,12 @@ func classifyTransportErrorCauseCode(origin: Exception, family: String, phase: S
     if (family == "NETWORK") {
         if (containsTransportStr(msg, "refused")) {
             return "connection_refused"
+        }
+        if (phase == "read") {
+            return "read_error"
+        }
+        if (phase == "write") {
+            return "write_error"
         }
         return "connect_error"
     }

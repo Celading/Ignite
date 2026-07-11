@@ -124,6 +124,18 @@ class NativeH1ClientHeaderReadResult {
     }
 }
 
+class NativeH1ClientParsedResponseHead {
+    let version: String
+    let status: Int64
+    let headers: HttpHeaders
+
+    init(version: String, status: Int64, headers: HttpHeaders) {
+        this.version = version
+        this.status = status
+        this.headers = headers
+    }
+}
+
 class NativeH1ClientSocketReader {
     let socket: TcpSocket
     let prefetched: Array<UInt8>
@@ -375,20 +387,32 @@ func sendNativeH1Request(
     socket.readTimeout = Some(readTimeout)
     socket.writeTimeout = Some(writeTimeout)
     if (!reused) {
-        socket.connect(timeout: Some(readTimeout))
+        try {
+            socket.connect(timeout: Some(readTimeout))
+        } catch (e: Exception) {
+            throw Exception("native H1 network connect failed: " + e.message)
+        }
     }
     var transferred = false
     try {
         let contentLength = if (bodyStream.isSome()) { bodyStreamLength } else { body.size }
-        socket.write(buildNativeH1RequestHead(method, target, headers, contentLength, requestReusable))
-        match (bodyStream) {
-            case Some(stream) => writeNativeH1RequestStream(socket, stream, bodyStreamLength)
-            case None =>
-                if (body.size > 0) {
-                    socket.write(body)
-                }
+        try {
+            socket.write(buildNativeH1RequestHead(method, target, headers, contentLength, requestReusable))
+            match (bodyStream) {
+                case Some(stream) => writeNativeH1RequestStream(socket, stream, bodyStreamLength)
+                case None =>
+                    if (body.size > 0) {
+                        socket.write(body)
+                    }
+            }
+        } catch (e: Exception) {
+            throw Exception("native H1 network write failed: " + e.message)
         }
-        let response = readNativeH1Response(socket, method, pool, origin, requestReusable)
+        let response = try {
+            readNativeH1Response(socket, method, pool, origin, requestReusable)
+        } catch (e: Exception) {
+            throw Exception("native H1 network read failed: " + e.message)
+        }
         transferred = true
         response
     } finally {
@@ -495,9 +519,27 @@ func writeNativeH1RequestStream(
 }
 
 func readNativeH1ResponseHeader(socket: TcpSocket): NativeH1ClientHeaderReadResult {
+    readNativeH1ResponseHeader(socket, Array<UInt8>())
+}
+
+func readNativeH1ResponseHeader(
+    socket: TcpSocket,
+    prefetched: Array<UInt8>
+): NativeH1ClientHeaderReadResult {
     let out = ArrayList<UInt8>()
+    for (value in prefetched) {
+        out.add(value)
+    }
     let buf = Array<UInt8>(4096, repeat: 0)
     while (out.size <= 65536) {
+        let bytes = out.toArray()
+        let headerEnd = nativeH1IndexOfBytes(bytes, "\r\n\r\n".toArray(), 0)
+        if (headerEnd >= 0) {
+            return NativeH1ClientHeaderReadResult(
+                nativeH1ByteSlice(bytes, 0, headerEnd),
+                nativeH1ByteSlice(bytes, headerEnd + 4, bytes.size)
+            )
+        }
         let n = socket.read(buf)
         if (n <= 0) {
             throw Exception("native H1 response closed before headers completed")
@@ -507,27 +549,12 @@ func readNativeH1ResponseHeader(socket: TcpSocket): NativeH1ClientHeaderReadResu
             out.add(buf[i])
             i += 1
         }
-        let bytes = out.toArray()
-        let headerEnd = nativeH1IndexOfBytes(bytes, "\r\n\r\n".toArray(), 0)
-        if (headerEnd >= 0) {
-            return NativeH1ClientHeaderReadResult(
-                nativeH1ByteSlice(bytes, 0, headerEnd),
-                nativeH1ByteSlice(bytes, headerEnd + 4, bytes.size)
-            )
-        }
     }
     throw Exception("native H1 response headers exceed 65536 bytes")
 }
 
-func readNativeH1Response(
-    socket: TcpSocket,
-    method: String,
-    pool: NativeH1ClientConnectionPool,
-    origin: String,
-    requestReusable: Bool
-): ClientResponse {
-    let readResult = readNativeH1ResponseHeader(socket)
-    let headerText = String.fromUtf8(readResult.headerBytes)
+func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedResponseHead {
+    let headerText = String.fromUtf8(headerBytes)
     let lines = headerText.split("\r\n")
     if (lines.size == 0) {
         throw Exception("native H1 response is missing status line")
@@ -553,7 +580,30 @@ func readNativeH1Response(
         }
         lineIndex += 1
     }
-    let responseReusable = requestReusable && statusParts[0].trimAscii().toAsciiUpper() == "HTTP/1.1" &&
+    NativeH1ClientParsedResponseHead(statusParts[0].trimAscii().toAsciiUpper(), statusValue, headers)
+}
+
+func readNativeH1Response(
+    socket: TcpSocket,
+    method: String,
+    pool: NativeH1ClientConnectionPool,
+    origin: String,
+    requestReusable: Bool
+): ClientResponse {
+    var readResult = readNativeH1ResponseHeader(socket)
+    var parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
+    var interimCount: Int64 = 0
+    while (parsedHead.status >= 100 && parsedHead.status < 200 && parsedHead.status != 101) {
+        interimCount += 1
+        if (interimCount > 8) {
+            throw Exception("native H1 response exceeds 8 interim responses")
+        }
+        readResult = readNativeH1ResponseHeader(socket, readResult.prefetchedBody)
+        parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
+    }
+    let statusValue = parsedHead.status
+    let headers = parsedHead.headers
+    let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" && statusValue != 101 &&
         !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {

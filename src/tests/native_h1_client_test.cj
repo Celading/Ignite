@@ -3,6 +3,7 @@ package ignite.tests
 import ignite.*
 import ignite.client.*
 import std.io.InputStream
+import std.net.{IPSocketAddress, TcpServerSocket}
 import std.sync.Mutex
 
 class NativeH1ClientTestStream <: InputStream & Resource {
@@ -396,6 +397,38 @@ public class NativeH1ClientTestSuite {
         } finally {
             client.close()
             shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitNativeH1ClientConsumesInterimResponsesBeforeFinalResponse(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:${port}"))
+        listener.bind()
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let _ = accepted.read(request)
+                accepted.write(
+                    ("HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n" +
+                    "HTTP/1.1 100 Continue\r\n\r\n" +
+                    "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nfinal").toArray()
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeH1TestClient()
+        try {
+            let response = client.get("http://127.0.0.1:${port}/interim")
+            @Assert(response.status, 200)
+            @Assert(response.body(), "final")
+            @Assert(nativeH1TestHeader(response, "link"), "missing")
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 2)
         }
     }
 
