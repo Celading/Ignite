@@ -1,5 +1,6 @@
 package ignite
 
+import ignite.native_tls.{NativeTlsApplicationProtocol, selectNativeTlsApplicationProtocol}
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
@@ -204,6 +205,14 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
         )
     if (let Some(hook) <- tlsAcceptedSessionReadyHook) {
         hook(attached.session)
+    }
+    let applicationProtocol = selectNativeTlsApplicationProtocol(
+        attached.session.result.negotiatedAlpn
+    )
+    if (applicationProtocol == NativeTlsApplicationProtocol.Http11) {
+        throw Exception(
+            "native TLS negotiated http/1.1 but the encrypted H1 adapter is not attached yet"
+        )
     }
     let hpackDecoderState =
         ServerJinguiAcceptedTransportH2HpackDecoderState()
