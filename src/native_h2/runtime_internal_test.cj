@@ -703,6 +703,148 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testConcurrentLargeResponsesRecoverAcrossSharedWindow(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 concurrent flow test could not reserve loopback port")
+        let app = App()
+        app.get("/large/a", { ctx =>
+            let _ = ctx.send(Array<UInt8>(70000, repeat: UInt8(0x61)))
+        })
+        app.get("/large/b", { ctx =>
+            let _ = ctx.send(Array<UInt8>(70000, repeat: UInt8(0x62)))
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 2)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let first = nativeH2TestRequestHeaders("/large/a")
+            first[0] = UInt8(0x82)
+            let second = nativeH2TestRequestHeaders("/large/b")
+            second[0] = UInt8(0x82)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, first))
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x1), UInt8(0x5), 3, second))
+
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            var firstBytes: Int64 = 0
+            var secondBytes: Int64 = 0
+            var firstEnded = false
+            var secondEnded = false
+            while (firstBytes + secondBytes < NATIVE_H2_INITIAL_FLOW_WINDOW) {
+                let frame = nativeH2ReadFrame(client)
+                if (frame.frameType != UInt8(0x0)) {
+                    continue
+                }
+                if (frame.streamId == 1) {
+                    firstBytes += frame.payload.size
+                    firstEnded = (frame.flags & UInt8(0x1)) != UInt8(0)
+                } else if (frame.streamId == 3) {
+                    secondBytes += frame.payload.size
+                    secondEnded = (frame.flags & UInt8(0x1)) != UInt8(0)
+                }
+            }
+            @Assert(firstBytes + secondBytes, NATIVE_H2_INITIAL_FLOW_WINDOW)
+            @Assert(firstBytes > 0, true)
+            @Assert(secondBytes > 0, true)
+            @Assert(firstEnded, false)
+            @Assert(secondEnded, false)
+
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(0, 100000))
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(1, 100000))
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(3, 100000))
+            while (!firstEnded || !secondEnded) {
+                let frame = nativeH2ReadFrame(client)
+                if (frame.frameType != UInt8(0x0)) {
+                    continue
+                }
+                if (frame.streamId == 1) {
+                    firstBytes += frame.payload.size
+                    firstEnded = (frame.flags & UInt8(0x1)) != UInt8(0)
+                } else if (frame.streamId == 3) {
+                    secondBytes += frame.payload.size
+                    secondEnded = (frame.flags & UInt8(0x1)) != UInt8(0)
+                }
+            }
+            @Assert(firstBytes, 70000)
+            @Assert(secondBytes, 70000)
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRepeatedConnectionChurnSettlesEverySocketTurn(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 connection churn test could not reserve loopback port")
+        let turns: Int64 = 16
+        let serverFuture = spawn {
+            var turn: Int64 = 0
+            while (turn < turns) {
+                let accepted = listener.accept()
+                try {
+                    serveNativeH2SingleStream(accepted, { request =>
+                        NativeH2SingleStreamResponse(body: "turn:${request.streamId}".toArray())
+                    })
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+                turn += 1
+            }
+        }
+
+        var turn: Int64 = 0
+        try {
+            while (turn < turns) {
+                let client = TcpSocket("127.0.0.1", port)
+                try {
+                    client.connect(timeout: Some(Duration.second * 2))
+                    client.readTimeout = Some(Duration.second * 2)
+                    client.write(NATIVE_H2_PREFACE)
+                    nativeH2WriteFrame(
+                        client,
+                        NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+                    )
+                    let headers = nativeH2TestRequestHeaders("/churn")
+                    headers[0] = UInt8(0x82)
+                    nativeH2WriteFrame(
+                        client,
+                        NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, headers)
+                    )
+                    let _ = nativeH2ReadFrame(client)
+                    let _ = nativeH2ReadFrame(client)
+                    let responseHeaders = nativeH2ReadFrame(client)
+                    let responseData = nativeH2ReadFrame(client)
+                    @Assert(responseHeaders.streamId, 1)
+                    @Assert(String.fromUtf8(responseData.payload), "turn:1")
+                } finally {
+                    try { client.close() } catch (_: Exception) {}
+                }
+                turn += 1
+            }
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testGoAwayEndsUnboundedConnectionLoop(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
