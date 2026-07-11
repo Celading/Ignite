@@ -590,6 +590,119 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testProtocolFailureEmitsExactGoAwayAndSettlesPendingHandler(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 protocol GOAWAY test could not reserve loopback port")
+        let handlerStarted = AtomicBool(false)
+        let app = App()
+        app.get("/protocol-failure", { ctx =>
+            handlerStarted.store(true)
+            sleep(Duration.millisecond * 400)
+            let _ = ctx.sendString("too-late")
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app)
+                NATIVE_H2_ERROR_NO_ERROR
+            } catch (e: NativeH2ProtocolException) {
+                e.errorCode
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let headers = nativeH2TestRequestHeaders("/protocol-failure")
+            headers[0] = UInt8(0x82)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, headers)
+            )
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            var attempts: Int64 = 0
+            while (!handlerStarted.load() && attempts < 200) {
+                sleep(Duration.millisecond * 5)
+                attempts += 1
+            }
+            @Assert(handlerStarted.load(), true)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x6), UInt8(0), 0, Array<UInt8>(7, repeat: 0))
+            )
+
+            let goAway = nativeH2ReadFrame(client)
+            @Assert(goAway.frameType, UInt8(0x7))
+            @Assert(goAway.streamId, 0)
+            @Assert(goAway.payload.size, 8)
+            @Assert(goAway.payload[3], UInt8(1))
+            @Assert(goAway.payload[7], UInt8(NATIVE_H2_ERROR_FRAME_SIZE))
+            @Assert(serverFuture.get(Duration.second * 2), NATIVE_H2_ERROR_FRAME_SIZE)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testUnknownExtensionFrameIsIgnored(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 extension frame test could not reserve loopback port")
+        let app = App()
+        app.get("/after-extension", { ctx =>
+            let _ = ctx.sendString("alive")
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x0a), UInt8(0), 0, "extension".toArray())
+            )
+            let headers = nativeH2TestRequestHeaders("/after-extension")
+            headers[0] = UInt8(0x82)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, headers)
+            )
+
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(responseHeaders.streamId, 1)
+            @Assert(responseData.streamId, 1)
+            @Assert(String.fromUtf8(responseData.payload), "alive")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testGoAwayEndsUnboundedConnectionLoop(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()

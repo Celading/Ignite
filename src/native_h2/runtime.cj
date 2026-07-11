@@ -12,6 +12,11 @@ let NATIVE_H2_MAX_CONCURRENT_STREAMS: Int64 = 100
 let NATIVE_H2_INITIAL_FLOW_WINDOW: Int64 = 65535
 let NATIVE_H2_MAX_FLOW_WINDOW: Int64 = 2147483647
 let NATIVE_H2_HANDLER_POLL_INTERVAL = Duration.millisecond * 10
+let NATIVE_H2_ERROR_NO_ERROR: Int64 = 0
+let NATIVE_H2_ERROR_PROTOCOL: Int64 = 1
+let NATIVE_H2_ERROR_FLOW_CONTROL: Int64 = 3
+let NATIVE_H2_ERROR_FRAME_SIZE: Int64 = 6
+let NATIVE_H2_ERROR_COMPRESSION: Int64 = 9
 
 public class NativeH2SingleStreamRequest {
     public let streamId: Int64
@@ -79,6 +84,15 @@ public class NativeH2ConnectionControl {
     }
 }
 
+public class NativeH2ProtocolException <: Exception {
+    public let errorCode: Int64
+
+    init(errorCode: Int64, message: String) {
+        super(message)
+        this.errorCode = errorCode
+    }
+}
+
 class NativeH2Frame {
     let frameType: UInt8
     let flags: UInt8
@@ -125,7 +139,10 @@ class NativeH2FrameReader {
             let payloadLength =
                 (Int64(header[0]) << 16) + (Int64(header[1]) << 8) + Int64(header[2])
             if (payloadLength > NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD) {
-                throw Exception("native H2 frame payload exceeds the default 16 KiB limit")
+                nativeH2ProtocolFailure(
+                    "native H2 frame payload exceeds the default 16 KiB limit",
+                    NATIVE_H2_ERROR_FRAME_SIZE
+                )
             }
             frameType = header[3]
             flags = header[4]
@@ -305,7 +322,7 @@ public func serveNativeH2Connection(
                             UInt8(0x7),
                             UInt8(0),
                             0,
-                            nativeH2GoAwayPayload(lastOpenedStreamId, 0)
+                            nativeH2GoAwayPayload(lastOpenedStreamId, NATIVE_H2_ERROR_NO_ERROR)
                         )
                     )
                     return
@@ -354,11 +371,15 @@ public func serveNativeH2Connection(
                 if (frame.streamId <= 0 || frame.streamId % 2 != 1 ||
                     frame.streamId <= lastOpenedStreamId ||
                     (frame.flags & UInt8(0x4)) == UInt8(0)) {
-                    throw Exception("native H2 requires increasing client-initiated END_HEADERS streams")
+                    nativeH2ProtocolFailure(
+                        "native H2 requires increasing client-initiated END_HEADERS streams"
+                    )
                 }
                 if ((frame.flags & UInt8(0x8)) != UInt8(0) ||
                     (frame.flags & UInt8(0x20)) != UInt8(0)) {
-                    throw Exception("native H2 does not support PADDED or PRIORITY HEADERS")
+                    nativeH2ProtocolFailure(
+                        "native H2 does not support PADDED or PRIORITY HEADERS"
+                    )
                 }
                 if (streams.size + handlers.size + outbound.size >=
                     NATIVE_H2_MAX_CONCURRENT_STREAMS) {
@@ -377,10 +398,11 @@ public func serveNativeH2Connection(
             }
             if (frame.frameType == UInt8(0x0)) {
                 if ((frame.flags & UInt8(0x8)) != UInt8(0)) {
-                    throw Exception("native H2 does not support PADDED DATA")
+                    nativeH2ProtocolFailure("native H2 does not support PADDED DATA")
                 }
-                let stream = streams.get(frame.streamId) ??
-                    throw Exception("native H2 DATA references an unknown stream")
+                let stream = streams.get(frame.streamId) ?? nativeH2ProtocolFailure(
+                    "native H2 DATA references an unknown stream"
+                )
                 stream.appendData(frame.payload)
                 if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
                     nativeH2StartCompletedStream(streams, handlers, stream, handler)
@@ -407,7 +429,9 @@ public func serveNativeH2Connection(
                         stream.sendWindow, increment, "stream"
                     )
                 } else {
-                    throw Exception("native H2 WINDOW_UPDATE references an unknown response stream")
+                    nativeH2ProtocolFailure(
+                        "native H2 WINDOW_UPDATE references an unknown response stream"
+                    )
                 }
                 connectionSendWindow = nativeH2FlushOutbound(
                     socket, outbound, connectionSendWindow
@@ -415,8 +439,14 @@ public func serveNativeH2Connection(
                 continue
             }
             if (frame.frameType == UInt8(0x3)) {
-                if (frame.streamId <= 0 || frame.payload.size != 4) {
-                    throw Exception("native H2 RST_STREAM requires a stream and four-byte error code")
+                if (frame.streamId <= 0) {
+                    nativeH2ProtocolFailure("native H2 RST_STREAM requires a stream")
+                }
+                if (frame.payload.size != 4) {
+                    nativeH2ProtocolFailure(
+                        "native H2 RST_STREAM requires a four-byte error code",
+                        NATIVE_H2_ERROR_FRAME_SIZE
+                    )
                 }
                 let _ = streams.remove(frame.streamId)
                 if (let Some(pending) <- handlers.remove(frame.streamId)) {
@@ -426,14 +456,26 @@ public func serveNativeH2Connection(
                 continue
             }
             if (frame.frameType == UInt8(0x7)) {
-                if (frame.streamId != 0 || frame.payload.size < 8) {
-                    throw Exception("native H2 GOAWAY requires stream 0 and at least eight payload bytes")
+                if (frame.streamId != 0) {
+                    nativeH2ProtocolFailure("native H2 GOAWAY requires stream 0")
+                }
+                if (frame.payload.size < 8) {
+                    nativeH2ProtocolFailure(
+                        "native H2 GOAWAY requires at least eight payload bytes",
+                        NATIVE_H2_ERROR_FRAME_SIZE
+                    )
                 }
                 return
             }
             if (frame.frameType == UInt8(0x6)) {
-                if (frame.streamId != 0 || frame.payload.size != 8) {
-                    throw Exception("native H2 PING requires stream 0 and eight payload bytes")
+                if (frame.streamId != 0) {
+                    nativeH2ProtocolFailure("native H2 PING requires stream 0")
+                }
+                if (frame.payload.size != 8) {
+                    nativeH2ProtocolFailure(
+                        "native H2 PING requires eight payload bytes",
+                        NATIVE_H2_ERROR_FRAME_SIZE
+                    )
                 }
                 if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
                     nativeH2WriteFrame(
@@ -443,14 +485,37 @@ public func serveNativeH2Connection(
                 }
                 continue
             }
-            throw Exception("native H2 connection received an unsupported frame type")
+            if (frame.frameType == UInt8(0x5) || frame.frameType == UInt8(0x9)) {
+                nativeH2ProtocolFailure("native H2 received an invalid connection frame sequence")
+            }
+            // RFC 9113 requires unknown extension frame types to be ignored.
+            continue
         }
+    } catch (e: NativeH2ProtocolException) {
+        nativeH2WriteFrame(
+            socket,
+            NativeH2Frame(
+                UInt8(0x7),
+                UInt8(0),
+                0,
+                nativeH2GoAwayPayload(lastOpenedStreamId, e.errorCode)
+            )
+        )
+        throw e
     } finally {
         for ((_streamId, pending) in handlers) {
             pending.future.cancel()
         }
         socket.readTimeout = originalReadTimeout
     }
+}
+
+func nativeH2ProtocolFailure(message: String): Nothing {
+    throw NativeH2ProtocolException(NATIVE_H2_ERROR_PROTOCOL, message)
+}
+
+func nativeH2ProtocolFailure(message: String, errorCode: Int64): Nothing {
+    throw NativeH2ProtocolException(errorCode, message)
 }
 
 func nativeH2ServerSettingsPayload(): Array<UInt8> {
@@ -589,7 +654,10 @@ func nativeH2FlushOutbound(
 
 func nativeH2DecodeWindowUpdate(frame: NativeH2Frame): Int64 {
     if (frame.payload.size != 4) {
-        throw Exception("native H2 WINDOW_UPDATE payload must be four bytes")
+        nativeH2ProtocolFailure(
+            "native H2 WINDOW_UPDATE payload must be four bytes",
+            NATIVE_H2_ERROR_FRAME_SIZE
+        )
     }
     let increment =
         ((Int64(frame.payload[0]) & 0x7f) << 24) +
@@ -597,30 +665,42 @@ func nativeH2DecodeWindowUpdate(frame: NativeH2Frame): Int64 {
         (Int64(frame.payload[2]) << 8) +
         Int64(frame.payload[3])
     if (increment == 0) {
-        throw Exception("native H2 WINDOW_UPDATE increment must be non-zero")
+        nativeH2ProtocolFailure(
+            "native H2 WINDOW_UPDATE increment must be non-zero",
+            NATIVE_H2_ERROR_FLOW_CONTROL
+        )
     }
     increment
 }
 
 func nativeH2IncreaseFlowWindow(current: Int64, increment: Int64, scope: String): Int64 {
     if (current > NATIVE_H2_MAX_FLOW_WINDOW - increment) {
-        throw Exception("native H2 ${scope} flow window overflow")
+        nativeH2ProtocolFailure(
+            "native H2 ${scope} flow window overflow",
+            NATIVE_H2_ERROR_FLOW_CONTROL
+        )
     }
     current + increment
 }
 
 func nativeH2HandleSettingsFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
     if (frame.streamId != 0) {
-        throw Exception("native H2 SETTINGS must use stream 0")
+        nativeH2ProtocolFailure("native H2 SETTINGS must use stream 0")
     }
     if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
         if (frame.payload.size != 0) {
-            throw Exception("native H2 SETTINGS ACK must have an empty payload")
+            nativeH2ProtocolFailure(
+                "native H2 SETTINGS ACK must have an empty payload",
+                NATIVE_H2_ERROR_FRAME_SIZE
+            )
         }
         return
     }
     if (frame.payload.size % 6 != 0) {
-        throw Exception("native H2 SETTINGS payload must contain 6-byte entries")
+        nativeH2ProtocolFailure(
+            "native H2 SETTINGS payload must contain 6-byte entries",
+            NATIVE_H2_ERROR_FRAME_SIZE
+        )
     }
     nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 }
@@ -724,10 +804,16 @@ func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHea
         if ((first & UInt8(0x80)) != UInt8(0)) {
             let index = Int64(first & UInt8(0x7f))
             if (index == 0 || index == 127) {
-                throw Exception("native H2 first-slice HPACK indexed integer is unsupported")
+                nativeH2ProtocolFailure(
+                    "native H2 first-slice HPACK indexed integer is unsupported",
+                    NATIVE_H2_ERROR_COMPRESSION
+                )
             }
             if (index > 61) {
-                throw Exception("native H2 first-slice HPACK dynamic-table indexes are unsupported")
+                nativeH2ProtocolFailure(
+                    "native H2 first-slice HPACK dynamic-table indexes are unsupported",
+                    NATIVE_H2_ERROR_COMPRESSION
+                )
             }
             if (index == 2) {
                 method = "GET"
@@ -745,29 +831,50 @@ func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHea
             continue
         }
         if ((first & UInt8(0xf0)) != UInt8(0)) {
-            throw Exception("native H2 first-slice HPACK only supports indexed or non-indexed literals")
+            nativeH2ProtocolFailure(
+                "native H2 first-slice HPACK only supports indexed or non-indexed literals",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         let nameIndex = Int64(first & UInt8(0x0f))
         if (nameIndex == 15) {
-            throw Exception("native H2 first-slice HPACK literal name integer is unsupported")
+            nativeH2ProtocolFailure(
+                "native H2 first-slice HPACK literal name integer is unsupported",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         if (nameIndex != 1 && nameIndex != 4) {
-            throw Exception("native H2 first-slice HPACK literal name is unsupported")
+            nativeH2ProtocolFailure(
+                "native H2 first-slice HPACK literal name is unsupported",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         if (cursor >= payload.size) {
-            throw Exception("native H2 HPACK literal is missing value length")
+            nativeH2ProtocolFailure(
+                "native H2 HPACK literal is missing value length",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         let valueLengthByte = payload[cursor]
         cursor += 1
         if ((valueLengthByte & UInt8(0x80)) != UInt8(0)) {
-            throw Exception("native H2 first-slice HPACK Huffman strings are unsupported")
+            nativeH2ProtocolFailure(
+                "native H2 first-slice HPACK Huffman strings are unsupported",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         let valueLength = Int64(valueLengthByte & UInt8(0x7f))
         if (valueLength == 127) {
-            throw Exception("native H2 first-slice HPACK string length integer is unsupported")
+            nativeH2ProtocolFailure(
+                "native H2 first-slice HPACK string length integer is unsupported",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         if (cursor + valueLength > payload.size) {
-            throw Exception("native H2 HPACK literal value is truncated")
+            nativeH2ProtocolFailure(
+                "native H2 HPACK literal value is truncated",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
         }
         let value = String.fromUtf8(nativeH2Slice(payload, cursor, cursor + valueLength))
         cursor += valueLength
@@ -778,7 +885,9 @@ func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHea
         }
     }
     if (method.size == 0 || scheme.size == 0 || authority.size == 0 || path.size == 0) {
-        throw Exception("native H2 first-slice request requires :method, :scheme, :authority, and :path")
+        nativeH2ProtocolFailure(
+            "native H2 first-slice request requires :method, :scheme, :authority, and :path"
+        )
     }
     NativeH2DecodedRequestHead(method, scheme, authority, path)
 }
