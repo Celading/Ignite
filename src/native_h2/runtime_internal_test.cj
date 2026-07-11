@@ -6,6 +6,21 @@ import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 @Test
 public class NativeH2RuntimeInternalTestSuite {
     @TestCase
+    public func testResponseHeadEncodesGenericStatusAndFiltersConnectionHeaders(): Unit {
+        let payload = nativeH2EncodeResponseHead(201, [
+            NativeH2Header("connection", "close"),
+            NativeH2Header("x-native-h2", "accepted")
+        ])
+
+        @Assert(payload[0], UInt8(0x08))
+        @Assert(payload[1], UInt8(0x03))
+        @Assert(String.fromUtf8(nativeH2Slice(payload, 2, 5)), "201")
+        @Assert(nativeH2ContainsBytes(payload, "x-native-h2".toArray()), true)
+        @Assert(nativeH2ContainsBytes(payload, "accepted".toArray()), true)
+        @Assert(nativeH2ContainsBytes(payload, "connection".toArray()), false)
+    }
+
+    @TestCase
     public func testSingleStreamRuntimeCompletesRealWireTurn(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
