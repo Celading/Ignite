@@ -484,6 +484,13 @@ public class RequestBuilder {
         let retryCfg = resolveRetryConfig()
         let canRetryMethod = methodCanRetry(_methodName, retryCfg) && _bodyStreamSnapshot.isNone()
         var attempt: Int64 = 1
+        var nativeRequestUrl = urlForHost
+        var nativeRequestMethod = _methodName
+        var nativeRequestBody = cloneNativeH1Bytes(_bodySnapshot)
+        var nativeRequestBodyStream = _bodyStreamSnapshot
+        var nativeRequestBodyStreamLength = _bodyStreamLength
+        var nativeRequestHeaders = cloneNativeH1Headers(_headerSnapshot)
+        var nativeRedirectCount: Int64 = 0
 
         if (let Some(verifyOption) <- resolvedX509Verify) {
             try {
@@ -556,12 +563,12 @@ public class RequestBuilder {
                         throw Exception("native H1 client first slice does not support HttpRequestBuilder mutation hooks")
                     }
                     sendNativeH1Request(
-                        _methodName,
-                        urlForHost,
-                        _headerSnapshot,
-                        _bodySnapshot,
-                        _bodyStreamSnapshot,
-                        _bodyStreamLength,
+                        nativeRequestMethod,
+                        nativeRequestUrl,
+                        nativeRequestHeaders,
+                        nativeRequestBody,
+                        nativeRequestBodyStream,
+                        nativeRequestBodyStreamLength,
                         _readTimeout,
                         _writeTimeout,
                         _nativeH1Pool
@@ -569,6 +576,55 @@ public class RequestBuilder {
                 } else {
                     let req = _builder.build()
                     ClientResponse(_client.send(req))
+                }
+
+                if (selectionDecision.selectedBackend == NATIVE_H1_CLIENT_BACKEND &&
+                    isNativeH1RedirectStatus(resp.status)) {
+                    if (let Some(location) <- resp.header("location")) {
+                        if (nativeRedirectCount >= 10) {
+                            try { resp.discard() } catch (_: Exception) {}
+                            throw Exception("native H1 redirect limit exceeded")
+                        }
+                        let redirectedUrl = resolveNativeH1RedirectUrl(nativeRequestUrl, location)
+                        if (!nativeH1StartsWith(redirectedUrl.toAsciiLower(), "http://")) {
+                            try { resp.discard() } catch (_: Exception) {}
+                            throw Exception("native H1 redirect target must remain http:// until TLS client seam lands")
+                        }
+                        let redirectedMethod = nativeH1RedirectMethod(resp.status, nativeRequestMethod)
+                        let preservesBody = redirectedMethod == nativeRequestMethod
+                        if (preservesBody && nativeRequestBodyStream.isSome()) {
+                            try { resp.discard() } catch (_: Exception) {}
+                            throw Exception("native H1 cannot replay a one-pass request stream across redirect")
+                        }
+                        let previousOrigin = nativeH1PoolOrigin(parseNativeH1Target(nativeRequestUrl))
+                        let redirectedOrigin = nativeH1PoolOrigin(parseNativeH1Target(redirectedUrl))
+                        if (previousOrigin != redirectedOrigin) {
+                            removeNativeH1Header(nativeRequestHeaders, "authorization")
+                            removeNativeH1Header(nativeRequestHeaders, "proxy-authorization")
+                            removeNativeH1Header(nativeRequestHeaders, "cookie")
+                            removeNativeH1Header(nativeRequestHeaders, "host")
+                        }
+                        if (let Some(store) <- _cookieStore) {
+                            store.addFromResponse(nativeRequestUrl, resp)
+                            removeNativeH1Header(nativeRequestHeaders, "cookie")
+                            let redirectedCookie = store.getCookieHeader(redirectedUrl)
+                            if (redirectedCookie.size > 0) {
+                                nativeRequestHeaders.add("cookie", redirectedCookie)
+                            }
+                        }
+                        try { resp.discard() } catch (_: Exception) {}
+                        nativeRequestUrl = redirectedUrl
+                        nativeRequestMethod = redirectedMethod
+                        if (!preservesBody) {
+                            nativeRequestBody = Array<UInt8>()
+                            nativeRequestBodyStream = None
+                            nativeRequestBodyStreamLength = 0
+                            removeNativeH1Header(nativeRequestHeaders, "content-length")
+                            removeNativeH1Header(nativeRequestHeaders, "transfer-encoding")
+                        }
+                        nativeRedirectCount += 1
+                        continue
+                    }
                 }
 
                 if (shouldRetryStatus(resp.status, retryCfg, canRetryMethod, attempt)) {
@@ -597,7 +653,12 @@ public class RequestBuilder {
                 )
                 notifyObserveHooks(observed)
                 if (let Some(store) <- _cookieStore) {
-                    store.addFromResponse(urlForHost, resp)
+                    let responseUrl = if (selectionDecision.selectedBackend == NATIVE_H1_CLIENT_BACKEND) {
+                        nativeRequestUrl
+                    } else {
+                        urlForHost
+                    }
+                    store.addFromResponse(responseUrl, resp)
                 }
                 for (hook in _responseHooks) {
                     hook(resp)
@@ -916,6 +977,21 @@ public class RequestBuilder {
             if (ok) { return true }
         }
         false
+    }
+
+    func isNativeH1RedirectStatus(status: UInt16): Bool {
+        status == 301 || status == 302 || status == 303 || status == 307 || status == 308
+    }
+
+    func nativeH1RedirectMethod(status: UInt16, currentMethod: String): String {
+        let method = normalizeMethod(currentMethod)
+        if (status == 303 && method != "HEAD") {
+            return "GET"
+        }
+        if ((status == 301 || status == 302) && method == "POST") {
+            return "GET"
+        }
+        method
     }
 
     func startsWith(s: String, prefix: String): Bool {

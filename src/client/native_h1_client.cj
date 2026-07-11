@@ -697,6 +697,57 @@ func parseNativeH1Port(portText: String): UInt16 {
     UInt16(parsedPort)
 }
 
+func cloneNativeH1Headers(input: HashMap<String, String>): HashMap<String, String> {
+    let out = HashMap<String, String>()
+    for ((name, value) in input) {
+        out.add(name, value)
+    }
+    out
+}
+
+func removeNativeH1Header(headers: HashMap<String, String>, target: String): Unit {
+    let names = ArrayList<String>()
+    for ((name, _value) in headers) {
+        if (name.trimAscii().toAsciiLower() == target) {
+            names.add(name)
+        }
+    }
+    for (name in names) {
+        let _ = headers.remove(name)
+    }
+}
+
+func resolveNativeH1RedirectUrl(currentUrl: String, rawLocation: String): String {
+    let location = rawLocation.trimAscii()
+    if (location.size == 0) {
+        throw Exception("native H1 redirect Location is empty")
+    }
+    let lower = location.toAsciiLower()
+    if (nativeH1StartsWith(lower, "http://") || nativeH1StartsWith(lower, "https://")) {
+        return location
+    }
+    if (nativeH1StartsWith(location, "//")) {
+        return "http:" + location
+    }
+    let current = parseNativeH1Target(currentUrl)
+    let origin = "http://" + current.hostHeader
+    if (nativeH1StartsWith(location, "/")) {
+        return origin + location
+    }
+    var path = current.requestTarget
+    let query = nativeH1IndexOf(path, "?")
+    if (query >= 0) {
+        path = nativeH1RuneSlice(path.toRuneArray(), 0, query)
+    }
+    let slash = nativeH1LastIndexOf(path, "/")
+    let basePath = if (slash >= 0) {
+        nativeH1RuneSlice(path.toRuneArray(), 0, slash + 1)
+    } else {
+        "/"
+    }
+    origin + basePath + location
+}
+
 func closeNativeH1Socket(socket: TcpSocket): Unit {
     if (!socket.isClosed()) {
         try {
