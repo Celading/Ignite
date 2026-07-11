@@ -4,6 +4,7 @@ import stdx.net.http.{Client, HttpRequestBuilder}
 import std.collection.{ArrayList, HashMap}
 import std.random.Random
 import std.time.MonoTime
+import std.io.InputStream
 import ignite.api2
 import ignite.security as security
 
@@ -43,6 +44,8 @@ public class RequestBuilder {
     var _transportBackendHintOverride: ?String = None
     var _allowExperimentalTransportOverride: ?Bool = None
     var _bodySnapshot: Array<UInt8> = Array<UInt8>()
+    var _bodyStreamSnapshot: ?InputStream = None
+    var _bodyStreamLength: Int64 = 0
 
     public init(
         client: Client,
@@ -329,6 +332,7 @@ public class RequestBuilder {
     public func body(b: String): RequestBuilder {
         _builder.body(b)
         _bodySnapshot = b.toArray()
+        _bodyStreamSnapshot = None
         _requestCryptoConfig = None
         this
     }
@@ -337,6 +341,7 @@ public class RequestBuilder {
         setHeader("content-type", "application/json")
         _builder.body(jsonPayload)
         _bodySnapshot = jsonPayload.toArray()
+        _bodyStreamSnapshot = None
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
@@ -347,6 +352,7 @@ public class RequestBuilder {
     public func bodyBytes(b: Array<UInt8>): RequestBuilder {
         _builder.body(b)
         _bodySnapshot = cloneNativeH1Bytes(b)
+        _bodyStreamSnapshot = None
         _requestCryptoConfig = None
         this
     }
@@ -361,6 +367,7 @@ public class RequestBuilder {
         setHeader("content-type", "application/json")
         _builder.body(envelope)
         _bodySnapshot = envelope.toArray()
+        _bodyStreamSnapshot = None
         _formParams = None
         _multipartFields = None
         _multipartFiles = None
@@ -374,6 +381,26 @@ public class RequestBuilder {
         config!: ?api2.ClientCryptoConfig = None
     ): RequestBuilder {
         encryptedBodyJson(jsonPayload, aad: aad, config: config)
+    }
+
+    /// Attaches a one-pass request body stream with an exact Content-Length.
+    ///
+    /// The stream is not replayed for retries. The caller must provide the
+    /// exact byte length; early EOF is reported as a transport error.
+    public func bodyStream(stream: InputStream, contentLength: Int64): RequestBuilder {
+        if (contentLength < 0) {
+            throw IllegalArgumentException("contentLength must be >= 0")
+        }
+        _builder.body(stream)
+        setHeader("content-length", contentLength.toString())
+        _bodySnapshot = Array<UInt8>()
+        _bodyStreamSnapshot = Some(stream)
+        _bodyStreamLength = contentLength
+        _formParams = None
+        _multipartFields = None
+        _multipartFiles = None
+        _requestCryptoConfig = None
+        this
     }
 
     public func form(params: ArrayList<(String, String)>): RequestBuilder {
@@ -421,6 +448,7 @@ public class RequestBuilder {
         if (let Some(params) <- _formParams) {
             setHeader("content-type", "application/x-www-form-urlencoded")
             _bodySnapshot = buildFormUrlEncoded(params).toArray()
+            _bodyStreamSnapshot = None
             _builder.body(_bodySnapshot)
         }
         if (let Some(fields) <- _multipartFields) {
@@ -428,6 +456,7 @@ public class RequestBuilder {
                 let boundary = randomBoundary()
                 setHeader("content-type", "multipart/form-data; boundary=${boundary}")
                 _bodySnapshot = buildMultipartBody(boundary, fields, files)
+                _bodyStreamSnapshot = None
                 _builder.body(_bodySnapshot)
             }
         }
@@ -446,13 +475,14 @@ public class RequestBuilder {
             resolvedX509Verify,
             requestCryptoConfig: _requestCryptoConfig,
             requiresMultipart: hasMultipartPayload(),
+            requiresStreaming: _bodyStreamSnapshot.isSome(),
             preferredBackendHint: resolvePreferredTransportBackendHint(),
             allowExperimental: resolveAllowExperimentalTransport()
         )
         notifyTransportTouchpoint(buildClientTransportTouchpoint(selectionDecision))
         let observeStart = MonoTime.now()
         let retryCfg = resolveRetryConfig()
-        let canRetryMethod = methodCanRetry(_methodName, retryCfg)
+        let canRetryMethod = methodCanRetry(_methodName, retryCfg) && _bodyStreamSnapshot.isNone()
         var attempt: Int64 = 1
 
         if (let Some(verifyOption) <- resolvedX509Verify) {
@@ -530,6 +560,8 @@ public class RequestBuilder {
                         urlForHost,
                         _headerSnapshot,
                         _bodySnapshot,
+                        _bodyStreamSnapshot,
+                        _bodyStreamLength,
                         _readTimeout,
                         _writeTimeout,
                         _nativeH1Pool

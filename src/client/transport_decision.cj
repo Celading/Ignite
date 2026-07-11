@@ -79,6 +79,7 @@ func buildClientTransportSelectionDecision(
     x509Verify: ?security.X509VerifyOption,
     requestCryptoConfig!: ?api2.ClientCryptoConfig = None,
     requiresMultipart!: Bool = false,
+    requiresStreaming!: Bool = false,
     preferredBackendHint!: String = "",
     allowExperimental!: Bool = false
 ): TransportSelectionDecision {
@@ -87,7 +88,7 @@ func buildClientTransportSelectionDecision(
     let contractRequest = api2.BackendSelectionRequest(
         "client",
         scheme,
-        false,
+        requiresStreaming,
         requiresMultipart,
         isX509Enabled(x509Verify),
         preferredBackendHint,
@@ -126,7 +127,7 @@ func nativeH1ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
             "cj>=1.0.0",
             false,
             false,
-            false,
+            true,
             false,
             false,
             true,

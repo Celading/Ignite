@@ -86,6 +86,32 @@ class NativeH1ClientDelayedStream <: InputStream & Resource {
     }
 }
 
+class NativeH1ClientGeneratedRequestStream <: InputStream {
+    let totalSize: Int64
+    var offset: Int64 = 0
+    var readCount: Int64 = 0
+
+    init(totalSize: Int64) {
+        this.totalSize = totalSize
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (offset >= totalSize || outBuf.size == 0) {
+            return 0
+        }
+        let remaining = totalSize - offset
+        let count = if (remaining < outBuf.size) { remaining } else { outBuf.size }
+        var i: Int64 = 0
+        while (i < count) {
+            outBuf[i] = UInt8((offset + i) % 251)
+            i += 1
+        }
+        offset += count
+        readCount += 1
+        count
+    }
+}
+
 @Test
 public class NativeH1ClientTestSuite {
     @TestCase
@@ -300,6 +326,73 @@ public class NativeH1ClientTestSuite {
             @Assert(firstPeer == "missing", false)
             @Assert(secondPeer == "missing", false)
             @Assert(secondPeer == firstPeer, false)
+        } finally {
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitNativeH1ClientStreamsKnownLengthRequestBody(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.post("/native-client-request-stream", { ctx =>
+            let _ = ctx.sendString(ctx.bodyBytes().size.toString())
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = nativeH1TestClient()
+        let input = NativeH1ClientGeneratedRequestStream(32768)
+        try {
+            waitForShellReady(app, port)
+            let response = client.request()
+                .method("POST")
+                .url("http://127.0.0.1:${port}/native-client-request-stream")
+                .bodyStream(input, 32768)
+                .send()
+            @Assert(response.status, 200)
+            @Assert(response.body(), "32768")
+            @Assert(input.readCount > 1, true)
+            @Assert(
+                nativeH1TestHeader(response, "x-ignite-observe-backend-id"),
+                "ignite-native-h1-client"
+            )
+        } finally {
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testKnownLengthRequestBodyStreamKeepsStdxDefaultCompatible(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.post("/stdx-client-request-stream", { ctx =>
+            let _ = ctx.sendString(ctx.bodyBytes().size.toString())
+        })
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        let client = RestClient(
+            readTimeout: Duration.second * 2,
+            writeTimeout: Duration.second * 2,
+            poolSize: 1
+        )
+        let input = NativeH1ClientGeneratedRequestStream(16384)
+        try {
+            waitForShellReady(app, port)
+            let response = client.request()
+                .method("POST")
+                .url("http://127.0.0.1:${port}/stdx-client-request-stream")
+                .bodyStream(input, 16384)
+                .send()
+            @Assert(response.status, 200)
+            @Assert(response.body(), "16384")
+            @Assert(
+                nativeH1TestHeader(response, "x-ignite-observe-backend-id"),
+                "stdx-http-client"
+            )
         } finally {
             client.close()
             shutdownServerEngineAbstractionApp(app, serverFuture)

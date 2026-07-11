@@ -352,6 +352,8 @@ func sendNativeH1Request(
     url: String,
     headers: HashMap<String, String>,
     body: Array<UInt8>,
+    bodyStream: ?InputStream,
+    bodyStreamLength: Int64,
     readTimeout: Duration,
     writeTimeout: Duration,
     pool: NativeH1ClientConnectionPool
@@ -377,7 +379,15 @@ func sendNativeH1Request(
     }
     var transferred = false
     try {
-        socket.write(buildNativeH1RequestWire(method, target, headers, body, requestReusable))
+        let contentLength = if (bodyStream.isSome()) { bodyStreamLength } else { body.size }
+        socket.write(buildNativeH1RequestHead(method, target, headers, contentLength, requestReusable))
+        match (bodyStream) {
+            case Some(stream) => writeNativeH1RequestStream(socket, stream, bodyStreamLength)
+            case None =>
+                if (body.size > 0) {
+                    socket.write(body)
+                }
+        }
         let response = readNativeH1Response(socket, method, pool, origin, requestReusable)
         transferred = true
         response
@@ -438,11 +448,11 @@ func parseNativeH1Target(rawUrl: String): NativeH1ClientTarget {
     NativeH1ClientTarget(host, port, requestTarget, authority)
 }
 
-func buildNativeH1RequestWire(
+func buildNativeH1RequestHead(
     method: String,
     target: NativeH1ClientTarget,
     headers: HashMap<String, String>,
-    body: Array<UInt8>,
+    contentLength: Int64,
     requestReusable: Bool
 ): Array<UInt8> {
     var head = method.trimAscii().toAsciiUpper() + " " + target.requestTarget + " HTTP/1.1\r\n"
@@ -455,24 +465,33 @@ func buildNativeH1RequestWire(
     if (!nativeH1HasHeader(headers, "connection")) {
         head += if (requestReusable) { "Connection: keep-alive\r\n" } else { "Connection: close\r\n" }
     }
-    if (body.size > 0 && !nativeH1HasHeader(headers, "content-length") &&
+    if (contentLength > 0 && !nativeH1HasHeader(headers, "content-length") &&
         !nativeH1HasHeader(headers, "transfer-encoding")) {
-        head += "Content-Length: ${body.size}\r\n"
+        head += "Content-Length: ${contentLength}\r\n"
     }
     head += "\r\n"
-    let headBytes = head.toArray()
-    let out = Array<UInt8>(headBytes.size + body.size, repeat: 0)
-    var i: Int64 = 0
-    while (i < headBytes.size) {
-        out[i] = headBytes[i]
-        i += 1
+    head.toArray()
+}
+
+func writeNativeH1RequestStream(
+    socket: TcpSocket,
+    stream: InputStream,
+    contentLength: Int64
+): Unit {
+    var remaining = contentLength
+    while (remaining > 0) {
+        let wanted = if (remaining < 8192) { remaining } else { 8192 }
+        let tmp = Array<UInt8>(wanted, repeat: 0)
+        let n = stream.read(tmp)
+        if (n <= 0) {
+            throw Exception("native H1 request body stream ended before Content-Length")
+        }
+        if (n > remaining) {
+            throw Exception("native H1 request body stream exceeded Content-Length")
+        }
+        socket.write(nativeH1ByteSlice(tmp, 0, n))
+        remaining -= n
     }
-    var j: Int64 = 0
-    while (j < body.size) {
-        out[headBytes.size + j] = body[j]
-        j += 1
-    }
-    out
 }
 
 func readNativeH1ResponseHeader(socket: TcpSocket): NativeH1ClientHeaderReadResult {
