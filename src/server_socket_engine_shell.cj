@@ -274,14 +274,19 @@ func serveSocketServerEngineShellStableTlsH1SocketTurn(
         )
         let request = openSocketServerEngineShellRequest(requestWire)
         let closeAfterWrite = request.closeAfterResponse || turn + 1 >= 16
-        let responsePlaintext = dispatchSocketServerEngineShellPlaintextHttp11Turn(
+        let carrier = dispatchSocketServerEngineShellPlaintextHttp11Turn(
             requestWire,
             app,
             accepted.remoteAddress.toString(),
-            option.maxRequestBodySize,
+            option.maxRequestBodySize
+        )
+        writeSocketServerEngineShellTlsH1Response(
+            accepted,
+            session,
+            request,
+            carrier,
             closeAfterWrite
         )
-        accepted.write(session.recordChannel.sealApplicationData(responsePlaintext))
         turn += 1
         if (closeAfterWrite) {
             return
@@ -335,9 +340,8 @@ func dispatchSocketServerEngineShellPlaintextHttp11Turn(
     requestWire: Array<UInt8>,
     app: App,
     remoteAddress: String,
-    maxRequestBodySize: Int64,
-    closeAfterWrite: Bool
-): Array<UInt8> {
+    maxRequestBodySize: Int64
+): SocketServerEngineShellCurrentRequestCarrier {
     let request = openSocketServerEngineShellRequest(requestWire)
     if (request.bodyPlan.needsMoreNetworkBytes) {
         throw Exception("native TLS H1 first turn requires one complete buffered request")
@@ -359,10 +363,119 @@ func dispatchSocketServerEngineShellPlaintextHttp11Turn(
         request.bodyPlan.prefetchedBodyBytes
     )
     app.handleRequest(carrier)
-    if (carrier.takeResponseBodyStream().isSome()) {
-        throw Exception("native TLS H1 first turn does not support streamed responses")
+    carrier
+}
+
+func writeSocketServerEngineShellTlsH1Response(
+    socket: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession,
+    request: SocketHttp11SessionRequest,
+    carrier: SocketServerEngineShellCurrentRequestCarrier,
+    closeAfterWrite: Bool
+): Unit {
+    match (carrier.takeResponseBodyStream()) {
+        case Some(stream) =>
+            writeSocketServerEngineShellTlsH1StreamResponse(
+                socket,
+                session,
+                request,
+                carrier,
+                stream,
+                closeAfterWrite
+            )
+        case None =>
+            writeSocketServerEngineShellTlsH1ApplicationData(
+                socket,
+                session,
+                buildSocketServerEngineShellResponseWire(
+                    request,
+                    carrier,
+                    closeAfterWrite
+                )
+            )
     }
-    buildSocketServerEngineShellResponseWire(request, carrier, closeAfterWrite)
+}
+
+func writeSocketServerEngineShellTlsH1StreamResponse(
+    socket: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession,
+    request: SocketHttp11SessionRequest,
+    carrier: SocketServerEngineShellCurrentRequestCarrier,
+    stream: InputStream,
+    closeAfterWrite: Bool
+): Unit {
+    try {
+        let responseHeaders = carrier.responseHeadersForSocket()
+        let responseHasChunkedTransfer = carrier.responseHeader("transfer-encoding") ?? ""
+        let responseContentLength = carrier.responseHeader("content-length") ?? ""
+        let statusCode = Int64(carrier.responseStatusCode())
+        let bodyMode = if (isSocketHttp11ResponseBodyForbiddenStatus(statusCode)) {
+            SocketHttp11ResponseBodyMode.Bodyless
+        } else if (responseHasChunkedTransfer.toAsciiLower() == "chunked") {
+            SocketHttp11ResponseBodyMode.UnknownLength
+        } else {
+            SocketHttp11ResponseBodyMode.KnownLength
+        }
+        let declaredBodyBytes = if (bodyMode == SocketHttp11ResponseBodyMode.KnownLength) {
+            socketServerEngineShellDeclaredStreamLength(responseContentLength)
+        } else {
+            0
+        }
+        let plan = buildSocketHttp11ResponseWritePlan(
+            request,
+            statusCode,
+            responseHeaders,
+            bodyMode,
+            declaredBodyBytes: declaredBodyBytes,
+            option: SocketHttp11ResponseWriteOption(closeAfterWrite: closeAfterWrite)
+        )
+        let writer = SocketHttp11ResponseWriterLifecycle(plan)
+        writeSocketServerEngineShellTlsH1ApplicationData(
+            socket,
+            session,
+            writer.takeHeadBytes()
+        )
+        if (plan.writesPayloadBody()) {
+            let buf = Array<Byte>(4096, repeat: 0)
+            while (true) {
+                let n = stream.read(buf)
+                if (n <= 0) {
+                    break
+                }
+                let chunk = Array<UInt8>(n, repeat: 0)
+                var i: Int64 = 0
+                while (i < n) {
+                    chunk[i] = UInt8(buf[i])
+                    i += 1
+                }
+                writeSocketServerEngineShellTlsH1ApplicationData(
+                    socket,
+                    session,
+                    writer.writeBodyChunk(chunk)
+                )
+            }
+        }
+        writeSocketServerEngineShellTlsH1ApplicationData(
+            socket,
+            session,
+            writer.finish()
+        )
+    } finally {
+        match (stream) {
+            case closable: Resource => closable.close()
+            case _ => ()
+        }
+    }
+}
+
+func writeSocketServerEngineShellTlsH1ApplicationData(
+    socket: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession,
+    plaintext: Array<UInt8>
+): Unit {
+    if (plaintext.size > 0) {
+        socket.write(session.recordChannel.sealApplicationData(plaintext))
+    }
 }
 
 public func isSocketServerEngineShellStableTlsH2ConnectionEndError(

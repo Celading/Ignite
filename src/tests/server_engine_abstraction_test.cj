@@ -399,6 +399,94 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellDirectTlsListenStreamsHttp11ResponseRecords(): Unit {
+        let clientChannelProbe = NativeTlsLiveIngressClientChannelProbe()
+        let streamPayload = serverEngineAbstractionTestUInt8Array(
+            engineIncrementalBytes(9000, start: 4352)
+        )
+        let tracked = SocketServerEngineShellStreamTrackingInput(streamPayload)
+        let app = App(config: Config(
+            enableNetworkChangeNotice: false,
+            tlsCertFile: resolveEngineFixturePath(ENGINE_TLS_CERT_A),
+            tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
+            enableTlsPrecheck: true
+        ))
+        app.get("/native-tls-h1-stream", { ctx =>
+            let _ = ctx.sendStream(
+                tracked,
+                contentType: "application/octet-stream",
+                contentLength: Some(streamPayload.size)
+            )
+        })
+        app.serverEngine(SocketServerEngineShell(
+            selectionLabel: "manual-opt-in",
+            tlsAcceptedSessionReadyHook: { session =>
+                clientChannelProbe.channel = Some(
+                    contractTls13CreateClientRecordChannel(
+                        session.keyMaterial,
+                        algorithm: session.recordChannel.algorithm
+                    )
+                )
+            }
+        ))
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let clientHello = contractTls13BuildHttpClientHelloX25519(
+            "www.example.com",
+            alpnProtocols: ["http/1.1"],
+            clientPrivateKey: Some(engineIncrementalBytes(32, start: 4384))
+        )
+        let clientHelloWire = buildServerEngineAbstractionTestTlsRecordWire(
+            clientHello.encodedClientHello
+        )
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        waitForShellReady(app, port)
+        let responseWire = runAcceptedTransportTlsHandshakeRequestResponseSocketSinkClient(
+            "127.0.0.1",
+            port,
+            [clientHelloWire],
+            "native TLS H1 streamed response",
+            { =>
+                match (clientChannelProbe.channel) {
+                    case Some(channel) =>
+                        Some(channel.sealFragments(
+                            ContractTlsRecordContentType.ApplicationData,
+                            "GET /native-tls-h1-stream HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toArray(),
+                            maxFragmentLen: 19
+                        ))
+                    case None => None
+                }
+            }
+        )
+        let _ = serverFuture.get(Duration.second * 5)
+        match (clientChannelProbe.channel) {
+            case Some(channel) =>
+                let decoded = channel.openAndReassemble(
+                    splitJinguiAcceptedTransportRecordWire(
+                        serverEngineAbstractionTestByteArray(responseWire)
+                    )
+                )
+                let headEnd = findServerEngineAbstractionTestBytes(
+                    decoded,
+                    serverEngineAbstractionTestByteArray("\r\n\r\n".toArray())
+                )
+                @Assert(headEnd >= 0, true)
+                let responseText = String.fromUtf8(decoded[..headEnd + 4])
+                @Assert(contains(responseText, "HTTP/1.1 200"), true)
+                @Assert(contains(responseText, "content-length: 9000"), true)
+                @Assert(
+                    serverEngineAbstractionTestByteArraysEqual(
+                        decoded[headEnd + 4..],
+                        serverEngineAbstractionTestByteArray(streamPayload)
+                    ),
+                    true
+                )
+                @Assert(tracked.closed, true)
+                @Assert(tracked.bytesRead(), Int64(9000))
+            case None => @Fail("expected native TLS H1 stream session hook")
+        }
+    }
+
+    @TestCase
     public func testSocketServerEngineShellDirectTlsListenServesSequentialH2TurnsWithSharedHpackState(): Unit {
         let clientChannelProbe = NativeTlsLiveIngressClientChannelProbe()
         let routeProbe = NativeTlsLiveIngressSequentialRouteProbe()
@@ -22417,6 +22505,32 @@ func serverEngineAbstractionTestByteArraysEqual(
         i += 1
     }
     true
+}
+
+func findServerEngineAbstractionTestBytes(
+    input: Array<Byte>,
+    needle: Array<Byte>
+): Int64 {
+    if (needle.size == 0) {
+        return 0
+    }
+    var start: Int64 = 0
+    while (start + needle.size <= input.size) {
+        var matched = true
+        var i: Int64 = 0
+        while (i < needle.size) {
+            if (input[start + i] != needle[i]) {
+                matched = false
+                break
+            }
+            i += 1
+        }
+        if (matched) {
+            return start
+        }
+        start += 1
+    }
+    -1
 }
 
 func resolveEngineFixturePath(path: String): String {
