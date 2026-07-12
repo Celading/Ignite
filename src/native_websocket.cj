@@ -68,6 +68,7 @@ class NativeWebSocketConnection {
                             return WsMessage(messageType: messageType, data: data.toArray())
                         }
                     case 8 =>
+                        validateNativeWebSocketClosePayload(frame.payload)
                         echoNativeWebSocketClose(frame.payload)
                         return WsMessage(messageType: WsMessageType.Close, data: frame.payload)
                     case 9 => writeNativeWebSocketFrame(socket, 10, frame.payload)
@@ -225,6 +226,33 @@ func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
         i += 1
     }
     NativeWebSocketFrame(fin, opcode, payload)
+}
+
+func validateNativeWebSocketClosePayload(payload: Array<UInt8>): Unit {
+    if (payload.size == 1) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket close payload cannot contain a one-byte status"
+        )
+    }
+    if (payload.size < 2) { return }
+    let status = (Int64(payload[0]) << 8) | Int64(payload[1])
+    let standard = status >= 1000 && status <= 1014 &&
+        status != 1004 && status != 1005 && status != 1006
+    let application = status >= 3000 && status <= 4999
+    if (!standard && !application) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket close payload contains invalid status ${status}"
+        )
+    }
+    if (payload.size > 2) {
+        try {
+            let _ = String.fromUtf8(payload[2..payload.size])
+        } catch (_: Exception) {
+            throw NativeWebSocketProtocolException(
+                "native WebSocket close reason is not valid UTF-8"
+            )
+        }
+    }
 }
 
 func writeNativeWebSocketFrame(socket: TcpSocket, opcode: Int64, payload: Array<UInt8>): Unit {

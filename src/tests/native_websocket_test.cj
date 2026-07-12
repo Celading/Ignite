@@ -107,6 +107,56 @@ public class NativeWebSocketTestSuite {
             closeNativeWebSocketTest(socket, app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testNativeH1WebSocketReassemblesFragmentsAndEchoesPeerClose(): Unit {
+        let port = chooseNativeWebSocketPort(1971)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws("/native-ws-fragments", { conn =>
+            let message = conn.readMessage()
+            conn.writeText("fragment:" + message.text())
+            let _ = conn.readMessage()
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(socket, port, "/native-ws-fragments")
+            let _ = readNativeWebSocketResponseHead(socket)
+            socket.write(maskedNativeWebSocketFrame(1, "hel".toArray(), fin: false))
+            socket.write(maskedNativeWebSocketFrame(0, "lo".toArray()))
+            let text = readNativeWebSocketServerFrame(socket)
+            @Assert(text.opcode, Int64(1))
+            @Assert(String.fromUtf8(text.payload), "fragment:hello")
+
+            socket.write(maskedNativeWebSocketFrame(8, [UInt8(0x03), UInt8(0xE8)]))
+            let close = readNativeWebSocketServerFrame(socket)
+            @Assert(close.opcode, Int64(8))
+            @Assert(nativeWebSocketTestCloseCode(close.payload), UInt16(1000))
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsOneByteClosePayload(): Unit {
+        let port = chooseNativeWebSocketPort(1987)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws("/native-ws-bad-close", { conn =>
+            let _ = conn.readMessage()
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(socket, port, "/native-ws-bad-close")
+            let _ = readNativeWebSocketResponseHead(socket)
+            socket.write(maskedNativeWebSocketFrame(8, [UInt8(0x03)]))
+            let close = readNativeWebSocketServerFrame(socket)
+            @Assert(close.opcode, Int64(8))
+            @Assert(nativeWebSocketTestCloseCode(close.payload), UInt16(1002))
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
 }
 
 struct NativeWebSocketTestFrame {
@@ -156,10 +206,14 @@ func maskedNativeWebSocketTextFrame(text: String): Array<UInt8> {
     maskedNativeWebSocketFrame(1, text.toArray())
 }
 
-func maskedNativeWebSocketFrame(opcode: Int64, payload: Array<UInt8>): Array<UInt8> {
+func maskedNativeWebSocketFrame(
+    opcode: Int64,
+    payload: Array<UInt8>,
+    fin!: Bool = true
+): Array<UInt8> {
     let mask = [UInt8(0x37), UInt8(0xFA), UInt8(0x21), UInt8(0x3D)]
     let out = Array<UInt8>(payload.size + 6, repeat: 0)
-    out[0] = UInt8(0x80 | opcode)
+    out[0] = UInt8((if (fin) { 0x80 } else { 0x00 }) | opcode)
     out[1] = UInt8(0x80 | payload.size)
     var i: Int64 = 0
     while (i < 4) { out[i + 2] = mask[i]; i += 1 }
