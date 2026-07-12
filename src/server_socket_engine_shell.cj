@@ -265,28 +265,60 @@ func serveSocketServerEngineShellStableTlsH1SocketTurn(
     option: ServerEngineListenOption,
     app: App
 ): Unit {
-    let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
-    var records = Array<Array<Byte>>()
-    while (records.size == 0) {
-        let buf = Array<UInt8>(4096, repeat: 0)
-        let n = accepted.read(buf)
-        if (n <= 0) {
-            throw Exception("native TLS H1 peer closed before one application-data record")
-        }
-        accumulator.append(serverEngineUInt8ToByteArray(buf[..n]))
-        records = accumulator.drainCompleteRecords()
-    }
-    if (accumulator.bufferedByteCount() != 0) {
-        throw Exception("native TLS H1 first turn does not accept a partial trailing TLS record")
-    }
-    let plaintext = session.recordChannel.openAndReassemble(records)
+    let requestWire = readSocketServerEngineShellStableTlsH1Request(
+        accepted,
+        session,
+        option.maxRequestBodySize
+    )
     let responsePlaintext = dispatchSocketServerEngineShellPlaintextHttp11Turn(
-        plaintext,
+        requestWire,
         app,
         accepted.remoteAddress.toString(),
         option.maxRequestBodySize
     )
     accepted.write(session.recordChannel.sealApplicationData(responsePlaintext))
+}
+
+func readSocketServerEngineShellStableTlsH1Request(
+    accepted: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession,
+    maxRequestBodySize: Int64
+): Array<UInt8> {
+    let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
+    let plaintext = ArrayList<UInt8>()
+    while (true) {
+        let buf = Array<UInt8>(4096, repeat: 0)
+        let n = accepted.read(buf)
+        if (n <= 0) {
+            throw Exception("native TLS H1 peer closed before one complete request")
+        }
+        accumulator.append(serverEngineUInt8ToByteArray(buf[..n]))
+        let records = accumulator.drainCompleteRecords()
+        if (records.size == 0) {
+            continue
+        }
+        appendSocketServerEngineShellBytes(
+            plaintext,
+            session.recordChannel.openAndReassemble(records)
+        )
+        match (tryOpenSocketServerEngineShellRequest(plaintext.toArray())) {
+            case Some(request) =>
+                if (
+                    request.bodyPlan.declaredBodyBytes > maxRequestBodySize ||
+                    request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize
+                ) {
+                    throw Exception("native TLS H1 request body exceeds configured body limit")
+                }
+                if (request.bodyPlan.framing == SocketHttp11RequestBodyFraming.Chunked) {
+                    throw Exception("native TLS H1 first turn does not support chunked request bodies")
+                }
+                if (!request.bodyPlan.needsMoreNetworkBytes) {
+                    return plaintext.toArray()
+                }
+            case None => ()
+        }
+    }
+    throw Exception("native TLS H1 request read loop ended unexpectedly")
 }
 
 func dispatchSocketServerEngineShellPlaintextHttp11Turn(
@@ -299,7 +331,10 @@ func dispatchSocketServerEngineShellPlaintextHttp11Turn(
     if (request.bodyPlan.needsMoreNetworkBytes) {
         throw Exception("native TLS H1 first turn requires one complete buffered request")
     }
-    if (request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize) {
+    if (
+        request.bodyPlan.declaredBodyBytes > maxRequestBodySize ||
+        request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize
+    ) {
         throw Exception("native TLS H1 request body exceeds configured body limit")
     }
     if (request.bodyPlan.trailingBufferedBytes.size > 0) {
@@ -927,16 +962,22 @@ func socketServerEngineShellHexDigitValue(b: UInt8): Int64 {
 }
 
 func openSocketServerEngineShellRequest(requestWire: Array<UInt8>): SocketHttp11SessionRequest {
+    match (tryOpenSocketServerEngineShellRequest(requestWire)) {
+        case Some(request) => request
+        case None =>
+            throw SocketServerEngineShellException(
+                "socket server engine shell requires one complete HTTP/1.1 request head before it can dispatch"
+            )
+    }
+}
+
+func tryOpenSocketServerEngineShellRequest(
+    requestWire: Array<UInt8>
+): ?SocketHttp11SessionRequest {
     let session = SocketHttp11ConnectionSession()
     session.appendHeadBytes(requestWire)
     try {
-        match (session.tryOpenRequest()) {
-            case Some(request) => request
-            case None =>
-                throw SocketServerEngineShellException(
-                    "socket server engine shell requires one complete HTTP/1.1 request head before it can dispatch"
-                )
-        }
+        session.tryOpenRequest()
     } catch (e: SocketHttp11HeadException) {
         throw SocketServerEngineShellException(
             "socket server engine shell request-head parse failed: ${e.message}"

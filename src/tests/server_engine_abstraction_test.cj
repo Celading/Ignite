@@ -253,11 +253,11 @@ public class ServerEngineAbstractionTestSuite {
             tlsKeyFile: resolveEngineFixturePath(ENGINE_TLS_KEY_A),
             enableTlsPrecheck: true
         ))
-        app.get("/native-tls-h1", { ctx =>
+        app.post("/native-tls-h1", { ctx =>
             routeProbe.invoked = true
             let _ = ctx
                 .setHeader("x-native-tls-protocol", "http/1.1")
-                .sendString("native-tls-h1-ok")
+                .sendString("native-tls-h1-${ctx.bodyString()}")
         })
         app.serverEngine(SocketServerEngineShell(
             selectionLabel: "manual-opt-in",
@@ -295,8 +295,8 @@ public class ServerEngineAbstractionTestSuite {
                         case Some(channel) =>
                             Some(channel.sealFragments(
                                 ContractTlsRecordContentType.ApplicationData,
-                                "GET /native-tls-h1 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toArray(),
-                                maxFragmentLen: 16384
+                                "POST /native-tls-h1 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 18\r\nConnection: close\r\n\r\nfragmented-request".toArray(),
+                                maxFragmentLen: 11
                             ))
                         case None => None
                     }
@@ -314,7 +314,7 @@ public class ServerEngineAbstractionTestSuite {
                 @Assert(routeProbe.invoked, true)
                 @Assert(contains(decoded, "HTTP/1.1 200"), true)
                 @Assert(contains(decoded, "x-native-tls-protocol: http/1.1"), true)
-                @Assert(contains(decoded, "native-tls-h1-ok"), true)
+                @Assert(contains(decoded, "native-tls-h1-fragmented-request"), true)
             case None => @Fail("expected native TLS H1 session hook")
         }
     }
