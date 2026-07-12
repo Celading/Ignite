@@ -12,7 +12,9 @@ public class FileDownloadAndRestfulTestSuite {
     @TestCase
     public func testStaticMiddlewareNegotiatesPrecompressedBrotliAndFallsBackForRange(): Unit {
         let root = "/tmp/ignite_precompressed_static"
-        Directory.create(root, recursive: true)
+        if (!exists(root)) {
+            Directory.create(root, recursive: true)
+        }
         let original = "console.log('identity')"
         let brotliWire = "precompressed-brotli-wire"
         let zstdWire = "precompressed-zstd-wire"
@@ -55,6 +57,49 @@ public class FileDownloadAndRestfulTestSuite {
             )
             @Assert(ranged.header("content-encoding") ?? "", "")
             @Assert(ranged.body, original)
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testAppStaticAndSpaSharePrecompressedSelection(): Unit {
+        let root = "/tmp/ignite_precompressed_app_static"
+        if (!exists(root)) {
+            Directory.create(root, recursive: true)
+        }
+        writeTextFile(root + "/app.js", "identity-app-static")
+        writeTextFile(root + "/app.js.br", "brotli-app-static")
+        writeTextFile(root + "/index.html", "identity-spa-index")
+        writeTextFile(root + "/index.html.br", "brotli-spa-index")
+        let port = chooseUploadTestPort(1907)
+
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.`static`("/assets", root)
+        app.staticSpa("/spa", root, indexFile: "index.html")
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let asset = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/assets/app.js",
+                headers: [("accept-encoding", "br")]
+            )
+            @Assert(asset.status, UInt16(200))
+            @Assert(asset.header("content-encoding") ?? "", "br")
+            @Assert(asset.header("content-type") ?? "", "application/javascript; charset=utf-8")
+            @Assert(asset.body, "brotli-app-static")
+
+            let spa = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/spa/missing-route",
+                headers: [("accept-encoding", "br")]
+            )
+            @Assert(spa.status, UInt16(200))
+            @Assert(spa.header("content-encoding") ?? "", "br")
+            @Assert(spa.header("content-type") ?? "", "text/html; charset=utf-8")
+            @Assert(spa.body, "brotli-spa-index")
         } finally {
             shutdownUploadTestApp(app, serverFuture)
         }

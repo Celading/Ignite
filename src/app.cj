@@ -260,6 +260,18 @@ public class App {
 
     // ── Static file serving ──
 
+    func sendNegotiatedStaticAsset(ctx: Ctx, filePath: String): Ctx {
+        match (selectPrecompressedStaticAssetPath(
+            ctx.header("accept-encoding") ?? "",
+            ctx.header("range") ?? "",
+            filePath
+        )) {
+            case Some((encodedPath, encoding)) =>
+                ctx.sendPrecompressedFile(encodedPath, filePath, encoding)
+            case None => ctx.sendFile(filePath)
+        }
+    }
+
     public func `static`(prefix: String, root: String): App {
         let rootDir = root
         let catchAllPath = if (prefix.size > 0 && prefix.toRuneArray()[prefix.size - 1] == r'/') {
@@ -270,7 +282,7 @@ public class App {
         router.addRoute("GET", catchAllPath, wrapSingle({ ctx: Ctx =>
             let filePath = ctx.params("*")
             if (let Some(fullPath) <- resolveStaticAssetPath(rootDir, filePath)) {
-                ctx.sendFile(fullPath)
+                sendNegotiatedStaticAsset(ctx, fullPath)
             } else {
                 ctx.sendStatus(404)
             }
@@ -284,7 +296,7 @@ public class App {
     public func staticSpa(prefix: String, root: String, indexFile!: String = "index.html"): App {
         let rootDir = root
         let fallbackPath = rootDir + "/" + indexFile
-        let serveFallback: Handler = { ctx: Ctx => ctx.sendFile(fallbackPath) }
+        let serveFallback: Handler = { ctx: Ctx => sendNegotiatedStaticAsset(ctx, fallbackPath) }
         let normalizedPrefix = if (prefix.size > 0 && prefix.toRuneArray()[prefix.size - 1] == r'/') {
             let runes = prefix.toRuneArray()
             var s = ""
@@ -305,7 +317,7 @@ public class App {
         let handler: Handler = { ctx: Ctx =>
             let filePath = ctx.params("*")
             if (let None <- normalizeStaticAssetRequestPath(filePath)) {
-                ctx.sendFile(fallbackPath)
+                sendNegotiatedStaticAsset(ctx, fallbackPath)
                 return
             }
             let fullPath = resolveStaticAssetPath(rootDir, filePath) ?? fallbackPath
@@ -316,9 +328,9 @@ public class App {
                 false
             }
             if (shouldServeStatic) {
-                ctx.sendFile(fullPath)
+                sendNegotiatedStaticAsset(ctx, fullPath)
             } else {
-                ctx.sendFile(fallbackPath)
+                sendNegotiatedStaticAsset(ctx, fallbackPath)
             }
         }
         router.addRoute("GET", catchAllPath, wrapSingle(handler))

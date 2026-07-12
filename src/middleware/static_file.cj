@@ -1,7 +1,6 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx, resolveStaticAssetPath}
-import std.fs.exists
+import ignite.{Handler, Ctx, resolveStaticAssetPath, selectPrecompressedStaticAssetPath}
 
 public class StaticFileConfig {
     public var root: String = "./public"
@@ -57,7 +56,17 @@ public func staticFileMiddleware(config!: StaticFileConfig = StaticFileConfig())
         }
 
         try {
-            match (selectPrecompressedStaticAsset(ctx, filePath, config)) {
+            var selected: ?(String, String) = None
+            if (config.precompressed) {
+                selected = selectPrecompressedStaticAssetPath(
+                    ctx.header("accept-encoding") ?? "",
+                    ctx.header("range") ?? "",
+                    filePath,
+                    brotliSuffix: config.brotliSuffix,
+                    zstdSuffix: config.zstdSuffix
+                )
+            }
+            match (selected) {
                 case Some((encodedPath, encoding)) =>
                     ctx.sendPrecompressedFile(encodedPath, filePath, encoding)
                 case None => ctx.sendFile(filePath)
@@ -66,56 +75,4 @@ public func staticFileMiddleware(config!: StaticFileConfig = StaticFileConfig())
             ctx.next()
         }
     }
-}
-
-func selectPrecompressedStaticAsset(
-    ctx: Ctx,
-    filePath: String,
-    config: StaticFileConfig
-): ?(String, String) {
-    if (!config.precompressed || (ctx.header("range") ?? "").size > 0) {
-        return None
-    }
-    let accepted = ctx.header("accept-encoding") ?? ""
-    let brQuality = staticEncodingQuality(accepted, "br")
-    let zstdQuality = staticEncodingQuality(accepted, "zstd")
-    let brPath = filePath + config.brotliSuffix
-    let zstdPath = filePath + config.zstdSuffix
-    if (brQuality >= zstdQuality && brQuality > 0 && exists(brPath)) {
-        return Some((brPath, "br"))
-    }
-    if (zstdQuality > 0 && exists(zstdPath)) {
-        return Some((zstdPath, "zstd"))
-    }
-    if (brQuality > 0 && exists(brPath)) {
-        return Some((brPath, "br"))
-    }
-    None
-}
-
-func staticEncodingQuality(raw: String, target: String): Int64 {
-    var exact: Int64 = -1
-    var wildcard: Int64 = -1
-    for (part in raw.trimAscii().toAsciiLower().split(",")) {
-        let tokens = part.trimAscii().split(";")
-        if (tokens.size == 0) {
-            continue
-        }
-        var quality: Int64 = 1000
-        var i: Int64 = 1
-        while (i < tokens.size) {
-            let kv = tokens[i].trimAscii().split("=", 2)
-            if (kv.size == 2 && kv[0].trimAscii() == "q") {
-                quality = parseQValue(kv[1])
-            }
-            i += 1
-        }
-        let name = tokens[0].trimAscii()
-        if (name == target) {
-            exact = quality
-        } else if (name == "*") {
-            wildcard = quality
-        }
-    }
-    if (exact >= 0) { exact } else { wildcard }
 }
