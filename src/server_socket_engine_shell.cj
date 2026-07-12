@@ -265,18 +265,28 @@ func serveSocketServerEngineShellStableTlsH1SocketTurn(
     option: ServerEngineListenOption,
     app: App
 ): Unit {
-    let requestWire = readSocketServerEngineShellStableTlsH1Request(
-        accepted,
-        session,
-        option.maxRequestBodySize
-    )
-    let responsePlaintext = dispatchSocketServerEngineShellPlaintextHttp11Turn(
-        requestWire,
-        app,
-        accepted.remoteAddress.toString(),
-        option.maxRequestBodySize
-    )
-    accepted.write(session.recordChannel.sealApplicationData(responsePlaintext))
+    var turn: Int64 = 0
+    while (turn < 16) {
+        let requestWire = readSocketServerEngineShellStableTlsH1Request(
+            accepted,
+            session,
+            option.maxRequestBodySize
+        )
+        let request = openSocketServerEngineShellRequest(requestWire)
+        let closeAfterWrite = request.closeAfterResponse || turn + 1 >= 16
+        let responsePlaintext = dispatchSocketServerEngineShellPlaintextHttp11Turn(
+            requestWire,
+            app,
+            accepted.remoteAddress.toString(),
+            option.maxRequestBodySize,
+            closeAfterWrite
+        )
+        accepted.write(session.recordChannel.sealApplicationData(responsePlaintext))
+        turn += 1
+        if (closeAfterWrite) {
+            return
+        }
+    }
 }
 
 func readSocketServerEngineShellStableTlsH1Request(
@@ -325,7 +335,8 @@ func dispatchSocketServerEngineShellPlaintextHttp11Turn(
     requestWire: Array<UInt8>,
     app: App,
     remoteAddress: String,
-    maxRequestBodySize: Int64
+    maxRequestBodySize: Int64,
+    closeAfterWrite: Bool
 ): Array<UInt8> {
     let request = openSocketServerEngineShellRequest(requestWire)
     if (request.bodyPlan.needsMoreNetworkBytes) {
@@ -351,7 +362,7 @@ func dispatchSocketServerEngineShellPlaintextHttp11Turn(
     if (carrier.takeResponseBodyStream().isSome()) {
         throw Exception("native TLS H1 first turn does not support streamed responses")
     }
-    buildSocketServerEngineShellResponseWire(request, carrier, true)
+    buildSocketServerEngineShellResponseWire(request, carrier, closeAfterWrite)
 }
 
 public func isSocketServerEngineShellStableTlsH2ConnectionEndError(
