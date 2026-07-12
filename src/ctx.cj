@@ -371,7 +371,9 @@ public class Ctx {
     }
 
     public func sendString(body: String): Ctx {
-        setResponseHeaderTracked("content-type", "text/plain; charset=utf-8")
+        if (responseHeader("content-type").isNone()) {
+            setResponseHeaderTracked("content-type", "text/plain; charset=utf-8")
+        }
         _currentRequestCarrier.setResponseString(body)
         _responded = true
         _responseBody = body
@@ -413,12 +415,7 @@ public class Ctx {
                 let existingVary = responseHeader("vary") ?? ""
                 let mergedVary = mergeVaryAcceptEncoding(existingVary)
                 if (mergedVary != existingVary.trimAscii()) {
-                    if (existingVary.trimAscii().size == 0) {
-                        setResponseHeaderTracked("vary", mergedVary)
-                    } else {
-                        rememberResponseHeader("vary", mergedVary)
-                        _currentRequestCarrier.setResponseHeader("vary", "Accept-Encoding")
-                    }
+                    setResponseHeaderTracked("vary", mergedVary)
                 }
             }
             setResponseHeaderTracked("content-encoding", plan.encoding)

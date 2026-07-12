@@ -738,6 +738,8 @@ public class ProxyMiddlewareTestSuite {
         let payload = buildLargeAsciiPayload()
         let hits = ArrayList<String>()
 
+        _ = removeIfExists(fixturePath)
+
         let upstream = App(config: Config(bodyLimit: 8 * 1024 * 1024))
         upstream.post("/up/chunked-limit", { ctx =>
             hits.add("hit")
@@ -784,6 +786,7 @@ public class ProxyMiddlewareTestSuite {
         } finally {
             shutdownApp(upstream, upstreamFuture)
             shutdownApp(proxy, proxyFuture)
+            _ = removeIfExists(fixturePath)
         }
     }
 

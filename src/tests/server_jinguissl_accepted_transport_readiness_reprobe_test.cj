@@ -13,7 +13,7 @@ let HQ0436_ENGINE_TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
 @Test
 public class ServerJinguiAcceptedTransportReadinessReprobeTestSuite {
     @TestCase
-    public func testCurrentSplitJinguiSslReprobeClassifiesTranscriptHashBlocker(): Unit {
+    public func testCurrentSplitJinguiSslReprobeAcceptsReadySession(): Unit {
         let app = App(config: Config(
             tlsCertFile: hq0436ResolveEngineFixturePath(HQ0436_ENGINE_TLS_CERT_A),
             tlsKeyFile: hq0436ResolveEngineFixturePath(HQ0436_ENGINE_TLS_KEY_A),
@@ -25,49 +25,14 @@ public class ServerJinguiAcceptedTransportReadinessReprobeTestSuite {
         app.listen("127.0.0.1", UInt16(38436))
 
         @Assert(engine.planAttachSurface, "accepted-socket")
-        @Assert(
-            hq0436Contains(
-                engine.observedError,
-                "TLS1.3 transcript hash must be SHA-256 sized"
-            ),
-            true
-        )
-
-        let classification =
-            classifyServerJinguiAcceptedTransportTlsAttachBlocker(
-                engine.observedError
-            )
-        @Assert(classification.status, "blocked-provider-contract")
-        @Assert(classification.owner, "JinguiSSL-contract")
-        @Assert(classification.failureCode, "TLS13_TRANSCRIPT_HASH_SIZE")
-
-        let attachGate = buildServerJinguiAcceptedTransportTlsAttachProofGate(
-            ServerJinguiAcceptedTransportTlsAttachProofGateEvidence(
-                classification,
-                false,
-                false,
-                false,
-                true
-            )
-        )
-        @Assert(attachGate.status, "expected-provider-blocker-carried")
-        @Assert(attachGate.diagnosticPacketAllowed, true)
-        @Assert(attachGate.h2RuntimeProofAllowed, false)
-
-        let launchGate = buildJinguiAcceptedTransportH2RuntimeProofLaunchGate(
-            JinguiAcceptedTransportH2RuntimeProofLaunchEvidence(
-                attachGate,
-                true,
-                true,
-                true,
-                true,
-                buildHq0737AcceptedRuntimeProgressReadoutForLaunchTest()
-            )
-        )
-        @Assert(launchGate.status, "diagnostic-only-provider-blocker-carried")
-        @Assert(launchGate.diagnosticPacketAllowed, true)
-        @Assert(launchGate.h2RuntimeProofLaunchAllowed, false)
-        @Assert(launchGate.h2RuntimeClosureClaimAllowed, false)
+        @Assert(engine.observedError, "")
+        @Assert(engine.readyStatus, "READY")
+        @Assert(engine.secureSessionReady, true)
+        @Assert(engine.negotiatedAlpn, "h2")
+        @Assert(engine.requestedServerName, "www.example.com")
+        @Assert(engine.acknowledgedServerName, true)
+        @Assert(engine.attachSurface, "accepted-transport-session")
+        @Assert(engine.transportId, "hq0436-accepted-transport")
     }
 }
 

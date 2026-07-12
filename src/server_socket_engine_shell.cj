@@ -1529,7 +1529,12 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func requestBodySize(): ?Int64 {
-        Some(requestBodyBytesValue.size)
+        match (request.bodyPlan.framing) {
+            case SocketHttp11RequestBodyFraming.Chunked => None
+            case SocketHttp11RequestBodyFraming.ContentLength =>
+                Some(request.bodyPlan.declaredBodyBytes)
+            case SocketHttp11RequestBodyFraming.Bodyless => Some(0)
+        }
     }
 
     public override func setResponseStatus(code: UInt16): Unit {

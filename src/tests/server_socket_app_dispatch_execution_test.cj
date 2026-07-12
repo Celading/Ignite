@@ -112,7 +112,7 @@ public class ServerSocketAppDispatchExecutionTestSuite {
 
     @TestCase
     public func testCurrentCarrierV2ProvidesRequestMetadataWhileKeepingHttpContextCompatibilitySurface(): Unit {
-        let app = App()
+        let app = App(config: Config(serverPreferredBackendHint: "stdx-default"))
         app.get("/carrier", { ctx =>
             let carrier = ctx.currentRequestCarrier()
             let request = carrier.rawHttpContext().request

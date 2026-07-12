@@ -109,7 +109,7 @@ public class DeploymentDualListenerPatternTestSuite {
     }
 
     @TestCase
-    public func testPreferredServerBackendHintStillFallsBackToStdxWhileAttachIsPrecheckOnly(): Unit {
+    public func testPreferredServerBackendHintKeepsStdxDefaultWhileAttachRemainsCandidate(): Unit {
         let httpsEngine = DeploymentSpyServerEngine()
         let httpsApp = buildHttpsServiceAppWithServerTransportPreference(
             DUAL_TLS_CERT_A,
@@ -137,8 +137,8 @@ public class DeploymentDualListenerPatternTestSuite {
         @Assert(httpsEngine.lastJinguiAttachSurface, "accepted-socket")
         @Assert(httpsEngine.lastJinguiAttachPlanningStatus, "PLANNING_ONLY")
         @Assert(httpsEngine.lastJinguiAttachPlanningReady, true)
-        @Assert(httpsEngine.lastJinguiAttachStableStatus, "BLOCKED")
-        @Assert(httpsEngine.lastJinguiAttachStableReady, false)
+        @Assert(httpsEngine.lastJinguiAttachStableStatus, "PROVIDER_CANDIDATE")
+        @Assert(httpsEngine.lastJinguiAttachStableReady, true)
         @Assert(httpsEngine.lastJinguiAttachExpectedTlsVersion, "TLS1.3")
         @Assert(
             containsText(httpsEngine.lastJinguiAttachExpectedAlpn, "h2"),
