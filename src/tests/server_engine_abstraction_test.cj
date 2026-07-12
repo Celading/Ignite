@@ -11586,7 +11586,7 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
-    public func testSocketServerEngineShellMatchesStdxForBufferedAndKnownLengthStreamResponse(): Unit {
+    public func testDefaultNativeH1MatchesExplicitStdxRollbackForBufferedAndKnownLengthStreamResponse(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
         setVariable(acceptLimitEnv, "2")
         try {
@@ -11596,7 +11596,6 @@ public class ServerEngineAbstractionTestSuite {
             let streamBody = "native-stdx-stream-parity"
 
             let shellApp = App(config: Config(enableTlsPrecheck: false))
-            shellApp.serverEngine(SocketServerEngineShell())
             installSocketServerEngineShellParityRoutes(
                 shellApp,
                 bufferedBody,
@@ -11606,6 +11605,12 @@ public class ServerEngineAbstractionTestSuite {
                 shellApp.listen("127.0.0.1", shellPort)
             }
             waitForShellReady(shellApp, shellPort)
+            match (shellApp.lastServerTransportTouchpoint()) {
+                case Some(touchpoint) =>
+                    @Assert(touchpoint.selectedBackend, "ignite-socket-server-shell")
+                    @Assert(touchpoint.publicPath, "native-h1-default")
+                case None => @Fail("expected default native H1 transport touchpoint")
+            }
 
             let shellBuffered = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -11619,7 +11624,10 @@ public class ServerEngineAbstractionTestSuite {
             )
             let _ = shellFuture.get(Duration.second * 5)
 
-            let stdxApp = App(config: Config(enableTlsPrecheck: false))
+            let stdxApp = App(config: Config(
+                enableTlsPrecheck: false,
+                serverPreferredBackendHint: "stdx-default"
+            ))
             installSocketServerEngineShellParityRoutes(
                 stdxApp,
                 bufferedBody,
@@ -11630,6 +11638,12 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(stdxApp, stdxPort)
             try {
+                match (stdxApp.lastServerTransportTouchpoint()) {
+                    case Some(touchpoint) =>
+                        @Assert(touchpoint.selectedBackend, "stdx-http-server")
+                        @Assert(touchpoint.publicPath, "stable-default")
+                    case None => @Fail("expected explicit stdx rollback transport touchpoint")
+                }
                 let stdxBuffered = runSocketServerEngineShellClient(
                     "127.0.0.1",
                     stdxPort,
