@@ -4,6 +4,7 @@ import ignite.*
 import seajson.JsonWriter as SeaJsonNativeWriter
 import std.collection.{ArrayList, HashMap}
 import std.net.{TcpSocket, IPSocketAddress}
+import std.sync.Mutex
 
 /// Focused real-HTTP proof for the public `JsonWriterInputStream` seam.
 ///
@@ -389,6 +390,128 @@ public class JsonEncodeStreamCtxSugarTestSuite {
     }
 }
 
+class JsonSeaStreamProducerGate {
+    let mtx = Mutex()
+    var released: Bool = false
+    var finished: Bool = false
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        synchronized(mtx) {
+            released
+        }
+    }
+
+    public func markFinished(): Unit {
+        synchronized(mtx) {
+            finished = true
+        }
+    }
+
+    public func isFinished(): Bool {
+        synchronized(mtx) {
+            finished
+        }
+    }
+}
+
+/// Real socket proof for the SeaJson-native callback surface.
+@Test
+public class JsonSeaStreamCtxSugarTestSuite {
+    @TestCase
+    public func testJsonSeaStreamKnownLengthUsesContentLength(): Unit {
+        let port = chooseJsonWriterInputStreamTestPort(1947)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        let expected = "{\"native\":true}"
+        app.get("/ctx-seajson-known", { ctx =>
+            _ = ctx.jsonSeaStream({ writer =>
+                writer.beginObject()
+                writer.name("native").value(true)
+                writer.endObject()
+            }, contentLength: Some(expected.size))
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let response = sendRawJsonWriterInputHttp(port, "GET", "/ctx-seajson-known", [])
+            @Assert(response.status, UInt16(200))
+            @Assert(response.header("content-type") ?? "", "application/json; charset=utf-8")
+            @Assert(response.header("content-length") ?? "", expected.size.toString())
+            @Assert(response.header("transfer-encoding") ?? "", "")
+            @Assert(response.body, expected)
+        } finally {
+            shutdownJsonWriterInputTestApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testJsonSeaStreamWritesBeforeLargeArrayProducerCompletes(): Unit {
+        let port = chooseJsonWriterInputStreamTestPort(1945)
+        let gate = JsonSeaStreamProducerGate()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/ctx-seajson-large", { ctx =>
+            _ = ctx.jsonSeaStream({ writer =>
+                writer.beginArray()
+                var i: Int64 = 0
+                while (i < 4) {
+                    writer.value(i)
+                    i += 1
+                }
+                while (!gate.isReleased()) {
+                    sleep(Duration.millisecond * 5)
+                }
+                while (i < 2048) {
+                    writer.value(i)
+                    i += 1
+                }
+                writer.endArray()
+                gate.markFinished()
+            }, bufferLimit: 64)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            let socket = connectJsonWriterInputSocket(port)
+            try {
+                socket.readTimeout = Some(Duration.second * 2)
+                socket.write(
+                    "GET /ctx-seajson-large HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n".toArray()
+                )
+                let firstWire = readJsonWriterInputSocketUntil(socket, "[0,1,2,3", Duration.second)
+                @Assert(indexOfJsonWriterInputText(firstWire, "HTTP/1.1 200 OK") >= 0, true)
+                @Assert(indexOfJsonWriterInputText(firstWire, "transfer-encoding: chunked") >= 0, true)
+                @Assert(indexOfJsonWriterInputText(firstWire, "[0,1,2,3") >= 0, true)
+                @Assert(gate.isFinished(), false)
+
+                gate.release()
+                let remainingWire = readJsonWriterInputSocketToClose(socket)
+                let response = parseJsonWriterInputRawHttpResponse(firstWire + remainingWire)
+                let body = decodeJsonWriterInputChunkedBody(response.body)
+                @Assert(body.startsWith("[0,1,2,3,4"), true)
+                @Assert(body.endsWith("2046,2047]"), true)
+                @Assert(gate.isFinished(), true)
+            } finally {
+                gate.release()
+                if (!socket.isClosed()) {
+                    socket.close()
+                }
+            }
+        } finally {
+            gate.release()
+            shutdownJsonWriterInputTestApp(app, serverFuture)
+        }
+    }
+}
+
 /// Focused proof for the current stdx-backed `SeaJson-Bridge` first cut.
 ///
 /// This suite keeps two truths honest:
@@ -437,6 +560,58 @@ func sendRawJsonWriterInputHttp(
         }
     }
     throw Exception("failed to connect json writer input test server: ${port} ${target}")
+}
+
+func connectJsonWriterInputSocket(port: UInt16): TcpSocket {
+    var attempt: Int64 = 0
+    while (attempt < 20) {
+        let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+        try {
+            socket.connect()
+            return socket
+        } catch (_: Exception) {
+            if (!socket.isClosed()) {
+                socket.close()
+            }
+            if (attempt == 19) {
+                throw Exception("failed to connect json writer input test server: ${port}")
+            }
+            sleep(Duration.millisecond * 50)
+            attempt += 1
+        }
+    }
+    throw Exception("failed to connect json writer input test server: ${port}")
+}
+
+func readJsonWriterInputSocketUntil(
+    socket: TcpSocket,
+    target: String,
+    timeout: Duration
+): String {
+    socket.readTimeout = Some(timeout)
+    let buf = Array<UInt8>(4096, repeat: 0)
+    var raw = ""
+    while (indexOfJsonWriterInputText(raw, target) < 0) {
+        let n = socket.read(buf)
+        if (n <= 0) {
+            break
+        }
+        raw += String.fromUtf8(buf[..n])
+    }
+    raw
+}
+
+func readJsonWriterInputSocketToClose(socket: TcpSocket): String {
+    let buf = Array<UInt8>(4096, repeat: 0)
+    var raw = ""
+    while (true) {
+        let n = socket.read(buf)
+        if (n <= 0) {
+            break
+        }
+        raw += String.fromUtf8(buf[..n])
+    }
+    raw
 }
 
 func doSendRawJsonWriterInputHttp(

@@ -550,6 +550,31 @@ public class Ctx {
         )
     }
 
+    /// Stream JSON through SeaJson's native writer without exposing stdx JSON types.
+    ///
+    /// The producer runs behind a bounded bridge and is consumed through
+    /// `sendStream(...)`, so a slow socket applies backpressure instead of forcing
+    /// the complete JSON value into memory. `jsonStream(...)` remains available as
+    /// the stdx-compatible callback surface.
+    public func jsonSeaStream(
+        writerFn: (SeaJsonWriter) -> Unit,
+        contentLength!: ?Int64 = None,
+        bufferLimit!: Int64 = 8192
+    ): Ctx {
+        setLocal("__ignite_response_kind", "json-stream")
+        let stream = JsonWriterInputStream(
+            outputProducer: { out =>
+                writeSeaJsonCallbackThroughSeaJsonBridge(out, writerFn)
+            },
+            bufferLimit: bufferLimit
+        )
+        sendStream(
+            stream,
+            contentType: "application/json; charset=utf-8",
+            contentLength: contentLength
+        )
+    }
+
     public func sendStatus(code: UInt16): Ctx {
         let msg = statusMessage(code)
         _currentRequestCarrier.setResponseStatus(code)

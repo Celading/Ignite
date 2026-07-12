@@ -3,6 +3,7 @@ package ignite
 import std.io.ByteBuffer
 import seajson.{
     JsonEncodable as SeaJsonEncodable,
+    JsonWriter as SeaJsonNativeWriter,
     JsonWriterEncodable as SeaJsonWriterEncodable,
     defaultJsonEncoder as seaJsonDefaultJsonEncoder
 }
@@ -14,6 +15,8 @@ import stdx.encoding.json.stream.{
 }
 
 public type JsonWriter = StdxJsonWriter
+/// SeaJson-owned writer surface for new incremental JSON APIs.
+public type SeaJsonWriter = SeaJsonNativeWriter
 public type JsonEncodable = SeaJsonEncodable
 public type JsonWriterEncodable = SeaJsonWriterEncodable
 public type JsonSerializable = StdxJsonSerializable
