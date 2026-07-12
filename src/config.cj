@@ -110,9 +110,10 @@ public struct Config {
     public var tlsKeyFile: String = ""
     /// 为 true 时启用 jinguiSSL TLS precheck；为 false 时仅使用 stdx TLS 构造路径（保留回退能力）。
     public var enableTlsPrecheck: Bool = true
-    /// 服务器端传输后端偏好；默认留空，保持稳定默认路径。
+    /// 服务器端传输后端偏好；留空时明文默认 native H1，TLS 在 provider 完整前回退 stdx。
+    /// `stdx-default` 可显式回滚；`native-h1` 配合 allowExperimentalServerBackend 可试用 native TLS。
     public var serverPreferredBackendHint: String = ""
-    /// 服务器端是否允许实验性后端参与选路；默认 false。
+    /// 服务器端是否允许实验性后端参与选路；当前主要用于显式启用 native TLS。
     public var allowExperimentalServerBackend: Bool = false
 
     public var allowRouteOverwrite: Bool = false

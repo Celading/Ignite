@@ -93,7 +93,7 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
-    public func testTlsConfigSelectsNativeSocketServerAndReportsMissingCertificate(): Unit {
+    public func testTlsConfigCanOptIntoNativeSocketServerAndReportsMissingCertificate(): Unit {
         let app = App(config: Config(
             enableNetworkChangeNotice: false,
             tlsCertFile: "missing-native-h1-cert.pem",
@@ -107,7 +107,7 @@ public class ServerEngineAbstractionTestSuite {
         match (app.lastServerTransportTouchpoint()) {
             case Some(touchpoint) =>
                 @Assert(touchpoint.selectedBackend, "ignite-socket-server-shell")
-                @Assert(touchpoint.publicPath, "native-h1-tls-default")
+                @Assert(touchpoint.publicPath, "native-h1-tls-opt-in")
             case None => @Fail("expected native TLS transport touchpoint")
         }
         match (app.lastServerStartupObserveEvent()) {

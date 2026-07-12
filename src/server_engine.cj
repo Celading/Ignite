@@ -75703,11 +75703,14 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             _selectionLabel == "default-cleartext" ||
             _selectionLabel == "default-tls"
         let tlsDefaultSelected = _selectionLabel == "default-tls"
+        let tlsOptInSelected = _selectionLabel == "config-opt-in-tls"
         buildServerEngineOverrideTouchpoint(
             baseTouchpoint,
             "ignite-socket-server-shell",
             if (tlsDefaultSelected) {
                 "native_h1_tls_default_selected"
+            } else if (tlsOptInSelected) {
+                "native_h1_tls_opt_in_selected"
             } else if (defaultSelected) {
                 "native_h1_default_selected"
             } else {
@@ -75715,6 +75718,8 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             },
             if (tlsDefaultSelected) {
                 "native-h1-tls-default"
+            } else if (tlsOptInSelected) {
+                "native-h1-tls-opt-in"
             } else if (defaultSelected) {
                 "native-h1-default"
             } else {
@@ -75727,6 +75732,8 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             },
             if (tlsDefaultSelected) {
                 "tls_h1_default_native"
+            } else if (tlsOptInSelected) {
+                "tls_h1_experimental_opt_in"
             } else if (defaultSelected) {
                 "cleartext_h1_default_native"
             } else {

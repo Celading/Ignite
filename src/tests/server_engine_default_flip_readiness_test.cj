@@ -1531,7 +1531,7 @@ public class ServerEngineDefaultFlipReadinessTestSuite {
     }
 
     @TestCase
-    public func testAppServerEngineSelectionPolicyDefaultsTlsConfigToNativeShell(): Unit {
+    public func testAppServerEngineSelectionPolicyDefaultsTlsConfigToStdxFallback(): Unit {
         let decision = buildAppServerEngineSelectionPolicyDecision(
             Config(
                 tlsCertFile: "cert.pem",
@@ -1541,12 +1541,34 @@ public class ServerEngineDefaultFlipReadinessTestSuite {
         )
 
         @Assert(decision.tlsConfigured, true)
+        @Assert(decision.nativeSocketShellSelected, false)
+        @Assert(decision.stdxRollbackSelected, true)
+        @Assert(decision.tlsDefaultSelected, false)
+        @Assert(decision.selectionLabel, "tls-stdx-fallback")
+        @Assert(decision.selectedEngineId, "stdx-http-server")
+        @Assert(decision.selectedReason, "tls-provider-gap-default-stdx")
+    }
+
+    @TestCase
+    public func testAppServerEngineSelectionPolicyAllowsExplicitNativeTlsOptIn(): Unit {
+        let decision = buildAppServerEngineSelectionPolicyDecision(
+            Config(
+                tlsCertFile: "cert.pem",
+                tlsKeyFile: "key.pem",
+                enableNetworkChangeNotice: false,
+                serverPreferredBackendHint: "native-h1",
+                allowExperimentalServerBackend: true
+            )
+        )
+
+        @Assert(decision.tlsConfigured, true)
         @Assert(decision.nativeSocketShellSelected, true)
         @Assert(decision.stdxRollbackSelected, false)
-        @Assert(decision.tlsDefaultSelected, true)
-        @Assert(decision.selectionLabel, "default-tls")
+        @Assert(decision.tlsDefaultSelected, false)
+        @Assert(decision.configOptInSelected, true)
+        @Assert(decision.selectionLabel, "config-opt-in-tls")
         @Assert(decision.selectedEngineId, "ignite-native-h1")
-        @Assert(decision.selectedReason, "tls-config-default-native")
+        @Assert(decision.selectedReason, "explicit-native-h1-tls-backend-hint")
     }
 
     @TestCase

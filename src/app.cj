@@ -84,15 +84,31 @@ public func buildAppServerEngineSelectionPolicyDecision(
         )
     }
     if (tlsConfigured) {
+        if (
+            config.allowExperimentalServerBackend &&
+            isAppNativeH1ServerBackendHint(hint)
+        ) {
+            return AppServerEngineSelectionPolicyDecision(
+                "ignite-native-h1",
+                "config-opt-in-tls",
+                "explicit-native-h1-tls-backend-hint",
+                true,
+                true,
+                false,
+                false,
+                false,
+                true
+            )
+        }
         return AppServerEngineSelectionPolicyDecision(
-            "ignite-native-h1",
-            "default-tls",
-            "tls-config-default-native",
+            "stdx-http-server",
+            "tls-stdx-fallback",
+            "tls-provider-gap-default-stdx",
             true,
+            false,
             true,
             false,
             false,
-            true,
             false
         )
     }
