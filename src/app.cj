@@ -279,14 +279,16 @@ public class App {
         } else {
             prefix + "/*"
         }
-        router.addRoute("GET", catchAllPath, wrapSingle({ ctx: Ctx =>
+        let handler: Handler = { ctx: Ctx =>
             let filePath = ctx.params("*")
             if (let Some(fullPath) <- resolveStaticAssetPath(rootDir, filePath)) {
                 sendNegotiatedStaticAsset(ctx, fullPath)
             } else {
                 ctx.sendStatus(404)
             }
-        }))
+        }
+        router.addRoute("GET", catchAllPath, wrapSingle(handler))
+        router.addRoute("HEAD", catchAllPath, wrapSingle(handler))
         this
     }
 

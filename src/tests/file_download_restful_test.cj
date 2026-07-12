@@ -90,6 +90,17 @@ public class FileDownloadAndRestfulTestSuite {
             @Assert(asset.header("content-type") ?? "", "application/javascript; charset=utf-8")
             @Assert(asset.body, "brotli-app-static")
 
+            let assetHead = sendRawDownloadWithRetry(
+                port,
+                "HEAD",
+                "/assets/app.js",
+                headers: [("accept-encoding", "br")]
+            )
+            @Assert(assetHead.status, UInt16(200))
+            @Assert(assetHead.header("content-encoding") ?? "", "br")
+            @Assert(assetHead.header("content-length") ?? "", "17")
+            @Assert(assetHead.body, "")
+
             let spa = sendRawDownloadWithRetry(
                 port,
                 "GET",
