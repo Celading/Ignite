@@ -25,8 +25,8 @@ Run commands from the repository root that contains `cjpm.toml`.
 5. `manual/samples/ignitekit`
    - Lightweight HTML / CSS composition with `IgniteKit`
 6. `manual/samples/h2wire`
-   - Local H2 on-wire smoke for `ctx.writer()` and large-file return
-   - Includes an isolated TLS guard step so current stdx startup aborts are captured as reproducible blockers instead of only crashing the sample service
+   - 0800 native H2 preview and retained TLS/ALPN compatibility smoke
+   - Keeps the legacy/default TLS guard separate from native H2 cleartext wire proofs
 7. `manual/samples/handlefortest`
    - Multi-process stress probe for `App.handleForTest(...)`
    - Reuses one shared lease root so cross-process port planning can be exercised from files alone
@@ -36,9 +36,9 @@ Run commands from the repository root that contains `cjpm.toml`.
 - If your immediate need is `H1`, prefer:
   - `hello -> api -> client -> files`
 - If your immediate need is `H2`, prefer:
-  - `h2wire` as a guarded smoke path
-  - treat guard logs and blocker wording as truth
-  - do not treat the current H2 sample as full green conformance
+  - `h2wire` as a preview and diagnostic path
+  - treat guard logs, native fixture results, and blocker wording as separate evidence
+  - do not treat the current H2 sample as browser or full h2spec conformance
 
 ## Additional samples
 

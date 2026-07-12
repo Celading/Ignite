@@ -1,10 +1,12 @@
 # Ignite Sample: h2wire
 
-最小 H2 on-wire smoke 样例，专门用来验证两件事：
+Ignite 0800 的 H2 preview / compatibility smoke，分开验证三类事实：
 
-- `ctx.writer()` 在 TLS + ALPN 的 H2 路径下可以多次写出响应体
-- `sendFile(...)` 的大文件返回在 H2 路径下不依赖 `Transfer-Encoding`
-- 一旦本地 TLS/provider 路线稳定下来，可以直接挂上 `h2spec` 做额外 conformance smoke
+- 默认 TLS + ALPN compatibility 路径下的 `ctx.writer()` / `sendFile(...)`
+- IgniteNEXT native H2 的 flow-control、生命周期与 raw-wire fixtures
+- provider 稳定后可继续使用的 `h2spec` smoke 工位
+
+它不是浏览器兼容性证书。native H2 的准确公开边界见 [`../../docs-md/ig0800-preview.md`](../../docs-md/ig0800-preview.md)。
 
 ## 运行服务
 

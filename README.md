@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.7.3-blue?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.0-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.7.3</span>                      │
+│                   <span style="color:#88C0D0;">Ignite v0.8.0</span>                      │
 │   <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>    │
 │                                                       │
 │   Touchpoints .......... 16   Processes .......... 1  │
 │   Prefork ......... Disabled   PID .......... 67271   │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.7.3</i></span>  │
+│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.8.0</i></span>  │
 └───────────────────────────────────────────────────────┘
 </pre>
 <span style="font-weight:300;font-size:38px">Ignite / 叶燧</span><br/>
@@ -38,12 +38,15 @@
 我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
 因此我们取 **“叶”** 之灵动，取 **“燧”** 之开创，命名它为 **叶燧 (Ignite)**。
 
-## 当前状态（0.7.3）
+## 当前状态（0.8.0 Preview）
 
-- `0700` 现在是当前公开/治理主线，重点不再只是“继续堆能力”，而是把现有能力压成更容易交接、验收和云端恢复的 truth lane。
-- `H1` 是当前最成熟的 intake 方向：`hello / api / client / files` 这几条公开样例路径已经足够支撑 first-run 与常见 payload/stream/client 联调。
-- `H2` 现在仍是 `guarded intake`：有 smoke、guard、writer/sendStream honest wording，但不应被讲成已经 fully green 的 commodity lane。
-- 自研 `server-socket` runway 已经有了 parser/session/body/writer/runtime experiment proof ladder，但它仍是 experiment/runway truth，不是默认 public engine 切换承诺。
+- 明文 HTTP/1.1 默认进入 Ignite native H1，保留 `stdx-default` 显式回滚入口。
+- 原生 H1 Client、WebSocket、SSE、流式响应与请求体上限已经进入真实 socket 回归面。
+- 原生 H2 Server/Client 已具备受限多路复用、流控恢复和生命周期切片，但仍是显式 preview，不宣称浏览器/h2spec 全兼容。
+- HTTPS 默认继续使用稳定的 stdx TLS 路径；JinguiSSL native TLS/ALPN 仍需显式实验开关。
+- SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径；传统 `ctx.json(String)` 仍是完整字符串响应。
+
+完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。
 
 ```
     ┌─────────────────────────────────────────┐

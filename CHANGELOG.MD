@@ -1,5 +1,22 @@
 # Ignite Changelog
 
+## Ignite `0800`
+> 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
+
+### v0.8.0 `Ignite Preview`
+
+- `+特性` 明文服务端默认进入 Ignite native H1，保留 `serverPreferredBackendHint: "stdx-default"` 回滚入口
+- `+特性` 原生 H1 Client 已覆盖连接复用、流式请求/响应、超时、重定向和真实 client/server loopback
+- `+特性` 原生 H2 Server/Client 已形成受限多路复用、双层流控、非丢帧队列、RST/GOAWAY/timeout/peer-close 生命周期切片
+- `+特性` 原生 H1 WebSocket 与 SSE 已进入真实 wire 回归；H2 extended CONNECT 不在本版承诺内
+- `+特性` SeaJson `JsonWriterEncodable` 与 `SeaJsonWriter` 支持通过 OutputStream 增量写出，避免所有 JSON API 都被固定为完整字符串缓冲
+- `+特性` 静态资源支持预压缩 `.br` / `.zst` 协商，动态 gzip/deflate 仍保留当前 provider 边界
+- `=依赖` 发布依赖切换为 GitCode JinguiSSL Contract 与 SeaJson；clean consumer build 已验证
+- `=文档` README 三语、manual 0800 preview 专章、H2 sample 说明与独立 0800 Web 入口同步
+- `=边界` HTTPS 默认继续走稳定 stdx TLS；JinguiSSL native TLS/ALPN 仍为显式实验入口
+- `=边界` 原生 H2 尚不声明浏览器矩阵、完整 h2spec、动态 HPACK、生产 TLS 默认或 release-grade 完成
+- `=杂项` 包版本、框架版本常量与 Banner fixtures 统一到 `0.8.0`
+
 ## Ignite `0700`
 > 资产压缩、协同治理、H1/H2 truth 收口
 

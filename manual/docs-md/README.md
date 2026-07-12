@@ -1,22 +1,24 @@
 # Ignite Docs MD
 
-这里是 Ignite `0700` 的中文正文主入口。
+这里是 Ignite `0800 Preview` 的中文正文主入口。
 
 根 `README.md` 负责项目门面，这个目录负责把公开能力讲清楚，后续 `docs-web` 也会直接以这里为内容源稿，而不是再重新发明一套章节结构。
 
 ## 阅读顺序
 
-1. [`Guide.md`](Guide.md)
+1. [`ig0800-preview.md`](ig0800-preview.md)
+   先确认 native H1/H2、TLS 回滚、SeaJson 流式 JSON 与未完成边界。
+2. [`Guide.md`](Guide.md)
    先理解 Ignite 是什么、适合什么项目、如何接依赖、如何首跑、常见问题怎么排。
-2. [`api.md`](api.md)
+3. [`api.md`](api.md)
    再看核心对象、路由注册、配置对象、请求绑定、命名路由与进程内测试。
-3. [`middleware.md`](middleware.md)
+4. [`middleware.md`](middleware.md)
    接着了解安全、治理、流量控制、缓存压缩与中间件组合方式。
-4. [`client.md`](client.md)
+5. [`client.md`](client.md)
    如果你需要服务端和调用端一起协作，这一页解释 `RestClient` 与 Builder 模式。
-5. [`advanced.md`](advanced.md)
+6. [`advanced.md`](advanced.md)
    放高级能力与部署边界，例如 WebSocket、SSE、静态托管、Swagger、TLS、优雅关闭。
-6. [`addon.md`](addon.md)
+7. [`addon.md`](addon.md)
    最后看项目结构、平台矩阵、生态入口与参与方式。
 
 ## 适合哪些读者

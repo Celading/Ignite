@@ -1,5 +1,22 @@
 # Ignite Changelog
 
+## Ignite `0800`
+> Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
+
+### v0.8.0 `Ignite Preview`
+
+- `+Feature` Cleartext servers default to Ignite native H1 while preserving `serverPreferredBackendHint: "stdx-default"` rollback
+- `+Feature` The native H1 client covers connection reuse, streamed request/response bodies, timeouts, redirects, and real client/server loopback
+- `+Feature` Native H2 server/client provide bounded multiplexing, dual-window flow control, non-dropping DATA queues, and RST/GOAWAY/timeout/peer-close lifecycle slices
+- `+Feature` Native H1 WebSocket and SSE have real wire regressions; H2 extended CONNECT remains outside this release
+- `+Feature` SeaJson `JsonWriterEncodable` and `SeaJsonWriter` can serialize incrementally through OutputStream instead of forcing every JSON API through a complete String
+- `+Feature` Static assets support precompressed `.br` / `.zst` selection; dynamic gzip/deflate retain the current provider boundary
+- `=Dependency` Release dependencies now consume hosted GitCode JinguiSSL Contract and SeaJson, verified by a clean consumer build
+- `=Docs` Trilingual README, the 0800 manual preview, H2 sample guidance, and a dedicated 0800 web entry are synchronized
+- `=Boundary` HTTPS keeps the stable stdx TLS path by default; JinguiSSL native TLS/ALPN remains explicit experimental opt-in
+- `=Boundary` Native H2 does not yet claim browser-matrix, complete h2spec, dynamic HPACK, production TLS default, or release-grade closure
+- `=Misc` Package metadata, framework version constant, and banner fixtures are aligned to `0.8.0`
+
 ## Ignite `0700`
 > Asset compression, collaboration governance, and H1/H2 truth closeout
 

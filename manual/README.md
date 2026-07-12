@@ -12,7 +12,7 @@
 ## 各入口负责什么
 
 - 根 `README.md`：项目门面、价值主张、平台口径、总入口分流。
-- `manual/docs-md/`：`0500` 中文正文主入口，也是后续 `docs-web` 的内容源稿。
+- `manual/docs-md/`：`0800` 中文正文主入口，也是后续 `docs-web` 的内容源稿。
 - `manual/samples/`：可运行路径，帮助你按顺序验证 Ignite 的公开能力。
 - `CHANGELOG*`：阶段时间线、版本收口与公开变动记录。
 
@@ -21,6 +21,7 @@
 - `manual/` 只放公开面向的文档，不承接归档实验、维护者私有流程或 `_helper` 内部材料。
 - 如果公开表达和内部表达不同，以根 README、`manual/` 与 `CHANGELOG*` 为准。
 - 本目录不负责定义新的技术承诺，只负责把当前已经公开确认的能力讲清楚。
+- `0800` 的 native H1/H2、TLS 回滚与流式 JSON 边界统一从 [`docs-md/ig0800-preview.md`](docs-md/ig0800-preview.md) 进入。
 
 ## docs-md 与 docs-web 的关系
 
