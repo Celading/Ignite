@@ -207,6 +207,10 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
     if (let Some(hook) <- tlsAcceptedSessionReadyHook) {
         hook(attached.session)
     }
+    writeSocketServerEngineShellInitialTlsHandshake(
+        accepted,
+        attached.session
+    )
     let applicationProtocol = selectNativeTlsApplicationProtocol(
         attached.session.result.negotiatedAlpn
     )
@@ -256,6 +260,15 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
                 throw e
             }
         }
+    }
+}
+
+func writeSocketServerEngineShellInitialTlsHandshake(
+    socket: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession
+): Unit {
+    for (record in session.initialHandshake.records) {
+        socket.write(serverEngineByteToUInt8Array(record))
     }
 }
 

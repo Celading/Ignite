@@ -211,7 +211,8 @@ public class ServerEngineAbstractionTestSuite {
                         case None => None
                     }
                 },
-                writePauseMillis: 20
+                writePauseMillis: 20,
+                serverHandshakeRecordCount: 5
             )
         let _ = serverFuture.get(Duration.second * 5)
 
@@ -300,7 +301,8 @@ public class ServerEngineAbstractionTestSuite {
                             ))
                         case None => None
                     }
-                }
+                },
+                serverHandshakeRecordCount: 5
             )
         let _ = serverFuture.get(Duration.second * 5)
 
@@ -361,6 +363,7 @@ public class ServerEngineAbstractionTestSuite {
                 "native TLS H1 sequential turns",
                 clientChannelProbe
             )
+            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
             writeAcceptedTransportSocketWireFragments(
                 socket,
                 channel.sealFragments(
@@ -455,7 +458,8 @@ public class ServerEngineAbstractionTestSuite {
                         ))
                     case None => None
                 }
-            }
+            },
+            serverHandshakeRecordCount: 5
         )
         let _ = serverFuture.get(Duration.second * 5)
         match (clientChannelProbe.channel) {
@@ -555,6 +559,7 @@ public class ServerEngineAbstractionTestSuite {
                     "native shell TLS live ingress sequential H2 channel",
                     clientChannelProbe
                 )
+            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),
@@ -695,6 +700,7 @@ public class ServerEngineAbstractionTestSuite {
                     "native shell TLS live ingress buffered carryover H2 channel",
                     clientChannelProbe
                 )
+            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),
@@ -853,6 +859,7 @@ public class ServerEngineAbstractionTestSuite {
                     "native shell TLS live ingress malformed second H2 channel",
                     clientChannelProbe
                 )
+            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),
@@ -22065,7 +22072,8 @@ func runAcceptedTransportTlsHandshakeRequestResponseSocketSinkClient(
     clientHelloWireFragments: Array<Array<Byte>>,
     label: String,
     supplier: AcceptedTransportRequestWireFragmentsSupplier,
-    writePauseMillis!: Int64 = 10
+    writePauseMillis!: Int64 = 10,
+    serverHandshakeRecordCount!: Int64 = 0
 ): Array<UInt8> {
     let socket = TcpSocket(IPSocketAddress.parse("${host}:${port}"))
     socket.connect()
@@ -22090,6 +22098,10 @@ func runAcceptedTransportTlsHandshakeRequestResponseSocketSinkClient(
                 label,
                 supplier
             )
+        consumeAcceptedTransportInitialHandshakeRecords(
+            socket,
+            serverHandshakeRecordCount
+        )
         i = 0
         while (i < requestWireFragments.size) {
             socket.write(
@@ -22119,7 +22131,8 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
     clientHelloWireFragments: Array<Array<Byte>>,
     label: String,
     supplier: AcceptedTransportRequestWireFragmentsSupplier,
-    writePauseMillis!: Int64 = 10
+    writePauseMillis!: Int64 = 10,
+    serverHandshakeRecordCount!: Int64 = 0
 ): Array<UInt8> {
     let socket = TcpSocket(IPSocketAddress.parse("${host}:${port}"))
     socket.connect()
@@ -22134,6 +22147,10 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
                 label,
                 supplier
             )
+        consumeAcceptedTransportInitialHandshakeRecords(
+            socket,
+            serverHandshakeRecordCount
+        )
         writeAcceptedTransportSocketWireFragments(
             socket,
             requestWireFragments,
@@ -22148,6 +22165,36 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
     } finally {
         if (!socket.isClosed()) {
             socket.close()
+        }
+    }
+}
+
+func consumeAcceptedTransportInitialHandshakeRecords(
+    socket: TcpSocket,
+    recordCount: Int64
+): Unit {
+    let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
+    let buf = Array<UInt8>(256, repeat: 0)
+    var consumed: Int64 = 0
+    while (consumed < recordCount) {
+        let n = socket.read(buf)
+        if (n <= 0) {
+            throw Exception(
+                "accepted transport socket ended before initial TLS handshake flight"
+            )
+        }
+        accumulator.append(serverEngineAbstractionTestByteArray(buf[..n]))
+        let records = accumulator.drainCompleteRecords()
+        for (record in records) {
+            @Assert(consumed < recordCount, true)
+            @Assert(record.size >= 5, true)
+            let expectedOuterType = if (consumed == 0) {
+                UInt8(22)
+            } else {
+                UInt8(23)
+            }
+            @Assert(UInt8(record[0]), expectedOuterType)
+            consumed += 1
         }
     }
 }
