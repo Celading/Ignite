@@ -28,7 +28,7 @@ public class SseResponseTestSuite {
             @Assert(resp.status, UInt16(200))
             @Assert(resp.header("content-type") ?? "", "text/event-stream")
             @Assert(resp.header("cache-control") ?? "", "no-cache")
-            @Assert(headerHasSseToken(resp.header("connection") ?? "", "keep-alive"), true)
+            @Assert(headerHasSseToken(resp.header("connection") ?? "", "close"), true)
             @Assert(resp.header("transfer-encoding") ?? "", "chunked")
             @Assert(resp.header("x-accel-buffering") ?? "", "no")
             @Assert(containsSseText(body, "retry: 3000\n\n"), true)
