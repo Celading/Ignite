@@ -3,10 +3,13 @@ package ignite
 import jinguissl.contract.{HashAlgorithm, contractHash}
 import std.collection.ArrayList
 import std.net.TcpSocket
-import stdx.net.http.WebSocketFrameType
 
 let NATIVE_WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 let NATIVE_WEBSOCKET_MAX_MESSAGE_BYTES: Int64 = 1024 * 1024
+
+class NativeWebSocketProtocolException <: Exception {
+    init(message: String) { super(message) }
+}
 
 class NativeWebSocketConnection {
     let socket: TcpSocket
@@ -24,48 +27,69 @@ class NativeWebSocketConnection {
 
     func readMessage(): WsMessage {
         let data = ArrayList<UInt8>()
-        var messageType = WebSocketFrameType.TextWebFrame
+        var messageType = WsMessageType.Text
         var started = false
-        while (true) {
-            let frame = readNativeWebSocketFrame(socket)
-            match (frame.opcode) {
-                case 0 =>
-                    if (!started) {
-                        throw Exception("native WebSocket continuation arrived before a data frame")
-                    }
-                    appendNativeWebSocketPayload(data, frame.payload)
-                    if (frame.fin) {
-                        return WsMessage(messageType: messageType, data: data.toArray())
-                    }
-                case 1 =>
-                    if (started) {
-                        throw Exception("native WebSocket received a new text frame before continuation completed")
-                    }
-                    started = true
-                    messageType = WebSocketFrameType.TextWebFrame
-                    appendNativeWebSocketPayload(data, frame.payload)
-                    if (frame.fin) {
-                        return WsMessage(messageType: messageType, data: data.toArray())
-                    }
-                case 2 =>
-                    if (started) {
-                        throw Exception("native WebSocket received a new binary frame before continuation completed")
-                    }
-                    started = true
-                    messageType = WebSocketFrameType.BinaryWebFrame
-                    appendNativeWebSocketPayload(data, frame.payload)
-                    if (frame.fin) {
-                        return WsMessage(messageType: messageType, data: data.toArray())
-                    }
-                case 8 =>
-                    closed = true
-                    return WsMessage(messageType: WebSocketFrameType.CloseWebFrame, data: frame.payload)
-                case 9 => writeNativeWebSocketFrame(socket, 10, frame.payload)
-                case 10 => ()
-                case _ => throw Exception("native WebSocket received unsupported opcode ${frame.opcode}")
+        try {
+            while (true) {
+                let frame = readNativeWebSocketFrame(socket)
+                match (frame.opcode) {
+                    case 0 =>
+                        if (!started) {
+                            throw NativeWebSocketProtocolException(
+                                "native WebSocket continuation arrived before a data frame"
+                            )
+                        }
+                        appendNativeWebSocketPayload(data, frame.payload)
+                        if (frame.fin) {
+                            return WsMessage(messageType: messageType, data: data.toArray())
+                        }
+                    case 1 =>
+                        if (started) {
+                            throw NativeWebSocketProtocolException(
+                                "native WebSocket received a new text frame before continuation completed"
+                            )
+                        }
+                        started = true
+                        messageType = WsMessageType.Text
+                        appendNativeWebSocketPayload(data, frame.payload)
+                        if (frame.fin) {
+                            return WsMessage(messageType: messageType, data: data.toArray())
+                        }
+                    case 2 =>
+                        if (started) {
+                            throw NativeWebSocketProtocolException(
+                                "native WebSocket received a new binary frame before continuation completed"
+                            )
+                        }
+                        started = true
+                        messageType = WsMessageType.Binary
+                        appendNativeWebSocketPayload(data, frame.payload)
+                        if (frame.fin) {
+                            return WsMessage(messageType: messageType, data: data.toArray())
+                        }
+                    case 8 =>
+                        echoNativeWebSocketClose(frame.payload)
+                        return WsMessage(messageType: WsMessageType.Close, data: frame.payload)
+                    case 9 => writeNativeWebSocketFrame(socket, 10, frame.payload)
+                    case 10 => ()
+                    case _ => throw NativeWebSocketProtocolException(
+                        "native WebSocket received unsupported opcode ${frame.opcode}"
+                    )
+                }
             }
+        } catch (e: NativeWebSocketProtocolException) {
+            close(1002, "protocol error")
+            throw e
         }
         throw Exception("native WebSocket read loop ended unexpectedly")
+    }
+
+    func echoNativeWebSocketClose(payload: Array<UInt8>): Unit {
+        if (!closed && !socket.isClosed()) {
+            writeNativeWebSocketFrame(socket, 8, payload)
+        }
+        closed = true
+        if (!socket.isClosed()) { socket.close() }
     }
 
     func writeText(text: String): Unit {
@@ -169,7 +193,7 @@ func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
     let opcode = Int64(head[0]) & 0x0F
     let masked = (Int64(head[1]) & 0x80) != 0
     if (!masked) {
-        throw Exception("native WebSocket client frame must be masked")
+        throw NativeWebSocketProtocolException("native WebSocket client frame must be masked")
     }
     var payloadLength = Int64(head[1]) & 0x7F
     if (payloadLength == 126) {
@@ -178,16 +202,20 @@ func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
     } else if (payloadLength == 127) {
         let ext = readNativeWebSocketExact(socket, 8)
         if ((Int64(ext[0]) & 0x80) != 0) {
-            throw Exception("native WebSocket payload length exceeds signed 63-bit range")
+            throw NativeWebSocketProtocolException(
+                "native WebSocket payload length exceeds signed 63-bit range"
+            )
         }
         payloadLength = 0
         for (b in ext) { payloadLength = (payloadLength << 8) | Int64(b) }
     }
     if (payloadLength > NATIVE_WEBSOCKET_MAX_MESSAGE_BYTES) {
-        throw Exception("native WebSocket frame exceeds bounded message limit")
+        throw NativeWebSocketProtocolException("native WebSocket frame exceeds bounded message limit")
     }
     if (opcode >= 8 && (!fin || payloadLength > 125)) {
-        throw Exception("native WebSocket control frame must be final and at most 125 bytes")
+        throw NativeWebSocketProtocolException(
+            "native WebSocket control frame must be final and at most 125 bytes"
+        )
     }
     let mask = readNativeWebSocketExact(socket, 4)
     let payload = readNativeWebSocketExact(socket, payloadLength)

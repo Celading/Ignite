@@ -53,6 +53,60 @@ public class NativeWebSocketTestSuite {
             }
         }
     }
+
+    @TestCase
+    public func testNativeH1WebSocketPingPongAndCloseOnRealSocket(): Unit {
+        let port = chooseNativeWebSocketPort(1943)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws("/native-ws-control", { conn =>
+            let message = conn.readMessage()
+            conn.writeText("control:" + message.text())
+            conn.close(status: 1000, reason: "done")
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(socket, port, "/native-ws-control")
+            let _ = readNativeWebSocketResponseHead(socket)
+
+            socket.write(maskedNativeWebSocketFrame(9, "ping".toArray()))
+            let pong = readNativeWebSocketServerFrame(socket)
+            @Assert(pong.opcode, Int64(10))
+            @Assert(String.fromUtf8(pong.payload), "ping")
+
+            socket.write(maskedNativeWebSocketTextFrame("next"))
+            let text = readNativeWebSocketServerFrame(socket)
+            @Assert(text.opcode, Int64(1))
+            @Assert(String.fromUtf8(text.payload), "control:next")
+
+            let close = readNativeWebSocketServerFrame(socket)
+            @Assert(close.opcode, Int64(8))
+            @Assert(nativeWebSocketTestCloseCode(close.payload), UInt16(1000))
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsUnmaskedClientFrameWithProtocolClose(): Unit {
+        let port = chooseNativeWebSocketPort(1957)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws("/native-ws-invalid", { conn =>
+            let _ = conn.readMessage()
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(socket, port, "/native-ws-invalid")
+            let _ = readNativeWebSocketResponseHead(socket)
+            socket.write([UInt8(0x81), UInt8(0x01), UInt8(0x78)])
+            let close = readNativeWebSocketServerFrame(socket)
+            @Assert(close.opcode, Int64(8))
+            @Assert(nativeWebSocketTestCloseCode(close.payload), UInt16(1002))
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
 }
 
 struct NativeWebSocketTestFrame {
@@ -99,10 +153,13 @@ func readNativeWebSocketResponseHead(socket: TcpSocket): String {
 }
 
 func maskedNativeWebSocketTextFrame(text: String): Array<UInt8> {
-    let payload = text.toArray()
+    maskedNativeWebSocketFrame(1, text.toArray())
+}
+
+func maskedNativeWebSocketFrame(opcode: Int64, payload: Array<UInt8>): Array<UInt8> {
     let mask = [UInt8(0x37), UInt8(0xFA), UInt8(0x21), UInt8(0x3D)]
     let out = Array<UInt8>(payload.size + 6, repeat: 0)
-    out[0] = UInt8(0x81)
+    out[0] = UInt8(0x80 | opcode)
     out[1] = UInt8(0x80 | payload.size)
     var i: Int64 = 0
     while (i < 4) { out[i + 2] = mask[i]; i += 1 }
@@ -112,6 +169,32 @@ func maskedNativeWebSocketTextFrame(text: String): Array<UInt8> {
         i += 1
     }
     out
+}
+
+func writeNativeWebSocketUpgradeRequest(socket: TcpSocket, port: UInt16, path: String): Unit {
+    socket.write(
+        ("GET ${path} HTTP/1.1\r\n" +
+        "Host: 127.0.0.1:${port}\r\n" +
+        "Upgrade: websocket\r\n" +
+        "Connection: Upgrade\r\n" +
+        "Sec-WebSocket-Version: 13\r\n" +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n").toArray()
+    )
+}
+
+func nativeWebSocketTestCloseCode(payload: Array<UInt8>): UInt16 {
+    if (payload.size < 2) { throw Exception("native WebSocket close payload is missing status") }
+    UInt16((Int64(payload[0]) << 8) | Int64(payload[1]))
+}
+
+func closeNativeWebSocketTest(socket: TcpSocket, app: App, future: Future<Unit>): Unit {
+    if (!socket.isClosed()) { socket.close() }
+    app.shutdown()
+    try {
+        let _ = future.get(Duration.second * 1)
+    } catch (_: Exception) {
+        future.cancel()
+    }
 }
 
 func readNativeWebSocketServerFrame(socket: TcpSocket): NativeWebSocketTestFrame {

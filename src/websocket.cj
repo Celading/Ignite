@@ -5,6 +5,12 @@ import std.collection.ArrayList
 
 public type WsHandler = (WsConn) -> Unit
 
+public enum WsMessageType {
+    Text |
+    Binary |
+    Close
+}
+
 interface NativeWebSocketUpgradeCarrier {
     func upgradeNativeWebSocket(): WsConn
 }
@@ -29,19 +35,23 @@ public class WsConn {
         }
         let ws = _ws ?? throw Exception("WebSocket connection backend is unavailable")
         let data = ArrayList<UInt8>()
-        var msgType = WebSocketFrameType.TextWebFrame
+        var msgType = WsMessageType.Text
         while (true) {
             let frame = ws.read()
             match (frame.frameType) {
                 case TextWebFrame | BinaryWebFrame =>
-                    msgType = frame.frameType
+                    msgType = if (frame.frameType == WebSocketFrameType.TextWebFrame) {
+                        WsMessageType.Text
+                    } else {
+                        WsMessageType.Binary
+                    }
                     for (b in frame.payload) { data.add(b) }
                     if (frame.fin) { break }
                 case ContinuationWebFrame =>
                     for (b in frame.payload) { data.add(b) }
                     if (frame.fin) { break }
                 case CloseWebFrame =>
-                    return WsMessage(messageType: WebSocketFrameType.CloseWebFrame, data: frame.payload)
+                    return WsMessage(messageType: WsMessageType.Close, data: frame.payload)
                 case PingWebFrame =>
                     ws.writePongFrame(frame.payload)
                 case _ => ()
@@ -98,11 +108,21 @@ public class WsConn {
 }
 
 public struct WsMessage {
-    public let messageType: WebSocketFrameType
+    public let messageType: WsMessageType
     public let data: Array<UInt8>
 
-    public init(messageType!: WebSocketFrameType, data!: Array<UInt8>) {
+    public init(messageType!: WsMessageType, data!: Array<UInt8>) {
         this.messageType = messageType
+        this.data = data
+    }
+
+    public init(messageType!: WebSocketFrameType, data!: Array<UInt8>) {
+        this.messageType = match (messageType) {
+            case TextWebFrame => WsMessageType.Text
+            case BinaryWebFrame => WsMessageType.Binary
+            case CloseWebFrame => WsMessageType.Close
+            case _ => WsMessageType.Binary
+        }
         this.data = data
     }
 
@@ -111,14 +131,29 @@ public struct WsMessage {
     }
 
     public prop isClose: Bool {
-        get() { messageType == WebSocketFrameType.CloseWebFrame }
+        get() {
+            match (messageType) {
+                case Close => true
+                case _ => false
+            }
+        }
     }
 
     public prop isText: Bool {
-        get() { messageType == WebSocketFrameType.TextWebFrame }
+        get() {
+            match (messageType) {
+                case Text => true
+                case _ => false
+            }
+        }
     }
 
     public prop isBinary: Bool {
-        get() { messageType == WebSocketFrameType.BinaryWebFrame }
+        get() {
+            match (messageType) {
+                case Binary => true
+                case _ => false
+            }
+        }
     }
 }
