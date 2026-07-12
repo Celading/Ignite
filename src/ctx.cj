@@ -867,10 +867,18 @@ public class Ctx {
     public func upgradeWebSocket(): WsConn {
         _responded = true
         if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket()
+            return nativeCarrier.upgradeNativeWebSocket([])
         }
         let ws = _currentRequestCarrier.upgradeWebSocketRaw()
         WsConn(ws)
+    }
+
+    public func upgradeWebSocketWithSubProtocols(subProtocols: Array<String>): WsConn {
+        _responded = true
+        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
+            return nativeCarrier.upgradeNativeWebSocket(subProtocols)
+        }
+        upgradeStdxWebSocketWithSubProtocols(_currentRequestCarrier, subProtocols)
     }
 
     // ── Internal HttpContext access ──

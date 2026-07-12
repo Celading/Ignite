@@ -157,6 +157,41 @@ public class NativeWebSocketTestSuite {
             closeNativeWebSocketTest(socket, app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testNativeH1WebSocketSelectsAllowedSubProtocolByClientPreference(): Unit {
+        let port = chooseNativeWebSocketPort(1999)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws("/native-ws-protocol", ["chat.v2", "chat.v1"], { conn =>
+            let _ = conn.readMessage()
+            conn.writeText(conn.subProtocol)
+            conn.close()
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(
+                socket,
+                port,
+                "/native-ws-protocol",
+                subProtocols: "unknown, chat.v1, chat.v2"
+            )
+            let responseHead = readNativeWebSocketResponseHead(socket)
+            @Assert(
+                nativeWebSocketTestContains(
+                    responseHead,
+                    "Sec-WebSocket-Protocol: chat.v1\r\n"
+                ),
+                true
+            )
+            socket.write(maskedNativeWebSocketTextFrame("ready"))
+            let text = readNativeWebSocketServerFrame(socket)
+            @Assert(text.opcode, Int64(1))
+            @Assert(String.fromUtf8(text.payload), "chat.v1")
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
 }
 
 struct NativeWebSocketTestFrame {
@@ -225,14 +260,25 @@ func maskedNativeWebSocketFrame(
     out
 }
 
-func writeNativeWebSocketUpgradeRequest(socket: TcpSocket, port: UInt16, path: String): Unit {
+func writeNativeWebSocketUpgradeRequest(
+    socket: TcpSocket,
+    port: UInt16,
+    path: String,
+    subProtocols!: String = ""
+): Unit {
+    let protocolHeader = if (subProtocols.size > 0) {
+        "Sec-WebSocket-Protocol: ${subProtocols}\r\n"
+    } else {
+        ""
+    }
     socket.write(
         ("GET ${path} HTTP/1.1\r\n" +
         "Host: 127.0.0.1:${port}\r\n" +
         "Upgrade: websocket\r\n" +
         "Connection: Upgrade\r\n" +
         "Sec-WebSocket-Version: 13\r\n" +
-        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n").toArray()
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+        protocolHeader + "\r\n").toArray()
     )
 }
 

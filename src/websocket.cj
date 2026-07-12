@@ -12,7 +12,16 @@ public enum WsMessageType {
 }
 
 interface NativeWebSocketUpgradeCarrier {
-    func upgradeNativeWebSocket(): WsConn
+    func upgradeNativeWebSocket(subProtocols: Array<String>): WsConn
+}
+
+func upgradeStdxWebSocketWithSubProtocols(
+    carrier: CurrentRequestCarrier,
+    subProtocols: Array<String>
+): WsConn {
+    let allowed = ArrayList<String>()
+    for (protocol in subProtocols) { allowed.add(protocol) }
+    WsConn(WebSocket.upgradeFromServer(carrier.rawHttpContext(), subProtocols: allowed))
 }
 
 public class WsConn {

@@ -156,7 +156,9 @@ func openNativeWebSocketConnection(
     connectionHeader: String,
     upgradeHeader: String,
     websocketVersion: String,
-    websocketKey: String
+    websocketKey: String,
+    offeredSubProtocols: String,
+    allowedSubProtocols: Array<String>
 ): NativeWebSocketConnection {
     if (method.trimAscii().toAsciiUpper() != "GET") {
         throw Exception("native WebSocket upgrade requires GET")
@@ -179,13 +181,39 @@ func openNativeWebSocketConnection(
     }
     let digest = contractHash(HashAlgorithm.SHA1, (key + NATIVE_WEBSOCKET_GUID).toArray())
     let accept = encodeNativeWebSocketBase64(nativeWebSocketUInt8Array(digest))
+    let selectedSubProtocol = selectNativeWebSocketSubProtocol(
+        offeredSubProtocols,
+        allowedSubProtocols
+    )
+    let protocolHeader = if (selectedSubProtocol.size > 0) {
+        "Sec-WebSocket-Protocol: ${selectedSubProtocol}\r\n"
+    } else {
+        ""
+    }
     socket.write(
         ("HTTP/1.1 101 Switching Protocols\r\n" +
         "Upgrade: websocket\r\n" +
         "Connection: Upgrade\r\n" +
-        "Sec-WebSocket-Accept: ${accept}\r\n\r\n").toArray()
+        "Sec-WebSocket-Accept: ${accept}\r\n" +
+        protocolHeader + "\r\n").toArray()
     )
-    NativeWebSocketConnection(socket)
+    NativeWebSocketConnection(socket, selectedSubProtocol: selectedSubProtocol)
+}
+
+func selectNativeWebSocketSubProtocol(
+    offeredRaw: String,
+    allowed: Array<String>
+): String {
+    if (allowed.size == 0) { return "" }
+    for (offeredPart in offeredRaw.split(",")) {
+        let offered = offeredPart.trimAscii()
+        for (candidate in allowed) {
+            if (offered == candidate.trimAscii() && offered.size > 0) {
+                return offered
+            }
+        }
+    }
+    ""
 }
 
 func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
