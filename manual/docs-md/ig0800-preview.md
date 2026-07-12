@@ -2,6 +2,12 @@
 
 `0.8.0` 是 Ignite 第一次把自研传输主线作为公开预览交付。它不是“已经完全脱离 stdx”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
 
+配套入口：
+
+- [`capability-matrix-0800.md`](capability-matrix-0800.md)：完整能力状态与 stdx 残留。
+- [`api-0800.md`](api-0800.md)：0800 新增 API 签名和调用边界。
+- [`migration-0700-to-0800.md`](migration-0700-to-0800.md)：从 0.7.7 升级的回归顺序。
+
 ## 依赖接入
 
 ```toml
@@ -28,7 +34,7 @@ seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
 - socket read/write timeout
 - Content-Length 与 chunked 请求/响应
 - 流式响应、HEAD、静态文件与 Range
-- native H1 Client 的连接复用、流式 body、重定向与错误归一
+- 可显式选择的 native H1 Client：连接复用、流式 body、重定向与错误归一
 - WebSocket、SSE 和明确连接关闭语义
 
 需要回滚时：
@@ -38,6 +44,15 @@ let app = App(config: Config(
     serverPreferredBackendHint: "stdx-default"
 ))
 ```
+
+`RestClient` 默认仍使用稳定 stdx Client。需要验证 native H1 Client 时显式选择：
+
+```cangjie
+let client = RestClient()
+    .preferTransportBackend("ignite-native-h1-client")
+```
+
+当前 native H1 Client 仅处理 `http://`，不应被理解为 HTTPS Client 已默认切换。
 
 ### HTTPS
 

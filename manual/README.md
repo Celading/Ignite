@@ -22,6 +22,8 @@
 - 如果公开表达和内部表达不同，以根 README、`manual/` 与 `CHANGELOG*` 为准。
 - 本目录不负责定义新的技术承诺，只负责把当前已经公开确认的能力讲清楚。
 - `0800` 的 native H1/H2、TLS 回滚与流式 JSON 边界统一从 [`docs-md/ig0800-preview.md`](docs-md/ig0800-preview.md) 进入。
+- 需要逐项核对交付状态时看 [`docs-md/capability-matrix-0800.md`](docs-md/capability-matrix-0800.md)，查新增签名看 [`docs-md/api-0800.md`](docs-md/api-0800.md)。
+- 从 `0.7.7` 升级时按 [`docs-md/migration-0700-to-0800.md`](docs-md/migration-0700-to-0800.md) 执行，不要直接打开所有 Preview 选项。
 
 ## docs-md 与 docs-web 的关系
 
