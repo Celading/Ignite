@@ -1,13 +1,65 @@
 package ignite.tests
 
 import ignite.*
+import ignite.middleware.*
 import std.collection.{ArrayList, HashMap}
-import std.fs.{exists, File, OpenMode}
+import std.fs.{exists, Directory, File, OpenMode}
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
 
 @Test
 public class FileDownloadAndRestfulTestSuite {
+    @TestCase
+    public func testStaticMiddlewareNegotiatesPrecompressedBrotliAndFallsBackForRange(): Unit {
+        let root = "/tmp/ignite_precompressed_static"
+        Directory.create(root, recursive: true)
+        let original = "console.log('identity')"
+        let brotliWire = "precompressed-brotli-wire"
+        let zstdWire = "precompressed-zstd-wire"
+        writeTextFile(root + "/app.js", original)
+        writeTextFile(root + "/app.js.br", brotliWire)
+        writeTextFile(root + "/app.js.zst", zstdWire)
+        let port = chooseUploadTestPort(1905)
+
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use(staticFileMiddleware(config: StaticFileConfig(root: root)))
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let br = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/app.js",
+                headers: [("accept-encoding", "zstd;q=0.5, br;q=1")]
+            )
+            @Assert(br.status, UInt16(200))
+            @Assert(br.header("content-encoding") ?? "", "br")
+            @Assert(br.header("content-type") ?? "", "application/javascript; charset=utf-8")
+            @Assert(br.header("vary") ?? "", "Accept-Encoding")
+            @Assert(br.header("accept-ranges") ?? "", "none")
+            @Assert(br.body, brotliWire)
+
+            let zstd = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/app.js",
+                headers: [("accept-encoding", "br;q=0, zstd;q=1")]
+            )
+            @Assert(zstd.header("content-encoding") ?? "", "zstd")
+            @Assert(zstd.body, zstdWire)
+
+            let ranged = sendRawDownloadWithRetry(
+                port,
+                "GET",
+                "/app.js",
+                headers: [("accept-encoding", "br"), ("range", "bytes=0-3")]
+            )
+            @Assert(ranged.header("content-encoding") ?? "", "")
+            @Assert(ranged.body, original)
+        } finally {
+            shutdownUploadTestApp(app, serverFuture)
+        }
+    }
+
     @TestCase
     public func testDownloadAndRangeSupportLeadingSlashRelativePath(): Unit {
         let app = App(config: Config())

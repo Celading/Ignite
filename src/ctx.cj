@@ -754,6 +754,22 @@ public class Ctx {
         this
     }
 
+    /// Send a precompressed representation while retaining the original asset MIME type.
+    public func sendPrecompressedFile(
+        encodedPath: String,
+        originalPath: String,
+        encoding: String
+    ): Ctx {
+        sendFile(encodedPath)
+        if (_statusCode == 200) {
+            setResponseHeaderTracked("content-type", detectMimeType(originalPath))
+            setResponseHeaderTracked("content-encoding", encoding)
+            setResponseHeaderTracked("vary", "Accept-Encoding")
+            setResponseHeaderTracked("accept-ranges", "none")
+        }
+        this
+    }
+
     public func download(filePath: String, filename!: String = ""): Ctx {
         let displayName = if (filename.size > 0) {
             filename
