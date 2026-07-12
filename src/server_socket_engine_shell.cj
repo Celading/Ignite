@@ -654,9 +654,14 @@ func serveSocketServerEngineShellSocketTurns(
                 request,
                 seed,
                 socket.remoteAddress.toString(),
-                requestBodyBytes
+                requestBodyBytes,
+                nativeWebSocketSocket: Some(socket)
             )
             app.handleRequest(carrier)
+            if (carrier.nativeWebSocketUpgraded()) {
+                moreTurns = false
+                continue
+            }
             let closeAfterWrite = !keepAliveAfterWrite
             writeSocketServerEngineShellResponse(
                 socket,
@@ -1406,22 +1411,25 @@ class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter 
     }
 }
 
-class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
+class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
     let remoteAddress: String
     let requestHeadersValue: HttpHeaders
     let requestBodyBytesValue: Array<UInt8>
     let responseHeadersValue: HashMap<String, String>
+    let nativeWebSocketSocket: ?TcpSocket
     var responseBodyBytesValue: ArrayList<UInt8> = ArrayList<UInt8>()
     var responseBodyStreamValue: ?InputStream = None
     var responseStatusCodeValue: UInt16 = 200
+    var nativeWebSocketUpgradedValue: Bool = false
 
     init(
         request: SocketHttp11SessionRequest,
         seed: SocketHttp11DispatchSeed,
         remoteAddress: String,
-        requestBodyBytes: Array<UInt8>
+        requestBodyBytes: Array<UInt8>,
+        nativeWebSocketSocket!: ?TcpSocket = None
     ) {
         this.request = request
         this.seed = seed
@@ -1429,6 +1437,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
         this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request)
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
         this.responseHeadersValue = HashMap<String, String>()
+        this.nativeWebSocketSocket = nativeWebSocketSocket
         this.responseBodyBytesValue = ArrayList<UInt8>()
     }
 
@@ -1442,6 +1451,27 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier {
         throw SocketServerEngineShellException(
             "socket server engine shell cleartext first-runnable path does not support WebSocket upgrade"
         )
+    }
+
+    public override func upgradeNativeWebSocket(): WsConn {
+        let socket = nativeWebSocketSocket ?? throw SocketServerEngineShellException(
+            "socket server engine shell request does not own an upgradeable cleartext socket"
+        )
+        let connection = openNativeWebSocketConnection(
+            socket,
+            requestMethod(),
+            requestVersionString(),
+            requestHeaderValue("connection") ?? "",
+            requestHeaderValue("upgrade") ?? "",
+            requestHeaderValue("sec-websocket-version") ?? "",
+            requestHeaderValue("sec-websocket-key") ?? ""
+        )
+        nativeWebSocketUpgradedValue = true
+        WsConn(connection)
+    }
+
+    func nativeWebSocketUpgraded(): Bool {
+        nativeWebSocketUpgradedValue
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {

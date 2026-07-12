@@ -5,18 +5,33 @@ import std.collection.ArrayList
 
 public type WsHandler = (WsConn) -> Unit
 
+interface NativeWebSocketUpgradeCarrier {
+    func upgradeNativeWebSocket(): WsConn
+}
+
 public class WsConn {
-    let _ws: WebSocket
+    let _ws: ?WebSocket
+    let _native: ?NativeWebSocketConnection
 
     public init(ws: WebSocket) {
-        _ws = ws
+        _ws = Some(ws)
+        _native = None
+    }
+
+    init(native: NativeWebSocketConnection) {
+        _ws = None
+        _native = Some(native)
     }
 
     public func readMessage(): WsMessage {
+        if (let Some(native) <- _native) {
+            return native.readMessage()
+        }
+        let ws = _ws ?? throw Exception("WebSocket connection backend is unavailable")
         let data = ArrayList<UInt8>()
         var msgType = WebSocketFrameType.TextWebFrame
         while (true) {
-            let frame = _ws.read()
+            let frame = ws.read()
             match (frame.frameType) {
                 case TextWebFrame | BinaryWebFrame =>
                     msgType = frame.frameType
@@ -28,7 +43,7 @@ public class WsConn {
                 case CloseWebFrame =>
                     return WsMessage(messageType: WebSocketFrameType.CloseWebFrame, data: frame.payload)
                 case PingWebFrame =>
-                    _ws.writePongFrame(frame.payload)
+                    ws.writePongFrame(frame.payload)
                 case _ => ()
             }
         }
@@ -36,24 +51,49 @@ public class WsConn {
     }
 
     public func writeText(text: String): Unit {
-        _ws.write(WebSocketFrameType.TextWebFrame, text.toArray())
+        if (let Some(native) <- _native) {
+            native.writeText(text)
+            return
+        }
+        (_ws ?? throw Exception("WebSocket connection backend is unavailable"))
+            .write(WebSocketFrameType.TextWebFrame, text.toArray())
     }
 
     public func writeBinary(data: Array<UInt8>): Unit {
-        _ws.write(WebSocketFrameType.BinaryWebFrame, data)
+        if (let Some(native) <- _native) {
+            native.writeBinary(data)
+            return
+        }
+        (_ws ?? throw Exception("WebSocket connection backend is unavailable"))
+            .write(WebSocketFrameType.BinaryWebFrame, data)
     }
 
     public func close(status!: UInt16 = 1000, reason!: String = ""): Unit {
-        _ws.writeCloseFrame(status: status, reason: reason)
-        _ws.closeConn()
+        if (let Some(native) <- _native) {
+            native.close(status, reason)
+            return
+        }
+        let ws = _ws ?? throw Exception("WebSocket connection backend is unavailable")
+        ws.writeCloseFrame(status: status, reason: reason)
+        ws.closeConn()
     }
 
     public func ping(data!: Array<UInt8> = Array<UInt8>(0, repeat: 0)): Unit {
-        _ws.writePingFrame(data)
+        if (let Some(native) <- _native) {
+            native.ping(data)
+            return
+        }
+        (_ws ?? throw Exception("WebSocket connection backend is unavailable"))
+            .writePingFrame(data)
     }
 
     public prop subProtocol: String {
-        get() { _ws.subProtocol }
+        get() {
+            if (let Some(native) <- _native) {
+                return native.subProtocol
+            }
+            (_ws ?? throw Exception("WebSocket connection backend is unavailable")).subProtocol
+        }
     }
 }
 

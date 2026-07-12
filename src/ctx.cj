@@ -866,6 +866,9 @@ public class Ctx {
 
     public func upgradeWebSocket(): WsConn {
         _responded = true
+        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
+            return nativeCarrier.upgradeNativeWebSocket()
+        }
         let ws = _currentRequestCarrier.upgradeWebSocketRaw()
         WsConn(ws)
     }
