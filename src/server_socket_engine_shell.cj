@@ -1,6 +1,7 @@
 package ignite
 
 import ignite.native_tls.{NativeTlsApplicationProtocol, selectNativeTlsApplicationProtocol}
+import jinguissl.live.ContractHttpServerAcceptedTransportSession
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
@@ -210,9 +211,13 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
         attached.session.result.negotiatedAlpn
     )
     if (applicationProtocol == NativeTlsApplicationProtocol.Http11) {
-        throw Exception(
-            "native TLS negotiated http/1.1 but the encrypted H1 adapter is not attached yet"
+        serveSocketServerEngineShellStableTlsH1SocketTurn(
+            accepted,
+            attached.session,
+            option,
+            app
         )
+        return
     }
     let hpackDecoderState =
         ServerJinguiAcceptedTransportH2HpackDecoderState()
@@ -252,6 +257,66 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
             }
         }
     }
+}
+
+func serveSocketServerEngineShellStableTlsH1SocketTurn(
+    accepted: TcpSocket,
+    session: ContractHttpServerAcceptedTransportSession,
+    option: ServerEngineListenOption,
+    app: App
+): Unit {
+    let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
+    var records = Array<Array<Byte>>()
+    while (records.size == 0) {
+        let buf = Array<UInt8>(4096, repeat: 0)
+        let n = accepted.read(buf)
+        if (n <= 0) {
+            throw Exception("native TLS H1 peer closed before one application-data record")
+        }
+        accumulator.append(serverEngineUInt8ToByteArray(buf[..n]))
+        records = accumulator.drainCompleteRecords()
+    }
+    if (accumulator.bufferedByteCount() != 0) {
+        throw Exception("native TLS H1 first turn does not accept a partial trailing TLS record")
+    }
+    let plaintext = session.recordChannel.openAndReassemble(records)
+    let responsePlaintext = dispatchSocketServerEngineShellPlaintextHttp11Turn(
+        plaintext,
+        app,
+        accepted.remoteAddress.toString(),
+        option.maxRequestBodySize
+    )
+    accepted.write(session.recordChannel.sealApplicationData(responsePlaintext))
+}
+
+func dispatchSocketServerEngineShellPlaintextHttp11Turn(
+    requestWire: Array<UInt8>,
+    app: App,
+    remoteAddress: String,
+    maxRequestBodySize: Int64
+): Array<UInt8> {
+    let request = openSocketServerEngineShellRequest(requestWire)
+    if (request.bodyPlan.needsMoreNetworkBytes) {
+        throw Exception("native TLS H1 first turn requires one complete buffered request")
+    }
+    if (request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize) {
+        throw Exception("native TLS H1 request body exceeds configured body limit")
+    }
+    if (request.bodyPlan.trailingBufferedBytes.size > 0) {
+        throw Exception("native TLS H1 first turn does not support pipelined request bytes")
+    }
+    let seed = buildSocketHttp11DispatchSeed(request)
+    let carrier = SocketServerEngineShellCurrentRequestCarrier(
+        request,
+        seed,
+        remoteAddress,
+        request.bodyPlan.prefetchedBodyBytes
+    )
+    app.handleRequest(carrier)
+    if (carrier.takeResponseBodyStream().isSome()) {
+        throw Exception("native TLS H1 first turn does not support streamed responses")
+    }
+    buildSocketServerEngineShellResponseWire(request, carrier, true)
 }
 
 public func isSocketServerEngineShellStableTlsH2ConnectionEndError(
