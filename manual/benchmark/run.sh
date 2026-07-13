@@ -40,9 +40,16 @@ if ! curl -fsS "http://${HOST}:${PORT}/health" >/dev/null; then
   exit 1
 fi
 
-for path in plaintext json bytes/64k; do
+for scenario in "plaintext:14" "json:50" "bytes/64k:65536"; do
+  path="${scenario%%:*}"
+  expected_bytes="${scenario##*:}"
   echo "[benchmark] running /${path}"
   IGNITE_BENCH_URL="http://${HOST}:${PORT}/${path}" \
+  IGNITE_BENCH_LABEL="ignite0800-${path//\//-}" \
+  IGNITE_BENCH_VERSION="${IGNITE_BENCH_VERSION:-IgniteNEXT}" \
+  IGNITE_BENCH_BACKEND="${IGNITE_BENCH_BACKEND:-native}" \
+  IGNITE_BENCH_EXPECTED_BYTES="${expected_bytes}" \
+  IGNITE_BENCH_REQUEST_TIMEOUT_MS="${IGNITE_BENCH_REQUEST_TIMEOUT_MS:-5000}" \
   IGNITE_BENCH_OUTPUT="${OUTPUT}" \
     node "${ROOT}/manual/benchmark/load.mjs"
 done

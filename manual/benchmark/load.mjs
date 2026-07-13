@@ -6,6 +6,11 @@ const concurrency = positiveInt("IGNITE_BENCH_CONCURRENCY", 32);
 const durationSeconds = positiveNumber("IGNITE_BENCH_DURATION", 10);
 const warmupSeconds = positiveNumber("IGNITE_BENCH_WARMUP", 2);
 const output = process.env.IGNITE_BENCH_OUTPUT ?? "";
+const label = process.env.IGNITE_BENCH_LABEL ?? "ignite-benchmark";
+const version = process.env.IGNITE_BENCH_VERSION ?? "unknown";
+const backend = process.env.IGNITE_BENCH_BACKEND ?? "unknown";
+const expectedResponseBytes = positiveInt("IGNITE_BENCH_EXPECTED_BYTES", 0);
+const requestTimeoutMs = positiveInt("IGNITE_BENCH_REQUEST_TIMEOUT_MS", 5000);
 const agent = new http.Agent({ keepAlive: true, maxSockets: concurrency, maxFreeSockets: concurrency });
 
 await runPhase(warmupSeconds, false);
@@ -49,8 +54,13 @@ async function runPhase(seconds, collect) {
   return {
     schema: "ignite-benchmark-v1",
     timestamp: new Date().toISOString(),
+    label,
+    version,
+    backend,
     url: target.toString(),
     concurrency,
+    expectedResponseBytes,
+    requestTimeoutMs,
     durationSeconds: round(elapsedSeconds),
     requests: completed,
     errors,
@@ -77,10 +87,17 @@ function requestOnce() {
           reject(new Error(`unexpected status ${response.statusCode}`));
           return;
         }
+        if (expectedResponseBytes > 0 && bytes !== expectedResponseBytes) {
+          reject(new Error(`unexpected body size ${bytes}, expected ${expectedResponseBytes}`));
+          return;
+        }
         resolve(bytes);
       });
     });
     request.on("error", reject);
+    request.setTimeout(requestTimeoutMs, () => {
+      request.destroy(new Error(`request timeout after ${requestTimeoutMs}ms`));
+    });
     request.end();
   });
 }

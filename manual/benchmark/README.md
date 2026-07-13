@@ -26,6 +26,8 @@ server log at `/tmp/ignite0800-benchmark-server.log`.
 IGNITE_BENCH_CONCURRENCY=64 \
 IGNITE_BENCH_WARMUP=3 \
 IGNITE_BENCH_DURATION=15 \
+IGNITE_BENCH_REQUEST_TIMEOUT_MS=5000 \
+IGNITE_BENCH_VERSION=IgniteNEXT-d6c42b0 \
 IGNITE_BENCH_OUTPUT=/tmp/ignite0800-run.jsonl \
 ./manual/benchmark/run.sh
 ```
@@ -40,8 +42,12 @@ truth.
 
 ## Result Contract
 
-Each line contains the URL, concurrency, elapsed duration, completed requests,
-errors, requests/second, transferred bytes/second, and p50/p95/p99/max latency.
+Each line contains a run label, version, backend, URL, concurrency, expected
+response bytes, request timeout, elapsed duration, completed requests, errors,
+requests/second, transferred bytes/second, and p50/p95/p99/max latency. The
+load generator treats a non-200 response, wrong response length, network error,
+or request timeout as an error rather than allowing a fast malformed response
+to inflate throughput.
 
 ## Required Generational Control
 
