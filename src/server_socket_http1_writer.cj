@@ -276,6 +276,17 @@ public class SocketHttp11ResponseWriterLifecycle {
     }
 
     public func writeBodyChunk(bytes: Array<UInt8>): Array<UInt8> {
+        writeBodyChunkInternal(bytes, true)
+    }
+
+    func writeBodyChunkBorrowedForSocket(bytes: Array<UInt8>): Array<UInt8> {
+        writeBodyChunkInternal(bytes, false)
+    }
+
+    func writeBodyChunkInternal(
+        bytes: Array<UInt8>,
+        cloneKnownLengthBody: Bool
+    ): Array<UInt8> {
         ensureSocketHttp11WriterOpenState(
             _state,
             "socket HTTP/1.1 response writer can only write body chunks after head commit"
@@ -309,7 +320,11 @@ public class SocketHttp11ResponseWriterLifecycle {
                 }
                 _bodyBytesWritten = nextTotal
                 _state = SocketHttp11WriterLifecycleState.BodyStreaming
-                cloneSocketHttp11WriterBytes(bytes)
+                if (cloneKnownLengthBody) {
+                    cloneSocketHttp11WriterBytes(bytes)
+                } else {
+                    bytes
+                }
             case SocketHttp11ResponseHeaderFraming.Chunked =>
                 _bodyBytesWritten += bytes.size
                 _state = SocketHttp11WriterLifecycleState.BodyStreaming

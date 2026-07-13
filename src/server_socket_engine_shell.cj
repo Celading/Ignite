@@ -1241,7 +1241,7 @@ func writeSocketServerEngineShellBufferedResponse(
         socket.write(head)
     }
     if (plan.writesPayloadBody() && responseBytes.size > 0) {
-        let bodyWire = writer.writeBodyChunk(responseBytes)
+        let bodyWire = writer.writeBodyChunkBorrowedForSocket(responseBytes)
         if (bodyWire.size > 0) {
             socket.write(bodyWire)
         }
