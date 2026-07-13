@@ -1469,7 +1469,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     let requestBodyBytesValue: Array<UInt8>
     let responseHeadersValue: HashMap<String, String>
     let nativeWebSocketSocket: ?TcpSocket
-    var responseBodyBytesValue: ArrayList<UInt8> = ArrayList<UInt8>()
+    var responseBodyBytesValue: Array<UInt8> = Array<UInt8>(0, repeat: 0)
+    var responseBodyAppendBufferValue: ?ArrayList<UInt8> = None
     var responseBodyStreamValue: ?InputStream = None
     var responseStatusCodeValue: UInt16 = 200
     var nativeWebSocketUpgradedValue: Bool = false
@@ -1488,7 +1489,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
         this.responseHeadersValue = HashMap<String, String>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
-        this.responseBodyBytesValue = ArrayList<UInt8>()
+        this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
+        this.responseBodyAppendBufferValue = None
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -1606,7 +1608,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
 
     public override func setResponseString(body: String): Unit {
         closeResponseBodyStreamIfPresent()
-        replaceResponseBodyBytes(body.toArray())
+        replaceResponseBodyOwnedBytes(body.toArray())
     }
 
     public override func setResponseBytes(data: Array<UInt8>): Unit {
@@ -1616,7 +1618,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
 
     public override func attachResponseBodyStream(stream: InputStream): Unit {
         closeResponseBodyStreamIfPresent()
-        responseBodyBytesValue = ArrayList<UInt8>()
+        responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
+        responseBodyAppendBufferValue = None
         responseBodyStreamValue = Some(stream)
     }
 
@@ -1641,13 +1644,10 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public func responseBodyBytes(): Array<UInt8> {
-        let out = Array<UInt8>(responseBodyBytesValue.size, repeat: 0)
-        var i: Int64 = 0
-        while (i < responseBodyBytesValue.size) {
-            out[i] = responseBodyBytesValue[i]
-            i += 1
+        if (let Some(buffer) <- responseBodyAppendBufferValue) {
+            return buffer.toArray()
         }
-        out
+        responseBodyBytesValue
     }
 
     public func takeResponseBodyStream(): ?InputStream {
@@ -1657,14 +1657,30 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     func appendResponseBodyBytes(bytes: Array<UInt8>): Unit {
-        for (b in bytes) {
-            responseBodyBytesValue.add(b)
+        if (let Some(buffer) <- responseBodyAppendBufferValue) {
+            for (b in bytes) {
+                buffer.add(b)
+            }
+            return
         }
+        let buffer = ArrayList<UInt8>()
+        for (b in responseBodyBytesValue) {
+            buffer.add(b)
+        }
+        for (b in bytes) {
+            buffer.add(b)
+        }
+        responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
+        responseBodyAppendBufferValue = Some(buffer)
     }
 
     func replaceResponseBodyBytes(bytes: Array<UInt8>): Unit {
-        responseBodyBytesValue = ArrayList<UInt8>()
-        appendResponseBodyBytes(bytes)
+        replaceResponseBodyOwnedBytes(socketServerEngineShellCloneBytes(bytes))
+    }
+
+    func replaceResponseBodyOwnedBytes(bytes: Array<UInt8>): Unit {
+        responseBodyBytesValue = bytes
+        responseBodyAppendBufferValue = None
     }
 
     func closeResponseBodyStreamIfPresent(): Unit {

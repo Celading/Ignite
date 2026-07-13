@@ -327,6 +327,34 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testDefaultNativeH1ClonesCallerOwnedResponseBytes(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/caller-owned-bytes", { ctx =>
+            let bytes = "safe".toArray()
+            let _ = ctx.send(bytes)
+            bytes[0] = UInt8(88)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let response = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /caller-owned-bytes HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+            )
+
+            @Assert(socketH1RuntimeBaselineContains(response, "content-length: 4"), true)
+            @Assert(response.endsWith("safe"), true)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
 }
 
 func socketH1RuntimeBaselineRepeatedBody(part: String, count: Int64): String {
