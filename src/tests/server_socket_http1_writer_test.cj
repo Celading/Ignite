@@ -47,6 +47,28 @@ public class SocketHttp11ResponseWriterTestSuite {
     }
 
     @TestCase
+    public func testPublicKnownLengthWriterKeepsCopyIsolation(): Unit {
+        let request = openSocketHttp11WriterTestRequest(
+            "GET /copy HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        )
+        let plan = buildSocketHttp11ResponseWritePlan(
+            request,
+            200,
+            Array<SocketHttp11Header>(0, repeat: SocketHttp11Header("", "")),
+            SocketHttp11ResponseBodyMode.KnownLength,
+            declaredBodyBytes: 4
+        )
+        let writer = SocketHttp11ResponseWriterLifecycle(plan)
+        let _ = writer.takeHeadBytes()
+        let input = "safe".toArray()
+        let output = writer.writeBodyChunk(input)
+        input[0] = UInt8(88)
+
+        @Assert(String.fromUtf8(output), "safe")
+        let _ = writer.finish()
+    }
+
+    @TestCase
     public func testWriterPlanBuildsChunkedUnknownLengthLifecycle(): Unit {
         let request = openSocketHttp11WriterTestRequest(
             "GET /stream HTTP/1.1\r\nHost: example.com\r\n\r\n"
