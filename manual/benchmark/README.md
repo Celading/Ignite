@@ -43,6 +43,22 @@ truth.
 Each line contains the URL, concurrency, elapsed duration, completed requests,
 errors, requests/second, transferred bytes/second, and p50/p95/p99/max latency.
 
+## Required Generational Control
+
+Every Ignite performance packet must carry three roles in the same host window:
+
+1. the current `IgniteNEXT` control checkpoint;
+2. the candidate mutation, when one exists;
+3. the current `Ignite0700 / 0.7.7` release-line control.
+
+Interleave control and candidate turns when short-run host drift is visible.
+`Ignite0700` currently has a single-accepted-connection structural limit, so a
+requested concurrency greater than one may not be numerically comparable. In
+that case the packet must also run a concurrency-1 common denominator and
+report the higher-concurrency difference as a structural capability gap rather
+than publishing a misleading ratio. The 0700 control must not be omitted merely
+because its runtime model differs.
+
 This baseline is not a public ranking and does not normalize CPU affinity,
 power state, compiler optimization level, TLS, H2, cross-host networking, or
 competitor configuration. Those controls belong in the later internal
