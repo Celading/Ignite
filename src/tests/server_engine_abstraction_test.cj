@@ -735,16 +735,20 @@ public class ServerEngineAbstractionTestSuite {
                 ),
                 writePauseMillis: 0
             )
+            let responseRecordAccumulator =
+                JinguiAcceptedTransportRecordWireAccumulator()
             let firstRecord =
-                readAcceptedTransportResponseSocketFirstCompleteRecord(
+                readAcceptedTransportResponseSocketFirstCompleteRecordWithAccumulator(
                     socket,
+                    responseRecordAccumulator,
                     readChunkSize: 3
                 )
             firstDecoded =
                 String.fromUtf8(channel.openAndReassemble([firstRecord]))
             let secondRecord =
-                readAcceptedTransportResponseSocketFirstCompleteRecord(
+                readAcceptedTransportResponseSocketFirstCompleteRecordWithAccumulator(
                     socket,
+                    responseRecordAccumulator,
                     readChunkSize: 3
                 )
             secondDecoded =
@@ -22253,6 +22257,18 @@ func readAcceptedTransportResponseSocketFirstCompleteRecord(
     readChunkSize!: Int64 = 3
 ): Array<Byte> {
     let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
+    readAcceptedTransportResponseSocketFirstCompleteRecordWithAccumulator(
+        socket,
+        accumulator,
+        readChunkSize: readChunkSize
+    )
+}
+
+func readAcceptedTransportResponseSocketFirstCompleteRecordWithAccumulator(
+    socket: TcpSocket,
+    accumulator: JinguiAcceptedTransportRecordWireAccumulator,
+    readChunkSize!: Int64 = 3
+): Array<Byte> {
     let chunkSize = if (readChunkSize > 0) {
         readChunkSize
     } else {
@@ -22260,6 +22276,10 @@ func readAcceptedTransportResponseSocketFirstCompleteRecord(
     }
     let buf = Array<UInt8>(chunkSize, repeat: 0)
     while (true) {
+        let bufferedRecords = accumulator.drainOneCompleteRecord()
+        if (bufferedRecords.size > 0) {
+            return bufferedRecords[0]
+        }
         let n = socket.read(buf)
         if (n <= 0) {
             throw Exception(
@@ -22267,10 +22287,6 @@ func readAcceptedTransportResponseSocketFirstCompleteRecord(
             )
         }
         accumulator.append(serverEngineAbstractionTestByteArray(buf[..n]))
-        let records = accumulator.drainCompleteRecords()
-        if (records.size > 0) {
-            return records[0]
-        }
     }
     throw Exception(
         "accepted transport response socket first complete record read loop ended unexpectedly"
