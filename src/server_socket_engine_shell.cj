@@ -628,8 +628,7 @@ func serveSocketServerEngineShellSocketTurns(
     while (moreTurns) {
         try {
             socket.readTimeout = Some(option.readHeaderTimeout)
-            let requestWire = readSocketServerEngineShellRequestWire(socket)
-            let request = openSocketServerEngineShellRequest(requestWire)
+            let request = readSocketServerEngineShellRequest(socket)
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
@@ -724,27 +723,34 @@ func socketServerEngineShellConnectionHasToken(
     false
 }
 
-func readSocketServerEngineShellRequestWire(socket: TcpSocket): Array<UInt8> {
-    let out = ArrayList<UInt8>()
+func readSocketServerEngineShellRequest(
+    socket: TcpSocket
+): SocketHttp11SessionRequest {
+    let session = SocketHttp11ConnectionSession()
     let buf = Array<UInt8>(4096, repeat: 0)
     while (true) {
         let n = socket.read(buf)
         if (n <= 0) {
             break
         }
-        appendSocketServerEngineShellBytes(out, buf[..n])
-        let snapshot = out.toArray()
+        session.appendHeadBytes(buf[..n])
         try {
-            if ((tryParseSocketHttp11RequestHead(snapshot)).isSome()) {
-                return snapshot
+            if (let Some(request) <- session.tryOpenRequest()) {
+                return request
             }
         } catch (e: SocketHttp11HeadException) {
             throw SocketServerEngineShellException(
                 "socket server engine shell request-head parse failed: ${e.message}"
             )
+        } catch (e: SocketHttp11SessionException) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell request session failed: ${e.message}"
+            )
         }
     }
-    out.toArray()
+    throw SocketServerEngineShellException(
+        "socket server engine shell requires one complete HTTP/1.1 request head before it can dispatch"
+    )
 }
 
 func readSocketServerEngineShellRequestBodyBytes(

@@ -11802,9 +11802,8 @@ public class ServerEngineAbstractionTestSuite {
             try {
                 badSocket.write("GARBAGE\r\n".toArray())
                 // close without sending a complete request head — the server-side
-                // readSocketServerEngineShellRequestWire loop returns the partial
-                // bytes when read returns 0, and openSocketServerEngineShellRequest
-                // throws because they don't form a valid HTTP/1.1 request head
+                // The single-parse socket request handoff rejects EOF before a
+                // complete HTTP/1.1 request head reaches dispatch.
             } finally {
                 if (!badSocket.isClosed()) {
                     badSocket.close()
