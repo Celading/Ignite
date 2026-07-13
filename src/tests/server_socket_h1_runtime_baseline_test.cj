@@ -299,6 +299,42 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testDefaultNativeH1WritesExact64KiBBufferedResponse(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let payload = socketH1RuntimeBaselineRepeatedBody("0123456789abcdef", 4096)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/buffered-64k", { ctx =>
+            let _ = ctx.sendString(payload)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let response = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /buffered-64k HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+            )
+
+            @Assert(socketH1RuntimeBaselineContains(response, "HTTP/1.1 200 OK"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "content-length: 65536"), true)
+            @Assert(response.endsWith(payload), true)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+}
+
+func socketH1RuntimeBaselineRepeatedBody(part: String, count: Int64): String {
+    var out = ""
+    for (_ in 0..count) {
+        out += part
+    }
+    out
 }
 
 func waitForSocketH1RuntimeBaselineGate(gate: SocketH1RuntimeBaselineGate): Unit {

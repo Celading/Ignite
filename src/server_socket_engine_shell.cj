@@ -1191,14 +1191,64 @@ func writeSocketServerEngineShellResponse(
                 closeAfterWrite
             )
         case None =>
-            let responseWire = buildSocketServerEngineShellResponseWire(
+            writeSocketServerEngineShellBufferedResponse(
+                socket,
                 request,
                 carrier,
                 closeAfterWrite
             )
-            if (responseWire.size > 0) {
-                socket.write(responseWire)
-            }
+    }
+}
+
+func writeSocketServerEngineShellBufferedResponse(
+    socket: TcpSocket,
+    request: SocketHttp11SessionRequest,
+    carrier: SocketServerEngineShellCurrentRequestCarrier,
+    closeAfterWrite: Bool
+): Unit {
+    let responseBytes = carrier.responseBodyBytes()
+    let responseHeaders = carrier.responseHeadersForSocket()
+    let responseHasChunkedTransfer = carrier.responseHeader("transfer-encoding") ?? ""
+    let responseContentLength = carrier.responseHeader("content-length") ?? ""
+    let statusCode = Int64(carrier.responseStatusCode())
+    let bodyMode = if (isSocketHttp11ResponseBodyForbiddenStatus(statusCode)) {
+        SocketHttp11ResponseBodyMode.Bodyless
+    } else if (responseHasChunkedTransfer.toAsciiLower() == "chunked") {
+        SocketHttp11ResponseBodyMode.UnknownLength
+    } else {
+        SocketHttp11ResponseBodyMode.KnownLength
+    }
+    let declaredBodyBytes = if (bodyMode == SocketHttp11ResponseBodyMode.KnownLength) {
+        socketServerEngineShellKnownLengthBytesForResponse(
+            request,
+            responseBytes.size,
+            responseContentLength
+        )
+    } else {
+        0
+    }
+    let plan = buildSocketHttp11ResponseWritePlan(
+        request,
+        statusCode,
+        responseHeaders,
+        bodyMode,
+        declaredBodyBytes: declaredBodyBytes,
+        option: SocketHttp11ResponseWriteOption(closeAfterWrite: closeAfterWrite)
+    )
+    let writer = SocketHttp11ResponseWriterLifecycle(plan)
+    let head = writer.takeHeadBytes()
+    if (head.size > 0) {
+        socket.write(head)
+    }
+    if (plan.writesPayloadBody() && responseBytes.size > 0) {
+        let bodyWire = writer.writeBodyChunk(responseBytes)
+        if (bodyWire.size > 0) {
+            socket.write(bodyWire)
+        }
+    }
+    let tail = writer.finish()
+    if (tail.size > 0) {
+        socket.write(tail)
     }
 }
 
