@@ -1,9 +1,8 @@
 # Ignite 0.8.0 Benchmark Baseline
 
-This directory is the first repository-owned executable benchmark for the
-`IgniteNEXT` 0.8.0 line. It is intentionally smaller than a public performance
-report: it proves that one repeatable server/load/result loop exists before we
-add multi-version or competitor comparisons.
+This directory owns the public Benchmark track for the `IgniteNEXT` 0.8.0
+line. Public results compare only Ignite native and the explicit stdx rollback
+backend. Competitor comparisons stay in the workspace-internal Benchmark lab.
 
 ## Run
 
@@ -19,6 +18,50 @@ The default matrix exercises:
 
 The runner writes JSON Lines to `/tmp/ignite0800-benchmark.jsonl` and keeps the
 server log at `/tmp/ignite0800-benchmark-server.log`.
+
+Every JSONL measurement names its public/internal track, benchmark profile,
+implementation, scenario, protocol family, exact expected bytes,
+backend/version, concurrency, error count, timeout, P50/P95/P99, and current
+caveats. HTTP/H1 is the only implemented protocol family in this matrix;
+HTTPS and H2 require separate future runners and result files.
+
+## Public Matrix
+
+```bash
+./manual/benchmark/run_public_matrix.sh
+```
+
+The default public matrix compares Ignite native and stdx across:
+
+- plaintext and fixed JSON;
+- exact `64 / 256 / 1024 KiB` binary-shaped responses;
+- concurrency `1 / 8 / 32 / 128`.
+
+The separate high-concurrency profile uses `64 / 256 / 1024` concurrent
+requests against plaintext, JSON, and `64 KiB`. It intentionally excludes
+`256 / 1024 KiB` bodies by default because `1024` simultaneous `1 MiB`
+responses is a memory-pressure experiment, not a safe routine benchmark:
+
+```bash
+IGNITE_BENCH_PROFILE=concurrency-stress \
+./manual/benchmark/run_public_matrix.sh
+```
+
+Each cell is interleaved as `native-r1 -> stdx-r1 -> stdx-r2 -> native-r2`
+by default so a long host-time drift does not systematically favor one
+backend. The matrix records the current Git checkpoint automatically and adds
+`+dirty` when the worktree is not clean. Set `IGNITE_BENCH_ROUNDS=1` only for
+a quick diagnostic smoke.
+
+Use a bounded smoke before a full run:
+
+```bash
+IGNITE_BENCH_CONCURRENCIES="1 8" \
+IGNITE_BENCH_SCENARIOS="plaintext:14 bytes/64k:65536" \
+IGNITE_BENCH_WARMUP=1 \
+IGNITE_BENCH_DURATION=3 \
+./manual/benchmark/run_public_matrix.sh
+```
 
 ## Controls
 
@@ -68,5 +111,5 @@ because its runtime model differs.
 This baseline is not a public ranking and does not normalize CPU affinity,
 power state, compiler optimization level, TLS, H2, cross-host networking, or
 competitor configuration. Those controls belong in the later internal
-multi-version/competitor benchmark packet after the 0800 capability baseline
-is accepted.
+multi-version/competitor Benchmark. Public HTTP/H1, HTTPS, and H2 results must
+remain separate tables rather than one blended score.

@@ -9,6 +9,15 @@ const output = process.env.IGNITE_BENCH_OUTPUT ?? "";
 const label = process.env.IGNITE_BENCH_LABEL ?? "ignite-benchmark";
 const version = process.env.IGNITE_BENCH_VERSION ?? "unknown";
 const backend = process.env.IGNITE_BENCH_BACKEND ?? "unknown";
+const track = process.env.IGNITE_BENCH_TRACK ?? "public";
+const benchmarkProfile = process.env.IGNITE_BENCH_PROFILE ?? "balanced";
+const implementation = process.env.IGNITE_BENCH_IMPLEMENTATION ?? backend;
+const scenario = process.env.IGNITE_BENCH_SCENARIO ?? target.pathname.replace(/^\//, "");
+const protocol = process.env.IGNITE_BENCH_PROTOCOL ?? `${target.protocol === "https:" ? "https" : "http"}/h1`;
+const caveats = (process.env.IGNITE_BENCH_CAVEATS ?? "")
+  .split("|")
+  .map(item => item.trim())
+  .filter(Boolean);
 const expectedResponseBytes = positiveInt("IGNITE_BENCH_EXPECTED_BYTES", 0);
 const requestTimeoutMs = positiveInt("IGNITE_BENCH_REQUEST_TIMEOUT_MS", 5000);
 const agent = new http.Agent({ keepAlive: true, maxSockets: concurrency, maxFreeSockets: concurrency });
@@ -57,6 +66,12 @@ async function runPhase(seconds, collect) {
     label,
     version,
     backend,
+    track,
+    benchmarkProfile,
+    implementation,
+    scenario,
+    protocol,
+    caveats,
     url: target.toString(),
     concurrency,
     expectedResponseBytes,

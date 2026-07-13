@@ -3,7 +3,9 @@ import std.env.getVariable
 
 let BENCH_HOST = "127.0.0.1"
 let BENCH_PORT: UInt16 = 18880
-let BENCH_LARGE_BODY = buildRepeatedBody("0123456789abcdef", 4096)
+let BENCH_BODY_64K = buildRepeatedBody("0123456789abcdef", 4096)
+let BENCH_BODY_256K = buildRepeatedBody("0123456789abcdef", 16384)
+let BENCH_BODY_1024K = buildRepeatedBody("0123456789abcdef", 65536)
 
 main() {
     let backendHint = resolveBackendHint()
@@ -29,7 +31,19 @@ main() {
     app.get("/bytes/64k", { ctx =>
         _ = ctx
             .setHeader("content-type", "application/octet-stream")
-            .sendString(BENCH_LARGE_BODY)
+            .sendString(BENCH_BODY_64K)
+    })
+
+    app.get("/bytes/256k", { ctx =>
+        _ = ctx
+            .setHeader("content-type", "application/octet-stream")
+            .sendString(BENCH_BODY_256K)
+    })
+
+    app.get("/bytes/1024k", { ctx =>
+        _ = ctx
+            .setHeader("content-type", "application/octet-stream")
+            .sendString(BENCH_BODY_1024K)
     })
 
     println("[benchmark] backend=${decision.selectedEngineId}")
@@ -49,8 +63,16 @@ func resolveBackendHint(): String {
 
 func buildRepeatedBody(part: String, count: Int64): String {
     var body = ""
-    for (_ in 0..count) {
-        body += part
+    var block = part
+    var remaining = count
+    while (remaining > 0) {
+        if (remaining % 2 == 1) {
+            body += block
+        }
+        remaining /= 2
+        if (remaining > 0) {
+            block += block
+        }
     }
     body
 }

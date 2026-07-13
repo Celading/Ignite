@@ -16,7 +16,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-: >"${OUTPUT}"
+if [[ "${IGNITE_BENCH_APPEND:-0}" != "1" ]]; then
+  : >"${OUTPUT}"
+fi
 echo "[benchmark] building and starting IgniteNEXT (${IGNITE_BENCH_BACKEND:-native})..."
 "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
   "manual/benchmark/main.cj" "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
@@ -40,18 +42,30 @@ if ! curl -fsS "http://${HOST}:${PORT}/health" >/dev/null; then
   exit 1
 fi
 
-for scenario in "plaintext:14" "json:50" "bytes/64k:65536"; do
-  path="${scenario%%:*}"
-  expected_bytes="${scenario##*:}"
-  echo "[benchmark] running /${path}"
-  IGNITE_BENCH_URL="http://${HOST}:${PORT}/${path}" \
-  IGNITE_BENCH_LABEL="ignite0800-${path//\//-}" \
-  IGNITE_BENCH_VERSION="${IGNITE_BENCH_VERSION:-IgniteNEXT}" \
-  IGNITE_BENCH_BACKEND="${IGNITE_BENCH_BACKEND:-native}" \
-  IGNITE_BENCH_EXPECTED_BYTES="${expected_bytes}" \
-  IGNITE_BENCH_REQUEST_TIMEOUT_MS="${IGNITE_BENCH_REQUEST_TIMEOUT_MS:-5000}" \
-  IGNITE_BENCH_OUTPUT="${OUTPUT}" \
-    node "${ROOT}/manual/benchmark/load.mjs"
+SCENARIOS="${IGNITE_BENCH_SCENARIOS:-plaintext:14 json:50 bytes/64k:65536}"
+CONCURRENCIES="${IGNITE_BENCH_CONCURRENCIES:-${IGNITE_BENCH_CONCURRENCY:-32}}"
+
+for concurrency in ${CONCURRENCIES}; do
+  for scenario in ${SCENARIOS}; do
+    path="${scenario%%:*}"
+    expected_bytes="${scenario##*:}"
+    echo "[benchmark] running /${path} concurrency=${concurrency}"
+    IGNITE_BENCH_URL="http://${HOST}:${PORT}/${path}" \
+    IGNITE_BENCH_LABEL="ignite0800-${IGNITE_BENCH_BACKEND:-native}-${path//\//-}-c${concurrency}-${IGNITE_BENCH_RUN_LABEL:-r1}" \
+    IGNITE_BENCH_VERSION="${IGNITE_BENCH_VERSION:-IgniteNEXT}" \
+    IGNITE_BENCH_BACKEND="${IGNITE_BENCH_BACKEND:-native}" \
+    IGNITE_BENCH_TRACK="${IGNITE_BENCH_TRACK:-public}" \
+    IGNITE_BENCH_PROFILE="${IGNITE_BENCH_PROFILE:-balanced}" \
+    IGNITE_BENCH_IMPLEMENTATION="${IGNITE_BENCH_IMPLEMENTATION:-ignite-${IGNITE_BENCH_BACKEND:-native}}" \
+    IGNITE_BENCH_SCENARIO="${path//\//-}" \
+    IGNITE_BENCH_PROTOCOL="${IGNITE_BENCH_PROTOCOL:-http/h1}" \
+    IGNITE_BENCH_CAVEATS="${IGNITE_BENCH_CAVEATS:-local-loopback|cpu-affinity-uncontrolled|power-state-uncontrolled|compiler-optimization-uncontrolled}" \
+    IGNITE_BENCH_CONCURRENCY="${concurrency}" \
+    IGNITE_BENCH_EXPECTED_BYTES="${expected_bytes}" \
+    IGNITE_BENCH_REQUEST_TIMEOUT_MS="${IGNITE_BENCH_REQUEST_TIMEOUT_MS:-5000}" \
+    IGNITE_BENCH_OUTPUT="${OUTPUT}" \
+      node "${ROOT}/manual/benchmark/load.mjs"
+  done
 done
 
 echo "[benchmark] result: ${OUTPUT}"
