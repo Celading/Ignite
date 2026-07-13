@@ -31,6 +31,10 @@ Run commands from the repository root that contains `cjpm.toml`.
    - Multi-process stress probe for `App.handleForTest(...)`
    - Reuses one shared lease root so cross-process port planning can be exercised from files alone
 
+For repeatable performance sampling after the functional samples pass, use
+[`../benchmark`](../benchmark). It is a repository-owned 0800 baseline rather
+than a public cross-framework ranking.
+
 ## H1 / H2 first route
 
 - If your immediate need is `H1`, prefer:
@@ -64,6 +68,7 @@ Run commands from the repository root that contains `cjpm.toml`.
 ./manual/samples/h2wire/probe.sh
 ./manual/samples/h2wire/h2spec_smoke.sh
 ./manual/samples/handlefortest/probe.sh
+./manual/benchmark/run.sh
 ```
 
 ## Notes

@@ -50,8 +50,20 @@ detect_stdx_static() {
   fi
 
   if [[ -n "${CANGJIE_STDX_PATH:-}" && -d "${CANGJIE_STDX_PATH}" ]]; then
+    local os_token=""
+    local arch_token=""
+    case "$(uname -s)" in
+      Darwin) os_token="darwin" ;;
+      Linux) os_token="linux" ;;
+    esac
+    case "$(uname -m)" in
+      arm64|aarch64) arch_token="aarch64" ;;
+      x86_64|amd64) arch_token="x86_64" ;;
+    esac
+
     local hit
-    hit="$(find "${CANGJIE_STDX_PATH}" -maxdepth 4 -type d -path "*/cj_stdx_*_llvm/static" | head -n 1)"
+    hit="$(find "${CANGJIE_STDX_PATH}" -maxdepth 4 -type d -name static \
+      -path "*${os_token}*${arch_token}*" -exec test -d '{}/stdx' \; -print | head -n 1)"
     if [[ -n "${hit}" ]]; then
       printf '%s\n' "${hit}"
       return 0
@@ -122,6 +134,11 @@ while IFS= read -r path; do
   JINGUISSL_CONTRACT_ARCHIVES+=("${path}")
 done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
 
+declare -a JINGUISSL_ARCHIVES=()
+while IFS= read -r path; do
+  JINGUISSL_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
+
 declare -a JINGUISSL_CORE_ARCHIVES=()
 while IFS= read -r path; do
   JINGUISSL_CORE_ARCHIVES+=("${path}")
@@ -136,6 +153,9 @@ declare -a COMMON_LINKS=()
 COMMON_LINKS+=(-L "${ROOT}/target/release/seajson" -lseajson)
 if [[ "${#IGNITE_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${IGNITE_ARCHIVES[@]}")
+fi
+if [[ "${#JINGUISSL_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${JINGUISSL_ARCHIVES[@]}")
 fi
 if [[ "${#JINGUISSL_CONTRACT_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${JINGUISSL_CONTRACT_ARCHIVES[@]}")
@@ -168,12 +188,12 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 
 echo "[sample-runner] running ${OUTPUT_BIN}"
-"${OUTPUT_BIN}"
+exec "${OUTPUT_BIN}"

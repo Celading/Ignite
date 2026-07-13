@@ -233,6 +233,7 @@ ignite/
 ## 文档与入口
 
 - [`manual/docs-md/README.md`](manual/docs-md/README.md)：中文正文主入口，适合从首页继续往深处看。
+- [`manual/benchmark/README.md`](manual/benchmark/README.md)：0800 仓内可执行 Benchmark 基线；当前用于重复测量，不代表公开竞品排名。
 - [`manual/samples/README.md`](manual/samples/README.md)：最快把 Ignite 跑起来的样例矩阵和顺序。
 - [`CHANGELOG.MD`](CHANGELOG.MD)：中文版本时间线与阶段收口记录。
 - [`CHANGELOG-en.MD`](CHANGELOG-en.MD)：英文版本时间线。
