@@ -131,39 +131,46 @@ public func tryParseSocketHttp11RequestHead(
     }
 
     let headText = decodeSocketHttp11HeadText(bytes, headStart)
-    let lines = headText.split("\r\n")
-    if (lines.size == 0) {
-        throw SocketHttp11HeadException(
-            SocketHttp11HeadErrorCode.MalformedRequestLine,
-            "missing HTTP/1.1 request line"
-        )
-    }
-
-    let requestLine = lines[0]
-    if (requestLine.size == 0) {
+    let requestLineEnd = findSocketHttp11LineEnd(headText, 0)
+    if (requestLineEnd == 0) {
         throw SocketHttp11HeadException(
             SocketHttp11HeadErrorCode.MalformedRequestLine,
             "empty HTTP/1.1 request line"
         )
     }
-    if (requestLine.size > option.maxRequestLineBytes) {
+    if (requestLineEnd > option.maxRequestLineBytes) {
         throw SocketHttp11HeadException(
             SocketHttp11HeadErrorCode.LimitExceeded,
             "HTTP/1.1 request line exceeds configured byte limit"
         )
     }
 
-    let requestLineParts = requestLine.split(" ")
-    if (requestLineParts.size != 3) {
+    let firstSpace = findSocketHttp11Byte(headText, UInt8(32), 0, requestLineEnd)
+    let secondSpace = if (firstSpace >= 0) {
+        findSocketHttp11Byte(headText, UInt8(32), firstSpace + 1, requestLineEnd)
+    } else {
+        -1
+    }
+    let thirdSpace = if (secondSpace >= 0) {
+        findSocketHttp11Byte(headText, UInt8(32), secondSpace + 1, requestLineEnd)
+    } else {
+        -1
+    }
+    if (
+        firstSpace <= 0 ||
+        secondSpace <= firstSpace + 1 ||
+        secondSpace >= requestLineEnd - 1 ||
+        thirdSpace >= 0
+    ) {
         throw SocketHttp11HeadException(
             SocketHttp11HeadErrorCode.MalformedRequestLine,
             "HTTP/1.1 request line must contain method, target, and version"
         )
     }
 
-    let method = requestLineParts[0]
-    let target = requestLineParts[1]
-    let version = requestLineParts[2]
+    let method = headText[..firstSpace]
+    let target = headText[firstSpace + 1..secondSpace]
+    let version = headText[secondSpace + 1..requestLineEnd]
     let validMethod = isSocketHttp11Token(method)
     if (method.size == 0 || target.size == 0 || !validMethod) {
         throw SocketHttp11HeadException(
@@ -179,9 +186,10 @@ public func tryParseSocketHttp11RequestHead(
     }
 
     let headers = ArrayList<SocketHttp11Header>()
-    for (i in 1..lines.size) {
-        let line = lines[i]
-        if (line.size == 0) {
+    var lineStart = if (requestLineEnd < headText.size) { requestLineEnd + 2 } else { headText.size }
+    while (lineStart < headText.size) {
+        let lineEnd = findSocketHttp11LineEnd(headText, lineStart)
+        if (lineEnd == lineStart) {
             throw SocketHttp11HeadException(
                 SocketHttp11HeadErrorCode.MalformedHeader,
                 "unexpected empty header line before terminator"
@@ -194,22 +202,15 @@ public func tryParseSocketHttp11RequestHead(
             )
         }
 
-        let colonIndex = line.indexOf(":")
-        if (let None <- colonIndex) {
-            throw SocketHttp11HeadException(
-                SocketHttp11HeadErrorCode.MalformedHeader,
-                "HTTP/1.1 header line must contain a name and ':'"
-            )
-        }
-        let colon = colonIndex ?? -1
-        if (colon <= 0) {
+        let colon = findSocketHttp11Byte(headText, UInt8(58), lineStart, lineEnd)
+        if (colon <= lineStart) {
             throw SocketHttp11HeadException(
                 SocketHttp11HeadErrorCode.MalformedHeader,
                 "HTTP/1.1 header line must contain a name and ':'"
             )
         }
 
-        let name = line[..colon]
+        let name = headText[lineStart..colon]
         if (!isSocketHttp11HeaderName(name)) {
             throw SocketHttp11HeadException(
                 SocketHttp11HeadErrorCode.InvalidHeaderName,
@@ -217,8 +218,9 @@ public func tryParseSocketHttp11RequestHead(
             )
         }
 
-        let value = line[colon + 1..line.size].trimAscii()
-        headers.add(SocketHttp11Header(name.toAsciiLower(), value))
+        let value = headText[colon + 1..lineEnd].trimAscii()
+        headers.add(SocketHttp11Header(normalizeSocketHttp11HeaderName(name), value))
+        lineStart = if (lineEnd < headText.size) { lineEnd + 2 } else { headText.size }
     }
 
     Some(
@@ -263,11 +265,44 @@ func decodeSocketHttp11HeadText(bytes: Array<UInt8>, length: Int64): String {
     if (length <= 0) {
         return ""
     }
-    let out = Array<UInt8>(length, repeat: 0)
-    for (i in 0..length) {
-        out[i] = bytes[i]
+    String.fromUtf8(bytes[..length])
+}
+
+func findSocketHttp11LineEnd(input: String, start: Int64): Int64 {
+    var i = start
+    while (i + 1 < input.size) {
+        if (input[i] == UInt8(13) && input[i + 1] == UInt8(10)) {
+            return i
+        }
+        i += 1
     }
-    String.fromUtf8(out)
+    input.size
+}
+
+func findSocketHttp11Byte(
+    input: String,
+    target: UInt8,
+    start: Int64,
+    end: Int64
+): Int64 {
+    var i = start
+    while (i < end) {
+        if (input[i] == target) {
+            return i
+        }
+        i += 1
+    }
+    -1
+}
+
+func normalizeSocketHttp11HeaderName(input: String): String {
+    for (i in 0..input.size) {
+        let code = input[i]
+        if (code >= UInt8(65) && code <= UInt8(90)) {
+            return input.toAsciiLower()
+        }
+    }
+    input
 }
 
 func isSocketHttp11HeaderName(input: String): Bool {
@@ -281,28 +316,27 @@ func isSocketHttp11Token(input: String): Bool {
     if (input.size == 0) {
         return false
     }
-    for (ch in input.toRuneArray()) {
-        if (!socketHttp11TokenRuneAllowed(ch)) {
+    for (i in 0..input.size) {
+        if (!socketHttp11TokenByteAllowed(input[i])) {
             return false
         }
     }
     true
 }
 
-func socketHttp11TokenRuneAllowed(ch: Rune): Bool {
-    let code = UInt32(ch)
-    (code >= UInt32(r'0') && code <= UInt32(r'9')) ||
-    (code >= UInt32(r'A') && code <= UInt32(r'Z')) ||
-    (code >= UInt32(r'a') && code <= UInt32(r'z')) ||
-    code == UInt32(33) ||
-    (code >= UInt32(35) && code <= UInt32(39)) ||
-    code == UInt32(42) ||
-    code == UInt32(43) ||
-    code == UInt32(45) ||
-    code == UInt32(46) ||
-    code == UInt32(94) ||
-    code == UInt32(95) ||
-    code == UInt32(96) ||
-    code == UInt32(124) ||
-    code == UInt32(126)
+func socketHttp11TokenByteAllowed(code: UInt8): Bool {
+    (code >= UInt8(48) && code <= UInt8(57)) ||
+    (code >= UInt8(65) && code <= UInt8(90)) ||
+    (code >= UInt8(97) && code <= UInt8(122)) ||
+    code == UInt8(33) ||
+    (code >= UInt8(35) && code <= UInt8(39)) ||
+    code == UInt8(42) ||
+    code == UInt8(43) ||
+    code == UInt8(45) ||
+    code == UInt8(46) ||
+    code == UInt8(94) ||
+    code == UInt8(95) ||
+    code == UInt8(96) ||
+    code == UInt8(124) ||
+    code == UInt8(126)
 }
