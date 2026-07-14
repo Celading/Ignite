@@ -65,6 +65,20 @@ public class SocketHttp11HeadParseTestSuite {
     }
 
     @TestCase
+    public func testParserKeepsFullRfcTokenPunctuationCoverage(): Unit {
+        let wire =
+            "M-SEARCH /token HTTP/1.1\r\n" +
+            "X!#$%&'*+-.^_`|~Token: value\r\n" +
+            "\r\n"
+        match (tryParseSocketHttp11RequestHead(wire.toArray())) {
+            case Some(parsed) =>
+                @Assert(parsed.method, "M-SEARCH")
+                @Assert(parsed.headers[0].name, "x!#$%&'*+-.^_`|~token")
+            case None => @Fail("complete token-punctuation request should parse")
+        }
+    }
+
+    @TestCase
     public func testParserRespectsConfiguredHeaderByteAndCountLimits(): Unit {
         let option = SocketHttp11HeadParseOption(maxHeaderBytes: 24)
         assertSocketHttp11HeadFailure(

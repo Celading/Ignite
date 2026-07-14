@@ -278,20 +278,31 @@ func isSocketHttp11HeaderName(input: String): Bool {
 }
 
 func isSocketHttp11Token(input: String): Bool {
-    let allowed = "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toRuneArray()
+    if (input.size == 0) {
+        return false
+    }
     for (ch in input.toRuneArray()) {
-        if (!socketHttp11AllowedContains(allowed, ch)) {
+        if (!socketHttp11TokenRuneAllowed(ch)) {
             return false
         }
     }
     true
 }
 
-func socketHttp11AllowedContains(allowed: Array<Rune>, target: Rune): Bool {
-    for (item in allowed) {
-        if (item == target) {
-            return true
-        }
-    }
-    false
+func socketHttp11TokenRuneAllowed(ch: Rune): Bool {
+    let code = UInt32(ch)
+    (code >= UInt32(r'0') && code <= UInt32(r'9')) ||
+    (code >= UInt32(r'A') && code <= UInt32(r'Z')) ||
+    (code >= UInt32(r'a') && code <= UInt32(r'z')) ||
+    code == UInt32(33) ||
+    (code >= UInt32(35) && code <= UInt32(39)) ||
+    code == UInt32(42) ||
+    code == UInt32(43) ||
+    code == UInt32(45) ||
+    code == UInt32(46) ||
+    code == UInt32(94) ||
+    code == UInt32(95) ||
+    code == UInt32(96) ||
+    code == UInt32(124) ||
+    code == UInt32(126)
 }
