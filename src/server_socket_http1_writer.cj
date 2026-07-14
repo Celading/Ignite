@@ -523,18 +523,40 @@ func serializeSocketHttp11ResponseHead(
     headers: Array<SocketHttp11Header>
 ): Array<UInt8> {
     let out = ArrayList<UInt8>()
-    appendSocketHttp11WriterText(out, "${version} ${statusCode} ${reasonPhrase}\r\n")
+    appendSocketHttp11WriterText(out, version)
+    out.add(UInt8(32))
+    appendSocketHttp11WriterStatusCode(out, statusCode)
+    out.add(UInt8(32))
+    appendSocketHttp11WriterText(out, reasonPhrase)
+    appendSocketHttp11WriterCrlf(out)
     for (header in headers) {
-        appendSocketHttp11WriterText(out, "${header.name}: ${header.value}\r\n")
+        appendSocketHttp11WriterText(out, header.name)
+        out.add(UInt8(58))
+        out.add(UInt8(32))
+        appendSocketHttp11WriterText(out, header.value)
+        appendSocketHttp11WriterCrlf(out)
     }
-    appendSocketHttp11WriterText(out, "\r\n")
+    appendSocketHttp11WriterCrlf(out)
     out.toArray()
 }
 
 func appendSocketHttp11WriterText(out: ArrayList<UInt8>, text: String): Unit {
-    for (b in text.toArray()) {
-        out.add(b)
+    var i: Int64 = 0
+    while (i < text.size) {
+        out.add(text[i])
+        i += 1
     }
+}
+
+func appendSocketHttp11WriterCrlf(out: ArrayList<UInt8>): Unit {
+    out.add(UInt8(13))
+    out.add(UInt8(10))
+}
+
+func appendSocketHttp11WriterStatusCode(out: ArrayList<UInt8>, statusCode: Int64): Unit {
+    out.add(UInt8(statusCode / 100 + 48))
+    out.add(UInt8((statusCode / 10) % 10 + 48))
+    out.add(UInt8(statusCode % 10 + 48))
 }
 
 func resolveSocketHttp11ReasonPhrase(statusCode: Int64, configured: String): String {

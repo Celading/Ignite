@@ -47,6 +47,31 @@ public class SocketHttp11ResponseWriterTestSuite {
     }
 
     @TestCase
+    public func testWriterPlanSerializesHeaderComponentsWithoutChangingUtf8Wire(): Unit {
+        let request = openSocketHttp11WriterTestRequest(
+            "GET /headers HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        )
+        let headers = Array<SocketHttp11Header>(2, repeat: SocketHttp11Header("", ""))
+        headers[0] = SocketHttp11Header("content-type", "text/plain; charset=utf-8")
+        headers[1] = SocketHttp11Header("x-ignite-label", "Cangjie-仓颉")
+        let plan = buildSocketHttp11ResponseWritePlan(
+            request,
+            201,
+            headers,
+            SocketHttp11ResponseBodyMode.KnownLength,
+            declaredBodyBytes: 0
+        )
+
+        @Assert(
+            String.fromUtf8(plan.headBytes),
+            "HTTP/1.1 201 Created\r\n" +
+            "content-type: text/plain; charset=utf-8\r\n" +
+            "x-ignite-label: Cangjie-仓颉\r\n" +
+            "content-length: 0\r\n\r\n"
+        )
+    }
+
+    @TestCase
     public func testPublicKnownLengthWriterKeepsCopyIsolation(): Unit {
         let request = openSocketHttp11WriterTestRequest(
             "GET /copy HTTP/1.1\r\nHost: example.com\r\n\r\n"
