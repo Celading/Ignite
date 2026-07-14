@@ -625,10 +625,11 @@ func serveSocketServerEngineShellSocketTurns(
     option: ServerEngineListenOption
 ): Unit {
     var moreTurns = true
+    let requestHeadReadBuffer = Array<UInt8>(4096, repeat: 0)
     while (moreTurns) {
         try {
             socket.readTimeout = Some(option.readHeaderTimeout)
-            let request = readSocketServerEngineShellRequest(socket)
+            let request = readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
@@ -724,10 +725,10 @@ func socketServerEngineShellConnectionHasToken(
 }
 
 func readSocketServerEngineShellRequest(
-    socket: TcpSocket
+    socket: TcpSocket,
+    buf: Array<UInt8>
 ): SocketHttp11SessionRequest {
     let session = SocketHttp11ConnectionSession()
-    let buf = Array<UInt8>(4096, repeat: 0)
     while (true) {
         let n = socket.read(buf)
         if (n <= 0) {
