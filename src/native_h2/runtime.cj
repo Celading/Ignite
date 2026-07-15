@@ -25,6 +25,7 @@ public class NativeH2SingleStreamRequest {
     public let authority: String
     public let path: String
     public let body: Array<UInt8>
+    public let headers: Array<NativeH2Header>
 
     public init(
         streamId: Int64,
@@ -32,7 +33,8 @@ public class NativeH2SingleStreamRequest {
         scheme: String,
         authority: String,
         path: String,
-        body: Array<UInt8>
+        body: Array<UInt8>,
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
     ) {
         this.streamId = streamId
         this.method = method
@@ -40,6 +42,7 @@ public class NativeH2SingleStreamRequest {
         this.authority = authority
         this.path = path
         this.body = nativeH2Clone(body)
+        this.headers = nativeH2CloneHeaders(headers)
     }
 }
 
@@ -183,12 +186,20 @@ class NativeH2DecodedRequestHead {
     let scheme: String
     let authority: String
     let path: String
+    let headers: Array<NativeH2Header>
 
-    init(method: String, scheme: String, authority: String, path: String) {
+    init(
+        method: String,
+        scheme: String,
+        authority: String,
+        path: String,
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
+    ) {
         this.method = method
         this.scheme = scheme
         this.authority = authority
         this.path = path
+        this.headers = nativeH2CloneHeaders(headers)
     }
 }
 
@@ -219,7 +230,8 @@ class NativeH2InboundStream {
             head.scheme,
             head.authority,
             head.path,
-            body.toArray()
+            body.toArray(),
+            headers: head.headers
         )
     }
 }

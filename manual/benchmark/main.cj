@@ -32,6 +32,13 @@ main() {
         _ = ctx.sendString("Hello, Ignite!")
     })
 
+    app.get("/h2/request-headers", { ctx =>
+        let userAgent = ctx.header("user-agent") ?? ""
+        let accept = ctx.header("accept") ?? ""
+        let probe = ctx.header("x-ignite-probe") ?? ""
+        _ = ctx.sendString(userAgent + "|" + accept + "|" + probe)
+    })
+
     app.get("/json", { ctx =>
         _ = ctx.json(#"{"framework":"ignite","version":"0.8.0","ok":true}"#)
     })

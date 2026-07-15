@@ -93,6 +93,9 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
         this.queryStringValue = if (targetParts.size == 2) { targetParts[1] } else { "" }
         let headers = HttpHeaders()
         headers.add("host", request.authority)
+        for (header in request.headers) {
+            headers.add(header.name, header.value)
+        }
         this.requestHeadersValue = headers
     }
 

@@ -30,6 +30,11 @@ public class NativeH2RuntimeInternalTestSuite {
         @Assert(first.scheme, "http")
         @Assert(first.path, "/health")
         @Assert(first.authority.size > 0, true)
+        @Assert(
+            nativeH2RequestHeaderValue(first.headers, "user-agent"),
+            "ignite-hq0828-node-capture"
+        )
+        @Assert(nativeH2RequestHeaderValue(first.headers, "accept"), "*/*")
         @Assert(decoder.dynamicEntryCount(), 3)
 
         let second = decoder.decodeRequestHead(secondBlock)
@@ -37,7 +42,48 @@ public class NativeH2RuntimeInternalTestSuite {
         @Assert(second.scheme, "http")
         @Assert(second.authority, first.authority)
         @Assert(second.path, "/plaintext")
+        @Assert(
+            nativeH2RequestHeaderValue(second.headers, "user-agent"),
+            "ignite-hq0828-node-capture"
+        )
+        @Assert(nativeH2RequestHeaderValue(second.headers, "accept"), "*/*")
         @Assert(decoder.dynamicEntryCount(), 3)
+    }
+
+    @TestCase
+    public func testNativeH2AppCarrierPreservesRegularAndDuplicateHeaders(): Unit {
+        let request = NativeH2SingleStreamRequest(
+            1,
+            "GET",
+            "http",
+            "localhost:18880",
+            "/headers",
+            Array<UInt8>(),
+            headers: [
+                NativeH2Header("user-agent", "node-probe"),
+                NativeH2Header("accept", "*/*"),
+                NativeH2Header("x-dup", "one"),
+                NativeH2Header("x-dup", "two")
+            ]
+        )
+        let carrier = NativeH2AppCurrentRequestCarrier(request, "127.0.0.1")
+
+        @Assert(carrier.requestHeaderValue("host") ?? "", "localhost:18880")
+        @Assert(carrier.requestHeaderValue("user-agent") ?? "", "node-probe")
+        @Assert(carrier.requestHeaderValue("accept") ?? "", "*/*")
+        var duplicateCount: Int64 = 0
+        var duplicateJoined = ""
+        for ((name, values) in carrier.requestHeaders()) {
+            if (name == "x-dup") {
+                duplicateCount = values.size
+                for (value in values) {
+                    if (duplicateJoined.size > 0) { duplicateJoined += "," }
+                    duplicateJoined += value
+                }
+            }
+        }
+        @Assert(duplicateCount, 2)
+        @Assert(duplicateJoined, "one,two")
     }
 
     @TestCase
@@ -959,6 +1005,18 @@ func assertNativeH2HpackCompressionFailure(
             e.message.contains(expectedMessage)
     }
     @Assert(rejected, true)
+}
+
+func nativeH2RequestHeaderValue(
+    headers: Array<NativeH2Header>,
+    name: String
+): String {
+    for (header in headers) {
+        if (header.name == name) {
+            return header.value
+        }
+    }
+    ""
 }
 
 func nativeH2TestWindowUpdate(streamId: Int64, increment: Int64): NativeH2Frame {

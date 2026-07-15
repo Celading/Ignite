@@ -125,6 +125,7 @@ class NativeH2HpackDecoderState {
         var scheme = ""
         var authority = ""
         var path = ""
+        let headers = ArrayList<NativeH2Header>()
         var regularHeaderSeen = false
         for (field in fields) {
             if (field.name.startsWith(":")) {
@@ -152,6 +153,7 @@ class NativeH2HpackDecoderState {
                 }
             } else {
                 regularHeaderSeen = true
+                headers.add(NativeH2Header(field.name, field.value))
             }
         }
         if (method.size == 0 || scheme.size == 0 || authority.size == 0 || path.size == 0) {
@@ -159,7 +161,9 @@ class NativeH2HpackDecoderState {
                 "native H2 request requires :method, :scheme, :authority, and :path"
             )
         }
-        NativeH2DecodedRequestHead(method, scheme, authority, path)
+        NativeH2DecodedRequestHead(
+            method, scheme, authority, path, headers: headers.toArray()
+        )
     }
 }
 
