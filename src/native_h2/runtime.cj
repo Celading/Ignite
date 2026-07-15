@@ -27,6 +27,7 @@ public class NativeH2SingleStreamRequest {
     public let path: String
     public let body: Array<UInt8>
     public let headers: Array<NativeH2Header>
+    public let trailers: Array<NativeH2Header>
 
     public init(
         streamId: Int64,
@@ -35,7 +36,8 @@ public class NativeH2SingleStreamRequest {
         authority: String,
         path: String,
         body: Array<UInt8>,
-        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>(),
+        trailers!: Array<NativeH2Header> = Array<NativeH2Header>()
     ) {
         this.streamId = streamId
         this.method = method
@@ -44,6 +46,7 @@ public class NativeH2SingleStreamRequest {
         this.path = path
         this.body = nativeH2Clone(body)
         this.headers = nativeH2CloneHeaders(headers)
+        this.trailers = nativeH2CloneHeaders(trailers)
     }
 }
 
@@ -208,6 +211,7 @@ class NativeH2InboundStream {
     let streamId: Int64
     let head: NativeH2DecodedRequestHead
     let body = ArrayList<UInt8>()
+    var trailers = Array<NativeH2Header>()
     var sendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
 
     init(streamId: Int64, head: NativeH2DecodedRequestHead) {
@@ -224,6 +228,10 @@ class NativeH2InboundStream {
         }
     }
 
+    func setTrailers(value: Array<NativeH2Header>): Unit {
+        trailers = nativeH2CloneHeaders(value)
+    }
+
     func request(): NativeH2SingleStreamRequest {
         NativeH2SingleStreamRequest(
             streamId,
@@ -232,7 +240,8 @@ class NativeH2InboundStream {
             head.authority,
             head.path,
             body.toArray(),
-            headers: head.headers
+            headers: head.headers,
+            trailers: trailers
         )
     }
 }
@@ -240,11 +249,18 @@ class NativeH2InboundStream {
 class NativeH2PendingRequestHead {
     let streamId: Int64
     let endStream: Bool
+    let isTrailer: Bool
     let payload = ArrayList<UInt8>()
 
-    init(streamId: Int64, endStream: Bool, firstPayload: Array<UInt8>) {
+    init(
+        streamId: Int64,
+        endStream: Bool,
+        firstPayload: Array<UInt8>,
+        isTrailer!: Bool = false
+    ) {
         this.streamId = streamId
         this.endStream = endStream
+        this.isTrailer = isTrailer
         append(firstPayload)
     }
 
@@ -421,16 +437,28 @@ public func serveNativeH2Connection(
                 }
                 pending.append(frame.payload)
                 if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
-                    let stream = NativeH2InboundStream(
-                        pending.streamId,
-                        hpackDecoder.decodeRequestHead(pending.headerBlock())
-                    )
-                    streams.add(pending.streamId, stream)
-                    pendingRequestHead = None
-                    if (pending.endStream) {
+                    if (pending.isTrailer) {
+                        let stream = streams.get(pending.streamId) ??
+                            nativeH2ProtocolFailure(
+                                "native H2 trailing CONTINUATION references an unknown stream"
+                            )
+                        stream.setTrailers(
+                            hpackDecoder.decodeRequestTrailers(pending.headerBlock())
+                        )
                         nativeH2StartCompletedStream(streams, handlers, stream, handler)
                         completedStreams += 1
+                    } else {
+                        let stream = NativeH2InboundStream(
+                            pending.streamId,
+                            hpackDecoder.decodeRequestHead(pending.headerBlock())
+                        )
+                        streams.add(pending.streamId, stream)
+                        if (pending.endStream) {
+                            nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                            completedStreams += 1
+                        }
                     }
+                    pendingRequestHead = None
                 }
                 continue
             }
@@ -442,16 +470,39 @@ public func serveNativeH2Connection(
                 continue
             }
             if (frame.frameType == UInt8(0x1)) {
-                if (frame.streamId <= 0 || frame.streamId % 2 != 1 ||
-                    frame.streamId <= lastOpenedStreamId) {
+                if (frame.streamId <= 0 || frame.streamId % 2 != 1) {
                     nativeH2ProtocolFailure(
-                        "native H2 requires increasing client-initiated streams"
+                        "native H2 HEADERS requires a client-initiated stream"
                     )
                 }
                 if ((frame.flags & UInt8(0x8)) != UInt8(0) ||
                     (frame.flags & UInt8(0x20)) != UInt8(0)) {
                     nativeH2ProtocolFailure(
                         "native H2 does not support PADDED or PRIORITY HEADERS"
+                    )
+                }
+                if (let Some(stream) <- streams.get(frame.streamId)) {
+                    if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
+                        nativeH2ProtocolFailure(
+                            "native H2 request trailers must terminate the stream"
+                        )
+                    }
+                    if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
+                        stream.setTrailers(hpackDecoder.decodeRequestTrailers(frame.payload))
+                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        completedStreams += 1
+                    } else {
+                        pendingRequestHead = Some(
+                            NativeH2PendingRequestHead(
+                                frame.streamId, true, frame.payload, isTrailer: true
+                            )
+                        )
+                    }
+                    continue
+                }
+                if (frame.streamId <= lastOpenedStreamId) {
+                    nativeH2ProtocolFailure(
+                        "native H2 HEADERS references an unknown or closed stream"
                     )
                 }
                 if (streams.size + handlers.size + outbound.size >=

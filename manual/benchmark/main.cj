@@ -39,6 +39,11 @@ main() {
         _ = ctx.sendString(userAgent + "|" + accept + "|" + probe)
     })
 
+    app.post("/h2/request-trailers", { ctx =>
+        let trailer = ctx.trailer("x-ignite-trailer") ?? ""
+        _ = ctx.sendString(ctx.bodyString() + "|" + trailer)
+    })
+
     app.get("/json", { ctx =>
         _ = ctx.json(#"{"framework":"ignite","version":"0.8.0","ok":true}"#)
     })

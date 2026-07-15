@@ -64,6 +64,10 @@ public class NativeH2RuntimeInternalTestSuite {
                 NativeH2Header("accept", "*/*"),
                 NativeH2Header("x-dup", "one"),
                 NativeH2Header("x-dup", "two")
+            ],
+            trailers: [
+                NativeH2Header("x-trailer", "first"),
+                NativeH2Header("x-trailer", "second")
             ]
         )
         let carrier = NativeH2AppCurrentRequestCarrier(request, "127.0.0.1")
@@ -84,6 +88,27 @@ public class NativeH2RuntimeInternalTestSuite {
         }
         @Assert(duplicateCount, 2)
         @Assert(duplicateJoined, "one,two")
+        var trailerCount: Int64 = 0
+        for ((name, values) in carrier.requestTrailers()) {
+            if (name == "x-trailer") {
+                trailerCount = values.size
+            }
+        }
+        @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
+        @Assert(trailerCount, 2)
+    }
+
+    @TestCase
+    public func testHpackRequestTrailersRejectPseudoHeaders(): Unit {
+        let decoder = NativeH2HpackDecoderState()
+        var rejected = false
+        try {
+            let _ = decoder.decodeRequestTrailers([UInt8(0x82)])
+        } catch (e: NativeH2ProtocolException) {
+            rejected = e.errorCode == NATIVE_H2_ERROR_PROTOCOL &&
+                e.message.contains("must not contain pseudo-headers")
+        }
+        @Assert(rejected, true)
     }
 
     @TestCase
@@ -318,6 +343,110 @@ public class NativeH2RuntimeInternalTestSuite {
             overflowRejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION
         }
         @Assert(overflowRejected, true)
+    }
+
+    @TestCase
+    public func testRequestTrailersCompleteSplitWireTurn(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 request trailer test could not reserve loopback port")
+        let app = App()
+        app.post("/trailers", { ctx =>
+            let trailer = ctx.trailer("x-request-trailer") ?? ""
+            let _ = ctx.sendString(ctx.bodyString() + "|" + trailer)
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x4), 1, nativeH2TestRequestHeaders("/trailers"))
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x0), UInt8(0), 1, "payload".toArray())
+            )
+            let trailers = nativeH2TestLiteralHeader("x-request-trailer", "seen")
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x1), 1, nativeH2Slice(trailers, 0, 7))
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x9), UInt8(0x4), 1, nativeH2Slice(trailers, 7, trailers.size))
+            )
+
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(String.fromUtf8(responseData.payload), "payload|seen")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRequestTrailersRequireTerminalEndStream(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 non-terminal trailer test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(accepted, { _ => NativeH2SingleStreamResponse() })
+                NATIVE_H2_ERROR_NO_ERROR
+            } catch (e: NativeH2ProtocolException) {
+                e.errorCode
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x4), 1, nativeH2TestRequestHeaders("/trailers"))
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x4), 1,
+                    nativeH2TestLiteralHeader("x-request-trailer", "seen")
+                )
+            )
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            let goAway = nativeH2ReadFrame(client)
+            @Assert(goAway.frameType, UInt8(0x7))
+            @Assert(goAway.payload[7], UInt8(NATIVE_H2_ERROR_PROTOCOL))
+            @Assert(serverFuture.get(Duration.second * 2), NATIVE_H2_ERROR_PROTOCOL)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
     }
 
     @TestCase
@@ -1196,6 +1325,27 @@ func nativeH2TestRequestHeaders(path: String): Array<UInt8> {
     i = 0
     while (i < pathBytes.size) {
         payload[pathOffset + 2 + i] = pathBytes[i]
+        i += 1
+    }
+    payload
+}
+
+func nativeH2TestLiteralHeader(name: String, value: String): Array<UInt8> {
+    let nameBytes = name.toArray()
+    let valueBytes = value.toArray()
+    let payload = Array<UInt8>(3 + nameBytes.size + valueBytes.size, repeat: 0)
+    payload[0] = UInt8(0)
+    payload[1] = UInt8(nameBytes.size)
+    var i: Int64 = 0
+    while (i < nameBytes.size) {
+        payload[2 + i] = nameBytes[i]
+        i += 1
+    }
+    let valueOffset = 2 + nameBytes.size
+    payload[valueOffset] = UInt8(valueBytes.size)
+    i = 0
+    while (i < valueBytes.size) {
+        payload[valueOffset + 1 + i] = valueBytes[i]
         i += 1
     }
     payload

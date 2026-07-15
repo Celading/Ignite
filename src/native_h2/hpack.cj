@@ -165,6 +165,20 @@ class NativeH2HpackDecoderState {
             method, scheme, authority, path, headers: headers.toArray()
         )
     }
+
+    func decodeRequestTrailers(payload: Array<UInt8>): Array<NativeH2Header> {
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let trailers = ArrayList<NativeH2Header>()
+        for (field in fields) {
+            if (field.name.startsWith(":")) {
+                nativeH2ProtocolFailure(
+                    "native H2 request trailers must not contain pseudo-headers"
+                )
+            }
+            trailers.add(NativeH2Header(field.name, field.value))
+        }
+        trailers.toArray()
+    }
 }
 
 func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHead {

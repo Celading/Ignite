@@ -76,6 +76,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     let requestPathValue: String
     let queryStringValue: String
     let requestHeadersValue: HttpHeaders
+    let requestTrailersValue: HttpHeaders
     let responseHeadersValue = HashMap<String, String>()
     var responseStatusValue: UInt16 = 200
     var responseBodyValue = ArrayList<UInt8>()
@@ -97,6 +98,11 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
             headers.add(header.name, header.value)
         }
         this.requestHeadersValue = headers
+        let trailers = HttpHeaders()
+        for (trailer in request.trailers) {
+            trailers.add(trailer.name, trailer.value)
+        }
+        this.requestTrailersValue = trailers
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -158,7 +164,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+        requestTrailersValue
     }
 
     public override func requestBodyStream(): InputStream {
