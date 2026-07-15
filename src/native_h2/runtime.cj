@@ -300,13 +300,16 @@ class NativeH2OutboundStream {
 
 class NativeH2PendingHandler {
     let future: Future<NativeH2SingleStreamResponse>
+    let requestMethod: String
     var sendWindow: Int64
 
     init(
         future: Future<NativeH2SingleStreamResponse>,
+        requestMethod: String,
         sendWindow: Int64
     ) {
         this.future = future
+        this.requestMethod = requestMethod
         this.sendWindow = sendWindow
     }
 }
@@ -693,7 +696,7 @@ func nativeH2StartCompletedStream(
     }
     handlers.add(
         stream.streamId,
-        NativeH2PendingHandler(future, stream.sendWindow)
+        NativeH2PendingHandler(future, request.method, stream.sendWindow)
     )
     let _ = streams.remove(stream.streamId)
 }
@@ -709,25 +712,35 @@ func nativeH2HarvestCompletedHandlers(
             if (response.body.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
                 throw Exception("native H2 response body exceeds 1 MiB")
             }
+            let bodyForbidden = nativeH2ResponseBodyForbidden(
+                pending.requestMethod,
+                response.status
+            )
             nativeH2WriteFrame(
                 socket,
                 NativeH2Frame(
                     UInt8(0x1),
-                    UInt8(0x4),
+                    if (bodyForbidden) { UInt8(0x5) } else { UInt8(0x4) },
                     streamId,
                     nativeH2EncodeResponseHead(response.status, response.headers)
                 )
             )
-            outbound.add(
-                streamId,
-                NativeH2OutboundStream(streamId, response.body, pending.sendWindow)
-            )
+            if (!bodyForbidden) {
+                outbound.add(
+                    streamId,
+                    NativeH2OutboundStream(streamId, response.body, pending.sendWindow)
+                )
+            }
             completed.add(streamId)
         }
     }
     for (streamId in completed) {
         let _ = handlers.remove(streamId)
     }
+}
+
+func nativeH2ResponseBodyForbidden(method: String, status: UInt16): Bool {
+    method.toAsciiUpper() == "HEAD" || status == UInt16(204) || status == UInt16(304)
 }
 
 func nativeH2FlushOutbound(

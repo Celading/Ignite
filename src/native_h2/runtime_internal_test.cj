@@ -450,6 +450,21 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testHeadResponseEndsOnHeadersWithoutData(): Unit {
+        nativeH2AssertResponseBodySuppressed("HEAD", UInt16(200))
+    }
+
+    @TestCase
+    public func test204ResponseEndsOnHeadersWithoutData(): Unit {
+        nativeH2AssertResponseBodySuppressed("GET", UInt16(204))
+    }
+
+    @TestCase
+    public func test304ResponseEndsOnHeadersWithoutData(): Unit {
+        nativeH2AssertResponseBodySuppressed("GET", UInt16(304))
+    }
+
+    @TestCase
     public func testConnectionKeepsInterleavedStreamsIndependent(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -1328,6 +1343,92 @@ func nativeH2TestRequestHeaders(path: String): Array<UInt8> {
         i += 1
     }
     payload
+}
+
+func nativeH2TestRequestHeadersForMethod(path: String, method: String): Array<UInt8> {
+    let authority = "localhost"
+    let methodBytes = method.toArray()
+    let payload = Array<UInt8>(7 + methodBytes.size + authority.size + path.size, repeat: 0)
+    payload[0] = UInt8(0x02)
+    payload[1] = UInt8(methodBytes.size)
+    var i: Int64 = 0
+    while (i < methodBytes.size) {
+        payload[2 + i] = methodBytes[i]
+        i += 1
+    }
+    let schemeOffset = 2 + methodBytes.size
+    payload[schemeOffset] = UInt8(0x86)
+    payload[schemeOffset + 1] = UInt8(0x01)
+    payload[schemeOffset + 2] = UInt8(authority.size)
+    let authorityBytes = authority.toArray()
+    i = 0
+    while (i < authorityBytes.size) {
+        payload[schemeOffset + 3 + i] = authorityBytes[i]
+        i += 1
+    }
+    let pathOffset = schemeOffset + 3 + authorityBytes.size
+    payload[pathOffset] = UInt8(0x04)
+    payload[pathOffset + 1] = UInt8(path.size)
+    let pathBytes = path.toArray()
+    i = 0
+    while (i < pathBytes.size) {
+        payload[pathOffset + 2 + i] = pathBytes[i]
+        i += 1
+    }
+    payload
+}
+
+func nativeH2AssertResponseBodySuppressed(method: String, status: UInt16): Unit {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+    listener.bind()
+    let port = (listener.localAddress as IPSocketAddress)?.port ??
+        throw Exception("native H2 body suppression test could not reserve loopback port")
+    let serverFuture = spawn {
+        let accepted = listener.accept()
+        try {
+            serveNativeH2Connection(
+                accepted,
+                { _ =>
+                    NativeH2SingleStreamResponse(
+                        status: status,
+                        body: "must-not-reach-wire".toArray()
+                    )
+                },
+                maxCompletedStreams: 1
+            )
+        } finally {
+            try { accepted.close() } catch (_: Exception) {}
+        }
+    }
+
+    let client = TcpSocket("127.0.0.1", port)
+    try {
+        client.connect(timeout: Some(Duration.second * 2))
+        client.readTimeout = Some(Duration.second * 2)
+        client.write(NATIVE_H2_PREFACE)
+        nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+        nativeH2WriteFrame(
+            client,
+            NativeH2Frame(
+                UInt8(0x1), UInt8(0x5), 1,
+                nativeH2TestRequestHeadersForMethod("/body-forbidden", method)
+            )
+        )
+
+        let serverSettings = nativeH2ReadFrame(client)
+        let settingsAck = nativeH2ReadFrame(client)
+        let responseHeaders = nativeH2ReadFrame(client)
+        @Assert(serverSettings.frameType, UInt8(0x4))
+        @Assert(settingsAck.frameType, UInt8(0x4))
+        @Assert(settingsAck.flags, UInt8(0x1))
+        @Assert(responseHeaders.frameType, UInt8(0x1))
+        @Assert(responseHeaders.flags, UInt8(0x5))
+        @Assert(responseHeaders.streamId, 1)
+        let _ = serverFuture.get(Duration.second * 2)
+    } finally {
+        try { client.close() } catch (_: Exception) {}
+        try { listener.close() } catch (_: Exception) {}
+    }
 }
 
 func nativeH2TestLiteralHeader(name: String, value: String): Array<UInt8> {

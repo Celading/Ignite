@@ -39,6 +39,10 @@ main() {
         _ = ctx.sendString(userAgent + "|" + accept + "|" + probe)
     })
 
+    app.head("/h2/head", { ctx =>
+        _ = ctx.sendString("must-not-reach-wire")
+    })
+
     app.post("/h2/request-trailers", { ctx =>
         let trailer = ctx.trailer("x-ignite-trailer") ?? ""
         _ = ctx.sendString(ctx.bodyString() + "|" + trailer)
