@@ -257,7 +257,8 @@ class NativeH2PendingHandler {
 /// Serves one bounded HTTP/2 stream on an already accepted cleartext socket.
 ///
 /// The connection runtime owns multiplexing and outbound flow control, while
-/// TLS, CONTINUATION, dynamic-table HPACK, and Huffman remain outside this API.
+/// TLS and CONTINUATION remain outside this API. Request HPACK decoding keeps
+/// one bounded dynamic-table state for the lifetime of the connection.
 public func serveNativeH2SingleStream(
     socket: TcpSocket,
     handler: NativeH2SingleStreamHandler
@@ -302,6 +303,7 @@ public func serveNativeH2Connection(
     let handlers = HashMap<Int64, NativeH2PendingHandler>()
     let outbound = HashMap<Int64, NativeH2OutboundStream>()
     let frameReader = NativeH2FrameReader()
+    let hpackDecoder = NativeH2HpackDecoderState()
     var lastOpenedStreamId: Int64 = 0
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
@@ -386,7 +388,7 @@ public func serveNativeH2Connection(
                     throw Exception("native H2 concurrent stream limit exceeded")
                 }
                 let stream = NativeH2InboundStream(
-                    frame.streamId, nativeH2DecodeRequestHead(frame.payload)
+                    frame.streamId, hpackDecoder.decodeRequestHead(frame.payload)
                 )
                 streams.add(frame.streamId, stream)
                 lastOpenedStreamId = frame.streamId
@@ -790,106 +792,6 @@ func nativeH2ReadExactly(socket: TcpSocket, length: Int64): Array<UInt8> {
         offset += n
     }
     out
-}
-
-func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHead {
-    var method = ""
-    var scheme = ""
-    var authority = ""
-    var path = ""
-    var cursor: Int64 = 0
-    while (cursor < payload.size) {
-        let first = payload[cursor]
-        cursor += 1
-        if ((first & UInt8(0x80)) != UInt8(0)) {
-            let index = Int64(first & UInt8(0x7f))
-            if (index == 0 || index == 127) {
-                nativeH2ProtocolFailure(
-                    "native H2 first-slice HPACK indexed integer is unsupported",
-                    NATIVE_H2_ERROR_COMPRESSION
-                )
-            }
-            if (index > 61) {
-                nativeH2ProtocolFailure(
-                    "native H2 first-slice HPACK dynamic-table indexes are unsupported",
-                    NATIVE_H2_ERROR_COMPRESSION
-                )
-            }
-            if (index == 2) {
-                method = "GET"
-            } else if (index == 3) {
-                method = "POST"
-            } else if (index == 4) {
-                path = "/"
-            } else if (index == 5) {
-                path = "/index.html"
-            } else if (index == 6) {
-                scheme = "http"
-            } else if (index == 7) {
-                scheme = "https"
-            }
-            continue
-        }
-        if ((first & UInt8(0xf0)) != UInt8(0)) {
-            nativeH2ProtocolFailure(
-                "native H2 first-slice HPACK only supports indexed or non-indexed literals",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        let nameIndex = Int64(first & UInt8(0x0f))
-        if (nameIndex == 15) {
-            nativeH2ProtocolFailure(
-                "native H2 first-slice HPACK literal name integer is unsupported",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        if (nameIndex != 1 && nameIndex != 4) {
-            nativeH2ProtocolFailure(
-                "native H2 first-slice HPACK literal name is unsupported",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        if (cursor >= payload.size) {
-            nativeH2ProtocolFailure(
-                "native H2 HPACK literal is missing value length",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        let valueLengthByte = payload[cursor]
-        cursor += 1
-        if ((valueLengthByte & UInt8(0x80)) != UInt8(0)) {
-            nativeH2ProtocolFailure(
-                "native H2 first-slice HPACK Huffman strings are unsupported",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        let valueLength = Int64(valueLengthByte & UInt8(0x7f))
-        if (valueLength == 127) {
-            nativeH2ProtocolFailure(
-                "native H2 first-slice HPACK string length integer is unsupported",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        if (cursor + valueLength > payload.size) {
-            nativeH2ProtocolFailure(
-                "native H2 HPACK literal value is truncated",
-                NATIVE_H2_ERROR_COMPRESSION
-            )
-        }
-        let value = String.fromUtf8(nativeH2Slice(payload, cursor, cursor + valueLength))
-        cursor += valueLength
-        if (nameIndex == 4) {
-            path = value
-        } else if (nameIndex == 1) {
-            authority = value
-        }
-    }
-    if (method.size == 0 || scheme.size == 0 || authority.size == 0 || path.size == 0) {
-        nativeH2ProtocolFailure(
-            "native H2 first-slice request requires :method, :scheme, :authority, and :path"
-        )
-    }
-    NativeH2DecodedRequestHead(method, scheme, authority, path)
 }
 
 func nativeH2EncodeStatus(status: UInt16): Array<UInt8> {

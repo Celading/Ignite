@@ -23,8 +23,9 @@ server log at `/tmp/ignite0800-benchmark-server.log`.
 Every JSONL measurement names its public/internal track, benchmark profile,
 implementation, scenario, protocol family, exact expected bytes,
 backend/version, concurrency, error count, timeout, P50/P95/P99, and current
-caveats. HTTP/H1 is the only implemented protocol family in this matrix;
-HTTPS and H2 require separate future runners and result files.
+caveats. HTTP/H1 remains the only public matrix protocol family. Cleartext
+prior-knowledge H2 has a separate internal smoke runner and result file; HTTPS
+still requires a future runner.
 
 ## Public Matrix
 
@@ -81,10 +82,11 @@ The default is Ignite native cleartext H1.
 
 The experimental cleartext prior-knowledge Native H2 `App.listen()` entry has
 a separate internal smoke runner: `./manual/benchmark/run_native_h2_smoke.sh`.
-It uses Ignite's own Native H2 client because the current first-slice HPACK
-decoder does not yet accept Node/browser Huffman and dynamic-table request
-headers. The smoke is not TLS/ALPN, h2c Upgrade, browser interoperability, or a
-release-grade H2 ranking.
+It first uses Ignite's own Native H2 client, then runs the shared Node JSONL
+load generator over one reused HTTP/2 session. The request decoder accepts the
+bounded Huffman and connection-owned dynamic-table behavior reproduced from
+Node, but this is not full RFC HPACK coverage. The smoke is not TLS/ALPN, h2c
+Upgrade, browser certification, or a release-grade H2 ranking.
 
 If the current commit has already been built and the host is intentionally
 offline, set `IGNITE_SAMPLE_SKIP_BUILD=1`. Without that flag the runner builds

@@ -24,5 +24,22 @@ IGNITE_SAMPLE_SKIP_BUILD=1 \
   "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
   "manual/benchmark/h2_smoke.cj" "${CLIENT_BIN}" | tee "${OUTPUT}"
 
+IGNITE_BENCH_URL="http://127.0.0.1:18880/plaintext" \
+IGNITE_BENCH_LABEL="ignite0800-native-h2-node-smoke" \
+IGNITE_BENCH_VERSION="IgniteNEXT" \
+IGNITE_BENCH_BACKEND="native-h2" \
+IGNITE_BENCH_TRACK="internal" \
+IGNITE_BENCH_PROFILE="interop-smoke" \
+IGNITE_BENCH_IMPLEMENTATION="ignite-native-h2" \
+IGNITE_BENCH_SCENARIO="plaintext" \
+IGNITE_BENCH_PROTOCOL="http/h2" \
+IGNITE_BENCH_CAVEATS="interop-only|local-loopback|no-performance-claim" \
+IGNITE_BENCH_CONCURRENCY="${IGNITE_BENCH_CONCURRENCY:-8}" \
+IGNITE_BENCH_WARMUP="${IGNITE_BENCH_WARMUP:-0.25}" \
+IGNITE_BENCH_DURATION="${IGNITE_BENCH_DURATION:-1}" \
+IGNITE_BENCH_EXPECTED_BYTES="14" \
+IGNITE_BENCH_OUTPUT="${OUTPUT}" \
+  node "${ROOT}/manual/benchmark/load.mjs"
+
 echo "[benchmark] Native H2 smoke result: ${OUTPUT}"
 echo "[benchmark] Native H2 server log: ${SERVER_LOG}"

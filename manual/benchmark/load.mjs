@@ -1,4 +1,5 @@
 import http from "node:http";
+import http2 from "node:http2";
 import { appendFileSync } from "node:fs";
 
 const target = new URL(process.env.IGNITE_BENCH_URL ?? "http://127.0.0.1:18880/plaintext");
@@ -14,17 +15,33 @@ const benchmarkProfile = process.env.IGNITE_BENCH_PROFILE ?? "balanced";
 const implementation = process.env.IGNITE_BENCH_IMPLEMENTATION ?? backend;
 const scenario = process.env.IGNITE_BENCH_SCENARIO ?? target.pathname.replace(/^\//, "");
 const protocol = process.env.IGNITE_BENCH_PROTOCOL ?? `${target.protocol === "https:" ? "https" : "http"}/h1`;
+const useH2 = protocol === "http/h2" || protocol === "https/h2";
 const caveats = (process.env.IGNITE_BENCH_CAVEATS ?? "")
   .split("|")
   .map(item => item.trim())
   .filter(Boolean);
 const expectedResponseBytes = positiveInt("IGNITE_BENCH_EXPECTED_BYTES", 0);
 const requestTimeoutMs = positiveInt("IGNITE_BENCH_REQUEST_TIMEOUT_MS", 5000);
-const agent = new http.Agent({ keepAlive: true, maxSockets: concurrency, maxFreeSockets: concurrency });
+const agent = useH2 ? null : new http.Agent({
+  keepAlive: true,
+  maxSockets: concurrency,
+  maxFreeSockets: concurrency
+});
+const h2Session = useH2 ? http2.connect(target.origin) : null;
+if (h2Session) {
+  // Stream-level failures are counted by requestH2Once; keep the session event
+  // from becoming an unrelated uncaught process error.
+  h2Session.on("error", () => {});
+}
 
 await runPhase(warmupSeconds, false);
 const result = await runPhase(durationSeconds, true);
-agent.destroy();
+if (agent) {
+  agent.destroy();
+}
+if (h2Session) {
+  h2Session.close();
+}
 
 const line = JSON.stringify(result);
 if (output) {
@@ -91,6 +108,9 @@ async function runPhase(seconds, collect) {
 }
 
 function requestOnce() {
+  if (h2Session) {
+    return requestH2Once(h2Session);
+  }
   return new Promise((resolve, reject) => {
     const request = http.request(target, { agent, method: "GET" }, response => {
       let bytes = 0;
@@ -112,6 +132,46 @@ function requestOnce() {
     request.on("error", reject);
     request.setTimeout(requestTimeoutMs, () => {
       request.destroy(new Error(`request timeout after ${requestTimeoutMs}ms`));
+    });
+    request.end();
+  });
+}
+
+function requestH2Once(session) {
+  return new Promise((resolve, reject) => {
+    const request = session.request({
+      ":method": "GET",
+      ":scheme": target.protocol === "https:" ? "https" : "http",
+      ":authority": target.host,
+      ":path": `${target.pathname}${target.search}`
+    });
+    let bytes = 0;
+    let status = 0;
+    const timer = setTimeout(() => {
+      request.close(http2.constants.NGHTTP2_CANCEL);
+      reject(new Error(`request timeout after ${requestTimeoutMs}ms`));
+    }, requestTimeoutMs);
+    request.on("response", headers => {
+      status = Number(headers[":status"] ?? 0);
+    });
+    request.on("data", chunk => {
+      bytes += chunk.length;
+    });
+    request.on("end", () => {
+      clearTimeout(timer);
+      if (status !== 200) {
+        reject(new Error(`unexpected status ${status}`));
+        return;
+      }
+      if (expectedResponseBytes > 0 && bytes !== expectedResponseBytes) {
+        reject(new Error(`unexpected body size ${bytes}, expected ${expectedResponseBytes}`));
+        return;
+      }
+      resolve(bytes);
+    });
+    request.on("error", error => {
+      clearTimeout(timer);
+      reject(error);
     });
     request.end();
   });

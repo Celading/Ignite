@@ -7,6 +7,75 @@ import std.sync.AtomicBool
 @Test
 public class NativeH2RuntimeInternalTestSuite {
     @TestCase
+    public func testNodeCapturedHeaderBlocksReuseConnectionHpackState(): Unit {
+        let firstBlock = [
+            UInt8(0x82), UInt8(0x86), UInt8(0x41), UInt8(0x8b), UInt8(0x08), UInt8(0x9d),
+            UInt8(0x5c), UInt8(0x0b), UInt8(0x81), UInt8(0x70), UInt8(0xdc), UInt8(0x70),
+            UInt8(0x0f), UInt8(0x81), UInt8(0x9f), UInt8(0x04), UInt8(0x85), UInt8(0x62),
+            UInt8(0x72), UInt8(0x8e), UInt8(0x84), UInt8(0xcf), UInt8(0x7a), UInt8(0x93),
+            UInt8(0x34), UInt8(0xd5), UInt8(0x19), UInt8(0x25), UInt8(0x5a), UInt8(0x7e),
+            UInt8(0xc0), UInt8(0x78), UInt8(0x4f), UInt8(0x2d), UInt8(0x51), UInt8(0xe4),
+            UInt8(0x2a), UInt8(0xc4), UInt8(0x1d), UInt8(0x69), UInt8(0xb6), UInt8(0xc2),
+            UInt8(0xff), UInt8(0x53), UInt8(0x03), UInt8(0x2a), UInt8(0x2f), UInt8(0x2a)
+        ]
+        let secondBlock = [
+            UInt8(0x82), UInt8(0x86), UInt8(0xc0), UInt8(0x04), UInt8(0x87), UInt8(0x62),
+            UInt8(0xba), UInt8(0x06), UInt8(0x6a), UInt8(0x92), UInt8(0x5f), UInt8(0x29),
+            UInt8(0xbf), UInt8(0xbe)
+        ]
+        let decoder = NativeH2HpackDecoderState()
+
+        let first = decoder.decodeRequestHead(firstBlock)
+        @Assert(first.method, "GET")
+        @Assert(first.scheme, "http")
+        @Assert(first.path, "/health")
+        @Assert(first.authority.size > 0, true)
+        @Assert(decoder.dynamicEntryCount(), 3)
+
+        let second = decoder.decodeRequestHead(secondBlock)
+        @Assert(second.method, "GET")
+        @Assert(second.scheme, "http")
+        @Assert(second.authority, first.authority)
+        @Assert(second.path, "/plaintext")
+        @Assert(decoder.dynamicEntryCount(), 3)
+    }
+
+    @TestCase
+    public func testHpackHuffmanRejectsInvalidPadding(): Unit {
+        let decoder = NativeH2HpackDecoderState()
+        let invalid = [
+            UInt8(0x82), UInt8(0x86), UInt8(0x01), UInt8(0x09),
+            UInt8(0x6c), UInt8(0x6f), UInt8(0x63), UInt8(0x61), UInt8(0x6c),
+            UInt8(0x68), UInt8(0x6f), UInt8(0x73), UInt8(0x74), UInt8(0x04),
+            UInt8(0x81), UInt8(0x00)
+        ]
+        var rejected = false
+        try {
+            let _ = decoder.decodeRequestHead(invalid)
+        } catch (e: NativeH2ProtocolException) {
+            rejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
+                e.message.contains("invalid padding")
+        }
+        @Assert(rejected, true)
+    }
+
+    @TestCase
+    public func testHpackDecoderRejectsUnavailableIndexLateUpdateAndTruncation(): Unit {
+        assertNativeH2HpackCompressionFailure(
+            [UInt8(0xbe)],
+            "dynamic index is unavailable"
+        )
+        assertNativeH2HpackCompressionFailure(
+            [UInt8(0x82), UInt8(0x20)],
+            "dynamic table update must precede"
+        )
+        assertNativeH2HpackCompressionFailure(
+            [UInt8(0x82), UInt8(0x86), UInt8(0x01), UInt8(0x09), UInt8(0x6c)],
+            "string payload is truncated"
+        )
+    }
+
+    @TestCase
     public func testResponseHeadEncodesGenericStatusAndFiltersConnectionHeaders(): Unit {
         let payload = nativeH2EncodeResponseHead(201, [
             NativeH2Header("connection", "close"),
@@ -876,6 +945,20 @@ public class NativeH2RuntimeInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+}
+
+func assertNativeH2HpackCompressionFailure(
+    payload: Array<UInt8>,
+    expectedMessage: String
+): Unit {
+    var rejected = false
+    try {
+        let _ = NativeH2HpackDecoderState().decodeRequestHead(payload)
+    } catch (e: NativeH2ProtocolException) {
+        rejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
+            e.message.contains(expectedMessage)
+    }
+    @Assert(rejected, true)
 }
 
 func nativeH2TestWindowUpdate(streamId: Int64, increment: Int64): NativeH2Frame {

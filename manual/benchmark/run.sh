@@ -10,7 +10,7 @@ SERVER_BIN="${IGNITE_BENCH_SERVER_BIN:-/tmp/ignite0800_benchmark_server}"
 BACKEND="${IGNITE_BENCH_BACKEND:-native}"
 
 if [[ "${BACKEND}" == "native-h2" || "${BACKEND}" == "h2" ]]; then
-  echo "[benchmark] use ./manual/benchmark/run_native_h2_smoke.sh for the current Native H2 internal smoke" >&2
+  echo "[benchmark] use ./manual/benchmark/run_native_h2_smoke.sh for the current Native H2 Cangjie + Node internal smoke" >&2
   exit 2
 fi
 
