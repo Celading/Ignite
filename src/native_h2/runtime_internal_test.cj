@@ -225,6 +225,7 @@ public class NativeH2RuntimeInternalTestSuite {
 
             let serverSettings = nativeH2ReadFrame(client)
             let settingsAck = nativeH2ReadFrame(client)
+            let requestConnectionUpdate = nativeH2ReadFrame(client)
             let responseHeaders = nativeH2ReadFrame(client)
             let responseDataFirst = nativeH2ReadFrame(client)
             let responseDataLast = nativeH2ReadFrame(client)
@@ -233,6 +234,9 @@ public class NativeH2RuntimeInternalTestSuite {
             @Assert(serverSettings.flags, UInt8(0))
             @Assert(settingsAck.frameType, UInt8(0x4))
             @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(requestConnectionUpdate.frameType, UInt8(0x8))
+            @Assert(requestConnectionUpdate.streamId, 0)
+            @Assert(nativeH2DecodeWindowUpdate(requestConnectionUpdate), 3)
             @Assert(responseHeaders.frameType, UInt8(0x1))
             @Assert(responseHeaders.flags, UInt8(0x4))
             @Assert(responseHeaders.streamId, 1)
@@ -391,8 +395,16 @@ public class NativeH2RuntimeInternalTestSuite {
 
             let _ = nativeH2ReadFrame(client)
             let _ = nativeH2ReadFrame(client)
+            let requestConnectionUpdate = nativeH2ReadFrame(client)
+            let requestStreamUpdate = nativeH2ReadFrame(client)
             let responseHeaders = nativeH2ReadFrame(client)
             let responseData = nativeH2ReadFrame(client)
+            @Assert(requestConnectionUpdate.frameType, UInt8(0x8))
+            @Assert(requestConnectionUpdate.streamId, 0)
+            @Assert(nativeH2DecodeWindowUpdate(requestConnectionUpdate), 7)
+            @Assert(requestStreamUpdate.frameType, UInt8(0x8))
+            @Assert(requestStreamUpdate.streamId, 1)
+            @Assert(nativeH2DecodeWindowUpdate(requestStreamUpdate), 7)
             @Assert(responseHeaders.frameType, UInt8(0x1))
             @Assert(String.fromUtf8(responseData.payload), "payload|seen")
             let _ = serverFuture.get(Duration.second * 2)
@@ -556,6 +568,88 @@ public class NativeH2RuntimeInternalTestSuite {
             @Assert(goAway.streamId, 0)
             @Assert(goAway.payload[7], UInt8(NATIVE_H2_ERROR_PROTOCOL))
             @Assert(serverFuture.get(Duration.second * 2), NATIVE_H2_ERROR_PROTOCOL)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testLargeRequestBodyAdvancesAfterConsumedWindowUpdates(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 request flow test could not reserve loopback port")
+        let app = App()
+        app.post("/upload", { ctx =>
+            let _ = ctx.sendString(ctx.bodyString().size.toString())
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x4), 1,
+                    nativeH2TestRequestHeadersForMethod("/upload", "POST")
+                )
+            )
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+
+            let initialChunks = [Int64(16384), Int64(16384), Int64(16384), Int64(16383)]
+            var replenished: Int64 = 0
+            for (count in initialChunks) {
+                nativeH2WriteFrame(
+                    client,
+                    NativeH2Frame(
+                        UInt8(0x0), UInt8(0), 1,
+                        Array<UInt8>(count, repeat: UInt8(0x78))
+                    )
+                )
+                let connectionUpdate = nativeH2ReadFrame(client)
+                let streamUpdate = nativeH2ReadFrame(client)
+                @Assert(connectionUpdate.frameType, UInt8(0x8))
+                @Assert(connectionUpdate.streamId, 0)
+                @Assert(nativeH2DecodeWindowUpdate(connectionUpdate), count)
+                @Assert(streamUpdate.frameType, UInt8(0x8))
+                @Assert(streamUpdate.streamId, 1)
+                @Assert(nativeH2DecodeWindowUpdate(streamUpdate), count)
+                replenished += count
+            }
+            @Assert(replenished, NATIVE_H2_INITIAL_FLOW_WINDOW)
+
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x0), UInt8(0x1), 1,
+                    Array<UInt8>(4465, repeat: UInt8(0x78))
+                )
+            )
+            let finalConnectionUpdate = nativeH2ReadFrame(client)
+            @Assert(finalConnectionUpdate.frameType, UInt8(0x8))
+            @Assert(finalConnectionUpdate.streamId, 0)
+            @Assert(nativeH2DecodeWindowUpdate(finalConnectionUpdate), 4465)
+
+            let responseHeaders = nativeH2ReadFrame(client)
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(responseHeaders.streamId, 1)
+            @Assert(responseData.streamId, 1)
+            @Assert(responseData.flags, UInt8(0x1))
+            @Assert(String.fromUtf8(responseData.payload), "70000")
+            let _ = serverFuture.get(Duration.second * 2)
         } finally {
             try { client.close() } catch (_: Exception) {}
             try { listener.close() } catch (_: Exception) {}

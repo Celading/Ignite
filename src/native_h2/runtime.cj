@@ -538,7 +538,11 @@ public func serveNativeH2Connection(
                     "native H2 DATA references an unknown stream"
                 )
                 stream.appendData(frame.payload)
-                if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                nativeH2ReplenishConsumedRequestData(
+                    socket, frame.streamId, frame.payload.size, endStream
+                )
+                if (endStream) {
                     nativeH2StartCompletedStream(streams, handlers, stream, handler)
                     completedStreams += 1
                 }
@@ -827,6 +831,30 @@ func nativeH2WindowUpdateReferencesClosedClientStream(
     lastOpenedStreamId: Int64
 ): Bool {
     streamId > 0 && streamId <= lastOpenedStreamId && (streamId & 1) == 1
+}
+
+func nativeH2ReplenishConsumedRequestData(
+    socket: TcpSocket,
+    streamId: Int64,
+    consumed: Int64,
+    endStream: Bool
+): Unit {
+    if (consumed <= 0) {
+        return
+    }
+    nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(0, consumed))
+    if (!endStream) {
+        nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(streamId, consumed))
+    }
+}
+
+func nativeH2WindowUpdateFrame(streamId: Int64, increment: Int64): NativeH2Frame {
+    let payload = Array<UInt8>(4, repeat: 0)
+    payload[0] = UInt8((increment >> 24) & 0x7f)
+    payload[1] = UInt8((increment >> 16) & 0xff)
+    payload[2] = UInt8((increment >> 8) & 0xff)
+    payload[3] = UInt8(increment & 0xff)
+    NativeH2Frame(UInt8(0x8), UInt8(0), streamId, payload)
 }
 
 func nativeH2IncreaseFlowWindow(current: Int64, increment: Int64, scope: String): Int64 {
