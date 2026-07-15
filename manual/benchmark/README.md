@@ -79,6 +79,13 @@ IGNITE_BENCH_OUTPUT=/tmp/ignite0800-run.jsonl \
 Use `IGNITE_BENCH_BACKEND=stdx` to exercise the explicit rollback server path.
 The default is Ignite native cleartext H1.
 
+The experimental cleartext prior-knowledge Native H2 `App.listen()` entry has
+a separate internal smoke runner: `./manual/benchmark/run_native_h2_smoke.sh`.
+It uses Ignite's own Native H2 client because the current first-slice HPACK
+decoder does not yet accept Node/browser Huffman and dynamic-table request
+headers. The smoke is not TLS/ALPN, h2c Upgrade, browser interoperability, or a
+release-grade H2 ranking.
+
 If the current commit has already been built and the host is intentionally
 offline, set `IGNITE_SAMPLE_SKIP_BUILD=1`. Without that flag the runner builds
 the current package first so stale artifacts cannot silently become benchmark

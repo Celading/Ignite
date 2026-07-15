@@ -1,4 +1,5 @@
 import ignite.*
+import ignite.native_h2.useExperimentalNativeH2ServerEngine
 import std.env.getVariable
 
 let BENCH_HOST = "127.0.0.1"
@@ -11,13 +12,17 @@ let BENCH_PREPARED_BODY_256K = PreparedResponseBody(BENCH_BODY_256K)
 let BENCH_PREPARED_BODY_1024K = PreparedResponseBody(BENCH_BODY_1024K)
 
 main() {
-    let backendHint = resolveBackendHint()
+    let backend = resolveBackend()
+    let backendHint = if (backend == "stdx") { "stdx-default" } else { "" }
     let config = Config(
         appName: "ignite-0800-benchmark",
         serverPreferredBackendHint: backendHint
     )
     let decision = buildAppServerEngineSelectionPolicyDecision(config)
     let app = App(config: config)
+    if (backend == "native-h2") {
+        useExperimentalNativeH2ServerEngine(app)
+    }
 
     app.get("/health", { ctx =>
         _ = ctx.sendString("ok")
@@ -49,19 +54,27 @@ main() {
             .sendPrepared(BENCH_PREPARED_BODY_1024K)
     })
 
-    println("[benchmark] backend=${decision.selectedEngineId}")
+    let selectedBackend = if (backend == "native-h2") {
+        "ignite-native-h2"
+    } else {
+        decision.selectedEngineId
+    }
+    println("[benchmark] backend=${selectedBackend}")
     println("[benchmark] listening on http://${BENCH_HOST}:${BENCH_PORT}")
     app.listen(BENCH_HOST, BENCH_PORT)
 }
 
-func resolveBackendHint(): String {
+func resolveBackend(): String {
     if (let Some(raw) <- getVariable("IGNITE_BENCH_BACKEND")) {
         let backend = raw.trimAscii().toAsciiLower()
         if (backend == "stdx" || backend == "stdx-default") {
-            return "stdx-default"
+            return "stdx"
+        }
+        if (backend == "native-h2" || backend == "h2") {
+            return "native-h2"
         }
     }
-    ""
+    "native"
 }
 
 func buildRepeatedBody(part: String, count: Int64): String {
