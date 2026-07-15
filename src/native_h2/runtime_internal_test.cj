@@ -236,6 +236,91 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testContinuationCompletesSplitRequestHead(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 continuation test could not reserve loopback port")
+        let app = App()
+        app.post("/continued", { ctx =>
+            let _ = ctx.sendString("continued:" + ctx.path)
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let headers = nativeH2TestRequestHeaders("/continued")
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x1), 1, nativeH2Slice(headers, 0, 5))
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x9), UInt8(0x4), 1, nativeH2Slice(headers, 5, headers.size))
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseData.frameType, UInt8(0x0))
+            @Assert(String.fromUtf8(responseData.payload), "continued:/continued")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testContinuationRejectsInvalidSequencesAndOversizedBlock(): Unit {
+        let incomplete = NativeH2Frame(
+            UInt8(0x1), UInt8(0x1), 1,
+            nativeH2Slice(nativeH2TestRequestHeaders("/continued"), 0, 5)
+        )
+        assertNativeH2ContinuationProtocolFailure(
+            incomplete,
+            Some(NativeH2Frame(UInt8(0x0), UInt8(0x1), 1, Array<UInt8>())),
+            NATIVE_H2_ERROR_PROTOCOL
+        )
+        assertNativeH2ContinuationProtocolFailure(
+            incomplete,
+            Some(NativeH2Frame(UInt8(0x9), UInt8(0x4), 3, Array<UInt8>())),
+            NATIVE_H2_ERROR_PROTOCOL
+        )
+        assertNativeH2ContinuationProtocolFailure(
+            NativeH2Frame(UInt8(0x9), UInt8(0x4), 1, Array<UInt8>()),
+            None,
+            NATIVE_H2_ERROR_PROTOCOL
+        )
+
+        let pending = NativeH2PendingRequestHead(
+            1, true, Array<UInt8>(NATIVE_H2_MAX_REQUEST_HEADER_BLOCK, repeat: 0)
+        )
+        var overflowRejected = false
+        try {
+            pending.append([UInt8(0)])
+        } catch (e: NativeH2ProtocolException) {
+            overflowRejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION
+        }
+        @Assert(overflowRejected, true)
+    }
+
+    @TestCase
     public func testConnectionKeepsInterleavedStreamsIndependent(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -1017,6 +1102,49 @@ func nativeH2RequestHeaderValue(
         }
     }
     ""
+}
+
+func assertNativeH2ContinuationProtocolFailure(
+    firstFrame: NativeH2Frame,
+    secondFrame: ?NativeH2Frame,
+    expectedError: Int64
+): Unit {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+    listener.bind()
+    let port = (listener.localAddress as IPSocketAddress)?.port ??
+        throw Exception("native H2 continuation failure test could not reserve loopback port")
+    let serverFuture = spawn {
+        let accepted = listener.accept()
+        try {
+            serveNativeH2Connection(accepted, { _ => NativeH2SingleStreamResponse() })
+            NATIVE_H2_ERROR_NO_ERROR
+        } catch (e: NativeH2ProtocolException) {
+            e.errorCode
+        } finally {
+            try { accepted.close() } catch (_: Exception) {}
+        }
+    }
+
+    let client = TcpSocket("127.0.0.1", port)
+    try {
+        client.connect(timeout: Some(Duration.second * 2))
+        client.readTimeout = Some(Duration.second * 2)
+        client.write(NATIVE_H2_PREFACE)
+        nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+        nativeH2WriteFrame(client, firstFrame)
+        if (let Some(frame) <- secondFrame) {
+            nativeH2WriteFrame(client, frame)
+        }
+        let _ = nativeH2ReadFrame(client)
+        let _ = nativeH2ReadFrame(client)
+        let goAway = nativeH2ReadFrame(client)
+        @Assert(goAway.frameType, UInt8(0x7))
+        @Assert(goAway.payload[7], UInt8(expectedError))
+        @Assert(serverFuture.get(Duration.second * 2), expectedError)
+    } finally {
+        try { client.close() } catch (_: Exception) {}
+        try { listener.close() } catch (_: Exception) {}
+    }
 }
 
 func nativeH2TestWindowUpdate(streamId: Int64, increment: Int64): NativeH2Frame {

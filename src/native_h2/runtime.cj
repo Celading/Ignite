@@ -8,6 +8,7 @@ import std.time.MonoTime
 let NATIVE_H2_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".toArray()
 let NATIVE_H2_MAX_FIRST_SLICE_BODY: Int64 = 1024 * 1024
 let NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD: Int64 = 16384
+let NATIVE_H2_MAX_REQUEST_HEADER_BLOCK: Int64 = 64 * 1024
 let NATIVE_H2_MAX_CONCURRENT_STREAMS: Int64 = 100
 let NATIVE_H2_INITIAL_FLOW_WINDOW: Int64 = 65535
 let NATIVE_H2_MAX_FLOW_WINDOW: Int64 = 2147483647
@@ -236,6 +237,34 @@ class NativeH2InboundStream {
     }
 }
 
+class NativeH2PendingRequestHead {
+    let streamId: Int64
+    let endStream: Bool
+    let payload = ArrayList<UInt8>()
+
+    init(streamId: Int64, endStream: Bool, firstPayload: Array<UInt8>) {
+        this.streamId = streamId
+        this.endStream = endStream
+        append(firstPayload)
+    }
+
+    func append(nextPayload: Array<UInt8>): Unit {
+        if (payload.size + nextPayload.size > NATIVE_H2_MAX_REQUEST_HEADER_BLOCK) {
+            nativeH2ProtocolFailure(
+                "native H2 request header block exceeds 64 KiB",
+                NATIVE_H2_ERROR_COMPRESSION
+            )
+        }
+        for (value in nextPayload) {
+            payload.add(value)
+        }
+    }
+
+    func headerBlock(): Array<UInt8> {
+        payload.toArray()
+    }
+}
+
 class NativeH2OutboundStream {
     let streamId: Int64
     let body: Array<UInt8>
@@ -269,8 +298,9 @@ class NativeH2PendingHandler {
 /// Serves one bounded HTTP/2 stream on an already accepted cleartext socket.
 ///
 /// The connection runtime owns multiplexing and outbound flow control, while
-/// TLS and CONTINUATION remain outside this API. Request HPACK decoding keeps
-/// one bounded dynamic-table state for the lifetime of the connection.
+/// TLS remains outside this API. Request HPACK decoding keeps one bounded
+/// dynamic-table state for the lifetime of the connection, and split request
+/// header blocks are assembled under a 64 KiB connection-local bound.
 public func serveNativeH2SingleStream(
     socket: TcpSocket,
     handler: NativeH2SingleStreamHandler
@@ -316,6 +346,7 @@ public func serveNativeH2Connection(
     let outbound = HashMap<Int64, NativeH2OutboundStream>()
     let frameReader = NativeH2FrameReader()
     let hpackDecoder = NativeH2HpackDecoderState()
+    var pendingRequestHead: ?NativeH2PendingRequestHead = None
     var lastOpenedStreamId: Int64 = 0
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
@@ -377,16 +408,44 @@ public func serveNativeH2Connection(
                 case Some(value) => value
                 case None => return
             }
+            if (let Some(pending) <- pendingRequestHead) {
+                if (frame.frameType != UInt8(0x9)) {
+                    nativeH2ProtocolFailure(
+                        "native H2 requires contiguous CONTINUATION frames"
+                    )
+                }
+                if (frame.streamId != pending.streamId) {
+                    nativeH2ProtocolFailure(
+                        "native H2 CONTINUATION must remain on the opened stream"
+                    )
+                }
+                pending.append(frame.payload)
+                if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
+                    let stream = NativeH2InboundStream(
+                        pending.streamId,
+                        hpackDecoder.decodeRequestHead(pending.headerBlock())
+                    )
+                    streams.add(pending.streamId, stream)
+                    pendingRequestHead = None
+                    if (pending.endStream) {
+                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        completedStreams += 1
+                    }
+                }
+                continue
+            }
+            if (frame.frameType == UInt8(0x9)) {
+                nativeH2ProtocolFailure("native H2 received orphan CONTINUATION")
+            }
             if (frame.frameType == UInt8(0x4)) {
                 nativeH2HandleSettingsFrame(socket, frame)
                 continue
             }
             if (frame.frameType == UInt8(0x1)) {
                 if (frame.streamId <= 0 || frame.streamId % 2 != 1 ||
-                    frame.streamId <= lastOpenedStreamId ||
-                    (frame.flags & UInt8(0x4)) == UInt8(0)) {
+                    frame.streamId <= lastOpenedStreamId) {
                     nativeH2ProtocolFailure(
-                        "native H2 requires increasing client-initiated END_HEADERS streams"
+                        "native H2 requires increasing client-initiated streams"
                     )
                 }
                 if ((frame.flags & UInt8(0x8)) != UInt8(0) ||
@@ -399,14 +458,21 @@ public func serveNativeH2Connection(
                     NATIVE_H2_MAX_CONCURRENT_STREAMS) {
                     throw Exception("native H2 concurrent stream limit exceeded")
                 }
-                let stream = NativeH2InboundStream(
-                    frame.streamId, hpackDecoder.decodeRequestHead(frame.payload)
-                )
-                streams.add(frame.streamId, stream)
                 lastOpenedStreamId = frame.streamId
-                if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
-                    nativeH2StartCompletedStream(streams, handlers, stream, handler)
-                    completedStreams += 1
+                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
+                    let stream = NativeH2InboundStream(
+                        frame.streamId, hpackDecoder.decodeRequestHead(frame.payload)
+                    )
+                    streams.add(frame.streamId, stream)
+                    if (endStream) {
+                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        completedStreams += 1
+                    }
+                } else {
+                    pendingRequestHead = Some(
+                        NativeH2PendingRequestHead(frame.streamId, endStream, frame.payload)
+                    )
                 }
                 continue
             }
@@ -499,7 +565,7 @@ public func serveNativeH2Connection(
                 }
                 continue
             }
-            if (frame.frameType == UInt8(0x5) || frame.frameType == UInt8(0x9)) {
+            if (frame.frameType == UInt8(0x5)) {
                 nativeH2ProtocolFailure("native H2 received an invalid connection frame sequence")
             }
             // RFC 9113 requires unknown extension frame types to be ignored.
