@@ -226,9 +226,6 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     func appendResponseBytes(data: Array<UInt8>): Unit {
-        if (responseBodyValue.size + data.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
-            throw Exception("native H2 App response exceeds first-slice 1 MiB limit")
-        }
         for (value in data) {
             responseBodyValue.add(value)
         }

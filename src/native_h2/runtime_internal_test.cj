@@ -1415,6 +1415,98 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testBufferedResponseAboveLegacyCeilingUsesFramedFlowControl(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 buffered response test could not reserve loopback port")
+        let responseSize: Int64 = 1280 * 1024
+        let app = App()
+        app.get("/above-legacy-ceiling", { ctx =>
+            let _ = ctx.send(Array<UInt8>(responseSize, repeat: UInt8(0x72)))
+        })
+        app.get("/health", { ctx =>
+            let _ = ctx.sendString("ok")
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 2)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 4)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let largeHeaders = nativeH2TestRequestHeaders("/above-legacy-ceiling")
+            largeHeaders[0] = UInt8(0x82)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, largeHeaders)
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.streamId, 1)
+
+            var received: Int64 = 0
+            var ended = false
+            while (!ended) {
+                let frame = nativeH2ReadFrame(client)
+                if (frame.frameType != UInt8(0x0) || frame.streamId != 1) {
+                    continue
+                }
+                received += frame.payload.size
+                if (frame.payload.size > 0) {
+                    @Assert(frame.payload[0], UInt8(0x72))
+                    @Assert(frame.payload[frame.payload.size - 1], UInt8(0x72))
+                }
+                ended = (frame.flags & UInt8(0x1)) != UInt8(0)
+                if (!ended) {
+                    nativeH2WriteFrame(
+                        client,
+                        nativeH2TestWindowUpdate(0, frame.payload.size)
+                    )
+                    nativeH2WriteFrame(
+                        client,
+                        nativeH2TestWindowUpdate(1, frame.payload.size)
+                    )
+                }
+            }
+            @Assert(received, responseSize)
+
+            let healthHeaders = nativeH2TestRequestHeaders("/health")
+            healthHeaders[0] = UInt8(0x82)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x5), 3, healthHeaders)
+            )
+            let healthResponseHeaders = nativeH2ReadFrame(client)
+            let healthResponseData = nativeH2ReadFrame(client)
+            @Assert(healthResponseHeaders.frameType, UInt8(0x1))
+            @Assert(healthResponseHeaders.streamId, 3)
+            @Assert(healthResponseData.frameType, UInt8(0x0))
+            @Assert(healthResponseData.flags, UInt8(0x1))
+            @Assert(healthResponseData.streamId, 3)
+            @Assert(String.fromUtf8(healthResponseData.payload), "ok")
+            let _ = serverFuture.get(Duration.second * 4)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testRepeatedConnectionChurnSettlesEverySocketTurn(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()

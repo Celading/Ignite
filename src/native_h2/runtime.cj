@@ -762,9 +762,6 @@ func nativeH2HarvestCompletedHandlers(
     let completed = ArrayList<Int64>()
     for ((streamId, pending) in handlers) {
         if (let Some(response) <- pending.future.tryGet()) {
-            if (response.body.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
-                throw Exception("native H2 response body exceeds 1 MiB")
-            }
             let bodyForbidden = nativeH2ResponseBodyForbidden(
                 pending.requestMethod,
                 response.status
