@@ -211,21 +211,30 @@ class NativeH2InboundStream {
     let streamId: Int64
     let head: NativeH2DecodedRequestHead
     let body = ArrayList<UInt8>()
+    let maxRequestBodySize: Int64
     var trailers = Array<NativeH2Header>()
     var sendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
 
-    init(streamId: Int64, head: NativeH2DecodedRequestHead) {
+    init(
+        streamId: Int64,
+        head: NativeH2DecodedRequestHead,
+        maxRequestBodySize: Int64
+    ) {
         this.streamId = streamId
         this.head = head
+        this.maxRequestBodySize = maxRequestBodySize
     }
 
-    func appendData(payload: Array<UInt8>): Unit {
-        if (body.size + payload.size > NATIVE_H2_MAX_FIRST_SLICE_BODY) {
-            throw Exception("native H2 request body exceeds 1 MiB")
+    func appendData(payload: Array<UInt8>): Bool {
+        if (maxRequestBodySize > 0 &&
+            (body.size > maxRequestBodySize ||
+                payload.size > maxRequestBodySize - body.size)) {
+            return false
         }
         for (value in payload) {
             body.add(value)
         }
+        true
     }
 
     func setTrailers(value: Array<NativeH2Header>): Unit {
@@ -322,9 +331,14 @@ class NativeH2PendingHandler {
 /// header blocks are assembled under a 64 KiB connection-local bound.
 public func serveNativeH2SingleStream(
     socket: TcpSocket,
-    handler: NativeH2SingleStreamHandler
+    handler: NativeH2SingleStreamHandler,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
 ): Unit {
-    serveNativeH2Connection(socket, handler, maxCompletedStreams: 1)
+    serveNativeH2Connection(
+        socket, handler,
+        maxCompletedStreams: 1,
+        maxRequestBodySize: maxRequestBodySize
+    )
 }
 
 /// Serves a bounded or socket-lifetime HTTP/2 connection.
@@ -336,7 +350,8 @@ public func serveNativeH2Connection(
     socket: TcpSocket,
     handler: NativeH2SingleStreamHandler,
     maxCompletedStreams!: Int64 = 0,
-    control!: ?NativeH2ConnectionControl = None
+    control!: ?NativeH2ConnectionControl = None,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
 ): Unit {
     if (maxCompletedStreams < 0) {
         throw Exception("native H2 maxCompletedStreams cannot be negative")
@@ -363,6 +378,7 @@ public func serveNativeH2Connection(
     let streams = HashMap<Int64, NativeH2InboundStream>()
     let handlers = HashMap<Int64, NativeH2PendingHandler>()
     let outbound = HashMap<Int64, NativeH2OutboundStream>()
+    let discardedRequestStreams = HashMap<Int64, Bool>()
     let frameReader = NativeH2FrameReader()
     let hpackDecoder = NativeH2HpackDecoderState()
     var pendingRequestHead: ?NativeH2PendingRequestHead = None
@@ -373,7 +389,7 @@ public func serveNativeH2Connection(
     var lastSocketProgressAt = MonoTime.now()
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
-            handlers.size > 0 || outbound.size > 0) {
+            handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
             nativeH2HarvestCompletedHandlers(socket, handlers, outbound)
             connectionSendWindow = nativeH2FlushOutbound(
                 socket, outbound, connectionSendWindow
@@ -393,7 +409,8 @@ public func serveNativeH2Connection(
                 }
             }
             if (maxCompletedStreams > 0 && completedStreams >= maxCompletedStreams &&
-                handlers.size == 0 && outbound.size == 0) {
+                handlers.size == 0 && outbound.size == 0 &&
+                discardedRequestStreams.size == 0) {
                 return
             }
 
@@ -453,7 +470,8 @@ public func serveNativeH2Connection(
                     } else {
                         let stream = NativeH2InboundStream(
                             pending.streamId,
-                            hpackDecoder.decodeRequestHead(pending.headerBlock())
+                            hpackDecoder.decodeRequestHead(pending.headerBlock()),
+                            maxRequestBodySize
                         )
                         streams.add(pending.streamId, stream)
                         if (pending.endStream) {
@@ -508,7 +526,8 @@ public func serveNativeH2Connection(
                         "native H2 HEADERS references an unknown or closed stream"
                     )
                 }
-                if (streams.size + handlers.size + outbound.size >=
+                if (streams.size + handlers.size + outbound.size +
+                    discardedRequestStreams.size >=
                     NATIVE_H2_MAX_CONCURRENT_STREAMS) {
                     throw Exception("native H2 concurrent stream limit exceeded")
                 }
@@ -516,7 +535,9 @@ public func serveNativeH2Connection(
                 let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
                 if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
                     let stream = NativeH2InboundStream(
-                        frame.streamId, hpackDecoder.decodeRequestHead(frame.payload)
+                        frame.streamId,
+                        hpackDecoder.decodeRequestHead(frame.payload),
+                        maxRequestBodySize
                     )
                     streams.add(frame.streamId, stream)
                     if (endStream) {
@@ -534,11 +555,33 @@ public func serveNativeH2Connection(
                 if ((frame.flags & UInt8(0x8)) != UInt8(0)) {
                     nativeH2ProtocolFailure("native H2 does not support PADDED DATA")
                 }
+                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                if (discardedRequestStreams.contains(frame.streamId)) {
+                    nativeH2ReplenishDiscardedRequestData(socket, frame.payload.size)
+                    if (endStream) {
+                        let _ = discardedRequestStreams.remove(frame.streamId)
+                    }
+                    continue
+                }
                 let stream = streams.get(frame.streamId) ?? nativeH2ProtocolFailure(
                     "native H2 DATA references an unknown stream"
                 )
-                stream.appendData(frame.payload)
-                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                if (!stream.appendData(frame.payload)) {
+                    nativeH2WriteFrame(
+                        socket,
+                        NativeH2Frame(
+                            UInt8(0x1), UInt8(0x5), frame.streamId,
+                            nativeH2EncodeResponseHead(UInt16(413), Array<NativeH2Header>())
+                        )
+                    )
+                    nativeH2ReplenishDiscardedRequestData(socket, frame.payload.size)
+                    let _ = streams.remove(frame.streamId)
+                    completedStreams += 1
+                    if (!endStream) {
+                        discardedRequestStreams.add(frame.streamId, true)
+                    }
+                    continue
+                }
                 nativeH2ReplenishConsumedRequestData(
                     socket, frame.streamId, frame.payload.size, endStream
                 )
@@ -592,6 +635,7 @@ public func serveNativeH2Connection(
                     )
                 }
                 let _ = streams.remove(frame.streamId)
+                let _ = discardedRequestStreams.remove(frame.streamId)
                 if (let Some(pending) <- handlers.remove(frame.streamId)) {
                     pending.future.cancel()
                 }
@@ -845,6 +889,12 @@ func nativeH2ReplenishConsumedRequestData(
     nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(0, consumed))
     if (!endStream) {
         nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(streamId, consumed))
+    }
+}
+
+func nativeH2ReplenishDiscardedRequestData(socket: TcpSocket, discarded: Int64): Unit {
+    if (discarded > 0) {
+        nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(0, discarded))
     }
 }
 

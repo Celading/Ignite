@@ -48,6 +48,10 @@ main() {
         _ = ctx.sendString(ctx.bodyString() + "|" + trailer)
     })
 
+    app.post("/h2/request-size", { ctx =>
+        _ = ctx.sendString(ctx.bodyString().size.toString())
+    })
+
     app.get("/json", { ctx =>
         _ = ctx.json(#"{"framework":"ignite","version":"0.8.0","ok":true}"#)
     })

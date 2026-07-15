@@ -16,7 +16,7 @@ public func serveNativeH2SingleStreamApp(
         let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
         app.handleRequest(carrier)
         carrier.response()
-    })
+    }, maxRequestBodySize: app.config.bodyLimit)
 }
 
 /// Serves multiple native H2 streams through the existing Ignite App dispatch.
@@ -31,7 +31,8 @@ public func serveNativeH2AppConnection(
         let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
         app.handleRequest(carrier)
         carrier.response()
-    }, maxCompletedStreams: maxCompletedStreams, control: control)
+    }, maxCompletedStreams: maxCompletedStreams, control: control,
+        maxRequestBodySize: app.config.bodyLimit)
 }
 
 class NativeH2AppBytesInputStream <: InputStream {
