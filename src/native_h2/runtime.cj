@@ -562,6 +562,11 @@ public func serveNativeH2Connection(
                     stream.sendWindow = nativeH2IncreaseFlowWindow(
                         stream.sendWindow, increment, "stream"
                     )
+                } else if (nativeH2WindowUpdateReferencesClosedClientStream(
+                    frame.streamId, lastOpenedStreamId
+                )) {
+                    // Flow-control feedback can arrive after our END_STREAM.
+                    continue
                 } else {
                     nativeH2ProtocolFailure(
                         "native H2 WINDOW_UPDATE references an unknown response stream"
@@ -815,6 +820,13 @@ func nativeH2DecodeWindowUpdate(frame: NativeH2Frame): Int64 {
         )
     }
     increment
+}
+
+func nativeH2WindowUpdateReferencesClosedClientStream(
+    streamId: Int64,
+    lastOpenedStreamId: Int64
+): Bool {
+    streamId > 0 && streamId <= lastOpenedStreamId && (streamId & 1) == 1
 }
 
 func nativeH2IncreaseFlowWindow(current: Int64, increment: Int64, scope: String): Int64 {

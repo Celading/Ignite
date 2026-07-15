@@ -465,6 +465,104 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testLateWindowUpdateForClosedResponseKeepsConnectionUsable(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 late window update test could not reserve loopback port")
+        let app = App()
+        app.get("/first", { ctx =>
+            let _ = ctx.sendString("first")
+        })
+        app.get("/after-window-update", { ctx =>
+            let _ = ctx.sendString("alive")
+        })
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2AppConnection(accepted, app, maxCompletedStreams: 2)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            let first = nativeH2TestRequestHeaders("/first")
+            first[0] = UInt8(0x82)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x1), UInt8(0x5), 1, first))
+
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            let firstHeaders = nativeH2ReadFrame(client)
+            let firstData = nativeH2ReadFrame(client)
+            @Assert(firstHeaders.streamId, 1)
+            @Assert(firstData.streamId, 1)
+            @Assert(firstData.flags, UInt8(0x1))
+            @Assert(String.fromUtf8(firstData.payload), "first")
+
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(1, 1024))
+            let second = nativeH2TestRequestHeaders("/after-window-update")
+            second[0] = UInt8(0x82)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x1), UInt8(0x5), 3, second))
+
+            let secondHeaders = nativeH2ReadFrame(client)
+            let secondData = nativeH2ReadFrame(client)
+            @Assert(secondHeaders.streamId, 3)
+            @Assert(secondData.streamId, 3)
+            @Assert(secondData.flags, UInt8(0x1))
+            @Assert(String.fromUtf8(secondData.payload), "alive")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testFutureStreamWindowUpdateStillFailsConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 future window update test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(accepted, { _ => NativeH2SingleStreamResponse() })
+                NATIVE_H2_ERROR_NO_ERROR
+            } catch (e: NativeH2ProtocolException) {
+                e.errorCode
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 2)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(1, 1024))
+
+            let _ = nativeH2ReadFrame(client)
+            let _ = nativeH2ReadFrame(client)
+            let goAway = nativeH2ReadFrame(client)
+            @Assert(goAway.frameType, UInt8(0x7))
+            @Assert(goAway.streamId, 0)
+            @Assert(goAway.payload[7], UInt8(NATIVE_H2_ERROR_PROTOCOL))
+            @Assert(serverFuture.get(Duration.second * 2), NATIVE_H2_ERROR_PROTOCOL)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testConnectionKeepsInterleavedStreamsIndependent(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
