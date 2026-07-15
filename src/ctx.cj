@@ -394,6 +394,13 @@ public class Ctx {
         this
     }
 
+    /// Send a reusable body that was encoded or copied once at construction.
+    public func sendPrepared(body: PreparedResponseBody): Ctx {
+        applyPreparedResponseBody(_currentRequestCarrier, body)
+        _responded = true
+        this
+    }
+
     public func sendStream(
         stream: InputStream,
         contentType!: String = "application/octet-stream",

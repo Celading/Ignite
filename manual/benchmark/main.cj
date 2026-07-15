@@ -6,6 +6,9 @@ let BENCH_PORT: UInt16 = 18880
 let BENCH_BODY_64K = buildRepeatedBody("0123456789abcdef", 4096)
 let BENCH_BODY_256K = buildRepeatedBody("0123456789abcdef", 16384)
 let BENCH_BODY_1024K = buildRepeatedBody("0123456789abcdef", 65536)
+let BENCH_PREPARED_BODY_64K = PreparedResponseBody(BENCH_BODY_64K)
+let BENCH_PREPARED_BODY_256K = PreparedResponseBody(BENCH_BODY_256K)
+let BENCH_PREPARED_BODY_1024K = PreparedResponseBody(BENCH_BODY_1024K)
 
 main() {
     let backendHint = resolveBackendHint()
@@ -31,19 +34,19 @@ main() {
     app.get("/bytes/64k", { ctx =>
         _ = ctx
             .setHeader("content-type", "application/octet-stream")
-            .sendString(BENCH_BODY_64K)
+            .sendPrepared(BENCH_PREPARED_BODY_64K)
     })
 
     app.get("/bytes/256k", { ctx =>
         _ = ctx
             .setHeader("content-type", "application/octet-stream")
-            .sendString(BENCH_BODY_256K)
+            .sendPrepared(BENCH_PREPARED_BODY_256K)
     })
 
     app.get("/bytes/1024k", { ctx =>
         _ = ctx
             .setHeader("content-type", "application/octet-stream")
-            .sendString(BENCH_BODY_1024K)
+            .sendPrepared(BENCH_PREPARED_BODY_1024K)
     })
 
     println("[benchmark] backend=${decision.selectedEngineId}")

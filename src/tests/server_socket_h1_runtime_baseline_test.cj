@@ -355,6 +355,53 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testPreparedResponseBodyOwnsCallerBytes(): Unit {
+        let source = "safe".toArray()
+        let prepared = PreparedResponseBody(source)
+        source[0] = UInt8(88)
+
+        let firstCopy = prepared.copyBytes()
+        @Assert(String.fromUtf8(firstCopy), "safe")
+        firstCopy[0] = UInt8(89)
+        @Assert(String.fromUtf8(prepared.copyBytes()), "safe")
+    }
+
+    @TestCase
+    public func testDefaultNativeH1ReusesPrepared64KiBBodyAcrossConcurrentConnections(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let payload = socketH1RuntimeBaselineRepeatedBody("0123456789abcdef", 4096)
+        let prepared = PreparedResponseBody(payload)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/prepared-64k", { ctx =>
+            let _ = ctx.sendPrepared(prepared)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let clients = ArrayList<Future<String>>()
+            for (_ in 0..16) {
+                clients.add(spawn {
+                    runSocketServerEngineShellClient(
+                        "127.0.0.1",
+                        port,
+                        "GET /prepared-64k HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+                    )
+                })
+            }
+            for (client in clients) {
+                let response = client.get(Duration.second * 5)
+                @Assert(socketH1RuntimeBaselineContains(response, "content-length: 65536"), true)
+                @Assert(response.endsWith(payload), true)
+            }
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
 }
 
 func socketH1RuntimeBaselineRepeatedBody(part: String, count: Int64): String {

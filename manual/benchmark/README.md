@@ -14,7 +14,8 @@ The default matrix exercises:
 
 - `/plaintext`: small fixed text response;
 - `/json`: fixed JSON response through `Ctx.json(String)`;
-- `/bytes/64k`: a prebuilt response crossing common socket buffer boundaries.
+- `/bytes/64k`: a `PreparedResponseBody` encoded once and reused across
+  requests while crossing common socket buffer boundaries.
 
 The runner writes JSON Lines to `/tmp/ignite0800-benchmark.jsonl` and keeps the
 server log at `/tmp/ignite0800-benchmark-server.log`.

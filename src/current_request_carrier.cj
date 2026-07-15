@@ -31,7 +31,7 @@ public interface CurrentRequestCarrier {
     func attachResponseBodyStream(stream: InputStream): Unit
 }
 
-public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier {
+public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
     let _httpCtx: HttpContext
 
     public init(httpCtx: HttpContext) {
@@ -118,6 +118,10 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier {
         _httpCtx.responseBuilder.body(data)
     }
 
+    public override func setPreparedResponseBody(body: PreparedResponseBody): Unit {
+        _httpCtx.responseBuilder.body(body.borrowBytesForTransport())
+    }
+
     public override func attachResponseBodyStream(stream: InputStream): Unit {
         _httpCtx.responseBuilder.body(stream)
     }
@@ -127,7 +131,7 @@ type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
 
 let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
 
-class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier {
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
     let _downstream: CurrentRequestCarrier
     let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
     var _responseWriter: ?ResponseTransportWriter = None
@@ -235,6 +239,13 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
             return
         }
         ensureResponseWriter().write(cloneResponseTransportBytes(data))
+    }
+
+    public override func setPreparedResponseBody(body: PreparedResponseBody): Unit {
+        if (body.size == 0) {
+            return
+        }
+        ensureResponseWriter().write(body.borrowBytesForTransport())
     }
 
     public override func attachResponseBodyStream(stream: InputStream): Unit {

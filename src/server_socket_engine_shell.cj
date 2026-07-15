@@ -1468,7 +1468,7 @@ class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter 
     }
 }
 
-class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier {
+class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
     let remoteAddress: String
@@ -1621,6 +1621,11 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     public override func setResponseBytes(data: Array<UInt8>): Unit {
         closeResponseBodyStreamIfPresent()
         replaceResponseBodyBytes(data)
+    }
+
+    public override func setPreparedResponseBody(body: PreparedResponseBody): Unit {
+        closeResponseBodyStreamIfPresent()
+        replaceResponseBodyOwnedBytes(body.borrowBytesForTransport())
     }
 
     public override func attachResponseBodyStream(stream: InputStream): Unit {
