@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.0-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.1-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.8.0</span>                     │
+│                  <span style="color:#88C0D0;">Ignite v0.8.1</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.0</i></span> │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.1</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -48,13 +48,14 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.8.0 Preview)
+## Текущее состояние (0.8.1 Preview)
 
 - HTTP/1.1 без TLS по умолчанию использует native H1 Ignite; доступен явный откат через `stdx-default`.
 - Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами.
 - Native H2 server/client поддерживают ограниченное мультиплексирование, flow control и lifecycle, но пока остаются preview без заявления о полной совместимости с браузерами и h2spec.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.
+- Динамические gzip/deflate теперь используют безопасный codec Ignite на Cangjie; Brotli/Zstd остаются доступными через заранее сжатые статические файлы.
 
 Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 

@@ -3,6 +3,14 @@
 ## Ignite `0800`
 > Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
 
+### v0.8.1 `Ignite Preview`
+
+- `+Feature` Buffered and streamed dynamic gzip/deflate responses now use an Ignite-owned safe Cangjie DEFLATE/GZIP codec; product paths no longer construct `stdx.compress.zlib` codecs
+- `+Feature` Buffered responses use fixed Huffman coding with bounded LZ77 matching; streamed responses emit incremental stored blocks without capturing the complete response
+- `+Feature` Brotli/Zstd remain available through precompressed `.br` / `.zst` static representations while preserving Range, HEAD, Vary, and MIME semantics
+- `=Boundary` The native codec currently prioritizes safety and protocol correctness; higher compression ratios, dictionaries, SIMD, and dynamic Brotli/Zstd remain later performance/provider work
+- `=Misc` IgniteNEXT package metadata, framework version, banner fixtures, trilingual README, and bilingual changelog are aligned to `0.8.1`
+
 ### v0.8.0 `Ignite Preview`
 
 - `+Feature` Cleartext servers default to Ignite native H1 while preserving `serverPreferredBackendHint: "stdx-default"` rollback

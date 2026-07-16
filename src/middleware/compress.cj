@@ -1,13 +1,14 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx, StreamCompressionPlan, registerStreamCompressionPlan}
-import std.collection.ArrayList
-import std.io.InputStream
-import stdx.compress.zlib.{
-    CompressInputStream,
-    CompressLevel,
-    WrapType
+import ignite.{
+    Handler,
+    Ctx,
+    CompressionFormat,
+    StreamCompressionPlan,
+    compressResponsePayload,
+    registerStreamCompressionPlan
 }
+import stdx.compress.zlib.CompressLevel
 
 public class CompressConfig {
     /// Minimum response body size (bytes) required before compression is attempted.
@@ -18,9 +19,10 @@ public class CompressConfig {
     public var gzipEnabled: Bool = true
     /// Enable deflate support.
     public var deflateEnabled: Bool = true
-    /// zlib compression level.
+    /// Compression level. The public stdx enum is retained for source
+    /// compatibility; Ignite maps it to its native codec internally.
     public var level: CompressLevel = CompressLevel.DefaultCompression
-    /// Internal stream buffer size for zlib streaming.
+    /// Internal stream buffer size.
     public var bufferSize: Int64 = 2048
     /// Set `Vary: Accept-Encoding` when compression is used.
     public var setVaryHeader: Bool = true
@@ -51,6 +53,7 @@ public class CompressConfig {
 public func compressMiddleware(config!: CompressConfig = CompressConfig()): Handler {
     let minBytes = if (config.minBytes < 0) { 0 } else { config.minBytes }
     let bufferSize = normalizeBufferSize(config.bufferSize)
+    let nativeLevel = nativeCompressionLevel(config.level)
 
     { ctx: Ctx =>
         let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
@@ -62,7 +65,7 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                     minBytes,
                     config.setVaryHeader,
                     config.skipIfNoGain,
-                    config.level,
+                    nativeLevel,
                     bufferSize
                 )
             )
@@ -83,7 +86,7 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                 return
             }
             let compressed = try {
-                compressResponseBytes(rawBytes, encoding, config.level, bufferSize)
+                compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
             } catch (_: Exception) {
                 return
             }
@@ -266,87 +269,18 @@ func digitValue(ch: Rune): Int64 {
     }
 }
 
-func compressResponseBytes(
-    body: Array<UInt8>,
-    encoding: String,
-    level: CompressLevel,
-    bufferSize: Int64
-): Array<UInt8> {
-    let wrap: WrapType = if (encoding == "deflate") {
-        WrapType.DeflateFormat
+func compressionFormat(encoding: String): CompressionFormat {
+    if (encoding == "deflate") {
+        CompressionFormat.Deflate
     } else {
-        WrapType.GzipFormat
+        CompressionFormat.Gzip
     }
-    let input = BytesInputStream(toByteArray(body))
-    let compressor = CompressInputStream(
-        input,
-        wrap: wrap,
-        compressLevel: level,
-        bufLen: bufferSize
-    )
-    let out = ArrayList<Byte>()
-    let tmp = Array<Byte>(bufferSize, repeat: 0)
-    try {
-        while (true) {
-            let n = compressor.read(tmp)
-            if (n <= 0) {
-                break
-            }
-            for (i in 0..n) {
-                out.add(tmp[i])
-            }
-        }
-    } finally {
-        try {
-            compressor.close()
-        } catch (_: Exception) {}
-        try {
-            input.close()
-        } catch (_: Exception) {}
-    }
-    toUInt8Array(out.toArray())
 }
 
-class BytesInputStream <: InputStream {
-    let bytes: Array<Byte>
-    var cursor: Int64 = 0
-
-    init(bytes: Array<Byte>) {
-        this.bytes = bytes
+func nativeCompressionLevel(level: CompressLevel): Int64 {
+    match (level) {
+        case BestSpeed => 1
+        case DefaultCompression => 6
+        case BestCompression => 9
     }
-
-    public override func read(outBuf: Array<Byte>): Int64 {
-        if (cursor >= bytes.size || outBuf.size == 0) {
-            return 0
-        }
-        let remaining = bytes.size - cursor
-        let readLen = if (remaining < outBuf.size) { remaining } else { outBuf.size }
-        for (i in 0..readLen) {
-            outBuf[i] = bytes[cursor + i]
-        }
-        cursor += readLen
-        readLen
-    }
-
-    public func close(): Unit {}
-}
-
-func toByteArray(input: Array<UInt8>): Array<Byte> {
-    let out = Array<Byte>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = input[i]
-        i += 1
-    }
-    out
-}
-
-func toUInt8Array(input: Array<Byte>): Array<UInt8> {
-    let out = Array<UInt8>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = UInt8(input[i])
-        i += 1
-    }
-    out
 }

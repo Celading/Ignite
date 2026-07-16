@@ -1,6 +1,6 @@
-# Ignite 0.8.0 Preview
+# Ignite 0.8.1 Preview
 
-`0.8.0` 是 Ignite 第一次把自研传输主线作为公开预览交付。它不是“已经完全脱离 stdx”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
+`0.8.1` 延续 Ignite 自研传输预览，并把动态 gzip/deflate codec 收回 Ignite 自有安全仓颉实现。它不是“已经完全脱离 stdx”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
 
 配套入口：
 
@@ -102,14 +102,14 @@ ctx.jsonSeaStream({ writer =>
 
 ## 压缩与静态资源
 
-- 动态 gzip/deflate 仍依赖当前 stdx zlib provider。
+- 动态 gzip/deflate 已使用 Ignite 自有安全仓颉 codec，覆盖缓冲与增量流式响应。
 - 静态文件可按 `Accept-Encoding` 选择预生成 `.br` / `.zst` 文件。
 - Range 请求不会错误套用预压缩副本。
 - 0800 不宣称内置 Brotli/Zstd runtime codec 已完成。
 
 ## 仍需保留的 stdx 面
 
-`0.8.0` 仍在 TLS 默认路径、部分 JSON compatibility、动态压缩、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度应以源码依赖和测试为准，不以“native preview”标题推导为完全替代。
+`0.8.1` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度应以源码依赖和测试为准，不以“native preview”标题推导为完全替代。
 
 ## 推荐验证顺序
 

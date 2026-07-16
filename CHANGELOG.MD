@@ -3,6 +3,14 @@
 ## Ignite `0800`
 > 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
 
+### v0.8.1 `Ignite Preview`
+
+- `+特性` 动态 gzip/deflate 的缓冲与流式响应改用 Ignite 自有安全仓颉 DEFLATE/GZIP codec，不再在产品路径构造 `stdx.compress.zlib`
+- `+特性` 缓冲响应使用固定 Huffman 与有界 LZ77；流式响应使用增量 stored blocks，避免完整响应捕获
+- `+特性` Brotli/Zstd 继续通过 `.br` / `.zst` 预压缩静态副本交付，保持 Range、HEAD、Vary 与 MIME 语义
+- `=边界` 当前 native codec 优先完成安全与协议正确性；更高压缩比、字典、SIMD 和动态 Brotli/Zstd 留待后续性能/provider 包
+- `=杂项` IgniteNEXT 包版本、框架版本常量、Banner fixtures、三语 README 与双语 changelog 更新到 `0.8.1`
+
 ### v0.8.0 `Ignite Preview`
 
 - `+特性` 明文服务端默认进入 Ignite native H1，保留 `serverPreferredBackendHint: "stdx-default"` 回滚入口

@@ -1,6 +1,6 @@
-# Ignite 0.8.0 能力矩阵
+# Ignite 0.8.1 能力矩阵
 
-这张表描述 `IgniteNEXT` 当前 `0.8.0 Preview` 的公开能力状态。它回答的是“现在可以怎样使用”，不是未来路线图。
+这张表描述 `IgniteNEXT` 当前 `0.8.1 Preview` 的公开能力状态。它回答的是“现在可以怎样使用”，不是未来路线图。
 
 ## 状态说明
 
@@ -35,7 +35,7 @@
 | 请求体流 | 0800 默认 | `requestBody()` 返回受 `Config.bodyLimit` 保护的流，`saveBodyToFile()` 可直接落盘。 | 流先被消费后，不承诺还能完整回放给 buffered API。 |
 | 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam。 | 调用方负责状态、响应头和 framing；不自动设置 H1 chunked。 |
 | 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是静态交付，不代表内置 Brotli/Zstd 动态 codec 已完成。 |
-| 动态 gzip/deflate | 稳定继承 | 压缩中间件继续可用。 | codec provider 仍来自当前 stdx zlib 面。 |
+| 动态 gzip/deflate | Preview | 压缩中间件通过 Ignite 自有安全仓颉 codec 支持缓冲与增量流式响应。 | 当前优先协议正确性；高级字典、SIMD 与极致压缩比未承诺。 |
 
 ## 运行时与依赖边界
 
@@ -45,7 +45,7 @@
 | 超时与 body limit | 0800 默认 | native H1 消费 `bodyLimit`、read/write/header/idle timeout。 | `readHeaderTimeout`、`idleTimeout` 当前需在构造后赋值。 |
 | IoDriver / lisi | Provider hold | 已有能力描述、策略与 probe 接点。 | 未替换底层 `std.net.TcpSocket`，不能宣称已获得 io_uring/IOCP/kqueue 的生产收益。 |
 | SeaJson | 0800 默认 | `jsonSeaStream` 使用 SeaJson 原生 writer 和有界桥接。 | 兼容 stdx JSON 的入口仍保留，未做到全项目 JSON 零 stdx。 |
-| stdx 总体依赖 | Provider hold | native H1/H2 和 SeaJson 已缩小核心耦合。 | TLS 默认、动态压缩、部分 JSON/代理/平台链接仍使用 stdx。 |
+| stdx 总体依赖 | Provider hold | native H1/H2、SeaJson 与动态 gzip/deflate 已缩小核心耦合。 | TLS 默认、部分 JSON/代理/平台链接仍使用 stdx。 |
 
 ## 选择建议
 

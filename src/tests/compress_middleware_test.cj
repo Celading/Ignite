@@ -8,10 +8,55 @@ import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
-import stdx.compress.zlib.{DecompressInputStream, WrapType}
+import stdx.compress.zlib.{CompressLevel, DecompressInputStream, WrapType}
 
 @Test
 public class CompressMiddlewareTestSuite {
+    @TestCase
+    public func testCompressConfigRetainsCompressLevelSourceCompatibility(): Unit {
+        let speed = CompressConfig(level: CompressLevel.BestSpeed)
+        let defaultLevel = CompressConfig(level: CompressLevel.DefaultCompression)
+        let best = CompressConfig(level: CompressLevel.BestCompression)
+
+        @Assert(speed.minBytes, 1024)
+        @Assert(defaultLevel.minBytes, 1024)
+        @Assert(best.minBytes, 1024)
+    }
+
+    @TestCase
+    public func testNativeCodecCompressesBufferedAndStreamsAcrossStoredBlocks(): Unit {
+        let raw = Array<UInt8>(70000, repeat: 0x61)
+        let expected = String.fromUtf8(raw)
+
+        let buffered = compressResponsePayload(raw, CompressionFormat.Gzip)
+        @Assert(buffered.size < raw.size, true)
+        @Assert(decompressBody(buffered, "gzip"), expected)
+
+        let source = SendStreamBytesInput(toSendStreamByteArray(raw))
+        let stream = CompressionInputStream(
+            source,
+            CompressionFormat.Deflate,
+            chunkSize: 4096
+        )
+        let streamed = readAllCompressionBytes(stream)
+        @Assert(decompressBody(streamed, "deflate"), expected)
+    }
+
+    @TestCase
+    public func testNativeCodecRoundTripsDeterministicBinaryPayload(): Unit {
+        let raw = Array<UInt8>(100000, repeat: 0)
+        for (i in 0..raw.size) {
+            raw[i] = UInt8((i * 31 + i / 7) & 0xff)
+        }
+
+        let gzip = compressResponsePayload(raw, CompressionFormat.Gzip)
+        let deflate = compressResponsePayload(raw, CompressionFormat.Deflate)
+        let stored = compressResponsePayload(raw, CompressionFormat.Deflate, level: 0)
+        @Assert(compressionByteArraysEqual(decompressBytes(gzip, "gzip"), raw), true)
+        @Assert(compressionByteArraysEqual(decompressBytes(deflate, "deflate"), raw), true)
+        @Assert(compressionByteArraysEqual(decompressBytes(stored, "deflate"), raw), true)
+    }
+
     @TestCase
     public func testCompressMiddlewareGzipAndSkipSmallBody(): Unit {
         let largeBody = "Ignite-compress-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
@@ -908,8 +953,12 @@ public class CompressMiddlewareTestSuite {
     }
 
     func decompressBody(data: Array<UInt8>, encoding: String): String {
+        String.fromUtf8(decompressBytes(data, encoding))
+    }
+
+    func decompressBytes(data: Array<UInt8>, encoding: String): Array<UInt8> {
         if (encoding.size == 0) {
-            return String.fromUtf8(data)
+            return data
         }
         let wrap: WrapType = if (encoding == "deflate") {
             WrapType.DeflateFormat
@@ -938,7 +987,41 @@ public class CompressMiddlewareTestSuite {
                 source.close()
             } catch (_: Exception) {}
         }
-        String.fromUtf8(toUInt8Array(out.toArray()))
+        toUInt8Array(out.toArray())
+    }
+
+    func readAllCompressionBytes(stream: InputStream): Array<UInt8> {
+        let out = ArrayList<Byte>()
+        let buffer = Array<Byte>(1024, repeat: 0)
+        try {
+            while (true) {
+                let count = stream.read(buffer)
+                if (count <= 0) {
+                    break
+                }
+                for (i in 0..count) {
+                    out.add(buffer[i])
+                }
+            }
+        } finally {
+            match (stream) {
+                case closable: Resource => closable.close()
+                case _ => ()
+            }
+        }
+        toUInt8Array(out.toArray())
+    }
+
+    func compressionByteArraysEqual(left: Array<UInt8>, right: Array<UInt8>): Bool {
+        if (left.size != right.size) {
+            return false
+        }
+        for (i in 0..left.size) {
+            if (left[i] != right[i]) {
+                return false
+            }
+        }
+        true
     }
 
     func choosePort(offset: Int64): UInt16 {

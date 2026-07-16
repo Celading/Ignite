@@ -1,7 +1,6 @@
 package ignite
 
 import std.io.InputStream
-import stdx.compress.zlib.{CompressInputStream, CompressLevel, WrapType}
 
 let IGNITE_STREAM_COMPRESSION_PLAN_LOCAL_KEY = "__ignite_stream_compression_plan"
 
@@ -14,7 +13,7 @@ public class StreamCompressionPlan {
     public let minBytes: Int64
     public let setVaryHeader: Bool
     public let skipIfNoGain: Bool
-    public let level: CompressLevel
+    public let level: Int64
     public let bufferSize: Int64
 
     public init(
@@ -22,7 +21,7 @@ public class StreamCompressionPlan {
         minBytes: Int64,
         setVaryHeader: Bool,
         skipIfNoGain: Bool,
-        level: CompressLevel,
+        level: Int64,
         bufferSize: Int64
     ) {
         this.encoding = encoding.trimAscii().toAsciiLower()
@@ -80,16 +79,15 @@ func wrapStreamWithCompressionPlan(
     stream: InputStream,
     plan: StreamCompressionPlan
 ): InputStream {
-    let wrap: WrapType = if (plan.encoding == "deflate") {
-        WrapType.DeflateFormat
+    let format = if (plan.encoding == "deflate") {
+        CompressionFormat.Deflate
     } else {
-        WrapType.GzipFormat
+        CompressionFormat.Gzip
     }
-    CompressInputStream(
+    CompressionInputStream(
         stream,
-        wrap: wrap,
-        compressLevel: plan.level,
-        bufLen: plan.bufferSize
+        format,
+        chunkSize: plan.bufferSize
     )
 }
 
