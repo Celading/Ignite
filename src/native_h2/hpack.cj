@@ -127,6 +127,7 @@ class NativeH2HpackDecoderState {
         var path = ""
         let headers = ArrayList<NativeH2Header>()
         var regularHeaderSeen = false
+        var contentLength: ?Int64 = None
         for (field in fields) {
             if (field.name.startsWith(":")) {
                 if (regularHeaderSeen) {
@@ -153,6 +154,18 @@ class NativeH2HpackDecoderState {
                 }
             } else {
                 regularHeaderSeen = true
+                nativeH2ValidateRequestHeader(field.name, field.value)
+                if (field.name == "content-length") {
+                    let parsed = nativeH2ParseContentLength(field.value)
+                    if (let Some(previous) <- contentLength) {
+                        if (previous != parsed) {
+                            nativeH2RequestFailure(
+                                "native H2 request has conflicting content-length values"
+                            )
+                        }
+                    }
+                    contentLength = Some(parsed)
+                }
                 headers.add(NativeH2Header(field.name, field.value))
             }
         }
@@ -162,7 +175,9 @@ class NativeH2HpackDecoderState {
             )
         }
         NativeH2DecodedRequestHead(
-            method, scheme, authority, path, headers: headers.toArray()
+            method, scheme, authority, path,
+            headers: headers.toArray(),
+            contentLength: contentLength
         )
     }
 
@@ -179,6 +194,43 @@ class NativeH2HpackDecoderState {
         }
         trailers.toArray()
     }
+}
+
+func nativeH2ValidateRequestHeader(name: String, value: String): Unit {
+    for (rune in name.toRuneArray()) {
+        if (rune >= r'A' && rune <= r'Z') {
+            nativeH2RequestFailure("native H2 request header name must be lowercase")
+        }
+    }
+    if (name == "connection" || name == "proxy-connection" ||
+        name == "keep-alive" || name == "transfer-encoding" ||
+        name == "upgrade") {
+        nativeH2RequestFailure(
+            "native H2 request contains a connection-specific header"
+        )
+    }
+    if (name == "te" && value.trimAscii().toAsciiLower() != "trailers") {
+        nativeH2RequestFailure("native H2 TE request header must contain trailers")
+    }
+}
+
+func nativeH2ParseContentLength(value: String): Int64 {
+    let digits = value.trimAscii().toRuneArray()
+    if (digits.size == 0) {
+        nativeH2RequestFailure("native H2 content-length must contain digits")
+    }
+    var parsed: Int64 = 0
+    for (rune in digits) {
+        if (rune < r'0' || rune > r'9') {
+            nativeH2RequestFailure("native H2 content-length must contain digits")
+        }
+        let digit = Int64(UInt32(rune)) - Int64(UInt32(r'0'))
+        if (parsed > (9223372036854775807 - digit) / 10) {
+            nativeH2RequestFailure("native H2 content-length exceeds Int64 range")
+        }
+        parsed = parsed * 10 + digit
+    }
+    parsed
 }
 
 func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHead {

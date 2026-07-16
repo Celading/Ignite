@@ -100,6 +100,12 @@ public class NativeH2ProtocolException <: Exception {
     }
 }
 
+class NativeH2RequestException <: Exception {
+    init(message: String) {
+        super(message)
+    }
+}
+
 class NativeH2Frame {
     let frameType: UInt8
     let flags: UInt8
@@ -191,19 +197,22 @@ class NativeH2DecodedRequestHead {
     let authority: String
     let path: String
     let headers: Array<NativeH2Header>
+    let contentLength: ?Int64
 
     init(
         method: String,
         scheme: String,
         authority: String,
         path: String,
-        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>(),
+        contentLength!: ?Int64 = None
     ) {
         this.method = method
         this.scheme = scheme
         this.authority = authority
         this.path = path
         this.headers = nativeH2CloneHeaders(headers)
+        this.contentLength = contentLength
     }
 }
 
@@ -254,6 +263,13 @@ class NativeH2InboundStream {
             headers: head.headers,
             trailers: trailers
         )
+    }
+
+    func contentLengthMatches(): Bool {
+        match (head.contentLength) {
+            case Some(expected) => expected == body.size
+            case None => true
+        }
     }
 }
 
@@ -478,18 +494,28 @@ public func serveNativeH2Connection(
                         stream.setTrailers(
                             hpackDecoder.decodeRequestTrailers(pending.headerBlock())
                         )
-                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        nativeH2CompleteInboundStream(
+                            socket, streams, handlers, stream, handler
+                        )
                         completedStreams += 1
                     } else {
-                        let stream = NativeH2InboundStream(
-                            pending.streamId,
-                            hpackDecoder.decodeRequestHead(pending.headerBlock()),
-                            maxRequestBodySize,
-                            sendWindow: peerSettings.initialStreamWindow
-                        )
-                        streams.add(pending.streamId, stream)
-                        if (pending.endStream) {
-                            nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        if (let Some(head) <- nativeH2DecodeRequestHeadOrReset(
+                            socket, hpackDecoder, pending.streamId, pending.headerBlock()
+                        )) {
+                            let stream = NativeH2InboundStream(
+                                pending.streamId,
+                                head,
+                                maxRequestBodySize,
+                                sendWindow: peerSettings.initialStreamWindow
+                            )
+                            streams.add(pending.streamId, stream)
+                            if (pending.endStream) {
+                                nativeH2CompleteInboundStream(
+                                    socket, streams, handlers, stream, handler
+                                )
+                                completedStreams += 1
+                            }
+                        } else {
                             completedStreams += 1
                         }
                     }
@@ -521,7 +547,9 @@ public func serveNativeH2Connection(
                     }
                     if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
                         stream.setTrailers(hpackDecoder.decodeRequestTrailers(headerBlock))
-                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                        nativeH2CompleteInboundStream(
+                            socket, streams, handlers, stream, handler
+                        )
                         completedStreams += 1
                     } else {
                         pendingRequestHead = Some(
@@ -545,15 +573,23 @@ public func serveNativeH2Connection(
                 lastOpenedStreamId = frame.streamId
                 let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
                 if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
-                    let stream = NativeH2InboundStream(
-                        frame.streamId,
-                        hpackDecoder.decodeRequestHead(headerBlock),
-                        maxRequestBodySize,
-                        sendWindow: peerSettings.initialStreamWindow
-                    )
-                    streams.add(frame.streamId, stream)
-                    if (endStream) {
-                        nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                    if (let Some(head) <- nativeH2DecodeRequestHeadOrReset(
+                        socket, hpackDecoder, frame.streamId, headerBlock
+                    )) {
+                        let stream = NativeH2InboundStream(
+                            frame.streamId,
+                            head,
+                            maxRequestBodySize,
+                            sendWindow: peerSettings.initialStreamWindow
+                        )
+                        streams.add(frame.streamId, stream)
+                        if (endStream) {
+                            nativeH2CompleteInboundStream(
+                                socket, streams, handlers, stream, handler
+                            )
+                            completedStreams += 1
+                        }
+                    } else {
                         completedStreams += 1
                     }
                 } else {
@@ -597,7 +633,9 @@ public func serveNativeH2Connection(
                     socket, frame.streamId, flowControlledSize, endStream
                 )
                 if (endStream) {
-                    nativeH2StartCompletedStream(streams, handlers, stream, handler)
+                    nativeH2CompleteInboundStream(
+                        socket, streams, handlers, stream, handler
+                    )
                     completedStreams += 1
                 }
                 continue
@@ -743,6 +781,10 @@ func nativeH2ProtocolFailure(message: String, errorCode: Int64): Nothing {
     throw NativeH2ProtocolException(errorCode, message)
 }
 
+func nativeH2RequestFailure(message: String): Nothing {
+    throw NativeH2RequestException(message)
+}
+
 func nativeH2RequestHeaderBlockFragment(frame: NativeH2Frame): Array<UInt8> {
     let padded = (frame.flags & UInt8(0x8)) != UInt8(0)
     let prioritized = (frame.flags & UInt8(0x20)) != UInt8(0)
@@ -852,12 +894,44 @@ func nativeH2GoAwayPayload(lastStreamId: Int64, errorCode: Int64): Array<UInt8> 
     payload
 }
 
-func nativeH2StartCompletedStream(
+func nativeH2DecodeRequestHeadOrReset(
+    socket: TcpSocket,
+    decoder: NativeH2HpackDecoderState,
+    streamId: Int64,
+    payload: Array<UInt8>
+): ?NativeH2DecodedRequestHead {
+    try {
+        Some(decoder.decodeRequestHead(payload))
+    } catch (_: NativeH2RequestException) {
+        nativeH2WriteFrame(
+            socket,
+            NativeH2Frame(
+                UInt8(0x3), UInt8(0), streamId,
+                nativeH2ErrorCodePayload(NATIVE_H2_ERROR_PROTOCOL)
+            )
+        )
+        None
+    }
+}
+
+func nativeH2CompleteInboundStream(
+    socket: TcpSocket,
     streams: HashMap<Int64, NativeH2InboundStream>,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
     stream: NativeH2InboundStream,
     handler: NativeH2SingleStreamHandler
 ): Unit {
+    if (!stream.contentLengthMatches()) {
+        nativeH2WriteFrame(
+            socket,
+            NativeH2Frame(
+                UInt8(0x3), UInt8(0), stream.streamId,
+                nativeH2ErrorCodePayload(NATIVE_H2_ERROR_PROTOCOL)
+            )
+        )
+        let _ = streams.remove(stream.streamId)
+        return
+    }
     let request = stream.request()
     let future = spawn {
         handler(request)
