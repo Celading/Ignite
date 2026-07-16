@@ -213,16 +213,18 @@ class NativeH2InboundStream {
     let body = ArrayList<UInt8>()
     let maxRequestBodySize: Int64
     var trailers = Array<NativeH2Header>()
-    var sendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
+    var sendWindow: Int64
 
     init(
         streamId: Int64,
         head: NativeH2DecodedRequestHead,
-        maxRequestBodySize: Int64
+        maxRequestBodySize: Int64,
+        sendWindow!: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
     ) {
         this.streamId = streamId
         this.head = head
         this.maxRequestBodySize = maxRequestBodySize
+        this.sendWindow = sendWindow
     }
 
     func appendData(payload: Array<UInt8>): Bool {
@@ -366,8 +368,18 @@ public func serveNativeH2Connection(
         (clientSettings.flags & UInt8(0x1)) != UInt8(0)) {
         throw Exception("native H2 expected initial non-ACK SETTINGS on stream 0")
     }
-    if (clientSettings.payload.size % 6 != 0) {
-        throw Exception("native H2 SETTINGS payload must contain 6-byte entries")
+    let peerSettings = NativeH2PeerSettings()
+    try {
+        let _ = peerSettings.apply(clientSettings.payload)
+    } catch (e: NativeH2ProtocolException) {
+        nativeH2WriteFrame(
+            socket,
+            NativeH2Frame(
+                UInt8(0x7), UInt8(0), 0,
+                nativeH2GoAwayPayload(0, e.errorCode)
+            )
+        )
+        throw e
     }
     nativeH2WriteFrame(
         socket,
@@ -392,7 +404,8 @@ public func serveNativeH2Connection(
             handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
             nativeH2HarvestCompletedHandlers(socket, handlers, outbound)
             connectionSendWindow = nativeH2FlushOutbound(
-                socket, outbound, connectionSendWindow
+                socket, outbound, connectionSendWindow,
+                peerSettings.maxFramePayload
             )
             if (let Some(connectionControl) <- control) {
                 if (connectionControl.isCloseRequested()) {
@@ -471,7 +484,8 @@ public func serveNativeH2Connection(
                         let stream = NativeH2InboundStream(
                             pending.streamId,
                             hpackDecoder.decodeRequestHead(pending.headerBlock()),
-                            maxRequestBodySize
+                            maxRequestBodySize,
+                            sendWindow: peerSettings.initialStreamWindow
                         )
                         streams.add(pending.streamId, stream)
                         if (pending.endStream) {
@@ -487,7 +501,9 @@ public func serveNativeH2Connection(
                 nativeH2ProtocolFailure("native H2 received orphan CONTINUATION")
             }
             if (frame.frameType == UInt8(0x4)) {
-                nativeH2HandleSettingsFrame(socket, frame)
+                nativeH2HandleSettingsFrame(
+                    socket, frame, peerSettings, streams, handlers, outbound
+                )
                 continue
             }
             if (frame.frameType == UInt8(0x1)) {
@@ -532,7 +548,8 @@ public func serveNativeH2Connection(
                     let stream = NativeH2InboundStream(
                         frame.streamId,
                         hpackDecoder.decodeRequestHead(headerBlock),
-                        maxRequestBodySize
+                        maxRequestBodySize,
+                        sendWindow: peerSettings.initialStreamWindow
                     )
                     streams.add(frame.streamId, stream)
                     if (endStream) {
@@ -587,22 +604,38 @@ public func serveNativeH2Connection(
             }
             if (frame.frameType == UInt8(0x8)) {
                 let increment = nativeH2DecodeWindowUpdate(frame)
+                var streamWindowOverflow = false
                 if (frame.streamId == 0) {
                     connectionSendWindow = nativeH2IncreaseFlowWindow(
                         connectionSendWindow, increment, "connection"
                     )
                 } else if (let Some(stream) <- outbound.get(frame.streamId)) {
-                    stream.sendWindow = nativeH2IncreaseFlowWindow(
-                        stream.sendWindow, increment, "stream"
-                    )
+                    if (nativeH2FlowWindowWouldOverflow(stream.sendWindow, increment)) {
+                        nativeH2ResetStreamForFlowError(
+                            socket, frame.streamId, streams, handlers, outbound
+                        )
+                        streamWindowOverflow = true
+                    } else {
+                        stream.sendWindow += increment
+                    }
                 } else if (let Some(pending) <- handlers.get(frame.streamId)) {
-                    pending.sendWindow = nativeH2IncreaseFlowWindow(
-                        pending.sendWindow, increment, "stream"
-                    )
+                    if (nativeH2FlowWindowWouldOverflow(pending.sendWindow, increment)) {
+                        nativeH2ResetStreamForFlowError(
+                            socket, frame.streamId, streams, handlers, outbound
+                        )
+                        streamWindowOverflow = true
+                    } else {
+                        pending.sendWindow += increment
+                    }
                 } else if (let Some(stream) <- streams.get(frame.streamId)) {
-                    stream.sendWindow = nativeH2IncreaseFlowWindow(
-                        stream.sendWindow, increment, "stream"
-                    )
+                    if (nativeH2FlowWindowWouldOverflow(stream.sendWindow, increment)) {
+                        nativeH2ResetStreamForFlowError(
+                            socket, frame.streamId, streams, handlers, outbound
+                        )
+                        streamWindowOverflow = true
+                    } else {
+                        stream.sendWindow += increment
+                    }
                 } else if (nativeH2WindowUpdateReferencesClosedClientStream(
                     frame.streamId, lastOpenedStreamId
                 )) {
@@ -613,8 +646,12 @@ public func serveNativeH2Connection(
                         "native H2 WINDOW_UPDATE references an unknown response stream"
                     )
                 }
+                if (streamWindowOverflow) {
+                    continue
+                }
                 connectionSendWindow = nativeH2FlushOutbound(
-                    socket, outbound, connectionSendWindow
+                    socket, outbound, connectionSendWindow,
+                    peerSettings.maxFramePayload
                 )
                 continue
             }
@@ -874,7 +911,8 @@ func nativeH2ResponseBodyForbidden(method: String, status: UInt16): Bool {
 func nativeH2FlushOutbound(
     socket: TcpSocket,
     outbound: HashMap<Int64, NativeH2OutboundStream>,
-    initialConnectionWindow: Int64
+    initialConnectionWindow: Int64,
+    maxFramePayload: Int64
 ): Int64 {
     var connectionWindow = initialConnectionWindow
     var progressed = true
@@ -895,7 +933,7 @@ func nativeH2FlushOutbound(
                 continue
             }
             let count = min(
-                min(stream.remaining(), NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD),
+                min(stream.remaining(), maxFramePayload),
                 min(stream.sendWindow, connectionWindow)
             )
             let end = stream.offset + count
@@ -992,7 +1030,48 @@ func nativeH2IncreaseFlowWindow(current: Int64, increment: Int64, scope: String)
     current + increment
 }
 
-func nativeH2HandleSettingsFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
+func nativeH2FlowWindowWouldOverflow(current: Int64, increment: Int64): Bool {
+    current > NATIVE_H2_MAX_FLOW_WINDOW - increment
+}
+
+func nativeH2ResetStreamForFlowError(
+    socket: TcpSocket,
+    streamId: Int64,
+    streams: HashMap<Int64, NativeH2InboundStream>,
+    handlers: HashMap<Int64, NativeH2PendingHandler>,
+    outbound: HashMap<Int64, NativeH2OutboundStream>
+): Unit {
+    nativeH2WriteFrame(
+        socket,
+        NativeH2Frame(
+            UInt8(0x3), UInt8(0), streamId,
+            nativeH2ErrorCodePayload(NATIVE_H2_ERROR_FLOW_CONTROL)
+        )
+    )
+    let _ = streams.remove(streamId)
+    if (let Some(pending) <- handlers.remove(streamId)) {
+        pending.future.cancel()
+    }
+    let _ = outbound.remove(streamId)
+}
+
+func nativeH2ErrorCodePayload(errorCode: Int64): Array<UInt8> {
+    [
+        UInt8((errorCode >> 24) & 0xff),
+        UInt8((errorCode >> 16) & 0xff),
+        UInt8((errorCode >> 8) & 0xff),
+        UInt8(errorCode & 0xff)
+    ]
+}
+
+func nativeH2HandleSettingsFrame(
+    socket: TcpSocket,
+    frame: NativeH2Frame,
+    peerSettings: NativeH2PeerSettings,
+    streams: HashMap<Int64, NativeH2InboundStream>,
+    handlers: HashMap<Int64, NativeH2PendingHandler>,
+    outbound: HashMap<Int64, NativeH2OutboundStream>
+): Unit {
     if (frame.streamId != 0) {
         nativeH2ProtocolFailure("native H2 SETTINGS must use stream 0")
     }
@@ -1005,11 +1084,17 @@ func nativeH2HandleSettingsFrame(socket: TcpSocket, frame: NativeH2Frame): Unit 
         }
         return
     }
-    if (frame.payload.size % 6 != 0) {
-        nativeH2ProtocolFailure(
-            "native H2 SETTINGS payload must contain 6-byte entries",
-            NATIVE_H2_ERROR_FRAME_SIZE
-        )
+    let windowDeltas = peerSettings.apply(frame.payload)
+    for (delta in windowDeltas) {
+        for ((_streamId, stream) in streams) {
+            stream.sendWindow = nativeH2AdjustedSendWindow(stream.sendWindow, delta)
+        }
+        for ((_streamId, pending) in handlers) {
+            pending.sendWindow = nativeH2AdjustedSendWindow(pending.sendWindow, delta)
+        }
+        for ((_streamId, stream) in outbound) {
+            stream.sendWindow = nativeH2AdjustedSendWindow(stream.sendWindow, delta)
+        }
     }
     nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 }
