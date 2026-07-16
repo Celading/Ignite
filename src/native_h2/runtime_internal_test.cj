@@ -7,6 +7,51 @@ import std.sync.AtomicBool
 @Test
 public class NativeH2RuntimeInternalTestSuite {
     @TestCase
+    public func testResetIdleStreamClassifierPreservesImplicitlyClosedStreams(): Unit {
+        @Assert(nativeH2ResetReferencesIdleStream(5, 3), true)
+        @Assert(nativeH2ResetReferencesIdleStream(2, 3), true)
+        @Assert(nativeH2ResetReferencesIdleStream(3, 3), false)
+        @Assert(nativeH2ResetReferencesIdleStream(1, 3), false)
+    }
+
+    @TestCase
+    public func testPriorityFrameValidationRejectsMalformedAndSelfDependentFrames(): Unit {
+        nativeH2ValidatePriorityFrame(
+            NativeH2Frame(
+                UInt8(0x2), UInt8(0), 5,
+                [UInt8(0), UInt8(0), UInt8(0), UInt8(3), UInt8(16)]
+            )
+        )
+
+        var malformedCode: Int64 = NATIVE_H2_ERROR_NO_ERROR
+        try {
+            nativeH2ValidatePriorityFrame(
+                NativeH2Frame(
+                    UInt8(0x2), UInt8(0), 5,
+                    [UInt8(0), UInt8(0), UInt8(0), UInt8(3)]
+                )
+            )
+        } catch (e: NativeH2ProtocolException) {
+            malformedCode = e.errorCode
+        }
+
+        var selfDependentCode: Int64 = NATIVE_H2_ERROR_NO_ERROR
+        try {
+            nativeH2ValidatePriorityFrame(
+                NativeH2Frame(
+                    UInt8(0x2), UInt8(0), 5,
+                    [UInt8(0), UInt8(0), UInt8(0), UInt8(5), UInt8(16)]
+                )
+            )
+        } catch (e: NativeH2ProtocolException) {
+            selfDependentCode = e.errorCode
+        }
+
+        @Assert(malformedCode, NATIVE_H2_ERROR_FRAME_SIZE)
+        @Assert(selfDependentCode, NATIVE_H2_ERROR_PROTOCOL)
+    }
+
+    @TestCase
     public func testPaddedPriorityHeadersExposeOnlyHeaderBlockFragment(): Unit {
         let frame = NativeH2Frame(
             UInt8(0x1), UInt8(0x28), 1,

@@ -628,12 +628,19 @@ public func serveNativeH2Connection(
                         NATIVE_H2_ERROR_FRAME_SIZE
                     )
                 }
+                if (nativeH2ResetReferencesIdleStream(frame.streamId, lastOpenedStreamId)) {
+                    nativeH2ProtocolFailure("native H2 RST_STREAM references an idle stream")
+                }
                 let _ = streams.remove(frame.streamId)
                 let _ = discardedRequestStreams.remove(frame.streamId)
                 if (let Some(pending) <- handlers.remove(frame.streamId)) {
                     pending.future.cancel()
                 }
                 let _ = outbound.remove(frame.streamId)
+                continue
+            }
+            if (frame.frameType == UInt8(0x2)) {
+                nativeH2ValidatePriorityFrame(frame)
                 continue
             }
             if (frame.frameType == UInt8(0x7)) {
@@ -750,6 +757,30 @@ func nativeH2RequestDataField(frame: NativeH2Frame): Array<UInt8> {
         nativeH2ProtocolFailure("native H2 DATA padding exceeds payload")
     }
     nativeH2Slice(frame.payload, 1, end)
+}
+
+func nativeH2ResetReferencesIdleStream(streamId: Int64, lastOpenedStreamId: Int64): Bool {
+    streamId > lastOpenedStreamId || (streamId & 1) == 0
+}
+
+func nativeH2ValidatePriorityFrame(frame: NativeH2Frame): Unit {
+    if (frame.streamId <= 0) {
+        nativeH2ProtocolFailure("native H2 PRIORITY requires a stream")
+    }
+    if (frame.payload.size != 5) {
+        nativeH2ProtocolFailure(
+            "native H2 PRIORITY requires a five-byte payload",
+            NATIVE_H2_ERROR_FRAME_SIZE
+        )
+    }
+    let dependency =
+        ((Int64(frame.payload[0]) & 0x7f) << 24) +
+        (Int64(frame.payload[1]) << 16) +
+        (Int64(frame.payload[2]) << 8) +
+        Int64(frame.payload[3])
+    if (dependency == frame.streamId) {
+        nativeH2ProtocolFailure("native H2 PRIORITY cannot depend on itself")
+    }
 }
 
 func nativeH2ServerSettingsPayload(): Array<UInt8> {
