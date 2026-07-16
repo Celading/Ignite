@@ -496,12 +496,7 @@ public func serveNativeH2Connection(
                         "native H2 HEADERS requires a client-initiated stream"
                     )
                 }
-                if ((frame.flags & UInt8(0x8)) != UInt8(0) ||
-                    (frame.flags & UInt8(0x20)) != UInt8(0)) {
-                    nativeH2ProtocolFailure(
-                        "native H2 does not support PADDED or PRIORITY HEADERS"
-                    )
-                }
+                let headerBlock = nativeH2RequestHeaderBlockFragment(frame)
                 if (let Some(stream) <- streams.get(frame.streamId)) {
                     if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
                         nativeH2ProtocolFailure(
@@ -509,13 +504,13 @@ public func serveNativeH2Connection(
                         )
                     }
                     if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
-                        stream.setTrailers(hpackDecoder.decodeRequestTrailers(frame.payload))
+                        stream.setTrailers(hpackDecoder.decodeRequestTrailers(headerBlock))
                         nativeH2StartCompletedStream(streams, handlers, stream, handler)
                         completedStreams += 1
                     } else {
                         pendingRequestHead = Some(
                             NativeH2PendingRequestHead(
-                                frame.streamId, true, frame.payload, isTrailer: true
+                                frame.streamId, true, headerBlock, isTrailer: true
                             )
                         )
                     }
@@ -536,7 +531,7 @@ public func serveNativeH2Connection(
                 if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
                     let stream = NativeH2InboundStream(
                         frame.streamId,
-                        hpackDecoder.decodeRequestHead(frame.payload),
+                        hpackDecoder.decodeRequestHead(headerBlock),
                         maxRequestBodySize
                     )
                     streams.add(frame.streamId, stream)
@@ -546,18 +541,17 @@ public func serveNativeH2Connection(
                     }
                 } else {
                     pendingRequestHead = Some(
-                        NativeH2PendingRequestHead(frame.streamId, endStream, frame.payload)
+                        NativeH2PendingRequestHead(frame.streamId, endStream, headerBlock)
                     )
                 }
                 continue
             }
             if (frame.frameType == UInt8(0x0)) {
-                if ((frame.flags & UInt8(0x8)) != UInt8(0)) {
-                    nativeH2ProtocolFailure("native H2 does not support PADDED DATA")
-                }
+                let dataField = nativeH2RequestDataField(frame)
+                let flowControlledSize = frame.payload.size
                 let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
                 if (discardedRequestStreams.contains(frame.streamId)) {
-                    nativeH2ReplenishDiscardedRequestData(socket, frame.payload.size)
+                    nativeH2ReplenishDiscardedRequestData(socket, flowControlledSize)
                     if (endStream) {
                         let _ = discardedRequestStreams.remove(frame.streamId)
                     }
@@ -566,7 +560,7 @@ public func serveNativeH2Connection(
                 let stream = streams.get(frame.streamId) ?? nativeH2ProtocolFailure(
                     "native H2 DATA references an unknown stream"
                 )
-                if (!stream.appendData(frame.payload)) {
+                if (!stream.appendData(dataField)) {
                     nativeH2WriteFrame(
                         socket,
                         NativeH2Frame(
@@ -574,7 +568,7 @@ public func serveNativeH2Connection(
                             nativeH2EncodeResponseHead(UInt16(413), Array<NativeH2Header>())
                         )
                     )
-                    nativeH2ReplenishDiscardedRequestData(socket, frame.payload.size)
+                    nativeH2ReplenishDiscardedRequestData(socket, flowControlledSize)
                     let _ = streams.remove(frame.streamId)
                     completedStreams += 1
                     if (!endStream) {
@@ -583,7 +577,7 @@ public func serveNativeH2Connection(
                     continue
                 }
                 nativeH2ReplenishConsumedRequestData(
-                    socket, frame.streamId, frame.payload.size, endStream
+                    socket, frame.streamId, flowControlledSize, endStream
                 )
                 if (endStream) {
                     nativeH2StartCompletedStream(streams, handlers, stream, handler)
@@ -703,6 +697,59 @@ func nativeH2ProtocolFailure(message: String): Nothing {
 
 func nativeH2ProtocolFailure(message: String, errorCode: Int64): Nothing {
     throw NativeH2ProtocolException(errorCode, message)
+}
+
+func nativeH2RequestHeaderBlockFragment(frame: NativeH2Frame): Array<UInt8> {
+    let padded = (frame.flags & UInt8(0x8)) != UInt8(0)
+    let prioritized = (frame.flags & UInt8(0x20)) != UInt8(0)
+    if (!padded && !prioritized) {
+        return frame.payload
+    }
+
+    var cursor: Int64 = 0
+    var paddingLength: Int64 = 0
+    if (padded) {
+        if (frame.payload.size < 1) {
+            nativeH2ProtocolFailure("native H2 padded HEADERS is missing pad length")
+        }
+        paddingLength = Int64(frame.payload[0])
+        cursor = 1
+    }
+    if (prioritized) {
+        if (frame.payload.size - cursor < 5) {
+            nativeH2ProtocolFailure("native H2 priority HEADERS prefix is truncated")
+        }
+        let dependency =
+            ((Int64(frame.payload[cursor]) & 0x7f) << 24) +
+            (Int64(frame.payload[cursor + 1]) << 16) +
+            (Int64(frame.payload[cursor + 2]) << 8) +
+            Int64(frame.payload[cursor + 3])
+        if (dependency == frame.streamId) {
+            nativeH2ProtocolFailure("native H2 priority HEADERS cannot depend on itself")
+        }
+        cursor += 5
+    }
+
+    let end = frame.payload.size - paddingLength
+    if (end < cursor) {
+        nativeH2ProtocolFailure("native H2 HEADERS padding exceeds payload")
+    }
+    nativeH2Slice(frame.payload, cursor, end)
+}
+
+func nativeH2RequestDataField(frame: NativeH2Frame): Array<UInt8> {
+    if ((frame.flags & UInt8(0x8)) == UInt8(0)) {
+        return frame.payload
+    }
+    if (frame.payload.size < 1) {
+        nativeH2ProtocolFailure("native H2 padded DATA is missing pad length")
+    }
+    let paddingLength = Int64(frame.payload[0])
+    let end = frame.payload.size - paddingLength
+    if (end < 1) {
+        nativeH2ProtocolFailure("native H2 DATA padding exceeds payload")
+    }
+    nativeH2Slice(frame.payload, 1, end)
 }
 
 func nativeH2ServerSettingsPayload(): Array<UInt8> {

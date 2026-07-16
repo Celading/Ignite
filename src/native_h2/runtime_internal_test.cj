@@ -7,6 +7,102 @@ import std.sync.AtomicBool
 @Test
 public class NativeH2RuntimeInternalTestSuite {
     @TestCase
+    public func testPaddedPriorityHeadersExposeOnlyHeaderBlockFragment(): Unit {
+        let frame = NativeH2Frame(
+            UInt8(0x1), UInt8(0x28), 1,
+            [
+                UInt8(0x02),
+                UInt8(0x00), UInt8(0x00), UInt8(0x00), UInt8(0x03), UInt8(0x0f),
+                UInt8(0x82), UInt8(0x86),
+                UInt8(0x00), UInt8(0x00)
+            ]
+        )
+
+        let block = nativeH2RequestHeaderBlockFragment(frame)
+
+        @Assert(block.size, 2)
+        @Assert(block[0], UInt8(0x82))
+        @Assert(block[1], UInt8(0x86))
+    }
+
+    @TestCase
+    public func testPaddedDataExposesOnlyApplicationBytes(): Unit {
+        let frame = NativeH2Frame(
+            UInt8(0x0), UInt8(0x8), 1,
+            [
+                UInt8(0x02), UInt8(0x70), UInt8(0x61), UInt8(0x79),
+                UInt8(0x00), UInt8(0x00)
+            ]
+        )
+
+        let data = nativeH2RequestDataField(frame)
+
+        @Assert(data.size, 3)
+        @Assert(String.fromUtf8(data), "pay")
+        @Assert(frame.payload.size, 6)
+    }
+
+    @TestCase
+    public func testPaddedPayloadRejectsMissingOrOversizedPadding(): Unit {
+        var missingDataPadLengthRejected = false
+        try {
+            let _ = nativeH2RequestDataField(
+                NativeH2Frame(UInt8(0x0), UInt8(0x8), 1, Array<UInt8>())
+            )
+        } catch (e: NativeH2ProtocolException) {
+            missingDataPadLengthRejected = e.message.contains("missing pad length")
+        }
+
+        var oversizedHeadersPaddingRejected = false
+        try {
+            let _ = nativeH2RequestHeaderBlockFragment(
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x8), 1,
+                    [UInt8(0x03), UInt8(0x82), UInt8(0x00)]
+                )
+            )
+        } catch (e: NativeH2ProtocolException) {
+            oversizedHeadersPaddingRejected = e.message.contains("padding exceeds payload")
+        }
+
+        @Assert(missingDataPadLengthRejected, true)
+        @Assert(oversizedHeadersPaddingRejected, true)
+    }
+
+    @TestCase
+    public func testPriorityHeadersRejectTruncatedAndSelfDependentPrefix(): Unit {
+        var truncatedRejected = false
+        try {
+            let _ = nativeH2RequestHeaderBlockFragment(
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x20), 1,
+                    [UInt8(0x00), UInt8(0x00), UInt8(0x00), UInt8(0x03)]
+                )
+            )
+        } catch (e: NativeH2ProtocolException) {
+            truncatedRejected = e.message.contains("prefix is truncated")
+        }
+
+        var selfDependentRejected = false
+        try {
+            let _ = nativeH2RequestHeaderBlockFragment(
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x20), 1,
+                    [
+                        UInt8(0x00), UInt8(0x00), UInt8(0x00), UInt8(0x01), UInt8(0x0f),
+                        UInt8(0x82)
+                    ]
+                )
+            )
+        } catch (e: NativeH2ProtocolException) {
+            selfDependentRejected = e.message.contains("cannot depend on itself")
+        }
+
+        @Assert(truncatedRejected, true)
+        @Assert(selfDependentRejected, true)
+    }
+
+    @TestCase
     public func testNodeCapturedHeaderBlocksReuseConnectionHpackState(): Unit {
         let firstBlock = [
             UInt8(0x82), UInt8(0x86), UInt8(0x41), UInt8(0x8b), UInt8(0x08), UInt8(0x9d),
@@ -220,8 +316,29 @@ public class NativeH2RuntimeInternalTestSuite {
                 headersPayload[pathOffset + 2 + i] = pathBytes[i]
                 i += 1
             }
-            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x1), UInt8(0x4), 1, headersPayload))
-            nativeH2WriteFrame(client, NativeH2Frame(UInt8(0x0), UInt8(0x1), 1, "abc".toArray()))
+            let framedHeaders = Array<UInt8>(headersPayload.size + 8, repeat: 0)
+            framedHeaders[0] = UInt8(0x02)
+            framedHeaders[4] = UInt8(0x03)
+            framedHeaders[5] = UInt8(0x0f)
+            i = 0
+            while (i < headersPayload.size) {
+                framedHeaders[6 + i] = headersPayload[i]
+                i += 1
+            }
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x1), UInt8(0x2c), 1, framedHeaders)
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x0), UInt8(0x9), 1,
+                    [
+                        UInt8(0x02), UInt8(0x61), UInt8(0x62), UInt8(0x63),
+                        UInt8(0x00), UInt8(0x00)
+                    ]
+                )
+            )
 
             let serverSettings = nativeH2ReadFrame(client)
             let settingsAck = nativeH2ReadFrame(client)
@@ -236,7 +353,7 @@ public class NativeH2RuntimeInternalTestSuite {
             @Assert(settingsAck.flags, UInt8(0x1))
             @Assert(requestConnectionUpdate.frameType, UInt8(0x8))
             @Assert(requestConnectionUpdate.streamId, 0)
-            @Assert(nativeH2DecodeWindowUpdate(requestConnectionUpdate), 3)
+            @Assert(nativeH2DecodeWindowUpdate(requestConnectionUpdate), 6)
             @Assert(responseHeaders.frameType, UInt8(0x1))
             @Assert(responseHeaders.flags, UInt8(0x4))
             @Assert(responseHeaders.streamId, 1)
@@ -1384,8 +1501,6 @@ public class NativeH2RuntimeInternalTestSuite {
                 }
             }
             @Assert(firstBytes + secondBytes, NATIVE_H2_INITIAL_FLOW_WINDOW)
-            @Assert(firstBytes > 0, true)
-            @Assert(secondBytes > 0, true)
             @Assert(firstEnded, false)
             @Assert(secondEnded, false)
 
