@@ -162,15 +162,20 @@ func nativeH1ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
             "ignite-native-h1",
             "cross-platform-socket-baseline",
             "cj>=1.0.0",
-            false,
-            false,
+            true,
+            true,
             true,
             false,
             false,
             true,
             false,
             [],
-            ["CLEAR_TEXT_ONLY", "ONE_REQUEST_PER_CONNECTION", "AP1_FIRST_SLICE"]
+            [
+                "TLS13_EXPLICIT_CONFIG",
+                "H1_NO_TLS_POOLING",
+                "H2_SINGLE_STREAM_TLS_FIRST_SLICE",
+                "AP5_EXPERIMENTAL"
+            ]
         ),
         api2.BackendCapabilityRecord(
             "stdx-default",

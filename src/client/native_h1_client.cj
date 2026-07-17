@@ -9,12 +9,14 @@ import stdx.net.http.HttpHeaders
 let NATIVE_H1_CLIENT_BACKEND = "ignite-native-h1-client"
 
 class NativeH1ClientTarget {
+    let scheme: String
     let host: String
     let port: UInt16
     let requestTarget: String
     let hostHeader: String
 
-    init(host: String, port: UInt16, requestTarget: String, hostHeader: String) {
+    init(scheme: String, host: String, port: UInt16, requestTarget: String, hostHeader: String) {
+        this.scheme = scheme
         this.host = host
         this.port = port
         this.requestTarget = requestTarget
@@ -371,6 +373,9 @@ func sendNativeH1Request(
     pool: NativeH1ClientConnectionPool
 ): ClientResponse {
     let target = parseNativeH1Target(url)
+    if (target.scheme != "http") {
+        throw Exception("native H1 cleartext transport requires http://")
+    }
     let origin = nativeH1PoolOrigin(target)
     let requestReusable = pool.enabled() && !nativeH1HeaderValueContains(headers, "connection", "close")
     var pooled: ?TcpSocket = None
@@ -424,11 +429,16 @@ func sendNativeH1Request(
 
 func parseNativeH1Target(rawUrl: String): NativeH1ClientTarget {
     let url = rawUrl.trimAscii()
-    if (!nativeH1StartsWith(url.toAsciiLower(), "http://")) {
-        throw Exception("native H1 client first slice supports http:// only")
+    let lower = url.toAsciiLower()
+    let scheme = if (nativeH1StartsWith(lower, "https://")) {
+        "https"
+    } else if (nativeH1StartsWith(lower, "http://")) {
+        "http"
+    } else {
+        throw Exception("native H1 client URL scheme must be http or https")
     }
     let runes = url.toRuneArray()
-    var index: Int64 = 7
+    var index: Int64 = if (scheme == "https") { 8 } else { 7 }
     var authority = ""
     while (index < runes.size) {
         let ch = runes[index]
@@ -455,7 +465,7 @@ func parseNativeH1Target(rawUrl: String): NativeH1ClientTarget {
     }
 
     var host = authority
-    var port: UInt16 = 80
+    var port: UInt16 = if (scheme == "https") { UInt16(443) } else { UInt16(80) }
     if (nativeH1StartsWith(authority, "[")) {
         let closing = nativeH1IndexOf(authority, "]")
         if (closing <= 1) {
@@ -485,7 +495,7 @@ func parseNativeH1Target(rawUrl: String): NativeH1ClientTarget {
     if (host.size == 0) {
         throw Exception("native H1 client URL host is empty")
     }
-    NativeH1ClientTarget(host, port, requestTarget, authority)
+    NativeH1ClientTarget(scheme, host, port, requestTarget, authority)
 }
 
 func buildNativeH1RequestHead(
@@ -684,9 +694,9 @@ func settleNativeH1BodylessSocket(
 func nativeH1PoolOrigin(target: NativeH1ClientTarget): String {
     let host = target.host.toAsciiLower()
     if (nativeH1IndexOf(host, ":") >= 0) {
-        return "[" + host + "]:" + target.port.toString()
+        return target.scheme + "://[" + host + "]:" + target.port.toString()
     }
-    host + ":" + target.port.toString()
+    target.scheme + "://" + host + ":" + target.port.toString()
 }
 
 func parseNativeH1Port(portText: String): UInt16 {
@@ -726,11 +736,11 @@ func resolveNativeH1RedirectUrl(currentUrl: String, rawLocation: String): String
     if (nativeH1StartsWith(lower, "http://") || nativeH1StartsWith(lower, "https://")) {
         return location
     }
-    if (nativeH1StartsWith(location, "//")) {
-        return "http:" + location
-    }
     let current = parseNativeH1Target(currentUrl)
-    let origin = "http://" + current.hostHeader
+    if (nativeH1StartsWith(location, "//")) {
+        return current.scheme + ":" + location
+    }
+    let origin = current.scheme + "://" + current.hostHeader
     if (nativeH1StartsWith(location, "/")) {
         return origin + location
     }

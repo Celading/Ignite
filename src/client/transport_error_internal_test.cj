@@ -1,7 +1,25 @@
 package ignite.client
 
+import ignite.security.X509VerifyOption
+
 @Test
 public class ClientTransportErrorInternalTestSuite {
+    @TestCase
+    public func testNativeClientCapabilityAcceptsExplicitHttpsTlsSelection(): Unit {
+        let selection = buildClientTransportSelectionDecision(
+            "https://example.test/resource",
+            Some(X509VerifyOption(
+                enabled: true,
+                expectedServerName: "example.test"
+            )),
+            preferredBackendHint: NATIVE_H1_CLIENT_BACKEND,
+            allowExperimental: true
+        )
+        @Assert(selection.selectedBackend, NATIVE_H1_CLIENT_BACKEND)
+        @Assert(selection.selectedReason, "preferred_backend_hint")
+        @Assert(selection.riskLevel, "medium")
+    }
+
     @TestCase
     public func testTlsHandshakeEnvelopeCanBecomeRetryableFallbackCandidate(): Unit {
         let selection = buildClientTransportSelectionDecision(

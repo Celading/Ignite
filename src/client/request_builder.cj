@@ -7,6 +7,7 @@ import std.time.MonoTime
 import std.io.InputStream
 import ignite.api2
 import ignite.security as security
+import ignite.native_tls.NativeTls13ClientConfig
 
 // ── RequestBuilder ──
 
@@ -29,6 +30,7 @@ public class RequestBuilder {
     let _writeTimeout: Duration
     let _nativeH1Pool: NativeH1ClientConnectionPool
     var _nativeH2Pool = NativeH2ClientConnectionPool(0)
+    let _defaultNativeTlsConfig: ?NativeTls13ClientConfig
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
@@ -44,6 +46,7 @@ public class RequestBuilder {
     var _requestCryptoConfig: ?api2.ClientCryptoConfig = None
     var _transportBackendHintOverride: ?String = None
     var _allowExperimentalTransportOverride: ?Bool = None
+    var _nativeTlsConfigOverride: ?NativeTls13ClientConfig = None
     var _bodySnapshot: Array<UInt8> = Array<UInt8>()
     var _bodyStreamSnapshot: ?InputStream = None
     var _bodyStreamLength: Int64 = 0
@@ -67,7 +70,8 @@ public class RequestBuilder {
         captureTransportTouchpointHook!: ?ClientTransportTouchpointHook = None,
         readTimeout!: Duration = Duration.second * 15,
         writeTimeout!: Duration = Duration.second * 15,
-        nativeH1Pool!: ?NativeH1ClientConnectionPool = None
+        nativeH1Pool!: ?NativeH1ClientConnectionPool = None,
+        nativeTlsConfig!: ?NativeTls13ClientConfig = None
     ) {
         _client = client
         _baseUrl = baseUrl
@@ -89,6 +93,7 @@ public class RequestBuilder {
             case Some(pool) => pool
             case None => NativeH1ClientConnectionPool(0)
         }
+        _defaultNativeTlsConfig = nativeTlsConfig
         _captureObserveHook = captureObserveHook
         _captureTransportTouchpointHook = captureTransportTouchpointHook
         for ((k, v) in defaultHeaders) {
@@ -161,6 +166,13 @@ public class RequestBuilder {
         None
     }
 
+    func resolveNativeTlsConfig(): ?NativeTls13ClientConfig {
+        if (let Some(config) <- _nativeTlsConfigOverride) {
+            return Some(config)
+        }
+        _defaultNativeTlsConfig
+    }
+
     public func method(m: String): RequestBuilder {
         _builder.method(m)
         _methodName = normalizeMethod(m)
@@ -203,6 +215,16 @@ public class RequestBuilder {
     public func allowExperimentalTransport(enable!: Bool = true): RequestBuilder {
         _allowExperimentalTransportOverride = Some(enable)
         this
+    }
+
+    /// Enables the explicit Contract-backed TLS1.3 client for this request.
+    public func nativeTls(config: NativeTls13ClientConfig): RequestBuilder {
+        _nativeTlsConfigOverride = Some(config)
+        this
+    }
+
+    public func withNativeTls(config: NativeTls13ClientConfig): RequestBuilder {
+        nativeTls(config)
     }
 
     public func onRequest(hook: ClientRequestHook): RequestBuilder {
@@ -475,15 +497,37 @@ public class RequestBuilder {
             }
         }
 
-        let resolvedX509Verify = resolveX509VerifyOption()
+        let resolvedNativeTls = resolveNativeTlsConfig()
+        let nativeTlsActive = resolvedNativeTls.isSome() &&
+            nativeH1StartsWith(urlForHost.trimAscii().toAsciiLower(), "https://")
+        let resolvedX509Verify = if (nativeTlsActive) {
+            match (resolvedNativeTls) {
+                case Some(config) => Some(security.X509VerifyOption(
+                    enabled: true,
+                    requireHttps: true,
+                    expectedServerName: if (config.requireTargetHostnameMatch) {
+                        config.hostname
+                    } else {
+                        ""
+                    }
+                ))
+                case None => resolveX509VerifyOption()
+            }
+        } else {
+            resolveX509VerifyOption()
+        }
         let selectionDecision = buildClientTransportSelectionDecision(
             urlForHost,
             resolvedX509Verify,
             requestCryptoConfig: _requestCryptoConfig,
             requiresMultipart: hasMultipartPayload(),
             requiresStreaming: _bodyStreamSnapshot.isSome(),
-            preferredBackendHint: resolvePreferredTransportBackendHint(),
-            allowExperimental: resolveAllowExperimentalTransport()
+            preferredBackendHint: if (nativeTlsActive) {
+                NATIVE_H1_CLIENT_BACKEND
+            } else {
+                resolvePreferredTransportBackendHint()
+            },
+            allowExperimental: nativeTlsActive || resolveAllowExperimentalTransport()
         )
         notifyTransportTouchpoint(buildClientTransportTouchpoint(selectionDecision))
         let observeStart = MonoTime.now()
@@ -568,17 +612,34 @@ public class RequestBuilder {
                     if (_requestHooks.size > 0) {
                         throw Exception("native H1 client first slice does not support HttpRequestBuilder mutation hooks")
                     }
-                    sendNativeH1Request(
-                        nativeRequestMethod,
-                        nativeRequestUrl,
-                        nativeRequestHeaders,
-                        nativeRequestBody,
-                        nativeRequestBodyStream,
-                        nativeRequestBodyStreamLength,
-                        _readTimeout,
-                        _writeTimeout,
-                        _nativeH1Pool
-                    )
+                    if (nativeH1StartsWith(nativeRequestUrl.toAsciiLower(), "https://")) {
+                        let tlsConfig = resolvedNativeTls ?? throw Exception(
+                            "native HTTPS requires nativeTls(...) configuration"
+                        )
+                        sendNativeTlsRequest(
+                            nativeRequestMethod,
+                            nativeRequestUrl,
+                            nativeRequestHeaders,
+                            nativeRequestBody,
+                            nativeRequestBodyStream,
+                            nativeRequestBodyStreamLength,
+                            _readTimeout,
+                            _writeTimeout,
+                            tlsConfig
+                        )
+                    } else {
+                        sendNativeH1Request(
+                            nativeRequestMethod,
+                            nativeRequestUrl,
+                            nativeRequestHeaders,
+                            nativeRequestBody,
+                            nativeRequestBodyStream,
+                            nativeRequestBodyStreamLength,
+                            _readTimeout,
+                            _writeTimeout,
+                            _nativeH1Pool
+                        )
+                    }
                 } else if (selectionDecision.selectedBackend == NATIVE_H2_CLIENT_BACKEND) {
                     if (_requestHooks.size > 0) {
                         throw Exception("native H2 client does not support HttpRequestBuilder mutation hooks")
@@ -605,9 +666,11 @@ public class RequestBuilder {
                             throw Exception("native H1 redirect limit exceeded")
                         }
                         let redirectedUrl = resolveNativeH1RedirectUrl(nativeRequestUrl, location)
-                        if (!nativeH1StartsWith(redirectedUrl.toAsciiLower(), "http://")) {
+                        let previousTarget = parseNativeH1Target(nativeRequestUrl)
+                        let redirectedTarget = parseNativeH1Target(redirectedUrl)
+                        if (previousTarget.scheme != redirectedTarget.scheme) {
                             try { resp.discard() } catch (_: Exception) {}
-                            throw Exception("native H1 redirect target must remain http:// until TLS client seam lands")
+                            throw Exception("native client redirect cannot change transport scheme")
                         }
                         let redirectedMethod = nativeH1RedirectMethod(resp.status, nativeRequestMethod)
                         let preservesBody = redirectedMethod == nativeRequestMethod
@@ -615,8 +678,8 @@ public class RequestBuilder {
                             try { resp.discard() } catch (_: Exception) {}
                             throw Exception("native H1 cannot replay a one-pass request stream across redirect")
                         }
-                        let previousOrigin = nativeH1PoolOrigin(parseNativeH1Target(nativeRequestUrl))
-                        let redirectedOrigin = nativeH1PoolOrigin(parseNativeH1Target(redirectedUrl))
+                        let previousOrigin = nativeH1PoolOrigin(previousTarget)
+                        let redirectedOrigin = nativeH1PoolOrigin(redirectedTarget)
                         if (previousOrigin != redirectedOrigin) {
                             removeNativeH1Header(nativeRequestHeaders, "authorization")
                             removeNativeH1Header(nativeRequestHeaders, "proxy-authorization")

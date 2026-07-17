@@ -5,6 +5,7 @@ import std.collection.{ArrayList, HashMap}
 import std.unicode.*
 import ignite.api2
 import ignite.security as security
+import ignite.native_tls.NativeTls13ClientConfig
 
 // ── RestClient ──
 
@@ -18,6 +19,7 @@ public class RestClient {
     var _retryConfig: ClientRetryConfig = ClientRetryConfig()
     var _preferredTransportBackendHint: String = ""
     var _allowExperimentalTransport: Bool = false
+    var _nativeTlsConfig: ?NativeTls13ClientConfig = None
     var _requestHooks: ArrayList<ClientRequestHook> = ArrayList<ClientRequestHook>()
     var _responseHooks: ArrayList<ClientResponseHook> = ArrayList<ClientResponseHook>()
     var _errorHooks: ArrayList<ClientErrorHook> = ArrayList<ClientErrorHook>()
@@ -131,6 +133,16 @@ public class RestClient {
     public func allowExperimentalTransport(enable!: Bool = true): RestClient {
         _allowExperimentalTransport = enable
         this
+    }
+
+    /// Enables the explicit Contract-backed TLS1.3 native client.
+    public func useNativeTls(config: NativeTls13ClientConfig): RestClient {
+        _nativeTlsConfig = Some(config)
+        this
+    }
+
+    public func withNativeTls(config: NativeTls13ClientConfig): RestClient {
+        useNativeTls(config)
     }
 
     public func onRequest(hook: ClientRequestHook): RestClient {
@@ -378,7 +390,8 @@ public class RestClient {
             },
             readTimeout: _readTimeout,
             writeTimeout: _writeTimeout,
-            nativeH1Pool: Some(_nativeH1Pool)
+            nativeH1Pool: Some(_nativeH1Pool),
+            nativeTlsConfig: _nativeTlsConfig
         )
         builder.attachNativeH2Pool(_nativeH2Pool)
     }
