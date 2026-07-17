@@ -1,7 +1,17 @@
 package ignite
 
 import ignite.native_tls.{NativeTlsApplicationProtocol, selectNativeTlsApplicationProtocol}
-import jinguissl.live.{ContractHttpServerAcceptedTransportSession, contractRandomBytes}
+import jinguissl.live.{
+    ContractHttpServerAcceptedTransportSession,
+    ContractTls13IncrementalServerFinishRequest,
+    ContractTls13IncrementalServerStartRequest,
+    ContractTlsRecordContentType,
+    ContractTlsVersion,
+    contractRandomBytes,
+    contractTlsEncodePlaintextRecord,
+    contractTryTls13FinishIncrementalHttpServerHandshake,
+    contractTryTls13StartIncrementalHttpServerHandshake
+}
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
@@ -195,28 +205,57 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
     app: App,
     tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
 ): Unit {
-    let attached =
-        option.attachJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHelloX25519Core(
+    let capture =
+        option.captureJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHello(
             accepted,
-            socketServerEngineShellExperimentalServerKeyExchangePrivate(),
-            transportId: "socket-server-engine-shell-native-tls-live-ingress",
-            readChunkSize: 4096,
-            notifyReadySnapshot: false
+            readChunkSize: 4096
         )
-    if (let Some(hook) <- tlsAcceptedSessionReadyHook) {
-        hook(attached.session)
-    }
-    writeSocketServerEngineShellInitialTlsHandshake(
-        accepted,
-        attached.session
+    let startOutcome = contractTryTls13StartIncrementalHttpServerHandshake(
+        ContractTls13IncrementalServerStartRequest(
+            buildServerAcceptedTransportDescriptorFromSocket(
+                accepted,
+                "socket-server-engine-shell-native-tls-live-ingress"
+            ),
+            buildServerContractHttpServerAttachPlan(option.loadPreparedTlsMaterial()),
+            socketServerEngineShellExperimentalServerKeyExchangePrivate(),
+            incomingBytes: contractTlsEncodePlaintextRecord(
+                ContractTlsVersion.Tls12,
+                ContractTlsRecordContentType.Handshake,
+                capture.encodedClientHello
+            )
+        )
     )
+    let start = match (startOutcome.result) {
+        case Some(value) => value
+        case None =>
+            writeSocketServerEngineShellTlsAlertIfPresent(accepted, startOutcome.alertBytes)
+            throw Exception("native TLS server start failed: ${startOutcome.message}")
+    }
+    writeSocketServerEngineShellInitialTlsHandshake(accepted, start.records)
+    let finishOutcome = contractTryTls13FinishIncrementalHttpServerHandshake(
+        ContractTls13IncrementalServerFinishRequest(
+            start.continuation,
+            start.continuation.pendingBytes,
+            readSocketServerEngineShellTlsRecord(accepted)
+        )
+    )
+    let ready = match (finishOutcome.runtime) {
+        case Some(value) => value
+        case None =>
+            writeSocketServerEngineShellTlsAlertIfPresent(accepted, finishOutcome.alertBytes)
+            throw Exception("native TLS client Finished verification failed: ${finishOutcome.message}")
+    }
+    let session = ready.session
+    if (let Some(hook) <- tlsAcceptedSessionReadyHook) {
+        hook(session)
+    }
     let applicationProtocol = selectNativeTlsApplicationProtocol(
-        attached.session.result.negotiatedAlpn
+        session.result.negotiatedAlpn
     )
     if (applicationProtocol == NativeTlsApplicationProtocol.Http11) {
         serveSocketServerEngineShellStableTlsH1SocketTurn(
             accepted,
-            attached.session,
+            session,
             option,
             app
         )
@@ -226,7 +265,7 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
         ServerJinguiAcceptedTransportH2HpackDecoderState()
     let requestAccumulator =
         option.buildJinguiAcceptedTransportApplicationDataH2HeadersPlusDataLogicalRequestAccumulator(
-            attached.session,
+            session,
             hpackDecoderState: Some(hpackDecoderState)
         )
     var servedTurns: Int64 = 0
@@ -235,7 +274,7 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
         try {
             let _ =
                 option.serveJinguiAcceptedTransportSessionAcceptedSocketApplicationDataFragmentedRecordWireH2HeadersPlusDataRequestTurn(
-                    attached.session,
+                    session,
                     accepted,
                     app,
                     readChunkSize: 4096,
@@ -264,11 +303,56 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
 
 func writeSocketServerEngineShellInitialTlsHandshake(
     socket: TcpSocket,
-    session: ContractHttpServerAcceptedTransportSession
+    records: Array<Array<Byte>>
 ): Unit {
-    for (record in session.initialHandshake.records) {
+    for (record in records) {
         socket.write(serverEngineByteToUInt8Array(record))
     }
+}
+
+func writeSocketServerEngineShellTlsAlertIfPresent(
+    socket: TcpSocket,
+    alertBytes: Array<Byte>
+): Unit {
+    if (alertBytes.size > 0) {
+        socket.write(serverEngineByteToUInt8Array(alertBytes))
+    }
+}
+
+func readSocketServerEngineShellTlsRecord(socket: TcpSocket): Array<Byte> {
+    let header = readSocketServerEngineShellExactly(socket, 5)
+    let payloadLength = (Int64(header[3]) << 8) + Int64(header[4])
+    if (payloadLength > 18432) {
+        throw Exception("native TLS record payload exceeds bounded limit")
+    }
+    let payload = readSocketServerEngineShellExactly(socket, payloadLength)
+    let out = ArrayList<Byte>()
+    for (value in header) {
+        out.add(value)
+    }
+    for (value in payload) {
+        out.add(value)
+    }
+    out.toArray()
+}
+
+func readSocketServerEngineShellExactly(socket: TcpSocket, length: Int64): Array<UInt8> {
+    let out = Array<UInt8>(length, repeat: 0)
+    var offset: Int64 = 0
+    while (offset < length) {
+        let chunk = Array<UInt8>(length - offset, repeat: 0)
+        let count = socket.read(chunk)
+        if (count <= 0) {
+            throw Exception("native TLS peer closed before one complete record")
+        }
+        var i: Int64 = 0
+        while (i < count) {
+            out[offset + i] = chunk[i]
+            i += 1
+        }
+        offset += count
+    }
+    out
 }
 
 func serveSocketServerEngineShellStableTlsH1SocketTurn(

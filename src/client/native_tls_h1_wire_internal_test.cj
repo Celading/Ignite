@@ -56,10 +56,6 @@ public class NativeTlsH1WireInternalTestSuite {
 func serveNativeTlsH1Fixture(socket: TcpSocket): Unit {
     let raw = TcpSocketByteTransport(socket)
     let clientHelloRecord = nativeTlsH1ReadRecord(raw)
-    let collected = contractTls13CollectIncrementalHandshakeRecords([], clientHelloRecord)
-    if (collected.records.size != 1) {
-        throw Exception("native TLS H1 fixture expected one ClientHello record")
-    }
     let certChain = nativeTlsTestText("policy_leaf.pem") + "\n" +
         nativeTlsTestText("policy_intermediate.pem")
     let policy = ContractTlsHttpNegotiationPolicy(
@@ -78,17 +74,33 @@ func serveNativeTlsH1Fixture(socket: TcpSocket): Unit {
             aesBackendHint: "shim"
         )
     )
-    let session = contractAttachStableAcceptedTransportTls13X25519(
-        ContractAcceptedTransportDescriptor("ignite-native-tls-h1-fixture"),
-        plan,
-        collected.records[0].payload,
-        nativeTlsH1IncrementalBytes(32, start: 80),
-        policy: policy
+    let startOutcome = contractTryTls13StartIncrementalHttpServerHandshake(
+        ContractTls13IncrementalServerStartRequest(
+            ContractAcceptedTransportDescriptor("ignite-native-tls-h1-fixture"),
+            plan,
+            nativeTlsH1IncrementalBytes(32, start: 80),
+            policy: policy,
+            incomingBytes: clientHelloRecord
+        )
     )
-    for (record in session.initialHandshake.records) {
+    let start = match (startOutcome.result) {
+        case Some(value) => value
+        case None => throw Exception("native TLS H1 fixture start failed: ${startOutcome.message}")
+    }
+    for (record in start.records) {
         raw.write(record)
     }
-    let _clientFinished = nativeTlsH1ReadRecord(raw)
+    let finishOutcome = contractTryTls13FinishIncrementalHttpServerHandshake(
+        ContractTls13IncrementalServerFinishRequest(
+            start.continuation,
+            start.continuation.pendingBytes,
+            nativeTlsH1ReadRecord(raw)
+        )
+    )
+    let session = match (finishOutcome.runtime) {
+        case Some(value) => value.session
+        case None => throw Exception("native TLS H1 fixture Finished failed: ${finishOutcome.message}")
+    }
     let tls = NativeTls13ClientTransport(raw, session.recordChannel)
     let requestHead = nativeTlsH1ReadUntil(tls, "\r\n\r\n".toArray(), 65536)
     if (nativeH1IndexOfBytes(requestHead, "GET /tls-h1 HTTP/1.1".toArray(), 0) < 0) {

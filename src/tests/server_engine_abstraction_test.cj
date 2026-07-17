@@ -212,7 +212,8 @@ public class ServerEngineAbstractionTestSuite {
                     }
                 },
                 writePauseMillis: 20,
-                serverHandshakeRecordCount: 5
+                serverHandshakeRecordCount: 5,
+                wireClientHello: Some(clientHello)
             )
         let _ = serverFuture.get(Duration.second * 5)
 
@@ -302,7 +303,8 @@ public class ServerEngineAbstractionTestSuite {
                         case None => None
                     }
                 },
-                serverHandshakeRecordCount: 5
+                serverHandshakeRecordCount: 5,
+                wireClientHello: Some(clientHello)
             )
         let _ = serverFuture.get(Duration.second * 5)
 
@@ -359,11 +361,11 @@ public class ServerEngineAbstractionTestSuite {
                     clientHello.encodedClientHello
                 )
             ))
-            let channel = waitForNativeTlsLiveIngressClientChannel(
-                "native TLS H1 sequential turns",
-                clientChannelProbe
+            let channel = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                5
             )
-            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
             writeAcceptedTransportSocketWireFragments(
                 socket,
                 channel.sealFragments(
@@ -459,7 +461,8 @@ public class ServerEngineAbstractionTestSuite {
                     case None => None
                 }
             },
-            serverHandshakeRecordCount: 5
+            serverHandshakeRecordCount: 5,
+            wireClientHello: Some(clientHello)
         )
         let _ = serverFuture.get(Duration.second * 5)
         match (clientChannelProbe.channel) {
@@ -554,12 +557,11 @@ public class ServerEngineAbstractionTestSuite {
                 ],
                 writePauseMillis: 20
             )
-            let channel =
-                waitForNativeTlsLiveIngressClientChannel(
-                    "native shell TLS live ingress sequential H2 channel",
-                    clientChannelProbe
-                )
-            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
+            let channel = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                5
+            )
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),
@@ -695,12 +697,11 @@ public class ServerEngineAbstractionTestSuite {
                 ],
                 writePauseMillis: 20
             )
-            let channel =
-                waitForNativeTlsLiveIngressClientChannel(
-                    "native shell TLS live ingress buffered carryover H2 channel",
-                    clientChannelProbe
-                )
-            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
+            let channel = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                5
+            )
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),
@@ -858,12 +859,11 @@ public class ServerEngineAbstractionTestSuite {
                 ],
                 writePauseMillis: 20
             )
-            let channel =
-                waitForNativeTlsLiveIngressClientChannel(
-                    "native shell TLS live ingress malformed second H2 channel",
-                    clientChannelProbe
-                )
-            consumeAcceptedTransportInitialHandshakeRecords(socket, 5)
+            let channel = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                5
+            )
             let firstHeaderBlock =
                 concatServerEngineAbstractionTestByteArrays([
                     serverEngineAbstractionTestByteArray([UInt8(0x82)]),

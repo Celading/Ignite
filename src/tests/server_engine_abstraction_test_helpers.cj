@@ -5,7 +5,7 @@ import std.unittest.testmacro.*
 import ignite.*
 import std.collection.ArrayList
 import std.env.{removeVariable, setVariable}
-import std.fs.exists
+import std.fs.{File, exists}
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
@@ -13,11 +13,16 @@ import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
 import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
+    ContractHttpClientTlsTrustRequest,
     ContractHttpServerAcceptedTransportSession,
+    ContractTls13HttpClientHelloX25519,
     ContractTlsRecordChannel,
     ContractTlsRecordContentType,
+    ContractTlsHttpNegotiationPolicy,
     contractTls13CreateClientRecordChannel,
-    contractTls13BuildHttpClientHelloX25519
+    contractTls13BuildHttpClientHelloX25519,
+    contractTls13CollectIncrementalHandshakeRecords,
+    contractTryTls13OpenHttpClientRuntimeFromWireDerivedServerFlight
 }
 
 class NativeTlsLiveIngressClientChannelProbe {
@@ -8995,7 +9000,8 @@ func runAcceptedTransportTlsHandshakeRequestResponseSocketSinkClient(
     label: String,
     supplier: AcceptedTransportRequestWireFragmentsSupplier,
     writePauseMillis!: Int64 = 10,
-    serverHandshakeRecordCount!: Int64 = 0
+    serverHandshakeRecordCount!: Int64 = 0,
+    wireClientHello!: ?ContractTls13HttpClientHelloX25519 = None
 ): Array<UInt8> {
     let socket = TcpSocket(IPSocketAddress.parse("${host}:${port}"))
     socket.connect()
@@ -9015,15 +9021,22 @@ func runAcceptedTransportTlsHandshakeRequestResponseSocketSinkClient(
             }
             i += 1
         }
+        if (serverHandshakeRecordCount > 0) {
+            let clientHello = match (wireClientHello) {
+                case Some(value) => value
+                case None => throw Exception("wire-derived TLS client hello is required")
+            }
+            let _ = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                serverHandshakeRecordCount
+            )
+        }
         let requestWireFragments =
             waitForAcceptedTransportPreparedRequestWireFragments(
                 label,
                 supplier
             )
-        consumeAcceptedTransportInitialHandshakeRecords(
-            socket,
-            serverHandshakeRecordCount
-        )
         i = 0
         while (i < requestWireFragments.size) {
             socket.write(
@@ -9054,7 +9067,8 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
     label: String,
     supplier: AcceptedTransportRequestWireFragmentsSupplier,
     writePauseMillis!: Int64 = 10,
-    serverHandshakeRecordCount!: Int64 = 0
+    serverHandshakeRecordCount!: Int64 = 0,
+    wireClientHello!: ?ContractTls13HttpClientHelloX25519 = None
 ): Array<UInt8> {
     let socket = TcpSocket(IPSocketAddress.parse("${host}:${port}"))
     socket.connect()
@@ -9064,15 +9078,22 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
             clientHelloWireFragments,
             writePauseMillis: writePauseMillis
         )
+        if (serverHandshakeRecordCount > 0) {
+            let clientHello = match (wireClientHello) {
+                case Some(value) => value
+                case None => throw Exception("wire-derived TLS client hello is required")
+            }
+            let _ = completeAcceptedTransportTls13ClientHandshake(
+                socket,
+                clientHello,
+                serverHandshakeRecordCount
+            )
+        }
         let requestWireFragments =
             waitForAcceptedTransportPreparedRequestWireFragments(
                 label,
                 supplier
             )
-        consumeAcceptedTransportInitialHandshakeRecords(
-            socket,
-            serverHandshakeRecordCount
-        )
         writeAcceptedTransportSocketWireFragments(
             socket,
             requestWireFragments,
@@ -9094,8 +9115,9 @@ func runAcceptedTransportTlsHandshakeRequestResponseFirstRecordSocketSinkClient(
 func consumeAcceptedTransportInitialHandshakeRecords(
     socket: TcpSocket,
     recordCount: Int64
-): Unit {
+): Array<Array<Byte>> {
     let accumulator = JinguiAcceptedTransportRecordWireAccumulator()
+    let collectedRecords = ArrayList<Array<Byte>>()
     let buf = Array<UInt8>(256, repeat: 0)
     var consumed: Int64 = 0
     while (consumed < recordCount) {
@@ -9116,25 +9138,49 @@ func consumeAcceptedTransportInitialHandshakeRecords(
                 UInt8(23)
             }
             @Assert(UInt8(record[0]), expectedOuterType)
+            collectedRecords.add(record)
             consumed += 1
         }
     }
+    collectedRecords.toArray()
 }
 
-func waitForNativeTlsLiveIngressClientChannel(
-    label: String,
-    probe: NativeTlsLiveIngressClientChannelProbe
+func completeAcceptedTransportTls13ClientHandshake(
+    socket: TcpSocket,
+    clientHello: ContractTls13HttpClientHelloX25519,
+    serverHandshakeRecordCount: Int64
 ): ContractTlsRecordChannel {
-    var attempts: Int64 = 0
-    while (attempts < 200) {
-        match (probe.channel) {
-            case Some(channel) => return channel
-            case None => ()
+    let records = consumeAcceptedTransportInitialHandshakeRecords(
+        socket,
+        serverHandshakeRecordCount
+    )
+    let wire = ArrayList<Byte>()
+    for (record in records) {
+        for (value in record) {
+            wire.add(value)
         }
-        sleep(Duration.millisecond * 10)
-        attempts += 1
     }
-    @Fail("timed out waiting for ${label}")
+    let outcome = contractTryTls13OpenHttpClientRuntimeFromWireDerivedServerFlight(
+        clientHello,
+        ContractHttpClientTlsTrustRequest(
+            String.fromUtf8(File.readFrom(resolveEngineFixturePath(
+                "_helper/testdata/tls/server-cert-a.pem"
+            ))),
+            hostname: "localhost",
+            policy: ContractTlsHttpNegotiationPolicy(
+                requireServerName: true,
+                allowedServerNames: ["www.example.com"],
+                alpnPreference: ["h2", "http/1.1"]
+            )
+        ),
+        contractTls13CollectIncrementalHandshakeRecords([], wire.toArray())
+    )
+    let runtime = match (outcome.result) {
+        case Some(value) => value
+        case None => throw Exception("wire-derived TLS client handshake failed: ${outcome.message}")
+    }
+    socket.write(serverEngineAbstractionTestUInt8Array(runtime.clientFinished.encodedRecord))
+    runtime.runtime.channelSet.clientChannel
 }
 
 func writeAcceptedTransportSocketWireFragments(
