@@ -118,6 +118,13 @@ if [[ -z "${RUNTIME_LIB_DIR}" ]]; then
   exit 1
 fi
 
+if [[ "${IGNITE_SAMPLE_SKIP_BUILD:-0}" == "1" ]]; then
+  echo "[sample-runner] skipping ignite package build (IGNITE_SAMPLE_SKIP_BUILD=1)"
+else
+  echo "[sample-runner] building ignite package..."
+  (cd "${ROOT}" && cjpm build)
+fi
+
 COMMON_IMPORTS=(
   --import-path "${ROOT}/target/release"
   --import-path "${ROOT}/target/release/seajson"
@@ -165,13 +172,6 @@ if [[ "${#JINGUISSL_CORE_ARCHIVES[@]}" -gt 0 ]]; then
 fi
 if [[ "${#STDX_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${STDX_ARCHIVES[@]}")
-fi
-
-if [[ "${IGNITE_SAMPLE_SKIP_BUILD:-0}" == "1" ]]; then
-  echo "[sample-runner] skipping ignite package build (IGNITE_SAMPLE_SKIP_BUILD=1)"
-else
-  echo "[sample-runner] building ignite package..."
-  (cd "${ROOT}" && cjpm build)
 fi
 
 echo "[sample-runner] compiling ${SAMPLE_SOURCE}..."
