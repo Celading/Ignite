@@ -120,6 +120,7 @@ class NativeH2ClientConnectionState {
 /// Owns H2 protocol state while the caller continues to own the socket.
 public class NativeH2ClientConnection {
     let socket: TcpSocket
+    let responseDecoder = NativeH2HpackDecoderState()
     var initialized = false
     var finished = false
     var nextStreamId: Int64 = 1
@@ -142,7 +143,8 @@ public class NativeH2ClientConnection {
             socket,
             requests,
             nextStreamId,
-            !initialized
+            !initialized,
+            responseDecoder
         )
         initialized = true
         nextStreamId = followingStreamId
@@ -196,7 +198,8 @@ func nativeH2ClientSendBatch(
     socket: TcpSocket,
     requests: Array<NativeH2ClientRequest>,
     initialStreamId: Int64,
-    completeHandshake: Bool
+    completeHandshake: Bool,
+    responseDecoder: NativeH2HpackDecoderState
 ): (Array<NativeH2ClientResponse>, Int64) {
     if (requests.size == 0) {
         return (Array<NativeH2ClientResponse>(), initialStreamId)
@@ -276,7 +279,7 @@ func nativeH2ClientSendBatch(
             if (stream.head.isSome()) {
                 throw Exception("native H2 client received duplicate response HEADERS")
             }
-            stream.head = Some(nativeH2DecodeClientResponseHead(frame.payload))
+            stream.head = Some(responseDecoder.decodeResponseHead(frame.payload))
             if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
                 stream.ended = true
                 connection.completedStreams += 1
@@ -449,69 +452,6 @@ func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt
         nativeH2AppendBytes(out, request.path.toArray())
     }
     out.toArray()
-}
-
-func nativeH2DecodeClientResponseHead(payload: Array<UInt8>): NativeH2DecodedResponseHead {
-    if (payload.size == 0) {
-        throw Exception("native H2 client response HEADERS payload is empty")
-    }
-    var cursor: Int64 = 0
-    var status: UInt16 = 0
-    let headers = ArrayList<NativeH2Header>()
-    let first = payload[cursor]
-    cursor += 1
-    if ((first & UInt8(0x80)) != UInt8(0)) {
-        status = match (Int64(first & UInt8(0x7f))) {
-            case 8 => 200
-            case 9 => 204
-            case 10 => 206
-            case 11 => 304
-            case 12 => 400
-            case 13 => 404
-            case 14 => 500
-            case _ => throw Exception("native H2 client received unsupported indexed status")
-        }
-    } else {
-        if (first != UInt8(0x08) || cursor >= payload.size) {
-            throw Exception("native H2 client received unsupported status encoding")
-        }
-        let length = Int64(payload[cursor])
-        cursor += 1
-        if (length != 3 || cursor + length > payload.size) {
-            throw Exception("native H2 client status literal must contain three digits")
-        }
-        let value = String.fromUtf8(nativeH2Slice(payload, cursor, cursor + length))
-        cursor += length
-        status = UInt16.parse(value)
-    }
-    while (cursor < payload.size) {
-        if (payload[cursor] != UInt8(0)) {
-            throw Exception("native H2 client supports literal response headers only")
-        }
-        cursor += 1
-        if (cursor >= payload.size) {
-            throw Exception("native H2 client response header name length is missing")
-        }
-        let nameLength = Int64(payload[cursor])
-        cursor += 1
-        if (nameLength == 0 || cursor + nameLength > payload.size) {
-            throw Exception("native H2 client response header name is truncated")
-        }
-        let name = String.fromUtf8(nativeH2Slice(payload, cursor, cursor + nameLength))
-        cursor += nameLength
-        if (cursor >= payload.size) {
-            throw Exception("native H2 client response header value length is missing")
-        }
-        let valueLength = Int64(payload[cursor])
-        cursor += 1
-        if (cursor + valueLength > payload.size) {
-            throw Exception("native H2 client response header value is truncated")
-        }
-        let value = String.fromUtf8(nativeH2Slice(payload, cursor, cursor + valueLength))
-        cursor += valueLength
-        headers.add(NativeH2Header(name, value))
-    }
-    NativeH2DecodedResponseHead(status, headers.toArray())
 }
 
 func nativeH2ClientWindowUpdate(streamId: Int64, increment: Int64): NativeH2Frame {

@@ -194,6 +194,52 @@ class NativeH2HpackDecoderState {
         }
         trailers.toArray()
     }
+
+    func decodeResponseHead(payload: Array<UInt8>): NativeH2DecodedResponseHead {
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        var statusText = ""
+        var regularHeaderSeen = false
+        let headers = ArrayList<NativeH2Header>()
+        for (field in fields) {
+            if (field.name.startsWith(":")) {
+                if (regularHeaderSeen) {
+                    nativeH2HpackFailure(
+                        "native H2 response pseudo-header appears after a regular header"
+                    )
+                }
+                if (field.name != ":status") {
+                    nativeH2HpackFailure(
+                        "native H2 response uses unsupported pseudo-header ${field.name}"
+                    )
+                }
+                if (statusText.size > 0) {
+                    nativeH2HpackDuplicatePseudo(field.name)
+                }
+                statusText = field.value
+            } else {
+                regularHeaderSeen = true
+                headers.add(NativeH2Header(field.name, field.value))
+            }
+        }
+        NativeH2DecodedResponseHead(
+            nativeH2ParseResponseStatus(statusText), headers.toArray()
+        )
+    }
+}
+
+func nativeH2ParseResponseStatus(value: String): UInt16 {
+    let digits = value.toRuneArray()
+    if (digits.size != 3) {
+        nativeH2HpackFailure("native H2 response :status must contain three digits")
+    }
+    var parsed: UInt16 = 0
+    for (rune in digits) {
+        if (rune < r'0' || rune > r'9') {
+            nativeH2HpackFailure("native H2 response :status must contain three digits")
+        }
+        parsed = parsed * 10 + UInt16(UInt32(rune) - UInt32(r'0'))
+    }
+    parsed
 }
 
 func nativeH2ValidateRequestHeader(name: String, value: String): Unit {

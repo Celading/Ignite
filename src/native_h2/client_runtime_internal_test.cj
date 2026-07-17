@@ -6,6 +6,24 @@ import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 @Test
 public class NativeH2ClientRuntimeInternalTestSuite {
     @TestCase
+    public func testResponseHpackStateKeepsIndexedDynamicHeadersAcrossHeads(): Unit {
+        let decoder = NativeH2HpackDecoderState()
+        let first = decoder.decodeResponseHead([
+            UInt8(0x88),
+            UInt8(0x61), UInt8(0x01), UInt8(0x78)
+        ])
+        @Assert(first.status, UInt16(200))
+        @Assert(first.headers[0].name, "date")
+        @Assert(first.headers[0].value, "x")
+        @Assert(decoder.dynamicEntryCount(), 1)
+
+        let second = decoder.decodeResponseHead([UInt8(0x88), UInt8(0xbe)])
+        @Assert(second.status, UInt16(200))
+        @Assert(second.headers[0].name, "date")
+        @Assert(second.headers[0].value, "x")
+    }
+
+    @TestCase
     public func testNativeClientCompletesRealWireTurnAgainstNativeServer(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
