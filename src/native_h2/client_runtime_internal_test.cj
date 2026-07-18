@@ -341,6 +341,93 @@ public class NativeH2ClientRuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeClientCarriesGeneralMethodAndOrdinaryHeaders(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 request header test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(
+                    accepted,
+                    { request =>
+                        @Assert(request.method, "PATCH")
+                        @Assert(request.path, "/resource/1")
+                        @Assert(String.fromUtf8(request.body), "abc")
+                        @Assert(nativeH2ClientTestHeaderValues(request.headers, "x-client"), ["one", "two"])
+                        @Assert(nativeH2ClientTestHeaderValues(request.headers, "content-type"), ["text/plain"])
+                        NativeH2SingleStreamResponse(
+                            status: 202,
+                            headers: [NativeH2Header("x-request-method", request.method)],
+                            body: "accepted".toArray()
+                        )
+                    },
+                    maxCompletedStreams: 1
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 2)
+            socket.writeTimeout = Some(Duration.second * 2)
+            let response = sendNativeH2SingleStreamRequest(
+                socket,
+                NativeH2ClientRequest(
+                    "PATCH",
+                    "http",
+                    "localhost",
+                    "/resource/1",
+                    body: "abc".toArray(),
+                    headers: [
+                        NativeH2Header("x-client", "one"),
+                        NativeH2Header("x-client", "two"),
+                        NativeH2Header("content-type", "text/plain"),
+                        NativeH2Header("content-length", "3")
+                    ]
+                )
+            )
+            @Assert(response.status, UInt16(202))
+            @Assert(response.header("x-request-method") ?? "", "PATCH")
+            @Assert(String.fromUtf8(response.body), "accepted")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeClientRejectsInvalidMethodAndRequestHeaders(): Unit {
+        assertNativeH2ClientRequestRejected(
+            NativeH2ClientRequest("BAD METHOD", "http", "localhost", "/")
+        )
+        assertNativeH2ClientRequestRejected(
+            NativeH2ClientRequest(
+                "GET", "http", "localhost", "/",
+                headers: [NativeH2Header("connection", "close")]
+            )
+        )
+        assertNativeH2ClientRequestRejected(
+            NativeH2ClientRequest(
+                "POST", "http", "localhost", "/",
+                body: "abc".toArray(),
+                headers: [NativeH2Header("content-length", "2")]
+            )
+        )
+        assertNativeH2ClientRequestRejected(
+            NativeH2ClientRequest(
+                "GET", "http", "localhost", "/",
+                headers: [NativeH2Header(":status", "200")]
+            )
+        )
+    }
+
+    @TestCase
     public func testNativeClientStreamsLargeBodyThenReusesConnection(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -592,6 +679,29 @@ func nativeH2ClientFailureFixture(
         try { listener.close() } catch (_: Exception) {}
     }
     observed ?? throw Exception("native H2 client failure fixture did not fail")
+}
+
+func nativeH2ClientTestHeaderValues(
+    headers: Array<NativeH2Header>,
+    name: String
+): Array<String> {
+    let out = ArrayList<String>()
+    for (header in headers) {
+        if (header.name == name) {
+            out.add(header.value)
+        }
+    }
+    out.toArray()
+}
+
+func assertNativeH2ClientRequestRejected(request: NativeH2ClientRequest): Unit {
+    var rejected = false
+    try {
+        let _ = nativeH2EncodeClientRequestHead(request)
+    } catch (_: Exception) {
+        rejected = true
+    }
+    @Assert(rejected, true)
 }
 
 func nativeH2ClientResponseSequenceFixture(

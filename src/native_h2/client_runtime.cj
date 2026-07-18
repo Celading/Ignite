@@ -26,19 +26,22 @@ public class NativeH2ClientRequest {
     public let authority: String
     public let path: String
     public let body: Array<UInt8>
+    public let headers: Array<NativeH2Header>
 
     public init(
         method: String,
         scheme: String,
         authority: String,
         path: String,
-        body!: Array<UInt8> = Array<UInt8>()
+        body!: Array<UInt8> = Array<UInt8>(),
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
     ) {
         this.method = method.trimAscii().toAsciiUpper()
         this.scheme = scheme.trimAscii().toAsciiLower()
         this.authority = authority
         this.path = path
         this.body = nativeH2Clone(body)
+        this.headers = nativeH2CloneHeaders(headers)
     }
 }
 
@@ -821,30 +824,141 @@ func nativeH2ClientSettingsPayload(): Array<UInt8> {
 }
 
 func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt8> {
-    if (request.method != "GET" && request.method != "POST") {
-        throw Exception("native H2 first client slice supports GET and POST only")
-    }
+    nativeH2ClientRequireToken(request.method, "method")
     if (request.scheme != "http" && request.scheme != "https") {
         throw Exception("native H2 client scheme must be http or https")
     }
-    if (request.authority.size == 0 || request.authority.size >= 127 ||
-        request.path.size == 0 || request.path.size >= 127) {
-        throw Exception("native H2 client authority/path exceeds single-byte HPACK limits")
+    if (request.authority.size == 0 || request.path.size == 0) {
+        throw Exception("native H2 client authority/path cannot be empty")
     }
     let out = ArrayList<UInt8>()
-    out.add(if (request.method == "GET") { UInt8(0x82) } else { UInt8(0x83) })
+    if (request.method == "GET") {
+        out.add(UInt8(0x82))
+    } else if (request.method == "POST") {
+        out.add(UInt8(0x83))
+    } else {
+        nativeH2ClientAppendLiteral(out, ":method", request.method, nameIndex: 2)
+    }
     out.add(if (request.scheme == "http") { UInt8(0x86) } else { UInt8(0x87) })
-    out.add(UInt8(0x01))
-    out.add(UInt8(request.authority.size))
-    nativeH2AppendBytes(out, request.authority.toArray())
+    nativeH2ClientAppendLiteral(out, ":authority", request.authority, nameIndex: 1)
     if (request.path == "/") {
         out.add(UInt8(0x84))
     } else {
-        out.add(UInt8(0x04))
-        out.add(UInt8(request.path.size))
-        nativeH2AppendBytes(out, request.path.toArray())
+        nativeH2ClientAppendLiteral(out, ":path", request.path, nameIndex: 4)
+    }
+
+    var contentLength: ?Int64 = None
+    for (header in request.headers) {
+        nativeH2ClientValidateRequestHeader(header)
+        if (header.name == "content-length") {
+            let parsed = nativeH2ParseContentLength(header.value)
+            if (let Some(previous) <- contentLength) {
+                if (previous != parsed) {
+                    throw Exception("native H2 client request has conflicting content-length values")
+                }
+            }
+            contentLength = Some(parsed)
+        }
+        nativeH2ClientAppendLiteral(
+            out,
+            header.name,
+            header.value,
+            nameIndex: nativeH2ClientStaticNameIndex(header.name)
+        )
+    }
+    if (let Some(length) <- contentLength) {
+        if (length != request.body.size) {
+            throw Exception("native H2 client content-length does not match request body")
+        }
+    }
+    if (out.size > NATIVE_H2_MAX_REQUEST_HEADER_BLOCK) {
+        throw Exception("native H2 client request header block exceeds 64 KiB")
     }
     out.toArray()
+}
+
+func nativeH2ClientValidateRequestHeader(header: NativeH2Header): Unit {
+    if (header.name.size == 0 || header.name.startsWith(":")) {
+        throw Exception("native H2 client ordinary headers cannot be empty or pseudo-headers")
+    }
+    nativeH2ClientRequireToken(header.name, "header name")
+    nativeH2ValidateRequestHeader(header.name, header.value)
+    for (value in header.value.toArray()) {
+        if (value == UInt8(0) || value == UInt8(10) || value == UInt8(13)) {
+            throw Exception("native H2 client request header value contains a forbidden byte")
+        }
+    }
+}
+
+func nativeH2ClientRequireToken(value: String, fieldName: String): Unit {
+    let bytes = value.toArray()
+    if (bytes.size == 0) {
+        throw Exception("native H2 client ${fieldName} cannot be empty")
+    }
+    for (byte in bytes) {
+        let alphaNumeric = (byte >= UInt8(0x30) && byte <= UInt8(0x39)) ||
+            (byte >= UInt8(0x41) && byte <= UInt8(0x5a)) ||
+            (byte >= UInt8(0x61) && byte <= UInt8(0x7a))
+        let punctuation = byte == UInt8(0x21) || byte == UInt8(0x23) ||
+            byte == UInt8(0x24) || byte == UInt8(0x25) || byte == UInt8(0x26) ||
+            byte == UInt8(0x27) || byte == UInt8(0x2a) || byte == UInt8(0x2b) ||
+            byte == UInt8(0x2d) || byte == UInt8(0x2e) || byte == UInt8(0x5e) ||
+            byte == UInt8(0x5f) || byte == UInt8(0x60) || byte == UInt8(0x7c) ||
+            byte == UInt8(0x7e)
+        if (!alphaNumeric && !punctuation) {
+            throw Exception("native H2 client ${fieldName} contains an invalid token byte")
+        }
+    }
+}
+
+func nativeH2ClientAppendLiteral(
+    out: ArrayList<UInt8>,
+    name: String,
+    value: String,
+    nameIndex!: Int64 = 0
+): Unit {
+    nativeH2ClientAppendHpackInteger(out, nameIndex, 4, UInt8(0))
+    if (nameIndex == 0) {
+        nativeH2ClientAppendHpackString(out, name)
+    }
+    nativeH2ClientAppendHpackString(out, value)
+}
+
+func nativeH2ClientAppendHpackString(out: ArrayList<UInt8>, value: String): Unit {
+    let bytes = value.toArray()
+    nativeH2ClientAppendHpackInteger(out, bytes.size, 7, UInt8(0))
+    nativeH2AppendBytes(out, bytes)
+}
+
+func nativeH2ClientAppendHpackInteger(
+    out: ArrayList<UInt8>,
+    input: Int64,
+    prefixBits: Int64,
+    prefix: UInt8
+): Unit {
+    let mask = (Int64(1) << prefixBits) - 1
+    if (input < mask) {
+        out.add(prefix | UInt8(input))
+        return
+    }
+    out.add(prefix | UInt8(mask))
+    var remaining = input - mask
+    while (remaining >= 128) {
+        out.add(UInt8((remaining % 128) + 128))
+        remaining /= 128
+    }
+    out.add(UInt8(remaining))
+}
+
+func nativeH2ClientStaticNameIndex(name: String): Int64 {
+    var index: Int64 = 15
+    while (index <= 61) {
+        if (nativeH2HpackStaticField(index).name == name) {
+            return index
+        }
+        index += 1
+    }
+    0
 }
 
 func nativeH2ClientWindowUpdate(streamId: Int64, increment: Int64): NativeH2Frame {
