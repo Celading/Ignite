@@ -52,7 +52,23 @@ let client = RestClient()
     .preferTransportBackend("ignite-native-h1-client")
 ```
 
-当前 native H1 Client 仅处理 `http://`，不应被理解为 HTTPS Client 已默认切换。
+Native H1 Client 也提供显式的 Contract-backed TLS1.3 Preview。调用方必须
+提供 trust anchor 与 hostname，并保持 `http/1.1` ALPN；它不会自动复用
+系统 CA，也不会进入 native TLS 连接池：
+
+```cangjie
+let client = RestClient()
+    .preferTransportBackend("ignite-native-h1-client")
+    .useNativeTls(NativeTls13ClientConfig(
+        trustAnchorsPemBundle,
+        "api.example.com",
+        alpnProtocols: ["http/1.1"]
+    ))
+```
+
+不配置 `useNativeTls(...)` 时，HTTPS 仍走默认 stdx Client。Native H2 TLS/ALPN
+尚未接入当前 AP4 streamed-response lifecycle；如果协商到 `h2`，当前 Native
+H1 TLS Preview 会显式失败而不是静默降级。
 
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
@@ -71,7 +87,9 @@ hook 仍不兼容。
 
 ### HTTPS
 
-HTTPS 默认仍走稳定的 stdx TLS 路径。JinguiSSL Contract 已经是 Ignite 的直接契约依赖，但 native TLS listener/client 仍是实验入口，不应在生产环境里无条件开启。
+HTTPS 默认仍走稳定的 stdx TLS 路径。JinguiSSL Contract 已经是 Ignite 的直接
+契约依赖；Native H1 TLS1.3 client 与 native TLS listener 是显式 Preview，要求
+调用方提供信任材料。Native H2 TLS、系统 CA、TLS1.2、会话恢复与默认切换仍未完成。
 
 ### HTTP/2
 

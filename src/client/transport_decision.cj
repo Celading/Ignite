@@ -173,7 +173,7 @@ func nativeH1ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
             [
                 "TLS13_EXPLICIT_CONFIG",
                 "H1_NO_TLS_POOLING",
-                "H2_SINGLE_STREAM_TLS_FIRST_SLICE",
+                "H2_TLS_NOT_YET_ATTACHED",
                 "AP5_EXPERIMENTAL"
             ]
         ),

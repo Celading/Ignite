@@ -244,6 +244,33 @@ client.useX509Verify(X509VerifyOption(
 
 如果目标地址不是 HTTPS，而你要求了 `requireHttps`，客户端会在发起网络请求前就给出失败。
 
+## Native H1 HTTPS Preview
+
+`RestClient` 默认 HTTPS 仍走稳定的 stdx Client。需要验证 Ignite 自研 H1
+传输与 JinguiSSL Contract TLS1.3 时，必须显式提供信任材料：
+
+```cangjie
+import ignite.client.*
+import ignite.native_tls.NativeTls13ClientConfig
+
+let client = RestClient()
+    .preferTransportBackend("ignite-native-h1-client")
+    .useNativeTls(NativeTls13ClientConfig(
+        trustAnchorsPemBundle,
+        "api.example.com",
+        alpnProtocols: ["http/1.1"]
+    ))
+
+let response = client.get("https://api.example.com/health")
+println(response.status)
+response.discard()
+```
+
+这条 Preview 会由 Ignite 持有 TCP socket，JinguiSSL Contract 负责 TLS1.3
+握手推导、证书/hostname policy、client Finished 和 application-data record。
+当前不自动读取系统 CA，不复用 TLS 连接，也不支持 Native H2 TLS；协商到
+`h2` 会明确失败，不会偷偷降级为 H1 或 stdx。
+
 ## 响应读取与大包读取
 
 `ClientResponse` 提供这些常见能力：

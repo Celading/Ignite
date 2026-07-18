@@ -51,6 +51,13 @@ class NativeTlsTestByteTransport <: NativeByteTransport {
 @Test
 public class NativeTls13ClientTransportInternalTestSuite {
     @TestCase
+    public func testDefaultClientAlpnStaysOnSupportedNativeH1Slice(): Unit {
+        let config = NativeTls13ClientConfig("test-anchor", "example.com")
+        @Assert(config.alpnProtocols.size, Int64(1))
+        @Assert(config.alpnProtocols[0], "http/1.1")
+    }
+
+    @TestCase
     public func testReadsOneFragmentedTlsRecordWithoutOverread(): Unit {
         let wire: Array<Byte> = [
             UInt8(23), UInt8(3), UInt8(3), UInt8(0), UInt8(3),

@@ -37,7 +37,7 @@ public class NativeTls13ClientConfig {
         hostname: String,
         intermediatesPemBundle!: String = "",
         validationTime!: String = "",
-        alpnProtocols!: Array<String> = ["h2", "http/1.1"],
+        alpnProtocols!: Array<String> = ["http/1.1"],
         requireTargetHostnameMatch!: Bool = true,
         allowedLeafDerSha256!: Array<Array<Byte>> = [],
         allowedLeafSpkiSha256!: Array<Array<Byte>> = []
