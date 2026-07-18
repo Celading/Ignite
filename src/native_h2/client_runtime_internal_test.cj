@@ -247,6 +247,100 @@ public class NativeH2ClientRuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeClientUploadsBeyondInitialWindowAfterPeerUpdates(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 client upload test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let preface = nativeH2ReadExactly(accepted, NATIVE_H2_PREFACE.size)
+                if (!nativeH2BytesEqual(preface, NATIVE_H2_PREFACE)) {
+                    throw Exception("native H2 client upload fixture received invalid preface")
+                }
+                let clientSettings = nativeH2ReadFrame(accepted)
+                @Assert(clientSettings.frameType, UInt8(0x4))
+                @Assert(clientSettings.payload, nativeH2ClientSettingsPayload())
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(
+                        UInt8(0x4), UInt8(0), 0,
+                        [
+                            UInt8(0), UInt8(4), UInt8(0), UInt8(0),
+                            UInt8(0x80), UInt8(0)
+                        ]
+                    )
+                )
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+                )
+                let clientAck = nativeH2ReadFrame(accepted)
+                @Assert(clientAck.frameType, UInt8(0x4))
+                @Assert(clientAck.flags & UInt8(0x1), UInt8(0x1))
+                let requestHead = nativeH2ReadFrame(accepted)
+                @Assert(requestHead.frameType, UInt8(0x1))
+
+                var received: Int64 = 0
+                while (received < 32768) {
+                    let data = nativeH2ReadFrame(accepted)
+                    @Assert(data.frameType, UInt8(0x0))
+                    received += data.payload.size
+                    @Assert(data.flags & UInt8(0x1), UInt8(0))
+                }
+                @Assert(received, 32768)
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(
+                        UInt8(0x1), UInt8(0x5), requestHead.streamId,
+                        nativeH2ClientTestEncodeResponseHead(
+                            204,
+                            [NativeH2Header("x-upload-size", "70000")]
+                        )
+                    )
+                )
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(0, 40000))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(requestHead.streamId, 40000))
+
+                var ended = false
+                while (!ended) {
+                    let data = nativeH2ReadFrame(accepted)
+                    @Assert(data.frameType, UInt8(0x0))
+                    received += data.payload.size
+                    ended = (data.flags & UInt8(0x1)) != UInt8(0)
+                }
+                @Assert(received, 70000)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 2)
+            socket.writeTimeout = Some(Duration.second * 2)
+            let response = sendNativeH2SingleStreamRequest(
+                socket,
+                NativeH2ClientRequest(
+                    "POST",
+                    "http",
+                    "localhost",
+                    "/large-upload",
+                    body: Array<UInt8>(70000, repeat: UInt8(0x75))
+                )
+            )
+            @Assert(response.status, UInt16(204))
+            @Assert(response.header("x-upload-size") ?? "", "70000")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeClientRejectsInterruptedContinuationSequence(): Unit {
         let failure = nativeH2ClientFailureFixture(
             { socket, streamId =>

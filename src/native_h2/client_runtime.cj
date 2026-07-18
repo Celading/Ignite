@@ -155,14 +155,17 @@ class NativeH2PendingResponseHead {
 
 class NativeH2ClientConnectionState {
     let streams = HashMap<Int64, NativeH2ClientResponseStream>()
+    let outbound = HashMap<Int64, NativeH2ClientOutboundStream>()
     let orderedStreamIds = ArrayList<Int64>()
     var nextStreamId: Int64
     var completedStreams: Int64 = 0
     var consumedConnectionFlowCredit: Int64 = 0
+    var connectionSendWindow: Int64
     var pendingResponseHead: ?NativeH2PendingResponseHead = None
 
-    init(nextStreamId: Int64) {
+    init(nextStreamId: Int64, connectionSendWindow: Int64) {
         this.nextStreamId = nextStreamId
+        this.connectionSendWindow = connectionSendWindow
     }
 
     func openStream(): NativeH2ClientResponseStream {
@@ -177,13 +180,32 @@ class NativeH2ClientConnectionState {
     }
 }
 
+class NativeH2ClientOutboundStream {
+    let streamId: Int64
+    let body: Array<UInt8>
+    var offset: Int64 = 0
+    var sendWindow: Int64
+
+    init(streamId: Int64, body: Array<UInt8>, sendWindow: Int64) {
+        this.streamId = streamId
+        this.body = body
+        this.sendWindow = sendWindow
+    }
+
+    func remaining(): Int64 {
+        body.size - offset
+    }
+}
+
 /// Owns H2 protocol state while the caller continues to own the socket.
 public class NativeH2ClientConnection {
     let socket: TcpSocket
     let responseDecoder = NativeH2HpackDecoderState()
+    let peerSettings = NativeH2PeerSettings()
     var initialized = false
     var finished = false
     var nextStreamId: Int64 = 1
+    var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
 
     public init(socket: TcpSocket) {
         this.socket = socket
@@ -199,15 +221,19 @@ public class NativeH2ClientConnection {
         if (finished) {
             throw Exception("native H2 client connection is finished")
         }
-        let (responses, followingStreamId) = nativeH2ClientSendBatch(
+        let (responses, followingStreamId, followingConnectionSendWindow) =
+            nativeH2ClientSendBatch(
             socket,
             requests,
             nextStreamId,
             !initialized,
-            responseDecoder
+            responseDecoder,
+            peerSettings,
+            connectionSendWindow
         )
         initialized = true
         nextStreamId = followingStreamId
+        connectionSendWindow = followingConnectionSendWindow
         responses
     }
 
@@ -259,38 +285,59 @@ func nativeH2ClientSendBatch(
     requests: Array<NativeH2ClientRequest>,
     initialStreamId: Int64,
     completeHandshake: Bool,
-    responseDecoder: NativeH2HpackDecoderState
-): (Array<NativeH2ClientResponse>, Int64) {
+    responseDecoder: NativeH2HpackDecoderState,
+    peerSettings: NativeH2PeerSettings,
+    initialConnectionSendWindow: Int64
+): (Array<NativeH2ClientResponse>, Int64, Int64) {
     if (requests.size == 0) {
-        return (Array<NativeH2ClientResponse>(), initialStreamId)
+        return (
+            Array<NativeH2ClientResponse>(),
+            initialStreamId,
+            initialConnectionSendWindow
+        )
     }
     if (requests.size > NATIVE_H2_MAX_CONCURRENT_STREAMS) {
         throw Exception("native H2 client request batch exceeds concurrent stream limit")
     }
-    var requestBodyBytes: Int64 = 0
-    for (request in requests) {
-        if (request.body.size > NATIVE_H2_INITIAL_FLOW_WINDOW) {
-            throw Exception("native H2 first client request body exceeds initial flow window")
-        }
-        requestBodyBytes += request.body.size
-    }
-    if (requestBodyBytes > NATIVE_H2_INITIAL_FLOW_WINDOW) {
-        throw Exception("native H2 first client request batch exceeds connection flow window")
-    }
-
     if (completeHandshake) {
         socket.write(NATIVE_H2_PREFACE)
-        nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>()))
-        nativeH2ClientCompleteSettingsHandshake(socket)
+        nativeH2WriteFrame(
+            socket,
+            NativeH2Frame(UInt8(0x4), UInt8(0), 0, nativeH2ClientSettingsPayload())
+        )
+        nativeH2ClientCompleteSettingsHandshake(socket, peerSettings)
     }
 
-    let connection = NativeH2ClientConnectionState(initialStreamId)
+    let connection = NativeH2ClientConnectionState(
+        initialStreamId,
+        initialConnectionSendWindow
+    )
     for (request in requests) {
         let stream = connection.openStream()
-        nativeH2ClientWriteRequest(socket, stream.streamId, request)
+        nativeH2ClientWriteRequestHead(socket, stream.streamId, request)
+        if (request.body.size > 0) {
+            connection.outbound.add(
+                stream.streamId,
+                NativeH2ClientOutboundStream(
+                    stream.streamId,
+                    request.body,
+                    peerSettings.initialStreamWindow
+                )
+            )
+        }
     }
 
-    while (connection.completedStreams < requests.size) {
+    while (connection.completedStreams < requests.size || connection.outbound.size > 0) {
+        connection.connectionSendWindow = nativeH2ClientFlushRequestBodies(
+            socket,
+            connection.outbound,
+            connection.orderedStreamIds,
+            connection.connectionSendWindow,
+            peerSettings.maxFramePayload
+        )
+        if (connection.completedStreams >= requests.size && connection.outbound.size == 0) {
+            break
+        }
         let frame = nativeH2ClientReadFrame(socket)
         if (let Some(pending) <- connection.pendingResponseHead) {
             if (frame.frameType != UInt8(0x9)) {
@@ -334,13 +381,28 @@ func nativeH2ClientSendBatch(
             )
         }
         if (frame.frameType == UInt8(0x4)) {
-            if (frame.streamId != 0) {
-                throw Exception("native H2 client received SETTINGS on a stream")
-            }
-            if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
-                nativeH2WriteFrame(
-                    socket,
-                    NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+            nativeH2ClientApplySettings(socket, frame, peerSettings, connection.outbound)
+            continue
+        }
+        if (frame.frameType == UInt8(0x8)) {
+            let increment = nativeH2DecodeWindowUpdate(frame)
+            if (frame.streamId == 0) {
+                connection.connectionSendWindow = nativeH2IncreaseFlowWindow(
+                    connection.connectionSendWindow,
+                    increment,
+                    "client connection send"
+                )
+            } else if (let Some(outbound) <- connection.outbound.get(frame.streamId)) {
+                outbound.sendWindow = nativeH2IncreaseFlowWindow(
+                    outbound.sendWindow,
+                    increment,
+                    "client stream send"
+                )
+            } else if (!connection.streams.contains(frame.streamId)) {
+                nativeH2ClientProtocolFailure(
+                    frame.streamId,
+                    NATIVE_H2_ERROR_PROTOCOL,
+                    "native H2 client WINDOW_UPDATE references an unknown stream"
                 )
             }
             continue
@@ -453,7 +515,87 @@ func nativeH2ClientSendBatch(
             throw Exception("native H2 client response stream disappeared")
         responses.add(stream.response())
     }
-    (responses.toArray(), connection.nextStreamId)
+    (responses.toArray(), connection.nextStreamId, connection.connectionSendWindow)
+}
+
+func nativeH2ClientFlushRequestBodies(
+    socket: TcpSocket,
+    outbound: HashMap<Int64, NativeH2ClientOutboundStream>,
+    orderedStreamIds: ArrayList<Int64>,
+    initialConnectionWindow: Int64,
+    maxFramePayload: Int64
+): Int64 {
+    var connectionWindow = initialConnectionWindow
+    var progressed = true
+    while (progressed && connectionWindow > 0 && outbound.size > 0) {
+        progressed = false
+        let completed = ArrayList<Int64>()
+        for (streamId in orderedStreamIds) {
+            if (let Some(stream) <- outbound.get(streamId)) {
+                if (stream.sendWindow <= 0 || stream.remaining() <= 0) {
+                    continue
+                }
+                let count = min(
+                    min(stream.remaining(), maxFramePayload),
+                    min(stream.sendWindow, connectionWindow)
+                )
+                let end = stream.offset + count
+                let flags = if (end == stream.body.size) { UInt8(0x1) } else { UInt8(0) }
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(
+                        UInt8(0x0),
+                        flags,
+                        stream.streamId,
+                        nativeH2Slice(stream.body, stream.offset, end)
+                    )
+                )
+                stream.offset = end
+                stream.sendWindow -= count
+                connectionWindow -= count
+                progressed = true
+                if (stream.remaining() == 0) {
+                    completed.add(stream.streamId)
+                }
+            }
+        }
+        for (streamId in completed) {
+            let _ = outbound.remove(streamId)
+        }
+    }
+    connectionWindow
+}
+
+func nativeH2ClientApplySettings(
+    socket: TcpSocket,
+    frame: NativeH2Frame,
+    peerSettings: NativeH2PeerSettings,
+    outbound: HashMap<Int64, NativeH2ClientOutboundStream>
+): Unit {
+    if (frame.streamId != 0) {
+        nativeH2ClientProtocolFailure(
+            frame.streamId,
+            NATIVE_H2_ERROR_PROTOCOL,
+            "native H2 client received SETTINGS on a stream"
+        )
+    }
+    if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+        if (frame.payload.size != 0) {
+            nativeH2ClientProtocolFailure(
+                0,
+                NATIVE_H2_ERROR_FRAME_SIZE,
+                "native H2 client SETTINGS ACK must be empty"
+            )
+        }
+        return
+    }
+    let windowDeltas = peerSettings.apply(frame.payload)
+    for (delta in windowDeltas) {
+        for ((_streamId, stream) in outbound) {
+            stream.sendWindow = nativeH2AdjustedSendWindow(stream.sendWindow, delta)
+        }
+    }
+    nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 }
 
 func nativeH2ClientApplyResponseHeaderBlock(
@@ -619,7 +761,7 @@ func nativeH2ClientDecode32Bit(payload: Array<UInt8>, offset: Int64): Int64 {
         Int64(payload[offset + 3])
 }
 
-func nativeH2ClientWriteRequest(
+func nativeH2ClientWriteRequestHead(
     socket: TcpSocket,
     streamId: Int64,
     request: NativeH2ClientRequest
@@ -627,21 +769,12 @@ func nativeH2ClientWriteRequest(
     let requestHead = nativeH2EncodeClientRequestHead(request)
     let headFlags = if (request.body.size == 0) { UInt8(0x5) } else { UInt8(0x4) }
     nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x1), headFlags, streamId, requestHead))
-    var offset: Int64 = 0
-    while (offset < request.body.size) {
-        let end = min(offset + NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD, request.body.size)
-        let flags = if (end == request.body.size) { UInt8(0x1) } else { UInt8(0) }
-        nativeH2WriteFrame(
-            socket,
-            NativeH2Frame(
-                UInt8(0x0), flags, streamId, nativeH2Slice(request.body, offset, end)
-            )
-        )
-        offset = end
-    }
 }
 
-func nativeH2ClientCompleteSettingsHandshake(socket: TcpSocket): Unit {
+func nativeH2ClientCompleteSettingsHandshake(
+    socket: TcpSocket,
+    peerSettings: NativeH2PeerSettings
+): Unit {
     var receivedServerSettings = false
     var receivedClientSettingsAck = false
     while (!receivedServerSettings || !receivedClientSettingsAck) {
@@ -655,9 +788,7 @@ func nativeH2ClientCompleteSettingsHandshake(socket: TcpSocket): Unit {
             }
             receivedClientSettingsAck = true
         } else {
-            if (frame.payload.size % 6 != 0) {
-                throw Exception("native H2 client SETTINGS payload must use six-byte entries")
-            }
+            let _ = peerSettings.apply(frame.payload)
             receivedServerSettings = true
             nativeH2WriteFrame(
                 socket,
@@ -665,6 +796,10 @@ func nativeH2ClientCompleteSettingsHandshake(socket: TcpSocket): Unit {
             )
         }
     }
+}
+
+func nativeH2ClientSettingsPayload(): Array<UInt8> {
+    [UInt8(0), UInt8(2), UInt8(0), UInt8(0), UInt8(0), UInt8(0)]
 }
 
 func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt8> {
