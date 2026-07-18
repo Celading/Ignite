@@ -2,6 +2,7 @@ package ignite.tests
 
 import std.collection.HashMap
 import ignite.api2
+import jinguissl.live.contractDecryptEnvelopeJsonCompatV1UInt8
 
 @Test
 public class ClientCryptoTestSuite {
@@ -99,6 +100,20 @@ public class ClientCryptoTestSuite {
         let envelope = "{\"v\":1,\"alg\":\"AES-256-GCM\",\"kid\":\"k1\",\"nonce\":\"AAAAAAAAAAAAAAAA\",\"ct\":\"psIsUSI\",\"tag\":\"gpHaSvAXItXfyQKgxMHeVQ\"}"
         let plain = api2.decryptEnvelopeV1ToJson(cfg, envelope, aadText: "route")
         @Assert(plain, "hello")
+    }
+
+    @TestCase
+    public func testJinguiContractDirectlyOpensIgniteProducedEnvelope(): Unit {
+        let cfg = buildConfig(api2.ClientCryptoProviderKind.jinguiSSL)
+        let envelope = api2.encryptJsonToEnvelopeV1(cfg, "contract-open", aadText: "route")
+        let ring = HashMap<String, Array<UInt8>>()
+        ring.add("k1", "0123456789abcdef0123456789abcdef".toArray())
+        let plain = contractDecryptEnvelopeJsonCompatV1UInt8(
+            envelope,
+            ring,
+            aadOverride: Some("route".toArray())
+        )
+        @Assert(String.fromUtf8(plain), "contract-open")
     }
 
     @TestCase
