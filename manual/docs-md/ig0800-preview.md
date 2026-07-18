@@ -1,6 +1,6 @@
 # Ignite 0.8.1 Preview
 
-`0.8.1` 延续 Ignite 自研传输预览，并把动态 gzip/deflate codec 收回 Ignite 自有安全仓颉实现。它不是“已经完全脱离 stdx”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
+`0.8.1` 延续 Ignite 自研传输预览，把动态 gzip/deflate codec 收回 Ignite 自有安全仓颉实现，并提供显式 opt-in 的动态 Zstd RAW/RLE baseline。它不是“已经完全脱离 stdx”或“完整高压缩比 Zstd 已完成”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
 
 配套入口：
 
@@ -121,9 +121,10 @@ ctx.jsonSeaStream({ writer =>
 ## 压缩与静态资源
 
 - 动态 gzip/deflate 已使用 Ignite 自有安全仓颉 codec，覆盖缓冲与增量流式响应。
+- 动态 Zstd 可通过 `CompressConfig(zstdEnabled: true)` 显式启用，覆盖有界 buffered/stream frame、content size 与 checksum；当前只提供 RAW/RLE block。
 - 静态文件可按 `Accept-Encoding` 选择预生成 `.br` / `.zst` 文件。
 - Range 请求不会错误套用预压缩副本。
-- 0800 不宣称内置 Brotli/Zstd runtime codec 已完成。
+- 0800 不宣称内置 Brotli、完整 Zstd sequence/FSE/Huffman、字典或调优策略已完成。
 
 ## 仍需保留的 stdx 面
 

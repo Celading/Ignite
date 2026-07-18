@@ -6,6 +6,7 @@ import ignite.{
     CompressionFormat,
     StreamCompressionPlan,
     compressResponsePayload,
+    compressZstdResponsePayload,
     registerStreamCompressionPlan
 }
 import stdx.compress.zlib.CompressLevel
@@ -19,6 +20,8 @@ public class CompressConfig {
     public var gzipEnabled: Bool = true
     /// Enable deflate support.
     public var deflateEnabled: Bool = true
+    /// Enable the Ignite-owned dynamic Zstd Preview baseline.
+    public var zstdEnabled: Bool = false
     /// Compression level. The public stdx enum is retained for source
     /// compatibility; Ignite maps it to its native codec internally.
     public var level: CompressLevel = CompressLevel.DefaultCompression
@@ -34,6 +37,7 @@ public class CompressConfig {
         preferGzip!: Bool = true,
         gzipEnabled!: Bool = true,
         deflateEnabled!: Bool = true,
+        zstdEnabled!: Bool = false,
         level!: CompressLevel = CompressLevel.DefaultCompression,
         bufferSize!: Int64 = 2048,
         setVaryHeader!: Bool = true,
@@ -43,6 +47,7 @@ public class CompressConfig {
         this.preferGzip = preferGzip
         this.gzipEnabled = gzipEnabled
         this.deflateEnabled = deflateEnabled
+        this.zstdEnabled = zstdEnabled
         this.level = level
         this.bufferSize = bufferSize
         this.setVaryHeader = setVaryHeader
@@ -86,7 +91,11 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                 return
             }
             let compressed = try {
-                compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
+                if (encoding == "zstd") {
+                    compressZstdResponsePayload(rawBytes)
+                } else {
+                    compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
+                }
             } catch (_: Exception) {
                 return
             }
@@ -127,6 +136,7 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
 
     var qGzip: Int64 = -1
     var qDeflate: Int64 = -1
+    var qZstd: Int64 = -1
     var qWildcard: Int64 = -1
 
     for (part in acceptEncoding.split(",")) {
@@ -154,6 +164,8 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
             qGzip = quality
         } else if (name == "deflate") {
             qDeflate = quality
+        } else if (name == "zstd") {
+            qZstd = quality
         } else if (name == "*") {
             qWildcard = quality
         }
@@ -165,6 +177,9 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     if (config.deflateEnabled && qDeflate < 0) {
         qDeflate = qWildcard
     }
+    if (config.zstdEnabled && qZstd < 0) {
+        qZstd = qWildcard
+    }
 
     if (!config.gzipEnabled) {
         qGzip = -1
@@ -172,27 +187,36 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     if (!config.deflateEnabled) {
         qDeflate = -1
     }
+    if (!config.zstdEnabled) {
+        qZstd = -1
+    }
 
-    if (qGzip <= 0 && qDeflate <= 0) {
+    if (qGzip <= 0 && qDeflate <= 0 && qZstd <= 0) {
         return ""
+    }
+
+    if (qZstd > qGzip && qZstd > qDeflate) {
+        return "zstd"
     }
 
     if (config.preferGzip) {
-        if (qGzip >= qDeflate && qGzip > 0) {
+        if (qGzip >= qDeflate && qGzip >= qZstd && qGzip > 0) {
             return "gzip"
         }
-        if (qDeflate > 0) {
+        if (qDeflate >= qZstd && qDeflate > 0) {
             return "deflate"
         }
+        if (qZstd > 0) { return "zstd" }
         return ""
     }
 
-    if (qDeflate >= qGzip && qDeflate > 0) {
+    if (qDeflate >= qGzip && qDeflate >= qZstd && qDeflate > 0) {
         return "deflate"
     }
-    if (qGzip > 0) {
+    if (qGzip >= qZstd && qGzip > 0) {
         return "gzip"
     }
+    if (qZstd > 0) { return "zstd" }
     ""
 }
 

@@ -58,6 +58,105 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testZstdBufferedFrameUsesKnownSizeRleAndChecksum(): Unit {
+        let raw = Array<UInt8>(200000, repeat: 0x41)
+        let encoded = compressZstdResponsePayload(raw)
+
+        @Assert(encoded[0], UInt8(0x28))
+        @Assert(encoded[1], UInt8(0xb5))
+        @Assert(encoded[2], UInt8(0x2f))
+        @Assert(encoded[3], UInt8(0xfd))
+        @Assert(encoded[4], UInt8(0x84))
+        @Assert(encoded[5], UInt8(0x38))
+        @Assert(encoded.size < Int64(32), true)
+        @Assert(compressionByteArraysEqual(decodeZstdBaseline(encoded), raw), true)
+    }
+
+    @TestCase
+    public func testZstdStreamingFrameUsesUnknownSizeAndBoundedBlocks(): Unit {
+        let raw = Array<UInt8>(200000, repeat: 0)
+        for (i in 0..raw.size) {
+            raw[i] = UInt8((i * 37 + i / 11) & 0xff)
+        }
+        let stream = ZstdCompressionInputStream(
+            SendStreamBytesInput(toSendStreamByteArray(raw)),
+            chunkSize: 65536
+        )
+        let encoded = readAllCompressionBytes(stream)
+
+        @Assert(encoded[4], UInt8(0x04))
+        @Assert(encoded[5], UInt8(0x38))
+        @Assert(compressionByteArraysEqual(decodeZstdBaseline(encoded), raw), true)
+    }
+
+    @TestCase
+    public func testCompressMiddlewareNegotiatesDynamicZstdOverRealHttp(): Unit {
+        let payload = "Z" * 4096
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            zstdEnabled: true,
+            skipIfNoGain: false
+        )))
+        app.get("/zstd", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(329)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/zstd",
+                "zstd;q=1, gzip;q=0.5, deflate;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "zstd")
+            @Assert(contains(resp.vary, "Accept-Encoding"), true)
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+            @Assert(resp.body.size < payload.size, true)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareSkipsZstdWhenFrameHasNoGain(): Unit {
+        let raw = Array<UInt8>(4096, repeat: 0)
+        for (i in 0..raw.size) {
+            raw[i] = UInt8(32 + ((i * 31 + i / 7) % 95))
+        }
+        let payload = String.fromUtf8(raw)
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            gzipEnabled: false,
+            deflateEnabled: false,
+            zstdEnabled: true
+        )))
+        app.get("/zstd-no-gain", { ctx => ctx.send(raw) })
+
+        let port = choosePort(341)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(port, "/zstd-no-gain", "zstd")
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "")
+            @Assert(String.fromUtf8(resp.body), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareGzipAndSkipSmallBody(): Unit {
         let largeBody = "Ignite-compress-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
@@ -960,6 +1059,9 @@ public class CompressMiddlewareTestSuite {
         if (encoding.size == 0) {
             return data
         }
+        if (encoding == "zstd") {
+            return decodeZstdBaseline(data)
+        }
         let wrap: WrapType = if (encoding == "deflate") {
             WrapType.DeflateFormat
         } else {
@@ -988,6 +1090,99 @@ public class CompressMiddlewareTestSuite {
             } catch (_: Exception) {}
         }
         toUInt8Array(out.toArray())
+    }
+
+    func decodeZstdBaseline(data: Array<UInt8>): Array<UInt8> {
+        if (
+            data.size < 8 || data[0] != UInt8(0x28) || data[1] != UInt8(0xb5) ||
+            data[2] != UInt8(0x2f) || data[3] != UInt8(0xfd)
+        ) {
+            throw Exception("invalid Zstd frame magic")
+        }
+        let descriptor = data[4]
+        let singleSegment = (descriptor & UInt8(0x20)) != UInt8(0)
+        let checksum = (descriptor & UInt8(0x04)) != UInt8(0)
+        let dictionaryFlag = Int64(descriptor & UInt8(0x03))
+        let contentSizeFlag = Int64((descriptor >> 6) & UInt8(0x03))
+        var cursor: Int64 = 5
+        if (!singleSegment) {
+            cursor += 1
+        }
+        cursor += match (dictionaryFlag) {
+            case 0 => 0
+            case 1 => 1
+            case 2 => 2
+            case _ => 4
+        }
+        let contentSizeField = match (contentSizeFlag) {
+            case 0 => if (singleSegment) { 1 } else { 0 }
+            case 1 => 2
+            case 2 => 4
+            case _ => 8
+        }
+        var expectedSize: Int64 = -1
+        if (contentSizeField > 0) {
+            expectedSize = readZstdLittleEndian(data, cursor, contentSizeField)
+            if (contentSizeFlag == 1) {
+                expectedSize += 256
+            }
+            cursor += contentSizeField
+        }
+
+        let out = ArrayList<UInt8>()
+        var last = false
+        while (!last) {
+            if (cursor + 3 > data.size) {
+                throw Exception("truncated Zstd block header")
+            }
+            let header = Int64(data[cursor]) |
+                (Int64(data[cursor + 1]) << 8) |
+                (Int64(data[cursor + 2]) << 16)
+            cursor += 3
+            last = (header & 1) != 0
+            let blockType = (header >> 1) & 0x03
+            let blockSize = header >> 3
+            if (blockType == 0) {
+                if (cursor + blockSize > data.size) {
+                    throw Exception("truncated Zstd RAW block")
+                }
+                for (value in data[cursor..cursor + blockSize]) {
+                    out.add(value)
+                }
+                cursor += blockSize
+            } else if (blockType == 1) {
+                if (cursor >= data.size) {
+                    throw Exception("truncated Zstd RLE block")
+                }
+                let value = data[cursor]
+                cursor += 1
+                for (_ in 0..blockSize) {
+                    out.add(value)
+                }
+            } else {
+                throw Exception("test decoder only accepts Ignite RAW/RLE Zstd blocks")
+            }
+        }
+        if (checksum) {
+            cursor += 4
+        }
+        if (cursor != data.size) {
+            throw Exception("unexpected bytes after Zstd frame")
+        }
+        if (expectedSize >= 0 && expectedSize != out.size) {
+            throw Exception("Zstd content size mismatch")
+        }
+        out.toArray()
+    }
+
+    func readZstdLittleEndian(data: Array<UInt8>, offset: Int64, count: Int64): Int64 {
+        var value: Int64 = 0
+        var i: Int64 = 0
+        while (i < count) {
+            value = value | (Int64(data[offset + i]) << (i * 8))
+            i += 1
+        }
+        value
     }
 
     func readAllCompressionBytes(stream: InputStream): Array<UInt8> {

@@ -163,6 +163,7 @@ app.use(compressMiddleware())
 当前 `0500` 公开压缩能力的基线是：
 
 - 已支持：`gzip`、`deflate`
+- 0800 Preview 可显式开启：`zstdEnabled: true`（RAW/RLE baseline）
 - 当前未支持：`br` / Brotli
 - 当两者都可接受且权重相同，默认优先 `gzip`
 
@@ -172,7 +173,9 @@ app.use(compressMiddleware())
 - 最小压缩体积阈值 `minBytes`
 - `skipIfNoGain`，避免压缩后反而变大
 
-如果你需要 Brotli，请把它视作外部扩展方向，而不是当前主仓已默认落地能力。
+Zstd baseline 默认关闭，并保留 `skipIfNoGain` 回退；它不代表完整
+sequence/FSE/Huffman 或字典压缩已完成。如果你需要 Brotli，请继续把它
+视作静态预压缩或外部扩展方向，而不是当前主仓已默认落地能力。
 
 ### `etagMiddleware`
 

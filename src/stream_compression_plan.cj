@@ -79,6 +79,12 @@ func wrapStreamWithCompressionPlan(
     stream: InputStream,
     plan: StreamCompressionPlan
 ): InputStream {
+    if (plan.encoding == "zstd") {
+        return ZstdCompressionInputStream(
+            stream,
+            chunkSize: plan.bufferSize
+        )
+    }
     let format = if (plan.encoding == "deflate") {
         CompressionFormat.Deflate
     } else {

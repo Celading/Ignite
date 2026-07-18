@@ -115,7 +115,12 @@ client.close()
 
 ## 7. 检查静态压缩部署
 
-`.br` / `.zst` 是预生成资产。发布流水线需要同时上传原文件和压缩副本。动态 gzip/deflate 仍使用当前 stdx zlib provider，不要删除相关运行时依赖。
+`.br` / `.zst` 静态副本仍需要在发布流水线预生成并与原文件一起上传。
+动态 gzip/deflate 已改为 Ignite 自有安全仓颉 codec，不再构造 stdx zlib
+codec。动态 Zstd baseline 需要显式设置 `zstdEnabled: true`，当前只生成
+有界 RAW/RLE block；通用 payload 可能被 `skipIfNoGain` 回退为 identity。
+不要因此推导所有 stdx 运行时依赖都可以删除，TLS、兼容 JSON、代理和
+平台链接仍需按实际依赖审计。
 
 ## 8. 推荐回归清单
 
