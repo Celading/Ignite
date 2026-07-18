@@ -98,6 +98,8 @@ func buildClientTransportSelectionDecision(
     )
     let contractDecision = if (preferredBackendHint.trimAscii() == NATIVE_H1_CLIENT_BACKEND) {
         api2.selectBackend(contractRequest, nativeH1ClientCapabilities())
+    } else if (preferredBackendHint.trimAscii() == NATIVE_H2_CLIENT_BACKEND) {
+        api2.selectBackend(contractRequest, nativeH2ClientCapabilities())
     } else {
         api2.selectBackend(contractRequest)
     }
@@ -116,6 +118,41 @@ func buildClientTransportSelectionDecision(
         contractDecision.selectedBackend,
         firstStringOrDash(contractDecision.fallbackChain)
     )
+}
+
+func nativeH2ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
+    [
+        api2.BackendCapabilityRecord(
+            NATIVE_H2_CLIENT_BACKEND,
+            "ignite-native-h2",
+            "cross-platform-socket-baseline",
+            "cj>=1.0.0",
+            false,
+            false,
+            false,
+            true,
+            true,
+            true,
+            false,
+            ["CLEAR_TEXT_PRIOR_KNOWLEDGE_ONLY", "BUFFERED_REQUEST_BODY_ONLY"],
+            ["AP4_RESTCLIENT_SLICE", "ONE_PUBLIC_STREAM_LEASE_PER_CONNECTION"]
+        ),
+        api2.BackendCapabilityRecord(
+            "stdx-default",
+            "stdx",
+            "cross-platform",
+            "cj>=1.0.0",
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+            [],
+            ["CURRENT_STABLE_DEFAULT_PATH"]
+        )
+    ]
 }
 
 func nativeH1ClientCapabilities(): Array<api2.BackendCapabilityRecord> {

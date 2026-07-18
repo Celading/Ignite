@@ -44,7 +44,7 @@ let config = Config(bodyLimit: 16 * 1024 * 1024)
 
 流式读取也受这个上限约束。需要上传大文件时，使用 `requestBody()` 或 `saveBodyToFile()`，不要先调用 `bodyBytes()`。
 
-`RestClient` 默认仍走稳定 stdx Client。如果要单独验证 native H1 Client，使用 `.preferTransportBackend("ignite-native-h1-client")`，并把范围限制在 `http://`。
+`RestClient` 默认仍走稳定 stdx Client。如果要单独验证 native H1 Client，使用 `.preferTransportBackend("ignite-native-h1-client")`；如果服务端支持明文 HTTP/2 prior knowledge，可显式选择 `ignite-native-h2-client`。两者都应同时开启 `allowExperimentalTransport()`，并把范围限制在 `http://`。
 
 ## 4. 把大 JSON 改为流式
 
@@ -83,21 +83,35 @@ let config = Config(
 
 这不是生产推荐配置，也不等于 native H2 + ALPN 已成为默认 listener。
 
-## 6. H2 只作为低层 Preview 接入
+## 6. H2 只作为显式 Preview 接入
 
-不要把 `ignite.native_h2` 直接替换成现有 `RestClient` 或公开 HTTPS listener。它要求调用方先准备好 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`，但它只处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+
+```cangjie
+let client = RestClient()
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+
+let response = client.get("http://127.0.0.1:8080/h2")
+let body = response.body()
+client.close()
+```
+
+完整消费 response body 后连接可归池复用；提前关闭 response 会取消 stream
+并淘汰连接。不要把当前单 lease 池化行为描述成公开多路并发 API；依赖
+`onRequest` / `onRequestHook` 改写 stdx builder 的调用仍应留在稳定路径。
 
 适合的 0800 使用方式：
 
 - 协议实验和 wire fixture。
 - 内部受控连接、代理或 transport adapter。
-- 验证多 stream、flow-control 和生命周期行为。
+- 验证多 stream、flow-control、response lease、完整消费归池和提前关闭淘汰行为。
 
 暂不适合：
 
 - 对外宣称完整浏览器 H2 兼容。
 - 直接替换生产网关。
-- 依赖动态 HPACK table、完整 h2spec 或 H2 WebSocket。
+- 依赖 TLS/ALPN 默认路径、公开 RestClient 多路 lease 或 H2 WebSocket。
 
 ## 7. 检查静态压缩部署
 
@@ -111,6 +125,6 @@ let config = Config(
 - JSON：小 buffered response 与大 streaming response。
 - 长连接：WebSocket 子协议、Ping/Pong/Close、SSE。
 - HTTPS：默认路径证书、错误诊断和回滚。
-- 如果消费 native H2：SETTINGS、多流、WINDOW_UPDATE、RST、GOAWAY、timeout 和物理 close。
+- 如果消费 native H2：SETTINGS、多流、WINDOW_UPDATE、RST、GOAWAY、timeout、完整消费归池、提前关闭淘汰和物理 close。
 
 能力全表见 [`capability-matrix-0800.md`](capability-matrix-0800.md)，新增签名见 [`api-0800.md`](api-0800.md)。

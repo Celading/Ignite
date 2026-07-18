@@ -21,8 +21,8 @@
 | HTTP/1.1 Client | Preview | `preferTransportBackend("ignite-native-h1-client")` 可显式进入 native H1，支持连接复用、流式请求体、重定向和统一错误。 | `RestClient` 默认仍是稳定 stdx Client；native H1 当前仅支持 `http://`，部分 request hook 仍不兼容。 |
 | HTTPS / TLS | 稳定继承 | 默认继续使用稳定的 stdx TLS 路径；JinguiSSL Contract 用于契约与预检。 | native TLS listener/client 仍是显式实验候选。 |
 | native HTTP/2 Server | Preview | `ignite.native_h2` 可在 caller 提供的 `TcpSocket` 上运行单流或多流连接，并可接入 `App`。 | 非默认 listener；未完成完整浏览器矩阵、h2spec、动态 HPACK table。 |
-| native HTTP/2 Client | Preview | 可在已连接 socket 上发送单请求、批量复用或复用 `NativeH2ClientConnection`。 | caller 负责 connect、TLS/ALPN、timeout 和物理 close；不是稳定 `RestClient` 替代。 |
-| H2 flow control | Preview | connection/stream 双窗口、DATA 暂存与 `WINDOW_UPDATE` 恢复已有 wire 回归。 | 当前响应仍以内存 body 模型为主，未宣称全场景零拷贝。 |
+| native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2，并继承连接池、超时、既有安全重试策略、Cookie 与 observe 生命周期。低层 `NativeH2ClientConnection` 仍可直接消费 caller-owned socket。 | 必须同时开启 `allowExperimentalTransport()`；仅支持 `http://`、buffered/replayable request body 和每连接一个公开 streamed response lease。`HttpRequestBuilder` mutation hook、TLS/ALPN、默认切换与公开 RestClient 多路并发仍未完成。 |
+| H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 恢复、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭会发送 CANCEL 并淘汰连接。当前不是全场景零拷贝或公开多路 lease API。 |
 | WebSocket | 0800 默认 | H1 native upgrade 支持文本、二进制、Ping/Pong、Close、分片与子协议选择。 | H2 extended CONNECT 尚未提供。 |
 | SSE | 0800 默认 | `ctx.sse()` 进入 native H1 长响应主路径。 | 显式 flush/close 的跨后端一致契约仍需继续收紧。 |
 
@@ -49,9 +49,9 @@
 
 ## 选择建议
 
-- 新的明文 H1 服务可直接使用默认配置，并保留一条 `stdx-default` 回滚配置；Client 需要显式选择 `ignite-native-h1-client` 才进入 Preview。
+- 新的明文 H1 服务可直接使用默认配置，并保留一条 `stdx-default` 回滚配置；Client 需要显式选择 `ignite-native-h1-client` 或 `ignite-native-h2-client` 才进入对应 Preview。
 - 大 JSON 数组优先使用 `jsonSeaStream`；需要 stdx `JsonWriter` 兼容时使用 `jsonStream`。
-- native H2 只在能自行管理 socket、超时和 TLS/ALPN 的受控组件中接入。
+- native H2 可通过显式 `RestClient` backend 接入明文 prior knowledge；需要 TLS/ALPN、公开多路并发或默认生产路径时，仍应停留在受控低层接入或稳定 stdx 路径。
 - HTTPS 生产服务继续使用默认稳定路径，不要仅因为 0800 标题就强制打开实验 backend。
 - 静态 Brotli/Zstd 需要在构建或发布阶段生成 `.br` / `.zst` 文件。
 

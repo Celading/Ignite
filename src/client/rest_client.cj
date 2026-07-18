@@ -28,6 +28,7 @@ public class RestClient {
     var _readTimeout: Duration = Duration.second * 15
     var _writeTimeout: Duration = Duration.second * 15
     var _nativeH1Pool = NativeH1ClientConnectionPool(10)
+    var _nativeH2Pool = NativeH2ClientConnectionPool(10)
 
     public init() {
         _client = ClientBuilder().build()
@@ -41,6 +42,7 @@ public class RestClient {
         _readTimeout = readTimeout
         _writeTimeout = writeTimeout
         _nativeH1Pool = NativeH1ClientConnectionPool(poolSize)
+        _nativeH2Pool = NativeH2ClientConnectionPool(poolSize)
         _client = ClientBuilder()
             .readTimeout(readTimeout)
             .writeTimeout(writeTimeout)
@@ -353,7 +355,7 @@ public class RestClient {
     }
 
     public func request(): RequestBuilder {
-        RequestBuilder(
+        let builder = RequestBuilder(
             _client,
             _baseUrl,
             _defaultHeaders,
@@ -378,10 +380,12 @@ public class RestClient {
             writeTimeout: _writeTimeout,
             nativeH1Pool: Some(_nativeH1Pool)
         )
+        builder.attachNativeH2Pool(_nativeH2Pool)
     }
 
     public func close(): Unit {
         _nativeH1Pool.close()
+        _nativeH2Pool.close()
         _client.close()
     }
 

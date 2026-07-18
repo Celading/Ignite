@@ -54,6 +54,21 @@ let client = RestClient()
 
 当前 native H1 Client 仅处理 `http://`，不应被理解为 HTTPS Client 已默认切换。
 
+如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
+RestClient Preview：
+
+```cangjie
+let client = RestClient()
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+```
+
+这个入口复用现有 `RestClient` 的同源连接池、timeout、状态码重试、Cookie
+和 observe 生命周期。完整消费 response body 后连接才会归池；提前关闭会
+发送 CANCEL 并淘汰连接。当前只支持 buffered/replayable request body，且
+每连接仅允许一个公开 streamed response lease；`HttpRequestBuilder` mutation
+hook 仍不兼容。
+
 ### HTTPS
 
 HTTPS 默认仍走稳定的 stdx TLS 路径。JinguiSSL Contract 已经是 Ignite 的直接契约依赖，但 native TLS listener/client 仍是实验入口，不应在生产环境里无条件开启。
@@ -69,13 +84,16 @@ native H2 preview 已经具备：
 - DATA park/requeue 与 `WINDOW_UPDATE` 恢复
 - RST_STREAM、GOAWAY、timeout、peer-close 和本地主动关闭
 - 70,000-byte 双并发响应与重复连接生命周期回归
+- 显式 `RestClient` 明文 prior-knowledge backend
+- streamed response lease、完整消费归池和提前关闭取消/淘汰
 
 当前没有证明：
 
 - Chrome/Firefox/Safari 完整矩阵
-- 完整 `h2spec` 通过
-- 动态 HPACK table 与全部 SETTINGS 语义
+- 浏览器、反向代理和长时压力的完整互操作矩阵
+- HPACK 与 SETTINGS 的全部边角语义
 - TLS + ALPN 下 native H2 成为默认生产路径
+- 公开 RestClient 多路并发 response lease
 - H2 extended CONNECT WebSocket
 
 ## 流式 JSON

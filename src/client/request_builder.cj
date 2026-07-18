@@ -28,6 +28,7 @@ public class RequestBuilder {
     let _readTimeout: Duration
     let _writeTimeout: Duration
     let _nativeH1Pool: NativeH1ClientConnectionPool
+    var _nativeH2Pool = NativeH2ClientConnectionPool(0)
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
     let _builder: HttpRequestBuilder = HttpRequestBuilder()
@@ -108,6 +109,11 @@ public class RequestBuilder {
         for (hook in transportTouchpointHooks) {
             _transportTouchpointHooks.add(hook)
         }
+    }
+
+    func attachNativeH2Pool(pool: NativeH2ClientConnectionPool): RequestBuilder {
+        _nativeH2Pool = pool
+        this
     }
 
     func resolveCryptoConfig(config: ?api2.ClientCryptoConfig): api2.ClientCryptoConfig {
@@ -573,6 +579,19 @@ public class RequestBuilder {
                         _writeTimeout,
                         _nativeH1Pool
                     )
+                } else if (selectionDecision.selectedBackend == NATIVE_H2_CLIENT_BACKEND) {
+                    if (_requestHooks.size > 0) {
+                        throw Exception("native H2 client does not support HttpRequestBuilder mutation hooks")
+                    }
+                    sendNativeH2Request(
+                        nativeRequestMethod,
+                        nativeRequestUrl,
+                        nativeRequestHeaders,
+                        nativeRequestBody,
+                        _readTimeout,
+                        _writeTimeout,
+                        _nativeH2Pool
+                    )
                 } else {
                     let req = _builder.build()
                     ClientResponse(_client.send(req))
@@ -653,7 +672,8 @@ public class RequestBuilder {
                 )
                 notifyObserveHooks(observed)
                 if (let Some(store) <- _cookieStore) {
-                    let responseUrl = if (selectionDecision.selectedBackend == NATIVE_H1_CLIENT_BACKEND) {
+                    let responseUrl = if (selectionDecision.selectedBackend == NATIVE_H1_CLIENT_BACKEND ||
+                        selectionDecision.selectedBackend == NATIVE_H2_CLIENT_BACKEND) {
                         nativeRequestUrl
                     } else {
                         urlForHost

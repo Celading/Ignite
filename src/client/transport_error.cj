@@ -304,7 +304,11 @@ func buildClientObserveSnapshot(
 
 func classifyTransportErrorFamily(origin: Exception): String {
     let msg = origin.message.toAsciiLower()
-    if (containsTransportStr(msg, "native h1 network")) {
+    if (containsTransportStr(msg, "native h2 network") && containsTransportTimeoutHint(msg)) {
+        return "TIMEOUT"
+    }
+    if (containsTransportStr(msg, "native h1 network") ||
+        containsTransportStr(msg, "native h2 network")) {
         return "NETWORK"
     }
     let hasCrypto = containsTransportStr(msg, "crypto")
@@ -346,6 +350,15 @@ func classifyTransportErrorPhase(origin: Exception, phaseHint: String): String {
         return "write"
     }
     if (containsTransportStr(msg, "native h1 network read")) {
+        return "read"
+    }
+    if (containsTransportStr(msg, "native h2 network connect")) {
+        return "connect"
+    }
+    if (containsTransportStr(msg, "native h2 network write")) {
+        return "write"
+    }
+    if (containsTransportStr(msg, "native h2 network read")) {
         return "read"
     }
     if (containsTransportStr(msg, "tls must be configured") || containsTransportStr(msg, "https requests are sent")) {
