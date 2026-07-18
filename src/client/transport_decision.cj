@@ -127,15 +127,20 @@ func nativeH2ClientCapabilities(): Array<api2.BackendCapabilityRecord> {
             "ignite-native-h2",
             "cross-platform-socket-baseline",
             "cj>=1.0.0",
-            false,
-            false,
+            true,
+            true,
             false,
             true,
             true,
             true,
             false,
-            ["CLEAR_TEXT_PRIOR_KNOWLEDGE_ONLY", "BUFFERED_REQUEST_BODY_ONLY"],
-            ["AP4_RESTCLIENT_SLICE", "ONE_PUBLIC_STREAM_LEASE_PER_CONNECTION"]
+            ["BUFFERED_REQUEST_BODY_ONLY"],
+            [
+                "AP4_RESTCLIENT_SLICE",
+                "ONE_PUBLIC_STREAM_LEASE_PER_CONNECTION",
+                "TLS13_EXPLICIT_CONFIG",
+                "H2_NO_TLS_POOLING"
+            ]
         ),
         api2.BackendCapabilityRecord(
             "stdx-default",

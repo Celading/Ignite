@@ -66,9 +66,8 @@ let client = RestClient()
     ))
 ```
 
-不配置 `useNativeTls(...)` 时，HTTPS 仍走默认 stdx Client。Native H2 TLS/ALPN
-尚未接入当前 AP4 streamed-response lifecycle；如果协商到 `h2`，当前 Native
-H1 TLS Preview 会显式失败而不是静默降级。
+不配置 `useNativeTls(...)` 时，HTTPS 仍走默认 stdx Client。Native H1 backend
+如果协商到 `h2`，会显式失败而不是静默降级。
 
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
@@ -79,17 +78,31 @@ let client = RestClient()
     .preferTransportBackend("ignite-native-h2-client")
 ```
 
+同一 backend 也可显式运行在 Contract-backed TLS1.3 上：
+
+```cangjie
+let client = RestClient()
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+    .useNativeTls(NativeTls13ClientConfig(
+        trustAnchorsPemBundle,
+        "api.example.com",
+        alpnProtocols: ["h2"]
+    ))
+```
+
 这个入口复用现有 `RestClient` 的同源连接池、timeout、状态码重试、Cookie
 和 observe 生命周期。完整消费 response body 后连接才会归池；提前关闭会
-发送 CANCEL 并淘汰连接。当前只支持 buffered/replayable request body，且
-每连接仅允许一个公开 streamed response lease；`HttpRequestBuilder` mutation
-hook 仍不兼容。
+发送 CANCEL 并淘汰连接。TLS H2 当前不进入连接池，每次请求完成后关闭；两条
+路径都只支持 buffered/replayable request body，且每连接仅允许一个公开
+streamed response lease；`HttpRequestBuilder` mutation hook 仍不兼容。
 
 ### HTTPS
 
 HTTPS 默认仍走稳定的 stdx TLS 路径。JinguiSSL Contract 已经是 Ignite 的直接
-契约依赖；Native H1 TLS1.3 client 与 native TLS listener 是显式 Preview，要求
-调用方提供信任材料。Native H2 TLS、系统 CA、TLS1.2、会话恢复与默认切换仍未完成。
+契约依赖；Native H1/H2 TLS1.3 client 与 native TLS listener 是显式 Preview，
+要求调用方提供信任材料。系统 CA、TLS1.2、TLS 连接池、会话恢复与默认切换仍
+未完成。
 
 ### HTTP/2
 

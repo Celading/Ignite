@@ -500,6 +500,15 @@ public class RequestBuilder {
         let resolvedNativeTls = resolveNativeTlsConfig()
         let nativeTlsActive = resolvedNativeTls.isSome() &&
             nativeH1StartsWith(urlForHost.trimAscii().toAsciiLower(), "https://")
+        let preferredBackendHint = resolvePreferredTransportBackendHint()
+        let selectedNativeTlsBackend = if (nativeTlsActive &&
+            preferredBackendHint == NATIVE_H2_CLIENT_BACKEND) {
+            NATIVE_H2_CLIENT_BACKEND
+        } else if (nativeTlsActive) {
+            NATIVE_H1_CLIENT_BACKEND
+        } else {
+            preferredBackendHint
+        }
         let resolvedX509Verify = if (nativeTlsActive) {
             match (resolvedNativeTls) {
                 case Some(config) => Some(security.X509VerifyOption(
@@ -522,11 +531,7 @@ public class RequestBuilder {
             requestCryptoConfig: _requestCryptoConfig,
             requiresMultipart: hasMultipartPayload(),
             requiresStreaming: _bodyStreamSnapshot.isSome(),
-            preferredBackendHint: if (nativeTlsActive) {
-                NATIVE_H1_CLIENT_BACKEND
-            } else {
-                resolvePreferredTransportBackendHint()
-            },
+            preferredBackendHint: selectedNativeTlsBackend,
             allowExperimental: nativeTlsActive || resolveAllowExperimentalTransport()
         )
         notifyTransportTouchpoint(buildClientTransportTouchpoint(selectionDecision))
@@ -644,15 +649,33 @@ public class RequestBuilder {
                     if (_requestHooks.size > 0) {
                         throw Exception("native H2 client does not support HttpRequestBuilder mutation hooks")
                     }
-                    sendNativeH2Request(
-                        nativeRequestMethod,
-                        nativeRequestUrl,
-                        nativeRequestHeaders,
-                        nativeRequestBody,
-                        _readTimeout,
-                        _writeTimeout,
-                        _nativeH2Pool
-                    )
+                    if (nativeH1StartsWith(nativeRequestUrl.toAsciiLower(), "https://")) {
+                        let tlsConfig = resolvedNativeTls ?? throw Exception(
+                            "native H2 HTTPS requires nativeTls(...) configuration"
+                        )
+                        sendNativeTlsRequest(
+                            nativeRequestMethod,
+                            nativeRequestUrl,
+                            nativeRequestHeaders,
+                            nativeRequestBody,
+                            None,
+                            0,
+                            _readTimeout,
+                            _writeTimeout,
+                            tlsConfig,
+                            expectedAlpn: "h2"
+                        )
+                    } else {
+                        sendNativeH2Request(
+                            nativeRequestMethod,
+                            nativeRequestUrl,
+                            nativeRequestHeaders,
+                            nativeRequestBody,
+                            _readTimeout,
+                            _writeTimeout,
+                            _nativeH2Pool
+                        )
+                    }
                 } else {
                     let req = _builder.build()
                     ClientResponse(_client.send(req))

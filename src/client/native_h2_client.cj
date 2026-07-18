@@ -11,6 +11,7 @@ import std.collection.{ArrayList, HashMap}
 import std.net.TcpSocket
 import std.sync.Mutex
 import stdx.net.http.HttpHeaders
+import ignite.transport.NativeByteTransport
 
 let NATIVE_H2_CLIENT_BACKEND = "ignite-native-h2-client"
 
@@ -141,6 +142,40 @@ func sendNativeH2Request(
     }
 }
 
+func sendNativeH2RequestOverTransport(
+    method: String,
+    url: String,
+    headers: HashMap<String, String>,
+    body: Array<UInt8>,
+    transport: NativeByteTransport
+): ClientResponse {
+    let target = parseNativeH1Target(url)
+    let protocol = NativeH2ClientConnection(transport)
+    var transferred = false
+    try {
+        let request = NativeH2ClientRequest(
+            method,
+            target.scheme,
+            target.hostHeader,
+            target.requestTarget,
+            body: body,
+            headers: nativeH2RequestHeaders(headers)
+        )
+        let streamed = try {
+            protocol.sendStreamed(request)
+        } catch (e: NativeH2ClientException) {
+            throw nativeH2ProtocolTransportException(e)
+        }
+        let response = adaptNativeH2TransportResponse(streamed, protocol, transport)
+        transferred = true
+        response
+    } finally {
+        if (!transferred) {
+            try { transport.close() } catch (_: Exception) {}
+        }
+    }
+}
+
 func openNativeH2Connection(
     target: NativeH1ClientTarget,
     readTimeout: Duration,
@@ -189,6 +224,27 @@ func adaptNativeH2Response(
             } else {
                 closeNativeH2Connection(connection)
             }
+        }
+    )
+}
+
+func adaptNativeH2TransportResponse(
+    response: NativeH2ClientStreamedResponse,
+    protocol: NativeH2ClientConnection,
+    transport: NativeByteTransport
+): ClientResponse {
+    let headers = HttpHeaders()
+    for (header in response.headers) {
+        headers.add(header.name, header.value)
+    }
+    ClientResponse(
+        response.status,
+        headers,
+        response.bodyStream(),
+        closeHook: { =>
+            response.close()
+            try { protocol.finish() } catch (_: Exception) {}
+            try { transport.close() } catch (_: Exception) {}
         }
     )
 }

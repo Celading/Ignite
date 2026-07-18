@@ -161,12 +161,12 @@ func nativeH2ClientOpenStreamedResponse(
         throw Exception("native H2 client connection already has a streamed response lease")
     }
     if (!connection.initialized) {
-        connection.socket.write(NATIVE_H2_PREFACE)
-        nativeH2WriteFrame(
-            connection.socket,
+        connection.transport.write(NATIVE_H2_PREFACE)
+        nativeH2ClientWriteFrame(
+            connection.transport,
             NativeH2Frame(UInt8(0x4), UInt8(0), 0, nativeH2ClientSettingsPayload())
         )
-        nativeH2ClientCompleteSettingsHandshake(connection.socket, connection.peerSettings)
+        nativeH2ClientCompleteSettingsHandshake(connection.transport, connection.peerSettings)
         connection.initialized = true
     }
 
@@ -174,7 +174,7 @@ func nativeH2ClientOpenStreamedResponse(
     connection.nextStreamId += 2
     connection.activeStreamLease = Some(lease)
     try {
-        nativeH2ClientWriteRequestHead(connection.socket, lease.streamId, request)
+        nativeH2ClientWriteRequestHead(connection.transport, lease.streamId, request)
         if (request.body.size > 0) {
             lease.outbound.add(
                 lease.streamId,
@@ -202,7 +202,7 @@ func nativeH2ClientAdvanceStreamedResponse(
     lease: NativeH2ClientStreamLease
 ): Unit {
     connection.connectionSendWindow = nativeH2ClientFlushRequestBodies(
-        connection.socket,
+        connection.transport,
         lease.outbound,
         lease.orderedStreamIds,
         connection.connectionSendWindow,
@@ -212,7 +212,7 @@ func nativeH2ClientAdvanceStreamedResponse(
         return
     }
 
-    let frame = nativeH2ClientReadFrame(connection.socket)
+    let frame = nativeH2ClientReadFrame(connection.transport)
     if (let Some(pending) <- lease.pendingResponseHead) {
         if (frame.frameType != UInt8(0x9) || frame.streamId != pending.streamId) {
             nativeH2ClientProtocolFailure(
@@ -239,7 +239,7 @@ func nativeH2ClientAdvanceStreamedResponse(
     }
     if (frame.frameType == UInt8(0x4)) {
         nativeH2ClientApplySettings(
-            connection.socket, frame, connection.peerSettings, lease.outbound
+            connection.transport, frame, connection.peerSettings, lease.outbound
         )
         return
     }
@@ -273,8 +273,8 @@ func nativeH2ClientAdvanceStreamedResponse(
             )
         }
         if ((frame.flags & UInt8(0x1)) == UInt8(0)) {
-            nativeH2WriteFrame(
-                connection.socket,
+            nativeH2ClientWriteFrame(
+                connection.transport,
                 NativeH2Frame(UInt8(0x6), UInt8(0x1), 0, frame.payload)
             )
         }
@@ -407,16 +407,16 @@ func nativeH2ClientRefillStreamedReceiveWindows(
 ): Unit {
     if (!lease.remoteEnded && lease.consumedStreamCredit >=
         NATIVE_H2_CLIENT_STREAM_REFILL_THRESHOLD) {
-        nativeH2WriteFrame(
-            connection.socket,
+        nativeH2ClientWriteFrame(
+            connection.transport,
             nativeH2ClientWindowUpdate(lease.streamId, lease.consumedStreamCredit)
         )
         lease.consumedStreamCredit = 0
     }
     if (lease.consumedConnectionCredit >= NATIVE_H2_CLIENT_CONNECTION_REFILL_THRESHOLD ||
         (forceConnection && lease.consumedConnectionCredit > 0)) {
-        nativeH2WriteFrame(
-            connection.socket,
+        nativeH2ClientWriteFrame(
+            connection.transport,
             nativeH2ClientWindowUpdate(0, lease.consumedConnectionCredit)
         )
         lease.consumedConnectionCredit = 0
@@ -443,8 +443,8 @@ func nativeH2ClientCancelStreamLease(
         return
     }
     try {
-        nativeH2WriteFrame(
-            connection.socket,
+        nativeH2ClientWriteFrame(
+            connection.transport,
             NativeH2Frame(
                 UInt8(0x3), UInt8(0), lease.streamId,
                 nativeH2ErrorCodePayload(NATIVE_H2_ERROR_CANCEL)
@@ -464,5 +464,5 @@ func nativeH2ClientFailStreamLease(
     lease.released = true
     connection.activeStreamLease = None
     connection.finished = true
-    try { connection.socket.close() } catch (_: Exception) {}
+    try { connection.transport.close() } catch (_: Exception) {}
 }

@@ -21,6 +21,22 @@ public class ClientTransportErrorInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeH2CapabilityAcceptsExplicitHttpsTlsSelection(): Unit {
+        let selection = buildClientTransportSelectionDecision(
+            "https://example.test/resource",
+            Some(X509VerifyOption(
+                enabled: true,
+                expectedServerName: "example.test"
+            )),
+            preferredBackendHint: NATIVE_H2_CLIENT_BACKEND,
+            allowExperimental: true
+        )
+        @Assert(selection.selectedBackend, NATIVE_H2_CLIENT_BACKEND)
+        @Assert(selection.selectedReason, "preferred_backend_hint")
+        @Assert(selection.riskLevel, "medium")
+    }
+
+    @TestCase
     public func testTlsHandshakeEnvelopeCanBecomeRetryableFallbackCandidate(): Unit {
         let selection = buildClientTransportSelectionDecision(
             "https://127.0.0.1:18443/internal-handshake",

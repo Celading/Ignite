@@ -268,8 +268,33 @@ response.discard()
 
 这条 Preview 会由 Ignite 持有 TCP socket，JinguiSSL Contract 负责 TLS1.3
 握手推导、证书/hostname policy、client Finished 和 application-data record。
-当前不自动读取系统 CA，不复用 TLS 连接，也不支持 Native H2 TLS；协商到
-`h2` 会明确失败，不会偷偷降级为 H1 或 stdx。
+当前不自动读取系统 CA，也不复用 TLS 连接；H1 backend 协商到 `h2` 会明确
+失败，不会偷偷降级为 H1 或 stdx。
+
+## Native H2 HTTPS Preview
+
+需要让现有 Native H2 HPACK、流控和 streamed-response lifecycle 运行在
+TLS1.3 上时，显式选择 H2 backend 并只提供 `h2` ALPN：
+
+```cangjie
+let client = RestClient()
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+    .useNativeTls(NativeTls13ClientConfig(
+        trustAnchorsPemBundle,
+        "api.example.com",
+        alpnProtocols: ["h2"]
+    ))
+
+let response = client.get("https://api.example.com/health")
+println(response.status)
+response.discard()
+```
+
+这条路径不另造一套 H2 parser：TLS record 解密后的字节直接进入现有 Native
+H2 Client 主电路。当前 TLS H2 每次请求独占连接，不进入明文 H2 连接池；仍只
+支持 buffered/replayable request body 和每连接一个公开 streamed response
+lease。
 
 ## 响应读取与大包读取
 
