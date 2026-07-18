@@ -79,6 +79,12 @@ func wrapStreamWithCompressionPlan(
     stream: InputStream,
     plan: StreamCompressionPlan
 ): InputStream {
+    if (plan.encoding == "br") {
+        return BrotliCompressionInputStream(
+            stream,
+            chunkSize: plan.bufferSize
+        )
+    }
     if (plan.encoding == "zstd") {
         return ZstdCompressionInputStream(
             stream,

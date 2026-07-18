@@ -5,6 +5,7 @@ import ignite.{
     Ctx,
     CompressionFormat,
     StreamCompressionPlan,
+    compressBrotliResponsePayload,
     compressResponsePayload,
     compressZstdResponsePayload,
     registerStreamCompressionPlan
@@ -22,6 +23,8 @@ public class CompressConfig {
     public var deflateEnabled: Bool = true
     /// Enable the Ignite-owned dynamic Zstd Preview baseline.
     public var zstdEnabled: Bool = false
+    /// Enable the Ignite-owned dynamic Brotli RAW/RLE Preview baseline.
+    public var brotliEnabled: Bool = false
     /// Compression level. The public stdx enum is retained for source
     /// compatibility; Ignite maps it to its native codec internally.
     public var level: CompressLevel = CompressLevel.DefaultCompression
@@ -38,6 +41,7 @@ public class CompressConfig {
         gzipEnabled!: Bool = true,
         deflateEnabled!: Bool = true,
         zstdEnabled!: Bool = false,
+        brotliEnabled!: Bool = false,
         level!: CompressLevel = CompressLevel.DefaultCompression,
         bufferSize!: Int64 = 2048,
         setVaryHeader!: Bool = true,
@@ -48,6 +52,7 @@ public class CompressConfig {
         this.gzipEnabled = gzipEnabled
         this.deflateEnabled = deflateEnabled
         this.zstdEnabled = zstdEnabled
+        this.brotliEnabled = brotliEnabled
         this.level = level
         this.bufferSize = bufferSize
         this.setVaryHeader = setVaryHeader
@@ -91,7 +96,9 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                 return
             }
             let compressed = try {
-                if (encoding == "zstd") {
+                if (encoding == "br") {
+                    compressBrotliResponsePayload(rawBytes)
+                } else if (encoding == "zstd") {
                     compressZstdResponsePayload(rawBytes)
                 } else {
                     compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
@@ -137,6 +144,7 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     var qGzip: Int64 = -1
     var qDeflate: Int64 = -1
     var qZstd: Int64 = -1
+    var qBrotli: Int64 = -1
     var qWildcard: Int64 = -1
 
     for (part in acceptEncoding.split(",")) {
@@ -166,6 +174,8 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
             qDeflate = quality
         } else if (name == "zstd") {
             qZstd = quality
+        } else if (name == "br") {
+            qBrotli = quality
         } else if (name == "*") {
             qWildcard = quality
         }
@@ -180,6 +190,9 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     if (config.zstdEnabled && qZstd < 0) {
         qZstd = qWildcard
     }
+    if (config.brotliEnabled && qBrotli < 0) {
+        qBrotli = qWildcard
+    }
 
     if (!config.gzipEnabled) {
         qGzip = -1
@@ -190,33 +203,41 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     if (!config.zstdEnabled) {
         qZstd = -1
     }
+    if (!config.brotliEnabled) {
+        qBrotli = -1
+    }
 
-    if (qGzip <= 0 && qDeflate <= 0 && qZstd <= 0) {
+    if (qGzip <= 0 && qDeflate <= 0 && qZstd <= 0 && qBrotli <= 0) {
         return ""
     }
 
-    if (qZstd > qGzip && qZstd > qDeflate) {
+    if (qBrotli > qGzip && qBrotli > qDeflate && qBrotli > qZstd) {
+        return "br"
+    }
+    if (qZstd > qGzip && qZstd > qDeflate && qZstd > qBrotli) {
         return "zstd"
     }
 
     if (config.preferGzip) {
-        if (qGzip >= qDeflate && qGzip >= qZstd && qGzip > 0) {
+        if (qGzip >= qDeflate && qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
             return "gzip"
         }
-        if (qDeflate >= qZstd && qDeflate > 0) {
+        if (qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
             return "deflate"
         }
-        if (qZstd > 0) { return "zstd" }
+        if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
+        if (qBrotli > 0) { return "br" }
         return ""
     }
 
-    if (qDeflate >= qGzip && qDeflate >= qZstd && qDeflate > 0) {
+    if (qDeflate >= qGzip && qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
         return "deflate"
     }
-    if (qGzip >= qZstd && qGzip > 0) {
+    if (qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
         return "gzip"
     }
-    if (qZstd > 0) { return "zstd" }
+    if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
+    if (qBrotli > 0) { return "br" }
     ""
 }
 

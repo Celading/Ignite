@@ -34,9 +34,10 @@
 | streaming JSON | 0800 默认 | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可边生成边写出。 | 不设置完整 `ctx.responseBody`；依赖全量 body 的缓存、ETag、幂等等中间件不自动兼容。 |
 | 请求体流 | 0800 默认 | `requestBody()` 返回受 `Config.bodyLimit` 保护的流，`saveBodyToFile()` 可直接落盘。 | 流先被消费后，不承诺还能完整回放给 buffered API。 |
 | 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam。 | 调用方负责状态、响应头和 framing；不自动设置 H1 chunked。 |
-| 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是静态交付；Brotli 仍没有内置动态 codec。 |
+| 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是发布阶段预压缩交付，不依赖动态 codec。 |
 | 动态 gzip/deflate | Preview | 压缩中间件通过 Ignite 自有安全仓颉 codec 支持缓冲与增量流式响应。 | 当前优先协议正确性；高级字典、SIMD 与极致压缩比未承诺。 |
 | 动态 Zstd baseline | Preview / opt-in | `CompressConfig(zstdEnabled: true)` 可协商缓冲与增量流式 `zstd` 响应；frame、128 KiB window/block、content-size 与 checksum 由安全仓颉实现。 | 当前仅生成 RAW/RLE block；可压缩同值 run，但通用 sequence/FSE/Huffman、字典、level 调优和默认选择仍未完成。 |
+| 动态 Brotli baseline | Preview / opt-in | `CompressConfig(brotliEnabled: true)` 可协商缓冲与增量流式 `br` 响应；安全仓颉 encoder 使用有界 RAW metablock，并用单 literal + distance-one copy 压缩同值 run。 | 不是完整 Brotli：通用 LZ 匹配、context modeling、多符号 Huffman、静态字典、quality/window 调优和默认选择仍未完成。 |
 
 ## 运行时与依赖边界
 
@@ -46,7 +47,7 @@
 | 超时与 body limit | 0800 默认 | native H1 消费 `bodyLimit`、read/write/header/idle timeout。 | `readHeaderTimeout`、`idleTimeout` 当前需在构造后赋值。 |
 | IoDriver / lisi | Provider hold | 已有能力描述、策略与 probe 接点。 | 未替换底层 `std.net.TcpSocket`，不能宣称已获得 io_uring/IOCP/kqueue 的生产收益。 |
 | SeaJson | 0800 默认 | `jsonSeaStream` 使用 SeaJson 原生 writer 和有界桥接。 | 兼容 stdx JSON 的入口仍保留，未做到全项目 JSON 零 stdx。 |
-| stdx 总体依赖 | Provider hold | native H1/H2、SeaJson 与动态 gzip/deflate/Zstd baseline 已缩小核心耦合。 | TLS 默认、部分 JSON/代理/平台链接仍使用 stdx。 |
+| stdx 总体依赖 | Provider hold | native H1/H2、SeaJson 与动态 gzip/deflate/Zstd/Brotli baseline 已缩小核心耦合。 | TLS 默认、部分 JSON/代理/平台链接仍使用 stdx。 |
 
 ## 选择建议
 
@@ -55,6 +56,6 @@
 - native H2 可通过显式 `RestClient` backend 接入明文 prior knowledge；需要 TLS/ALPN、公开多路并发或默认生产路径时，仍应停留在受控低层接入或稳定 stdx 路径。
 - HTTPS 生产服务继续使用默认稳定路径，不要仅因为 0800 标题就强制打开实验 backend。
 - 静态 Brotli/Zstd 需要在构建或发布阶段生成 `.br` / `.zst` 文件。
-- 动态 Zstd 需显式设置 `zstdEnabled: true`；通用数据默认仍可能因 `skipIfNoGain` 回退 identity，不要把 Preview baseline 当作完整高压缩比实现。
+- 动态 Zstd/Brotli 需分别显式设置 `zstdEnabled: true` / `brotliEnabled: true`；通用 buffered 数据默认仍可能因 `skipIfNoGain` 回退 identity，不要把 RAW/RLE Preview 当作完整高压缩比实现。
 
 更具体的签名见 [`api-0800.md`](api-0800.md)，从 0700 升级见 [`migration-0700-to-0800.md`](migration-0700-to-0800.md)。

@@ -56,6 +56,8 @@ than a public cross-framework ranking.
   - Multi-process stress probe for file-backed cross-process in-proc port leases
 - `manual/samples/middleware`
   - Middleware composition and request flow
+- `manual/samples/brotli_interop`
+  - Validate that the safe-Cangjie Brotli RAW/RLE Preview is decoded exactly by the system `brotli` tool
 
 ## Typical commands
 

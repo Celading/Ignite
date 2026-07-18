@@ -164,7 +164,7 @@ app.use(compressMiddleware())
 
 - 已支持：`gzip`、`deflate`
 - 0800 Preview 可显式开启：`zstdEnabled: true`（RAW/RLE baseline）
-- 当前未支持：`br` / Brotli
+- 0800 Preview 可显式开启：`brotliEnabled: true`（RAW + 单字节 RLE/LZ77 baseline）
 - 当两者都可接受且权重相同，默认优先 `gzip`
 
 同时它还支持：
@@ -173,9 +173,9 @@ app.use(compressMiddleware())
 - 最小压缩体积阈值 `minBytes`
 - `skipIfNoGain`，避免压缩后反而变大
 
-Zstd baseline 默认关闭，并保留 `skipIfNoGain` 回退；它不代表完整
-sequence/FSE/Huffman 或字典压缩已完成。如果你需要 Brotli，请继续把它
-视作静态预压缩或外部扩展方向，而不是当前主仓已默认落地能力。
+Zstd/Brotli baseline 默认关闭，并保留 buffered `skipIfNoGain` 回退；它们
+不代表完整 sequence/context/FSE/Huffman、字典或质量调优已经完成。动态
+stream 在无法预知最终收益时，仅在 `skipIfNoGain: false` 下启用。
 
 ### `etagMiddleware`
 

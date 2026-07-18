@@ -55,7 +55,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 - Native H2 server/client поддерживают ограниченное мультиплексирование, flow control и lifecycle, но пока остаются preview без заявления о полной совместимости с браузерами и h2spec.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.
-- Динамические gzip/deflate теперь используют безопасный codec Ignite на Cangjie; Brotli/Zstd остаются доступными через заранее сжатые статические файлы.
+- Динамические gzip/deflate используют безопасные codec Ignite на Cangjie; Zstd и Brotli имеют отключённые по умолчанию RAW/RLE Preview, а статические `.zst/.br` файлы по-прежнему поддерживаются.
 
 Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 

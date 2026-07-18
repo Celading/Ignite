@@ -122,9 +122,10 @@ ctx.jsonSeaStream({ writer =>
 
 - 动态 gzip/deflate 已使用 Ignite 自有安全仓颉 codec，覆盖缓冲与增量流式响应。
 - 动态 Zstd 可通过 `CompressConfig(zstdEnabled: true)` 显式启用，覆盖有界 buffered/stream frame、content size 与 checksum；当前只提供 RAW/RLE block。
+- 动态 Brotli 可通过 `CompressConfig(brotliEnabled: true)` 显式启用，覆盖有界 buffered/stream metablock；当前只提供 RAW 与单字节 RLE/LZ77 子集。
 - 静态文件可按 `Accept-Encoding` 选择预生成 `.br` / `.zst` 文件。
 - Range 请求不会错误套用预压缩副本。
-- 0800 不宣称内置 Brotli、完整 Zstd sequence/FSE/Huffman、字典或调优策略已完成。
+- 0800 不宣称完整 Brotli context/Huffman/dictionary 或完整 Zstd sequence/FSE/Huffman、字典和调优策略已完成。
 
 ## 仍需保留的 stdx 面
 

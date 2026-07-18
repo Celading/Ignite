@@ -119,6 +119,8 @@ client.close()
 动态 gzip/deflate 已改为 Ignite 自有安全仓颉 codec，不再构造 stdx zlib
 codec。动态 Zstd baseline 需要显式设置 `zstdEnabled: true`，当前只生成
 有界 RAW/RLE block；通用 payload 可能被 `skipIfNoGain` 回退为 identity。
+动态 Brotli baseline 同样需要显式设置 `brotliEnabled: true`，当前只生成
+有界 RAW metablock 与单字节 RLE/LZ77 子集，不应替代完整 Brotli 质量档。
 不要因此推导所有 stdx 运行时依赖都可以删除，TLS、兼容 JSON、代理和
 平台链接仍需按实际依赖审计。
 

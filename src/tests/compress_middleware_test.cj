@@ -17,10 +17,13 @@ public class CompressMiddlewareTestSuite {
         let speed = CompressConfig(level: CompressLevel.BestSpeed)
         let defaultLevel = CompressConfig(level: CompressLevel.DefaultCompression)
         let best = CompressConfig(level: CompressLevel.BestCompression)
+        let brotli = CompressConfig(brotliEnabled: true)
 
         @Assert(speed.minBytes, 1024)
         @Assert(defaultLevel.minBytes, 1024)
         @Assert(best.minBytes, 1024)
+        @Assert(defaultLevel.brotliEnabled, false)
+        @Assert(brotli.brotliEnabled, true)
     }
 
     @TestCase
@@ -146,6 +149,143 @@ public class CompressMiddlewareTestSuite {
             @Assert(resp.status, 200)
             @Assert(resp.encoding, "")
             @Assert(String.fromUtf8(resp.body), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testBrotliBufferedAndStreamedPreviewProduceRealCompression(): Unit {
+        @Assert(compressBrotliResponsePayload([]).size > 0, true)
+        @Assert(compressBrotliResponsePayload(Array<UInt8>(3, repeat: 0x31)).size > 0, true)
+        @Assert(compressBrotliResponsePayload(Array<UInt8>(32, repeat: 0x32)).size < 32, true)
+
+        let bufferedRaw = Array<UInt8>(4096, repeat: 0x41)
+        let buffered = compressBrotliResponsePayload(bufferedRaw)
+        @Assert(buffered.size < bufferedRaw.size, true)
+        @Assert(buffered.size < Int64(32), true)
+
+        let streamedRaw = Array<UInt8>(70000, repeat: 0x42)
+        let streamed = readAllCompressionBytes(BrotliCompressionInputStream(
+            SendStreamBytesInput(toSendStreamByteArray(streamedRaw)),
+            chunkSize: 4096
+        ))
+        @Assert(streamed.size < streamedRaw.size, true)
+    }
+
+    @TestCase
+    public func testCompressMiddlewareNegotiatesDynamicBrotliOverRealHttp(): Unit {
+        let payload = "B" * 4096
+        let expected = compressBrotliResponsePayload(payload.toArray())
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            brotliEnabled: true
+        )))
+        app.get("/brotli", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(343)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/brotli",
+                "br;q=1, gzip;q=0.5, deflate;q=0, zstd;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "br")
+            @Assert(contains(resp.vary, "Accept-Encoding"), true)
+            @Assert(resp.contentLength, expected.size.toString())
+            @Assert(compressionByteArraysEqual(resp.body, expected), true)
+            @Assert(resp.body.size < payload.size, true)
+
+            let tied = sendRawBinarySnapshotWithRetry(port, "/brotli", "br, gzip")
+            @Assert(tied.status, 200)
+            @Assert(tied.encoding, "gzip")
+            @Assert(decompressBody(tied.body, tied.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareStreamsDynamicBrotliOverRealHttp(): Unit {
+        let raw = Array<UInt8>(70000, repeat: 0x43)
+        let expected = readAllCompressionBytes(BrotliCompressionInputStream(
+            SendStreamBytesInput(toSendStreamByteArray(raw)),
+            chunkSize: 4096
+        ))
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            gzipEnabled: false,
+            deflateEnabled: false,
+            zstdEnabled: false,
+            brotliEnabled: true,
+            bufferSize: 4096,
+            skipIfNoGain: false
+        )))
+        app.get("/brotli-stream", { ctx =>
+            _ = ctx.sendStream(
+                SendStreamBytesInput(toSendStreamByteArray(raw)),
+                contentType: "application/octet-stream"
+            )
+        })
+
+        let port = choosePort(347)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(port, "/brotli-stream", "br")
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "br")
+            @Assert(contains(resp.vary, "Accept-Encoding"), true)
+            @Assert(resp.transferEncoding, "chunked")
+            @Assert(resp.contentLength, "")
+            @Assert(compressionByteArraysEqual(resp.body, expected), true)
+            @Assert(resp.body.size < raw.size, true)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareSkipsBrotliWhenFrameHasNoGain(): Unit {
+        let raw = Array<UInt8>(4096, repeat: 0)
+        for (i in 0..raw.size) {
+            raw[i] = UInt8((i * 31 + i / 7) & 0xff)
+        }
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 8,
+            gzipEnabled: false,
+            deflateEnabled: false,
+            zstdEnabled: false,
+            brotliEnabled: true
+        )))
+        app.get("/brotli-no-gain", { ctx => ctx.send(raw) })
+
+        let port = choosePort(349)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(port, "/brotli-no-gain", "br")
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "")
+            @Assert(compressionByteArraysEqual(resp.body, raw), true)
         } finally {
             app.shutdown()
             try {

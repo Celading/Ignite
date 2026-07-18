@@ -55,7 +55,7 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 - Native H2 server/client include bounded multiplexing, flow-control recovery, and lifecycle slices, but remain an explicit preview rather than a browser/h2spec compatibility claim.
 - HTTPS keeps the stable stdx TLS path by default; JinguiSSL native TLS/ALPN remains experimental opt-in.
 - SeaJson exposes a `JsonWriterEncodable -> OutputStream` path; classic `ctx.json(String)` still sends a complete string.
-- Dynamic gzip/deflate now use an Ignite-owned safe Cangjie codec; Brotli/Zstd remain available through precompressed static representations.
+- Dynamic gzip/deflate now use Ignite-owned safe Cangjie codecs; Zstd and Brotli have opt-in RAW/RLE Preview baselines, while precompressed `.zst/.br` assets remain supported.
 
 See [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md) for the complete 0800 boundary and rollback notes. The public milestone timeline remains in `CHANGELOG.MD` and `CHANGELOG-en.MD`.
 

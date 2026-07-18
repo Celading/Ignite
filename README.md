@@ -45,7 +45,7 @@
 - 原生 H2 Server/Client 已具备受限多路复用、流控恢复和生命周期切片，但仍是显式 preview，不宣称浏览器/h2spec 全兼容。
 - HTTPS 默认继续使用稳定的 stdx TLS 路径；JinguiSSL native TLS/ALPN 仍需显式实验开关。
 - SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径；传统 `ctx.json(String)` 仍是完整字符串响应。
-- 动态 gzip/deflate 已切换为 Ignite 自有安全仓颉 codec；Brotli/Zstd 继续通过预压缩静态副本交付。
+- 动态 gzip/deflate 已切换为 Ignite 自有安全仓颉 codec；Zstd 与 Brotli 提供默认关闭的 RAW/RLE Preview，静态 `.zst/.br` 副本继续保留。
 
 完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。
 
