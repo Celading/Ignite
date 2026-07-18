@@ -17,35 +17,29 @@ public class ClientCryptoTestSuite {
     }
 
     @TestCase
-    public func testEncryptDecryptRoundTripAcrossProviders(): Unit {
+    public func testEncryptDecryptRoundTripWithJinguiProvider(): Unit {
         let payload = "{\"message\":\"hello\"}"
         let aad = "route:/v1/demo"
+        let cfg = buildConfig(api2.ClientCryptoProviderKind.jinguiSSL)
+        let envelope = api2.encryptJsonToEnvelopeV1(cfg, payload, aadText: aad)
+        let restored = api2.decryptEnvelopeV1ToJson(cfg, envelope, aadText: aad)
+        @Assert(restored, payload)
+    }
 
-        let configs = [
-            buildConfig(api2.ClientCryptoProviderKind.jinguiSSL),
-            buildConfig(api2.ClientCryptoProviderKind.StdxFallback)
-        ]
-        for (cfg in configs) {
-            try {
-                let envelope = api2.encryptJsonToEnvelopeV1(cfg, payload, aadText: aad)
-                let restored = api2.decryptEnvelopeV1ToJson(cfg, envelope, aadText: aad)
-                @Assert(restored, payload)
-            } catch (e: api2.ClientCryptoException) {
-                if (
-                    cfg.providerKind == api2.ClientCryptoProviderKind.jinguiSSL &&
-                    e.code == api2.ClientCryptoErrorCode.CryptoUnavailable
-                ) {
-                    @Assert(true)
-                } else {
-                    @Fail("unexpected error: ${e.code.toString()} ${e.message}")
-                }
-            }
+    @TestCase
+    public func testLegacyFallbackCannotWriteNewEnvelope(): Unit {
+        let cfg = buildConfig(api2.ClientCryptoProviderKind.StdxFallback)
+        try {
+            let _ = api2.encryptJsonToEnvelopeV1(cfg, "{\"blocked\":true}")
+            @Fail("legacy fallback must not write new secure envelopes")
+        } catch (e: api2.ClientCryptoException) {
+            @Assert(e.code, api2.ClientCryptoErrorCode.CryptoUnavailable)
         }
     }
 
     @TestCase
     public func testTamperedTagFailsDecrypt(): Unit {
-        let cfg = buildConfig(api2.ClientCryptoProviderKind.StdxFallback)
+        let cfg = buildConfig(api2.ClientCryptoProviderKind.jinguiSSL)
         let envelopeJson = api2.encryptJsonToEnvelopeV1(cfg, "{\"ok\":true}")
         let env = api2.EnvelopeV1.parse(envelopeJson)
 
@@ -62,7 +56,7 @@ public class ClientCryptoTestSuite {
 
     @TestCase
     public func testKeyNotFoundError(): Unit {
-        let cfg = buildConfig(api2.ClientCryptoProviderKind.StdxFallback)
+        let cfg = buildConfig(api2.ClientCryptoProviderKind.jinguiSSL)
         let envelopeJson = api2.encryptJsonToEnvelopeV1(cfg, "{\"ok\":true}")
         let env = api2.EnvelopeV1.parse(envelopeJson)
         let rewritten = api2.EnvelopeV1(1, env.alg, "k2", env.nonce, env.ct, env.tag).toJsonString()
@@ -92,6 +86,56 @@ public class ClientCryptoTestSuite {
         let hex = api2.clientCryptoRandomHex(32)
         @Assert(hex.size, 32)
     }
+
+    @TestCase
+    public func testExternalAes256GcmVectorDecrypts(): Unit {
+        let ring = HashMap<String, Array<UInt8>>()
+        ring.add("k1", Array<UInt8>(32, repeat: 0))
+        let cfg = api2.ClientCryptoConfig(
+            providerKind: api2.ClientCryptoProviderKind.jinguiSSL,
+            activeKid: "k1",
+            keyRing: ring
+        )
+        let envelope = "{\"v\":1,\"alg\":\"AES-256-GCM\",\"kid\":\"k1\",\"nonce\":\"AAAAAAAAAAAAAAAA\",\"ct\":\"psIsUSI\",\"tag\":\"gpHaSvAXItXfyQKgxMHeVQ\"}"
+        let plain = api2.decryptEnvelopeV1ToJson(cfg, envelope, aadText: "route")
+        @Assert(plain, "hello")
+    }
+
+    @TestCase
+    public func testLegacyPseudoEnvelopeRequiresExplicitFallbackRead(): Unit {
+        let key = legacyRepeatedKey("migration-key")
+        let ring = HashMap<String, Array<UInt8>>()
+        ring.add("k1", key)
+        let envelope = "{\"v\":1,\"alg\":\"AES-256-GCM\",\"kid\":\"k1\",\"nonce\":\"AAAAAAAAAAAAAAAA\",\"ct\":\"osb5SoiTqhqbMJo2iQ\",\"tag\":\"vZbonRw57MZ8dLoeOh8EDw\"}"
+
+        let secureConfig = api2.ClientCryptoConfig(
+            providerKind: api2.ClientCryptoProviderKind.jinguiSSL,
+            activeKid: "k1",
+            keyRing: ring
+        )
+        try {
+            let _ = api2.decryptEnvelopeV1ToJson(secureConfig, envelope)
+            @Fail("secure provider must reject the pre-HQ-0848 pseudo envelope")
+        } catch (e: api2.ClientCryptoException) {
+            @Assert(e.code, api2.ClientCryptoErrorCode.DecryptFailed)
+        }
+
+        let legacyConfig = api2.ClientCryptoConfig(
+            providerKind: api2.ClientCryptoProviderKind.StdxFallback,
+            activeKid: "k1",
+            keyRing: ring
+        )
+        @Assert(api2.decryptEnvelopeV1ToJson(legacyConfig, envelope), "legacy-pseudo")
+    }
+}
+
+func legacyRepeatedKey(raw: String): Array<UInt8> {
+    let source = raw.toArray()
+    let out = Array<UInt8>(32, repeat: 0)
+    for (i in 0..out.size) {
+        out[i] = source[i % source.size]
+    }
+    out
 }
 
 func mutateToken(token: String): String {

@@ -1,12 +1,11 @@
 package ignite
 
 import ignite.native_tls.{NativeTlsApplicationProtocol, selectNativeTlsApplicationProtocol}
-import jinguissl.live.ContractHttpServerAcceptedTransportSession
+import jinguissl.live.{ContractHttpServerAcceptedTransportSession, contractRandomBytes}
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
-import std.random.Random
 import std.sync.Mutex
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
@@ -509,14 +508,7 @@ public func isSocketServerEngineShellStableTlsH2ConnectionEndError(
 }
 
 func socketServerEngineShellExperimentalServerKeyExchangePrivate(): Array<Byte> {
-    let rng = Random()
-    let out = Array<Byte>(32, repeat: 0)
-    var i: Int64 = 0
-    while (i < out.size) {
-        out[i] = UInt8(rng.nextUInt64() & 0xff)
-        i += 1
-    }
-    out
+    contractRandomBytes(32)
 }
 
 func serveSocketServerEngineShellTurns(

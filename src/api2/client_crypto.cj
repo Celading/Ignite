@@ -1,8 +1,15 @@
 package ignite.api2
 
 import ignite.binary.{base64UrlEncode, base64UrlDecode, cloneBytes}
+import jinguissl.live.{
+    ContractAeadAlgorithm,
+    ContractErrorCode,
+    ContractException,
+    contractDecryptEnvelopeJsonCompatV1UInt8,
+    contractEncryptEnvelopeJsonV1UInt8,
+    contractRandomUInt8Bytes
+}
 import std.collection.{HashMap, ArrayList}
-import std.random.Random
 
 public enum ClientCryptoProviderKind <: Equatable<ClientCryptoProviderKind> & ToString {
     | jinguiSSL
@@ -164,11 +171,12 @@ public class EnvelopeV1 {
             throw ClientCryptoException(BadEnvelope, "envelope is empty")
         }
 
-        let version = extractIntField(compact, "v")
+        let contractShape = indexOfString(compact, "\"ver\":") >= 0
+        let version = extractIntField(compact, if (contractShape) { "ver" } else { "v" })
         let alg = extractStringField(compact, "alg")
         let kid = extractStringField(compact, "kid")
         let nonce = extractStringField(compact, "nonce")
-        let ct = extractStringField(compact, "ct")
+        let ct = extractStringField(compact, if (contractShape) { "ciphertext" } else { "ct" })
         let tag = extractStringField(compact, "tag")
         EnvelopeV1(version, alg, kid, nonce, ct, tag)
     }
@@ -179,14 +187,11 @@ class jinguiSSLClientCryptoProvider <: ClientCryptoProvider {
         if (size <= 0) {
             throw ClientCryptoException(BadEnvelope, "random size must be > 0")
         }
-        let rng = Random()
-        let out = Array<UInt8>(size, repeat: 0)
-        var i = 0
-        while (i < size) {
-            out[i] = UInt8(rng.nextUInt64() & 0xFF)
-            i += 1
+        try {
+            contractRandomUInt8Bytes(size)
+        } catch (e: ContractException) {
+            throw mapContractCryptoError(e)
         }
-        out
     }
 
     public override func aeadEncrypt(
@@ -195,11 +200,22 @@ class jinguiSSLClientCryptoProvider <: ClientCryptoProvider {
         aad: Array<UInt8>
     ): (Array<UInt8>, Array<UInt8>, Array<UInt8>) {
         requireAes256Key(key)
-        let nonce = randomBytes(12)
-        let stream = deriveStream(key, nonce, plaintext.size)
-        let ciphertext = xorWithStream(plaintext, stream)
-        let tag = fallbackTag(key, nonce, ciphertext, aad)
-        (nonce, ciphertext, tag)
+        try {
+            let envelopeJson = contractEncryptEnvelopeJsonV1UInt8(
+                ContractAeadAlgorithm.Aes256Gcm,
+                "ignite-provider",
+                key,
+                plaintext,
+                aad: aad
+            )
+            (
+                decodeEnvelopeSegmentOrThrow(extractStringField(envelopeJson, "nonce")),
+                decodeEnvelopeSegmentOrThrow(extractStringField(envelopeJson, "ciphertext")),
+                decodeEnvelopeSegmentOrThrow(extractStringField(envelopeJson, "tag"))
+            )
+        } catch (e: ContractException) {
+            throw mapContractCryptoError(e)
+        }
     }
 
     public override func aeadDecrypt(
@@ -210,28 +226,36 @@ class jinguiSSLClientCryptoProvider <: ClientCryptoProvider {
         aad: Array<UInt8>
     ): Array<UInt8> {
         requireAes256Key(key)
-        let expected = fallbackTag(key, nonce, ciphertext, aad)
-        if (!constantTimeEquals(expected, tag)) {
-            throw ClientCryptoException(DecryptFailed, "tag mismatch")
+        let keyRing = HashMap<String, Array<UInt8>>()
+        keyRing.add("ignite-provider", cloneBytes(key))
+        let envelopeJson = EnvelopeV1(
+            1,
+            "AES-256-GCM",
+            "ignite-provider",
+            base64UrlEncode(nonce),
+            base64UrlEncode(ciphertext),
+            base64UrlEncode(tag)
+        ).toJsonString()
+        try {
+            contractDecryptEnvelopeJsonCompatV1UInt8(
+                envelopeJson,
+                keyRing,
+                aadOverride: Some(cloneBytes(aad))
+            )
+        } catch (e: ContractException) {
+            throw mapContractCryptoError(e)
         }
-        let stream = deriveStream(key, nonce, ciphertext.size)
-        xorWithStream(ciphertext, stream)
     }
 }
 
+/// Retained only for explicit reads of pre-HQ-0848 insecure envelopes.
 class StdxFallbackClientCryptoProvider <: ClientCryptoProvider {
     public override func randomBytes(size: Int64): Array<UInt8> {
-        if (size <= 0) {
-            throw ClientCryptoException(BadEnvelope, "random size must be > 0")
-        }
-        let rng = Random()
-        let out = Array<UInt8>(size, repeat: 0)
-        var i = 0
-        while (i < size) {
-            out[i] = UInt8(rng.nextUInt64() & 0xFF)
-            i += 1
-        }
-        out
+        let _ = size
+        throw ClientCryptoException(
+            ClientCryptoErrorCode.CryptoUnavailable,
+            "stdx-fallback is a legacy read-only provider and cannot generate entropy"
+        )
     }
 
     public override func aeadEncrypt(
@@ -239,14 +263,13 @@ class StdxFallbackClientCryptoProvider <: ClientCryptoProvider {
         plaintext: Array<UInt8>,
         aad: Array<UInt8>
     ): (Array<UInt8>, Array<UInt8>, Array<UInt8>) {
-        if (key.size == 0) {
-            throw ClientCryptoException(ClientCryptoErrorCode.CryptoUnavailable, "fallback key must not be empty")
-        }
-        let nonce = randomBytes(12)
-        let stream = deriveStream(key, nonce, plaintext.size)
-        let ciphertext = xorWithStream(plaintext, stream)
-        let tag = fallbackTag(key, nonce, ciphertext, aad)
-        (nonce, ciphertext, tag)
+        let _ = key
+        let _ = plaintext
+        let _ = aad
+        throw ClientCryptoException(
+            ClientCryptoErrorCode.CryptoUnavailable,
+            "stdx-fallback is a legacy read-only provider and cannot encrypt"
+        )
     }
 
     public override func aeadDecrypt(
@@ -259,12 +282,12 @@ class StdxFallbackClientCryptoProvider <: ClientCryptoProvider {
         if (key.size == 0) {
             throw ClientCryptoException(ClientCryptoErrorCode.CryptoUnavailable, "fallback key must not be empty")
         }
-        let expected = fallbackTag(key, nonce, ciphertext, aad)
+        let expected = legacyFallbackTag(key, nonce, ciphertext, aad)
         if (!constantTimeEquals(expected, tag)) {
-            throw ClientCryptoException(DecryptFailed, "fallback tag mismatch")
+            throw ClientCryptoException(DecryptFailed, "legacy fallback tag mismatch")
         }
-        let stream = deriveStream(key, nonce, ciphertext.size)
-        xorWithStream(ciphertext, stream)
+        let stream = legacyDeriveStream(key, nonce, ciphertext.size)
+        legacyXorWithStream(ciphertext, stream)
     }
 }
 
@@ -336,12 +359,7 @@ public func clientCryptoRandomHex(length: Int64): String {
         throw ClientCryptoException(BadEnvelope, "hex length must be > 0")
     }
     let bytesNeeded = (length + 1) / 2
-    let provider = clientCryptoProvider(jinguiSSL)
-    let entropy = try {
-        provider.randomBytes(bytesNeeded)
-    } catch (_: ClientCryptoException) {
-        clientCryptoProvider(StdxFallback).randomBytes(bytesNeeded)
-    }
+    let entropy = clientCryptoProvider(jinguiSSL).randomBytes(bytesNeeded)
 
     let chars = "0123456789abcdef".toRuneArray()
     var out = ""
@@ -391,26 +409,6 @@ func normalizeAlg(raw: String): String {
     raw.trimAscii().toAsciiUpper()
 }
 
-func toByteArray(input: Array<UInt8>): Array<Byte> {
-    let out = Array<Byte>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = input[i]
-        i += 1
-    }
-    out
-}
-
-func toUInt8Array(input: Array<Byte>): Array<UInt8> {
-    let out = Array<UInt8>(input.size, repeat: 0)
-    var i = 0
-    while (i < input.size) {
-        out[i] = UInt8(input[i])
-        i += 1
-    }
-    out
-}
-
 func decodeEnvelopeSegmentOrThrow(segment: String): Array<UInt8> {
     try {
         base64UrlDecode(segment)
@@ -419,7 +417,7 @@ func decodeEnvelopeSegmentOrThrow(segment: String): Array<UInt8> {
     }
 }
 
-func deriveStream(key: Array<UInt8>, nonce: Array<UInt8>, size: Int64): Array<UInt8> {
+func legacyDeriveStream(key: Array<UInt8>, nonce: Array<UInt8>, size: Int64): Array<UInt8> {
     let stream = Array<UInt8>(size, repeat: 0)
     var state: UInt64 = 0x9E3779B97F4A7C15
 
@@ -441,7 +439,7 @@ func deriveStream(key: Array<UInt8>, nonce: Array<UInt8>, size: Int64): Array<UI
     stream
 }
 
-func xorWithStream(input: Array<UInt8>, stream: Array<UInt8>): Array<UInt8> {
+func legacyXorWithStream(input: Array<UInt8>, stream: Array<UInt8>): Array<UInt8> {
     if (input.size != stream.size) {
         throw ClientCryptoException(BadEnvelope, "stream length mismatch")
     }
@@ -454,7 +452,7 @@ func xorWithStream(input: Array<UInt8>, stream: Array<UInt8>): Array<UInt8> {
     out
 }
 
-func fallbackTag(
+func legacyFallbackTag(
     key: Array<UInt8>,
     nonce: Array<UInt8>,
     ciphertext: Array<UInt8>,
@@ -466,6 +464,16 @@ func fallbackTag(
     foldTag(acc, aad)
     foldTag(acc, ciphertext)
     acc
+}
+
+func mapContractCryptoError(e: ContractException): ClientCryptoException {
+    let code = match (e.code) {
+        case ContractErrorCode.BadInput => ClientCryptoErrorCode.BadEnvelope
+        case ContractErrorCode.KeyNotFound => ClientCryptoErrorCode.KeyNotFound
+        case ContractErrorCode.VerifyFailed => ClientCryptoErrorCode.DecryptFailed
+        case _ => ClientCryptoErrorCode.CryptoUnavailable
+    }
+    ClientCryptoException(code, e.message)
 }
 
 func foldTag(acc: Array<UInt8>, data: Array<UInt8>): Unit {

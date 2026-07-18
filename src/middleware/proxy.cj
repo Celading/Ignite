@@ -20,8 +20,6 @@ import std.collection.ArrayList
 import std.env.getVariable
 import std.fs.{Directory, File, OpenMode, Path, exists, removeIfExists}
 import std.io.InputStream
-import std.random.Random
-import std.time.DateTime
 import ignite.security as security
 
 public let IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_request_body_mode"
@@ -379,16 +377,8 @@ func shouldProxyBufferUnknownLengthBodyToFile(targetUrl: String, config: ProxyCo
 func buildProxyTempBodyPath(baseDir: String): String {
     let normalizedDir = normalizeProxyTempDir(baseDir)
     ensureProxyTempDirExists(normalizedDir)
-    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-    let rng = Random()
-    var suffix = ""
-    let hex = "0123456789abcdef".toRuneArray()
-    var i: Int64 = 0
-    while (i < 12) {
-        suffix += hex[Int64(rng.nextUInt64() % 16)].toString()
-        i += 1
-    }
-    Path(normalizedDir).join("ignite-proxy-body-${nowMs}-${suffix}.tmp").toString()
+    let suffix = security.randomHex(32)
+    Path(normalizedDir).join("ignite-proxy-body-${suffix}.tmp").toString()
 }
 
 func ensureProxyTempDirExists(path: String): Unit {

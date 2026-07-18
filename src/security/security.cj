@@ -2,6 +2,7 @@ package ignite.security
 
 import ignite.api2
 import ignite.binary.{base64UrlEncode, base64UrlDecode, cloneBytes}
+import jinguissl.contract.{HashAlgorithm, contractHkdf}
 import std.collection.{HashMap, ArrayList}
 import std.sync.Mutex
 
@@ -394,10 +395,29 @@ public func isCookieEnvelopeV1(value: String): Bool {
 
 public func deriveKey32FromString(raw: String): Array<UInt8> {
     let bytes = raw.toArray()
-    let out = Array<UInt8>(32, repeat: 0)
     if (bytes.size == 0) {
-        return out
+        throw SecurityException(KeyNotFound, "security key material must not be empty")
     }
+    try {
+        contractHkdf(
+            HashAlgorithm.SHA256,
+            bytes,
+            "ignite/security/string-key/v2".toArray(),
+            32,
+            salt: "ignite/security/hkdf-sha256".toArray()
+        )
+    } catch (e: Exception) {
+        throw SecurityException(CryptoUnavailable, "failed to derive security key: ${e.message}")
+    }
+}
+
+/// Reconstructs only the pre-HQ-0848 repeating-string key for explicit reads.
+public func deriveLegacyInsecureKey32FromString(raw: String): Array<UInt8> {
+    let bytes = raw.toArray()
+    if (bytes.size == 0) {
+        throw SecurityException(KeyNotFound, "legacy security key material must not be empty")
+    }
+    let out = Array<UInt8>(32, repeat: 0)
     var i = 0
     while (i < out.size) {
         out[i] = bytes[i % bytes.size]

@@ -1095,22 +1095,21 @@ public class Ctx {
         let alg = _locals.get("__ignite_cookie_enc_alg") ?? "AES-256-GCM"
         let providerText = _locals.get("__ignite_cookie_enc_provider") ?? "jinguiSSL"
         if (keyHex.size == 0) {
-            return value
-        }
-        try {
-            let key = security.hexToBytes(keyHex)
-            let keyRing = HashMap<String, Array<UInt8>>()
-            keyRing.add(keyId, key)
-            let config = security.SecurityConfig(
-                providerKind: parseSecurityProviderKind(providerText),
-                activeKid: keyId,
-                keyRing: keyRing,
-                aeadAlgorithm: alg
+            throw security.SecurityException(
+                security.SecurityErrorCode.KeyNotFound,
+                "encrypted Cookie write is enabled but key material is missing"
             )
-            security.sealCookieValueV1(config, value, cookieName: name)
-        } catch (_: Exception) {
-            value
         }
+        let key = security.hexToBytes(keyHex)
+        let keyRing = HashMap<String, Array<UInt8>>()
+        keyRing.add(keyId, key)
+        let config = security.SecurityConfig(
+            providerKind: parseSecurityProviderKind(providerText),
+            activeKid: keyId,
+            keyRing: keyRing,
+            aeadAlgorithm: alg
+        )
+        security.sealCookieValueV1(config, value, cookieName: name)
     }
 
     func parseSecurityProviderKind(raw: String): security.SecurityProviderKind {

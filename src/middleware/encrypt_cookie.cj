@@ -48,7 +48,7 @@ public func encryptCookieMiddleware(config: EncryptCookieConfig): Handler {
     let secConfig = buildCookieSecurityConfig(config)
     let activeKeyHex = security.bytesToHex(secConfig.activeKey())
     let exceptCsv = joinExceptNames(config.exceptNames)
-    let canLegacyDecrypt = config.enableLegacyDecrypt && config.key.size > 0
+    let canLegacyDecrypt = config.enableLegacyDecrypt && (config.key.size > 0 || config.keyRing.size > 0)
 
     { ctx: Ctx =>
         let cookieHeaderOpt = ctx.header("cookie")
@@ -80,7 +80,13 @@ public func encryptCookieMiddleware(config: EncryptCookieConfig): Handler {
                         }
                         if (canLegacyDecrypt) {
                             try {
-                                decrypted = Some(legacyDecryptValue(value, config.key))
+                                decrypted = Some(
+                                    security.openCookieValueV1(
+                                        buildLegacyCookieSecurityConfig(config),
+                                        value,
+                                        cookieName: name
+                                    )
+                                )
                                 usedLegacy = true
                             } catch (_: Exception) {}
                         }
@@ -113,29 +119,58 @@ public func encryptCookieMiddleware(config: EncryptCookieConfig): Handler {
 
 public func encryptValue(value: String, key: String): String {
     if (key.size == 0) {
-        return value
+        throw security.SecurityException(
+            security.SecurityErrorCode.KeyNotFound,
+            "encryptValue requires non-empty key material"
+        )
     }
     let secConfig = buildCookieSecurityConfig(EncryptCookieConfig(key: key))
-    try {
-        security.sealCookieValueV1(secConfig, value)
-    } catch (_: security.SecurityException) {
-        legacyEncryptValue(value, key)
-    }
+    security.sealCookieValueV1(secConfig, value)
 }
 
 public func decryptValue(encoded: String, key: String): String {
     if (key.size == 0) {
-        return encoded
+        throw security.SecurityException(
+            security.SecurityErrorCode.KeyNotFound,
+            "decryptValue requires non-empty key material"
+        )
+    }
+    if (!security.isCookieEnvelopeV1(encoded)) {
+        throw security.SecurityException(
+            security.SecurityErrorCode.BadEnvelope,
+            "legacy cookie value requires explicit compatibility read"
+        )
+    }
+    let secConfig = buildCookieSecurityConfig(EncryptCookieConfig(key: key))
+    try {
+        security.openCookieValueV1(secConfig, encoded)
+    } catch (e: security.SecurityException) {
+        security.recordDecryptFailure()
+        if (e.code == security.SecurityErrorCode.DecryptFailed) {
+            security.recordSignatureFailure()
+        }
+        throw e
+    }
+}
+
+public func decryptValueLegacyCompatible(encoded: String, key: String): String {
+    if (key.size == 0) {
+        throw security.SecurityException(
+            security.SecurityErrorCode.KeyNotFound,
+            "legacy-compatible decrypt requires non-empty key material"
+        )
     }
     if (security.isCookieEnvelopeV1(encoded)) {
-        let secConfig = buildCookieSecurityConfig(EncryptCookieConfig(key: key))
         try {
-            return security.openCookieValueV1(secConfig, encoded)
-        } catch (e: security.SecurityException) {
-            security.recordDecryptFailure()
-            if (e.code == security.SecurityErrorCode.DecryptFailed) {
-                security.recordSignatureFailure()
-            }
+            return security.openCookieValueV1(
+                buildCookieSecurityConfig(EncryptCookieConfig(key: key)),
+                encoded
+            )
+        } catch (_: security.SecurityException) {
+            return security.openCookieValueV1(
+                buildLegacyCookieSecurityConfig(EncryptCookieConfig(key: key)),
+                encoded
+            )
         }
     }
     legacyDecryptValue(encoded, key)
@@ -155,7 +190,10 @@ func buildCookieSecurityConfig(config: EncryptCookieConfig): security.SecurityCo
         ring.add(resolvedKeyId, security.deriveKey32FromString(config.key))
     }
     if (ring.size == 0) {
-        ring.add(resolvedKeyId, security.deriveKey32FromString(config.key))
+        throw security.SecurityException(
+            security.SecurityErrorCode.KeyNotFound,
+            "encrypted Cookie middleware requires key or keyRing"
+        )
     }
     if (!ring.contains(resolvedKeyId)) {
         resolvedKeyId = firstKeyId(ring) ?? resolvedKeyId
@@ -163,6 +201,32 @@ func buildCookieSecurityConfig(config: EncryptCookieConfig): security.SecurityCo
 
     security.SecurityConfig(
         providerKind: config.providerKind,
+        activeKid: resolvedKeyId,
+        keyRing: ring,
+        aeadAlgorithm: config.algorithm
+    )
+}
+
+func buildLegacyCookieSecurityConfig(config: EncryptCookieConfig): security.SecurityConfig {
+    let ring = HashMap<String, Array<UInt8>>()
+    for ((kid, keyBytes) in config.keyRing) {
+        ring.add(kid, cloneBytes(keyBytes))
+    }
+    var resolvedKeyId = if (config.keyId.size == 0) { "k1" } else { config.keyId }
+    if (config.key.size > 0 && !ring.contains(resolvedKeyId)) {
+        ring.add(resolvedKeyId, security.deriveLegacyInsecureKey32FromString(config.key))
+    }
+    if (ring.size == 0) {
+        throw security.SecurityException(
+            security.SecurityErrorCode.KeyNotFound,
+            "legacy Cookie read requires key or keyRing"
+        )
+    }
+    if (!ring.contains(resolvedKeyId)) {
+        resolvedKeyId = firstKeyId(ring) ?? resolvedKeyId
+    }
+    security.SecurityConfig(
+        providerKind: security.SecurityProviderKind.StdxFallback,
         activeKid: resolvedKeyId,
         keyRing: ring,
         aeadAlgorithm: config.algorithm
@@ -211,13 +275,6 @@ func emitLegacyDecryptWarning(config: EncryptCookieConfig, cookieName: String): 
     } else {
         println(message)
     }
-}
-
-func legacyEncryptValue(value: String, key: String): String {
-    let vBytes = value.toArray()
-    let kBytes = key.toArray()
-    let encrypted = xorBytes(vBytes, kBytes)
-    base64Encode(encrypted)
 }
 
 func legacyDecryptValue(encoded: String, key: String): String {

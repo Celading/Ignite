@@ -1,7 +1,7 @@
 package ignite.tests
 
 import ignite.security.*
-import ignite.middleware.{encryptValue, decryptValue}
+import ignite.middleware.{encryptValue, decryptValue, decryptValueLegacyCompatible}
 import std.collection.HashMap
 
 @Test
@@ -11,7 +11,7 @@ public class SecurityTestSuite {
         let keyRing = HashMap<String, Array<UInt8>>()
         keyRing.add("k1", Array<UInt8>(32, repeat: UInt8(7)))
         let config = SecurityConfig(
-            providerKind: StdxFallback,
+            providerKind: jinguiSSL,
             activeKid: "k1",
             keyRing: keyRing
         )
@@ -28,7 +28,7 @@ public class SecurityTestSuite {
         let keyRing = HashMap<String, Array<UInt8>>()
         keyRing.add("k1", Array<UInt8>(32, repeat: UInt8(9)))
         let config = SecurityConfig(
-            providerKind: StdxFallback,
+            providerKind: jinguiSSL,
             activeKid: "k1",
             keyRing: keyRing
         )
@@ -52,8 +52,25 @@ public class SecurityTestSuite {
 
         // legacy XOR+Base64 value for plaintext "legacy" with key "k"
         let legacyEncoded = "Bw4MCggS"
-        let legacyDecrypted = decryptValue(legacyEncoded, "k")
+        let legacyDecrypted = decryptValueLegacyCompatible(legacyEncoded, "k")
         @Assert(legacyDecrypted, "legacy")
+    }
+
+    @TestCase
+    public func testSecureConvenienceRejectsEmptyKeyAndImplicitLegacyRead(): Unit {
+        try {
+            let _ = encryptValue("must-not-leak", "")
+            @Fail("empty encryption key must fail closed")
+        } catch (e: SecurityException) {
+            @Assert(e.code, SecurityErrorCode.KeyNotFound)
+        }
+
+        try {
+            let _ = decryptValue("Bw4MCggS", "k")
+            @Fail("legacy XOR read must require explicit compatibility API")
+        } catch (e: SecurityException) {
+            @Assert(e.code, SecurityErrorCode.BadEnvelope)
+        }
     }
 
     @TestCase

@@ -12,7 +12,7 @@ public class ClientHookTestSuite {
         let ring = HashMap<String, Array<UInt8>>()
         ring.add("k1", "0123456789abcdef0123456789abcdef".toArray())
         api2.ClientCryptoConfig(
-            providerKind: api2.ClientCryptoProviderKind.StdxFallback,
+            providerKind: api2.ClientCryptoProviderKind.jinguiSSL,
             activeKid: "k1",
             keyRing: ring,
             aeadAlgorithm: "AES-256-GCM"

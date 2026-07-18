@@ -27,7 +27,7 @@ public class SecurityCookieRegressionTestSuite {
         let wrongKeyRing = HashMap<String, Array<UInt8>>()
         wrongKeyRing.add("k2", deriveKey32FromString("cookie-source-k2"))
         let wrongConfig = SecurityConfig(
-            providerKind: StdxFallback,
+            providerKind: jinguiSSL,
             activeKid: "k2",
             keyRing: wrongKeyRing
         )
@@ -90,11 +90,90 @@ public class SecurityCookieRegressionTestSuite {
         @Assert(resp.body, "Bw4MCggS")
     }
 
+    @TestCase
+    public func testEncryptCookieMiddlewareReadsPseudoEnvelopeOnlyWhenExplicitlyEnabled(): Unit {
+        let legacyEnvelope = "v1.eyJ2IjoxLCJhbGciOiJBRVMtMjU2LUdDTSIsImtpZCI6ImsxIiwibm9uY2UiOiJBQUFBQUFBQUFBQUFBQUFBIiwiY3QiOiJvc2I1U29pVHFocWJNSm8yaVEiLCJ0YWciOiIwNXVqblJ3NTdNWjhkTG9lT2g4RUR3In0"
+        let app = App(config: Config())
+        app.use(
+            encryptCookieMiddleware(
+                EncryptCookieConfig(
+                    key: "migration-key",
+                    enableLegacyDecrypt: true
+                )
+            )
+        )
+        app.get("/cookie", { ctx =>
+            _ = ctx.sendString(ctx.cookies("sid") ?? "")
+        })
+
+        let resp = app.handleForTest(
+            "GET",
+            "/cookie",
+            headers: [("cookie", "sid=${legacyEnvelope}")]
+        )
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "legacy-pseudo")
+    }
+
+    @TestCase
+    public func testEncryptCookieMiddlewareCanUseExplicitLegacyKeyRingForCompatibilityRead(): Unit {
+        let legacyEnvelope = "v1.eyJ2IjoxLCJhbGciOiJBRVMtMjU2LUdDTSIsImtpZCI6ImsxIiwibm9uY2UiOiJBQUFBQUFBQUFBQUFBQUFBIiwiY3QiOiJvc2I1U29pVHFocWJNSm8yaVEiLCJ0YWciOiIwNXVqblJ3NTdNWjhkTG9lT2g4RUR3In0"
+        let legacyRing = HashMap<String, Array<UInt8>>()
+        legacyRing.add("k1", deriveLegacyInsecureKey32FromString("migration-key"))
+        let app = App(config: Config())
+        app.use(
+            encryptCookieMiddleware(
+                EncryptCookieConfig(
+                    keyRing: legacyRing,
+                    enableLegacyDecrypt: true
+                )
+            )
+        )
+        app.get("/cookie-key-ring", { ctx =>
+            _ = ctx.sendString(ctx.cookies("sid") ?? "")
+        })
+
+        let resp = app.handleForTest(
+            "GET",
+            "/cookie-key-ring",
+            headers: [("cookie", "sid=${legacyEnvelope}")]
+        )
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "legacy-pseudo")
+    }
+
+    @TestCase
+    public func testEncryptedCookieWriteDoesNotFallBackToPlaintextWhenKeyLocalIsMissing(): Unit {
+        let app = App(config: Config())
+        app.use({ ctx =>
+            ctx.setLocal("__ignite_cookie_enc_enabled", "1")
+            ctx.next()
+        })
+        app.get("/cookie-missing-key", { ctx =>
+            _ = ctx.setCookie("sid", "must-not-leak").sendString("ok")
+        })
+
+        let resp = app.handleForTest("GET", "/cookie-missing-key")
+        @Assert(resp.status, UInt16(500))
+        @Assert(resp.header("set-cookie") ?? "", "")
+        @Assert(resp.body == "must-not-leak", false)
+    }
+
+    @TestCase
+    public func testEncryptCookieMiddlewareRejectsMissingKeyMaterial(): Unit {
+        try {
+            let _ = encryptCookieMiddleware(EncryptCookieConfig())
+            @Fail("encrypted Cookie middleware must fail without key material")
+        } catch (e: SecurityException) {
+            @Assert(e.code, SecurityErrorCode.KeyNotFound)
+        }
+    }
+
     func buildConfig(rawKey: String, kid!: String = "k1"): SecurityConfig {
         let ring = HashMap<String, Array<UInt8>>()
         ring.add(kid, deriveKey32FromString(rawKey))
         SecurityConfig(
-            providerKind: StdxFallback,
+            providerKind: jinguiSSL,
             activeKid: kid,
             keyRing: ring
         )

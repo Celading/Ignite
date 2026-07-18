@@ -2,7 +2,6 @@ package ignite.client
 
 import stdx.net.http.HttpRequestBuilder
 import std.collection.{ArrayList, HashMap}
-import std.random.Random
 import std.time.MonoTime
 import std.unicode.*
 import ignite.api2
@@ -134,17 +133,7 @@ func buildMultipartBody(
 }
 
 func randomBoundary(): String {
-    try {
-        api2.clientCryptoRandomHex(32)
-    } catch (_: api2.ClientCryptoException) {
-        let rng = Random()
-        let hex = "0123456789abcdef".toRuneArray()
-        var s = ""
-        for (_ in 0..32) {
-            s += hex[Int64(rng.nextUInt64() % 16)].toString()
-        }
-        s
-    }
+    api2.clientCryptoRandomHex(32)
 }
 
 // ── Cookie 存储 ──

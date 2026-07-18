@@ -143,7 +143,7 @@ public class ClientTransportSelectionTestSuite {
             writeTimeout: Duration.second * 1,
             poolSize: 1
         )
-            .useCrypto(buildCryptoConfig(api2.ClientCryptoProviderKind.StdxFallback))
+            .useCrypto(buildCryptoConfig(api2.ClientCryptoProviderKind.jinguiSSL))
             .onTransportTouchpoint({ touchpoint =>
                 touchpointMarks.add("global:" + touchpoint.cryptoProviderId)
             })
@@ -162,14 +162,14 @@ public class ClientTransportSelectionTestSuite {
             @Assert(resp.status, 201)
             @Assert(resp.body(), "crypto-ok")
             @Assert(cryptoProviderIds.size, 1)
-            @Assert(cryptoProviderIds[0], "crypto:stdx-fallback")
+            @Assert(cryptoProviderIds[0], "crypto:jinguiSSL")
             @Assert(riskLevels.size, 1)
             @Assert(riskLevels[0], "medium")
             @Assert(touchpointMarks.size, 1)
-            @Assert(touchpointMarks[0], "global:crypto:stdx-fallback")
+            @Assert(touchpointMarks[0], "global:crypto:jinguiSSL")
             match (client.lastClientTransportTouchpoint()) {
                 case Some(touchpoint) =>
-                    @Assert(touchpoint.cryptoProviderId, "crypto:stdx-fallback")
+                    @Assert(touchpoint.cryptoProviderId, "crypto:jinguiSSL")
                     @Assert(touchpoint.riskLevel, "medium")
                 case None => @Fail("expected encrypted transport touchpoint")
             }
