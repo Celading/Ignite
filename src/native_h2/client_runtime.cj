@@ -202,6 +202,7 @@ public class NativeH2ClientConnection {
     let socket: TcpSocket
     let responseDecoder = NativeH2HpackDecoderState()
     let peerSettings = NativeH2PeerSettings()
+    var activeStreamLease: ?NativeH2ClientStreamLease = None
     var initialized = false
     var finished = false
     var nextStreamId: Int64 = 1
@@ -221,6 +222,9 @@ public class NativeH2ClientConnection {
         if (finished) {
             throw Exception("native H2 client connection is finished")
         }
+        if (activeStreamLease.isSome()) {
+            throw Exception("native H2 client connection has an active streamed response")
+        }
         let (responses, followingStreamId, followingConnectionSendWindow) =
             nativeH2ClientSendBatch(
             socket,
@@ -237,10 +241,24 @@ public class NativeH2ClientConnection {
         responses
     }
 
+    /// Opens one response body as a connection-owned incremental stream.
+    ///
+    /// The Preview implementation intentionally permits one public streamed
+    /// response lease at a time so socket reads, HPACK state, and control frames
+    /// remain owned by this connection rather than competing body streams.
+    public func sendStreamed(
+        request: NativeH2ClientRequest
+    ): NativeH2ClientStreamedResponse {
+        nativeH2ClientOpenStreamedResponse(this, request)
+    }
+
     /// Emits NO_ERROR GOAWAY but leaves physical socket close to the caller.
     public func finish(): Unit {
         if (finished) {
             return
+        }
+        if (activeStreamLease.isSome()) {
+            throw Exception("native H2 client cannot finish with an active streamed response")
         }
         if (initialized) {
             nativeH2WriteFrame(

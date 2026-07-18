@@ -341,6 +341,146 @@ public class NativeH2ClientRuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeClientStreamsLargeBodyThenReusesConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 streamed client test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(accepted, { request =>
+                    NativeH2SingleStreamResponse(
+                        status: 200,
+                        headers: [NativeH2Header("x-stream-path", request.path)],
+                        body: if (request.path == "/streamed") {
+                            Array<UInt8>(70000, repeat: UInt8(0x73))
+                        } else {
+                            request.path.toArray()
+                        }
+                    )
+                })
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 2)
+            socket.writeTimeout = Some(Duration.second * 2)
+            let connection = NativeH2ClientConnection(socket)
+            let streamed = connection.sendStreamed(
+                NativeH2ClientRequest("GET", "http", "localhost", "/streamed")
+            )
+            var concurrentSendRejected = false
+            try {
+                let _ = connection.send(
+                    NativeH2ClientRequest("GET", "http", "localhost", "/must-wait")
+                )
+            } catch (_: Exception) {
+                concurrentSendRejected = true
+            }
+            var finishRejected = false
+            try {
+                connection.finish()
+            } catch (_: Exception) {
+                finishRejected = true
+            }
+            @Assert(concurrentSendRejected, true)
+            @Assert(finishRejected, true)
+            let body = streamed.bodyStream()
+            let chunk = Array<UInt8>(4096, repeat: 0)
+            var total: Int64 = 0
+            while (true) {
+                let count = body.read(chunk)
+                if (count <= 0) {
+                    break
+                }
+                total += count
+                @Assert(chunk[0], UInt8(0x73))
+            }
+            @Assert(total, 70000)
+            @Assert(streamed.trailers().size, 0)
+
+            let following = connection.send(
+                NativeH2ClientRequest("GET", "http", "localhost", "/following")
+            )
+            connection.finish()
+            @Assert(String.fromUtf8(following.body), "/following")
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeClientCancelsUnreadStreamAndInvalidatesConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 cancel test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let streamId = nativeH2ClientTestHandshakeAndReadRequest(accepted)
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(
+                        UInt8(0x1), UInt8(0x4), streamId,
+                        nativeH2ClientTestEncodeResponseHead(
+                            200, [NativeH2Header("x-cancel", "ready")]
+                        )
+                    )
+                )
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(
+                        UInt8(0x0), UInt8(0), streamId,
+                        Array<UInt8>(4096, repeat: UInt8(0x63))
+                    )
+                )
+                let reset = nativeH2ReadFrame(accepted)
+                @Assert(reset.frameType, UInt8(0x3))
+                @Assert(reset.streamId, streamId)
+                @Assert(nativeH2ClientDecode32Bit(reset.payload, 0), NATIVE_H2_ERROR_CANCEL)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 2)
+            socket.writeTimeout = Some(Duration.second * 2)
+            let connection = NativeH2ClientConnection(socket)
+            let streamed = connection.sendStreamed(
+                NativeH2ClientRequest("GET", "http", "localhost", "/cancel")
+            )
+            let chunk = Array<UInt8>(64, repeat: 0)
+            @Assert(streamed.bodyStream().read(chunk), 64)
+            streamed.close()
+
+            var rejected = false
+            try {
+                let _ = connection.send(
+                    NativeH2ClientRequest("GET", "http", "localhost", "/after-cancel")
+                )
+            } catch (_: Exception) {
+                rejected = true
+            }
+            @Assert(rejected, true)
+            let _ = serverFuture.get(Duration.second * 2)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeClientRejectsInterruptedContinuationSequence(): Unit {
         let failure = nativeH2ClientFailureFixture(
             { socket, streamId =>
