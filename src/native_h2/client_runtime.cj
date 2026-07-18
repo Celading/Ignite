@@ -46,11 +46,21 @@ public class NativeH2ClientResponse {
     public let status: UInt16
     public let headers: Array<NativeH2Header>
     public let body: Array<UInt8>
+    public let informational: Array<NativeH2ClientResponseHead>
+    public let trailers: Array<NativeH2Header>
 
-    public init(status: UInt16, headers: Array<NativeH2Header>, body: Array<UInt8>) {
+    public init(
+        status: UInt16,
+        headers: Array<NativeH2Header>,
+        body: Array<UInt8>,
+        informational!: Array<NativeH2ClientResponseHead> = Array<NativeH2ClientResponseHead>(),
+        trailers!: Array<NativeH2Header> = Array<NativeH2Header>()
+    ) {
         this.status = status
         this.headers = nativeH2CloneHeaders(headers)
         this.body = nativeH2Clone(body)
+        this.informational = nativeH2CloneResponseHeads(informational)
+        this.trailers = nativeH2CloneHeaders(trailers)
     }
 
     public func header(name: String): ?String {
@@ -64,20 +74,34 @@ public class NativeH2ClientResponse {
     }
 }
 
-class NativeH2DecodedResponseHead {
-    let status: UInt16
-    let headers: Array<NativeH2Header>
+public class NativeH2ClientResponseHead {
+    public let status: UInt16
+    public let headers: Array<NativeH2Header>
 
-    init(status: UInt16, headers: Array<NativeH2Header>) {
+    public init(status: UInt16, headers: Array<NativeH2Header>) {
         this.status = status
         this.headers = nativeH2CloneHeaders(headers)
     }
+
+    public func header(name: String): ?String {
+        let normalized = name.trimAscii().toAsciiLower()
+        for (header in headers) {
+            if (header.name == normalized) {
+                return Some(header.value)
+            }
+        }
+        None
+    }
 }
+
+type NativeH2DecodedResponseHead = NativeH2ClientResponseHead
 
 class NativeH2ClientResponseStream {
     let streamId: Int64
     var head: ?NativeH2DecodedResponseHead = None
+    let informational = ArrayList<NativeH2ClientResponseHead>()
     let body = ArrayList<UInt8>()
+    var trailers = Array<NativeH2Header>()
     var consumedFlowCredit: Int64 = 0
     var ended = false
 
@@ -90,7 +114,42 @@ class NativeH2ClientResponseStream {
         if (!ended) {
             throw Exception("native H2 client response stream is incomplete")
         }
-        NativeH2ClientResponse(decoded.status, decoded.headers, body.toArray())
+        NativeH2ClientResponse(
+            decoded.status,
+            decoded.headers,
+            body.toArray(),
+            informational: informational.toArray(),
+            trailers: trailers
+        )
+    }
+}
+
+class NativeH2PendingResponseHead {
+    let streamId: Int64
+    let endStream: Bool
+    let payload = ArrayList<UInt8>()
+
+    init(streamId: Int64, endStream: Bool, firstPayload: Array<UInt8>) {
+        this.streamId = streamId
+        this.endStream = endStream
+        append(firstPayload)
+    }
+
+    func append(nextPayload: Array<UInt8>): Unit {
+        if (payload.size + nextPayload.size > NATIVE_H2_MAX_REQUEST_HEADER_BLOCK) {
+            nativeH2ClientProtocolFailure(
+                streamId,
+                NATIVE_H2_ERROR_COMPRESSION,
+                "native H2 client response header block exceeds 64 KiB"
+            )
+        }
+        for (value in nextPayload) {
+            payload.add(value)
+        }
+    }
+
+    func headerBlock(): Array<UInt8> {
+        payload.toArray()
     }
 }
 
@@ -100,6 +159,7 @@ class NativeH2ClientConnectionState {
     var nextStreamId: Int64
     var completedStreams: Int64 = 0
     var consumedConnectionFlowCredit: Int64 = 0
+    var pendingResponseHead: ?NativeH2PendingResponseHead = None
 
     init(nextStreamId: Int64) {
         this.nextStreamId = nextStreamId
@@ -232,6 +292,47 @@ func nativeH2ClientSendBatch(
 
     while (connection.completedStreams < requests.size) {
         let frame = nativeH2ClientReadFrame(socket)
+        if (let Some(pending) <- connection.pendingResponseHead) {
+            if (frame.frameType != UInt8(0x9)) {
+                nativeH2ClientProtocolFailure(
+                    pending.streamId,
+                    NATIVE_H2_ERROR_PROTOCOL,
+                    "native H2 client requires contiguous CONTINUATION frames"
+                )
+            }
+            if (frame.streamId != pending.streamId) {
+                nativeH2ClientProtocolFailure(
+                    pending.streamId,
+                    NATIVE_H2_ERROR_PROTOCOL,
+                    "native H2 client CONTINUATION must remain on the opened stream"
+                )
+            }
+            pending.append(frame.payload)
+            if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
+                let stream = connection.streams.get(pending.streamId) ??
+                    nativeH2ClientProtocolFailure(
+                        pending.streamId,
+                        NATIVE_H2_ERROR_PROTOCOL,
+                        "native H2 client CONTINUATION references an unknown stream"
+                    )
+                nativeH2ClientApplyResponseHeaderBlock(
+                    connection,
+                    stream,
+                    pending.endStream,
+                    pending.headerBlock(),
+                    responseDecoder
+                )
+                connection.pendingResponseHead = None
+            }
+            continue
+        }
+        if (frame.frameType == UInt8(0x9)) {
+            nativeH2ClientProtocolFailure(
+                frame.streamId,
+                NATIVE_H2_ERROR_PROTOCOL,
+                "native H2 client received orphan CONTINUATION"
+            )
+        }
         if (frame.frameType == UInt8(0x4)) {
             if (frame.streamId != 0) {
                 throw Exception("native H2 client received SETTINGS on a stream")
@@ -273,16 +374,23 @@ func nativeH2ClientSendBatch(
         if (frame.frameType == UInt8(0x1)) {
             let stream = connection.streams.get(frame.streamId) ??
                 throw Exception("native H2 client received HEADERS for an unknown stream")
+            if (stream.ended) {
+                nativeH2ClientProtocolFailure(
+                    frame.streamId,
+                    NATIVE_H2_ERROR_STREAM_CLOSED,
+                    "native H2 client received HEADERS after stream completion"
+                )
+            }
+            let headerBlock = nativeH2ClientHeaderBlockFragment(frame)
+            let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
             if ((frame.flags & UInt8(0x4)) == UInt8(0)) {
-                throw Exception("native H2 client requires END_HEADERS response")
-            }
-            if (stream.head.isSome()) {
-                throw Exception("native H2 client received duplicate response HEADERS")
-            }
-            stream.head = Some(responseDecoder.decodeResponseHead(frame.payload))
-            if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
-                stream.ended = true
-                connection.completedStreams += 1
+                connection.pendingResponseHead = Some(
+                    NativeH2PendingResponseHead(frame.streamId, endStream, headerBlock)
+                )
+            } else {
+                nativeH2ClientApplyResponseHeaderBlock(
+                    connection, stream, endStream, headerBlock, responseDecoder
+                )
             }
             continue
         }
@@ -346,6 +454,138 @@ func nativeH2ClientSendBatch(
         responses.add(stream.response())
     }
     (responses.toArray(), connection.nextStreamId)
+}
+
+func nativeH2ClientApplyResponseHeaderBlock(
+    connection: NativeH2ClientConnectionState,
+    stream: NativeH2ClientResponseStream,
+    endStream: Bool,
+    payload: Array<UInt8>,
+    responseDecoder: NativeH2HpackDecoderState
+): Unit {
+    if (stream.head.isNone()) {
+        let decoded = responseDecoder.decodeResponseHead(payload)
+        if (decoded.status >= 100 && decoded.status < 200) {
+            if (decoded.status == 101) {
+                nativeH2ClientProtocolFailure(
+                    stream.streamId,
+                    NATIVE_H2_ERROR_PROTOCOL,
+                    "native H2 client forbids 101 Switching Protocols"
+                )
+            }
+            if (endStream) {
+                nativeH2ClientProtocolFailure(
+                    stream.streamId,
+                    NATIVE_H2_ERROR_PROTOCOL,
+                    "native H2 informational response cannot end the stream"
+                )
+            }
+            stream.informational.add(decoded)
+            return
+        }
+        stream.head = Some(decoded)
+        if (endStream) {
+            nativeH2ClientCompleteResponseStream(connection, stream)
+        }
+        return
+    }
+
+    if (!endStream) {
+        nativeH2ClientProtocolFailure(
+            stream.streamId,
+            NATIVE_H2_ERROR_PROTOCOL,
+            "native H2 response trailers must end the stream"
+        )
+    }
+    stream.trailers = responseDecoder.decodeResponseTrailers(payload)
+    nativeH2ClientCompleteResponseStream(connection, stream)
+}
+
+func nativeH2ClientCompleteResponseStream(
+    connection: NativeH2ClientConnectionState,
+    stream: NativeH2ClientResponseStream
+): Unit {
+    if (stream.ended) {
+        nativeH2ClientProtocolFailure(
+            stream.streamId,
+            NATIVE_H2_ERROR_STREAM_CLOSED,
+            "native H2 client response stream completed more than once"
+        )
+    }
+    stream.ended = true
+    connection.completedStreams += 1
+}
+
+func nativeH2ClientProtocolFailure(
+    streamId: Int64,
+    errorCode: Int64,
+    message: String
+): Nothing {
+    throw NativeH2ClientException("protocol", streamId, errorCode, message)
+}
+
+func nativeH2ClientHeaderBlockFragment(frame: NativeH2Frame): Array<UInt8> {
+    let padded = (frame.flags & UInt8(0x8)) != UInt8(0)
+    let prioritized = (frame.flags & UInt8(0x20)) != UInt8(0)
+    if (!padded && !prioritized) {
+        return frame.payload
+    }
+
+    var cursor: Int64 = 0
+    var paddingLength: Int64 = 0
+    if (padded) {
+        if (frame.payload.size < 1) {
+            nativeH2ClientProtocolFailure(
+                frame.streamId,
+                NATIVE_H2_ERROR_PROTOCOL,
+                "native H2 client padded HEADERS is missing pad length"
+            )
+        }
+        paddingLength = Int64(frame.payload[0])
+        cursor = 1
+    }
+    if (prioritized) {
+        if (frame.payload.size - cursor < 5) {
+            nativeH2ClientProtocolFailure(
+                frame.streamId,
+                NATIVE_H2_ERROR_FRAME_SIZE,
+                "native H2 client priority HEADERS prefix is truncated"
+            )
+        }
+        let dependency =
+            ((Int64(frame.payload[cursor]) & 0x7f) << 24) +
+            (Int64(frame.payload[cursor + 1]) << 16) +
+            (Int64(frame.payload[cursor + 2]) << 8) +
+            Int64(frame.payload[cursor + 3])
+        if (dependency == frame.streamId) {
+            nativeH2ClientProtocolFailure(
+                frame.streamId,
+                NATIVE_H2_ERROR_PROTOCOL,
+                "native H2 client priority HEADERS cannot depend on itself"
+            )
+        }
+        cursor += 5
+    }
+
+    let end = frame.payload.size - paddingLength
+    if (end < cursor) {
+        nativeH2ClientProtocolFailure(
+            frame.streamId,
+            NATIVE_H2_ERROR_PROTOCOL,
+            "native H2 client HEADERS padding exceeds payload"
+        )
+    }
+    nativeH2Slice(frame.payload, cursor, end)
+}
+
+func nativeH2CloneResponseHeads(
+    input: Array<NativeH2ClientResponseHead>
+): Array<NativeH2ClientResponseHead> {
+    let out = ArrayList<NativeH2ClientResponseHead>()
+    for (head in input) {
+        out.add(NativeH2ClientResponseHead(head.status, head.headers))
+    }
+    out.toArray()
 }
 
 func nativeH2ClientReadFrame(socket: TcpSocket): NativeH2Frame {

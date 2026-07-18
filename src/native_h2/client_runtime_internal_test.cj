@@ -1,6 +1,7 @@
 package ignite.native_h2
 
 import ignite.App
+import std.collection.ArrayList
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 
 @Test
@@ -188,6 +189,91 @@ public class NativeH2ClientRuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeClientConsumesInformationalContinuationAndTrailers(): Unit {
+        let response = nativeH2ClientResponseSequenceFixture({ socket, streamId =>
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x4), streamId,
+                    nativeH2ClientTestEncodeResponseHead(
+                        103,
+                        [NativeH2Header("link", "</style.css>; rel=preload")]
+                    )
+                )
+            )
+            let finalHead = nativeH2ClientTestEncodeResponseHead(
+                200,
+                [NativeH2Header("x-final", "accepted")]
+            )
+            let split = finalHead.size / 2
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0), streamId,
+                    nativeH2Slice(finalHead, 0, split)
+                )
+            )
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(
+                    UInt8(0x9), UInt8(0x4), streamId,
+                    nativeH2Slice(finalHead, split, finalHead.size)
+                )
+            )
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(UInt8(0x0), UInt8(0), streamId, "body".toArray())
+            )
+            nativeH2WriteFrame(
+                socket,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), streamId,
+                    nativeH2ClientTestEncodeHeaders([
+                        NativeH2Header("x-trailer", "complete")
+                    ])
+                )
+            )
+        })
+
+        @Assert(response.status, UInt16(200))
+        @Assert(response.header("x-final") ?? "", "accepted")
+        @Assert(String.fromUtf8(response.body), "body")
+        @Assert(response.informational.size, 1)
+        @Assert(response.informational[0].status, UInt16(103))
+        @Assert(response.informational[0].header("link") ?? "", "</style.css>; rel=preload")
+        @Assert(response.trailers.size, 1)
+        @Assert(response.trailers[0].name, "x-trailer")
+        @Assert(response.trailers[0].value, "complete")
+    }
+
+    @TestCase
+    public func testNativeClientRejectsInterruptedContinuationSequence(): Unit {
+        let failure = nativeH2ClientFailureFixture(
+            { socket, streamId =>
+                let head = nativeH2ClientTestEncodeResponseHead(200, Array<NativeH2Header>())
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(
+                        UInt8(0x1), UInt8(0), streamId,
+                        nativeH2Slice(head, 0, 1)
+                    )
+                )
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(
+                        UInt8(0x6), UInt8(0), 0,
+                        Array<UInt8>(8, repeat: UInt8(0))
+                    )
+                )
+            },
+            Duration.second * 2
+        )
+        @Assert(failure.failureKind, "protocol")
+        @Assert(failure.streamId, 1)
+        @Assert(failure.errorCode, NATIVE_H2_ERROR_PROTOCOL)
+    }
+
+    @TestCase
     public func testNativeClientClassifiesResetAndGoAway(): Unit {
         let reset = nativeH2ClientFailureFixture(
             { socket, streamId =>
@@ -272,6 +358,66 @@ func nativeH2ClientFailureFixture(
         try { listener.close() } catch (_: Exception) {}
     }
     observed ?? throw Exception("native H2 client failure fixture did not fail")
+}
+
+func nativeH2ClientResponseSequenceFixture(
+    serverAction: (TcpSocket, Int64) -> Unit
+): NativeH2ClientResponse {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+    listener.bind()
+    let port = (listener.localAddress as IPSocketAddress)?.port ??
+        throw Exception("native H2 client response fixture could not reserve loopback port")
+    let serverFuture = spawn {
+        let accepted = listener.accept()
+        try {
+            let streamId = nativeH2ClientTestHandshakeAndReadRequest(accepted)
+            serverAction(accepted, streamId)
+        } finally {
+            try { accepted.close() } catch (_: Exception) {}
+        }
+    }
+
+    let socket = TcpSocket("127.0.0.1", port)
+    try {
+        socket.connect(timeout: Some(Duration.second * 2))
+        socket.readTimeout = Some(Duration.second * 2)
+        socket.writeTimeout = Some(Duration.second * 2)
+        let response = sendNativeH2SingleStreamRequest(
+            socket,
+            NativeH2ClientRequest("GET", "http", "localhost", "/response-sequence")
+        )
+        let _ = serverFuture.get(Duration.second * 2)
+        response
+    } finally {
+        try { socket.close() } catch (_: Exception) {}
+        try { listener.close() } catch (_: Exception) {}
+    }
+}
+
+func nativeH2ClientTestEncodeResponseHead(
+    status: UInt16,
+    headers: Array<NativeH2Header>
+): Array<UInt8> {
+    let out = ArrayList<UInt8>()
+    out.add(UInt8(0x08))
+    out.add(UInt8(0x03))
+    nativeH2AppendBytes(out, status.toString().toArray())
+    nativeH2AppendBytes(out, nativeH2ClientTestEncodeHeaders(headers))
+    out.toArray()
+}
+
+func nativeH2ClientTestEncodeHeaders(headers: Array<NativeH2Header>): Array<UInt8> {
+    let out = ArrayList<UInt8>()
+    for (header in headers) {
+        let name = header.name.toArray()
+        let value = header.value.toArray()
+        out.add(UInt8(0))
+        out.add(UInt8(name.size))
+        nativeH2AppendBytes(out, name)
+        out.add(UInt8(value.size))
+        nativeH2AppendBytes(out, value)
+    }
+    out.toArray()
 }
 
 func nativeH2ClientTestHandshakeAndReadRequest(socket: TcpSocket): Int64 {

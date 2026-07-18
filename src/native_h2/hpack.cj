@@ -225,6 +225,20 @@ class NativeH2HpackDecoderState {
             nativeH2ParseResponseStatus(statusText), headers.toArray()
         )
     }
+
+    func decodeResponseTrailers(payload: Array<UInt8>): Array<NativeH2Header> {
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let trailers = ArrayList<NativeH2Header>()
+        for (field in fields) {
+            if (field.name.startsWith(":")) {
+                nativeH2HpackFailure(
+                    "native H2 response trailers must not contain pseudo-headers"
+                )
+            }
+            trailers.add(NativeH2Header(field.name, field.value))
+        }
+        trailers.toArray()
+    }
 }
 
 func nativeH2ParseResponseStatus(value: String): UInt16 {
