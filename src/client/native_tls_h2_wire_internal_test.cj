@@ -64,9 +64,123 @@ public class NativeTlsH2WireInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testRestClientReusesOneNativeTlsH2SessionAfterCompleteBodies(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 reuse test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2ReuseFixture(accepted)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+            .useNativeTls(NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            ))
+        try {
+            let first = client.get("https://127.0.0.1:${port}/reuse-1")
+            @Assert(first.body(), "reuse-h2-1")
+            let second = client.get("https://127.0.0.1:${port}/reuse-2")
+            @Assert(second.body(), "reuse-h2-2")
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientRetiresNativeTlsH2SessionAfterPrematureClose(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 retirement test could not reserve loopback port")
+        let serverFuture = spawn {
+            for (turn in 1..3) {
+                let accepted = listener.accept()
+                accepted.readTimeout = Some(Duration.second * 3)
+                accepted.writeTimeout = Some(Duration.second * 3)
+                try {
+                    serveNativeTlsH2SingleTurnFixture(accepted, turn)
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+            .useNativeTls(NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            ))
+        try {
+            let first = client.get("https://127.0.0.1:${port}/retire-1")
+            first.close()
+            let second = client.get("https://127.0.0.1:${port}/retire-2")
+            @Assert(second.body(), "retire-h2-2")
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
 }
 
 func serveNativeTlsH2Fixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let head = nativeTlsH2ReadRequestHead(tls)
+    if (head.streamId != 1) {
+        throw Exception("native TLS H2 fixture expected stream 1")
+    }
+    nativeTlsH2WriteResponse(tls, 1, "native-tls-h2-ok")
+}
+
+func serveNativeTlsH2ReuseFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    for (turn in 1..3) {
+        let head = nativeTlsH2ReadRequestHead(tls)
+        let expectedStreamId = turn * 2 - 1
+        if (head.streamId != expectedStreamId) {
+            throw Exception("native TLS H2 reuse fixture received unexpected stream")
+        }
+        nativeTlsH2WriteResponse(tls, expectedStreamId, "reuse-h2-${turn}")
+    }
+}
+
+func serveNativeTlsH2SingleTurnFixture(socket: TcpSocket, turn: Int64): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let head = nativeTlsH2ReadRequestHead(tls)
+    if (head.streamId != 1) {
+        throw Exception("native TLS H2 retirement fixture expected stream 1")
+    }
+    nativeTlsH2WriteResponse(tls, 1, "retire-h2-${turn}")
+}
+
+func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTransport {
     let raw = TcpSocketByteTransport(socket)
     let clientHelloRecord = nativeTlsH1ReadRecord(raw)
     let certChain = nativeTlsTestText("policy_leaf.pem") + "\n" +
@@ -132,6 +246,10 @@ func serveNativeTlsH2Fixture(socket: TcpSocket): Unit {
         NativeTlsH2TestFrame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
     )
 
+    tls
+}
+
+func nativeTlsH2ReadRequestHead(tls: NativeByteTransport): NativeTlsH2TestFrame {
     var requestHead: ?NativeTlsH2TestFrame = None
     while (requestHead.isNone()) {
         let frame = nativeTlsH2ReadFrame(tls)
@@ -139,23 +257,22 @@ func serveNativeTlsH2Fixture(socket: TcpSocket): Unit {
             requestHead = Some(frame)
         }
     }
-    let head = requestHead ?? throw Exception("native TLS H2 fixture request head is missing")
-    if (head.streamId != 1) {
-        throw Exception("native TLS H2 fixture expected stream 1")
-    }
+    requestHead ?? throw Exception("native TLS H2 fixture request head is missing")
+}
 
+func nativeTlsH2WriteResponse(tls: NativeByteTransport, streamId: Int64, body: String): Unit {
     nativeTlsH2WriteFrame(
         tls,
         NativeTlsH2TestFrame(
-            UInt8(0x1), UInt8(0x4), 1,
+            UInt8(0x1), UInt8(0x4), streamId,
             nativeTlsH2ResponseHeadBlock()
         )
     )
     nativeTlsH2WriteFrame(
         tls,
         NativeTlsH2TestFrame(
-            UInt8(0x0), UInt8(0x1), 1,
-            "native-tls-h2-ok".toArray()
+            UInt8(0x0), UInt8(0x1), streamId,
+            body.toArray()
         )
     )
 }

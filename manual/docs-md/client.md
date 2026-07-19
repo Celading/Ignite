@@ -268,8 +268,10 @@ response.discard()
 
 这条 Preview 会由 Ignite 持有 TCP socket，JinguiSSL Contract 负责 TLS1.3
 握手推导、证书/hostname policy、client Finished 和 application-data record。
-当前不自动读取系统 CA，也不复用 TLS 连接；H1 backend 协商到 `h2` 会明确
-失败，不会偷偷降级为 H1 或 stdx。
+当前不自动读取系统 CA；完整消费可复用响应后，同源且信任策略完全一致的 H1
+TLS 连接会进入有界连接池。提前关闭、错误、close-delimited 或
+`Connection: close` 都会淘汰连接。H1 backend 协商到 `h2` 会明确失败，不会
+偷偷降级为 H1 或 stdx。
 
 ## Native H2 HTTPS Preview
 
@@ -292,9 +294,10 @@ response.discard()
 ```
 
 这条路径不另造一套 H2 parser：TLS record 解密后的字节直接进入现有 Native
-H2 Client 主电路。当前 TLS H2 每次请求独占连接，不进入明文 H2 连接池；仍只
+H2 Client 主电路。完整消费 streamed response lease 后，同源且信任策略完全
+一致的 TLS H2 连接可顺序归池；提前关闭会发送 CANCEL 并淘汰连接。当前仍只
 支持 buffered/replayable request body 和每连接一个公开 streamed response
-lease。
+lease，不开放公开并发多路 lease API。
 
 ## 响应读取与大包读取
 

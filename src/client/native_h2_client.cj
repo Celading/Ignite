@@ -8,6 +8,7 @@ import ignite.native_h2.{
     NativeH2Header
 }
 import std.collection.{ArrayList, HashMap}
+import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
 import stdx.net.http.HttpHeaders
@@ -176,6 +177,32 @@ func sendNativeH2RequestOverTransport(
     }
 }
 
+func sendNativeH2RequestOverPooledTransport(
+    method: String,
+    url: String,
+    headers: HashMap<String, String>,
+    body: Array<UInt8>,
+    protocol: NativeH2ClientConnection,
+    transport: NativeByteTransport,
+    settle: (Bool) -> Unit
+): ClientResponse {
+    let target = parseNativeH1Target(url)
+    let request = NativeH2ClientRequest(
+        method,
+        target.scheme,
+        target.hostHeader,
+        target.requestTarget,
+        body: body,
+        headers: nativeH2RequestHeaders(headers)
+    )
+    let streamed = try {
+        protocol.sendStreamed(request)
+    } catch (e: NativeH2ClientException) {
+        throw nativeH2ProtocolTransportException(e)
+    }
+    adaptNativeH2PooledTransportResponse(streamed, transport, settle)
+}
+
 func openNativeH2Connection(
     target: NativeH1ClientTarget,
     readTimeout: Duration,
@@ -247,6 +274,80 @@ func adaptNativeH2TransportResponse(
             try { transport.close() } catch (_: Exception) {}
         }
     )
+}
+
+func adaptNativeH2PooledTransportResponse(
+    response: NativeH2ClientStreamedResponse,
+    transport: NativeByteTransport,
+    settle: (Bool) -> Unit
+): ClientResponse {
+    let headers = HttpHeaders()
+    for (header in response.headers) {
+        headers.add(header.name, header.value)
+    }
+    let stream = NativeH2PooledResponseInputStream(response, transport, settle)
+    ClientResponse(
+        response.status,
+        headers,
+        stream,
+        closeHook: { => stream.close() }
+    )
+}
+
+class NativeH2PooledResponseInputStream <: InputStream & Resource {
+    let response: NativeH2ClientStreamedResponse
+    let body: InputStream
+    let transport: NativeByteTransport
+    let settle: (Bool) -> Unit
+    var settled = false
+
+    init(
+        response: NativeH2ClientStreamedResponse,
+        transport: NativeByteTransport,
+        settle: (Bool) -> Unit
+    ) {
+        this.response = response
+        this.body = response.bodyStream()
+        this.transport = transport
+        this.settle = settle
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (settled) {
+            return 0
+        }
+        try {
+            let count = body.read(outBuf)
+            if (count <= 0) {
+                finish(!transport.isClosed())
+            }
+            count
+        } catch (e: Exception) {
+            response.close()
+            finish(false)
+            throw e
+        }
+    }
+
+    public func close(): Unit {
+        if (settled) {
+            return
+        }
+        response.close()
+        finish(false)
+    }
+
+    public func isClosed(): Bool {
+        settled
+    }
+
+    func finish(reusable: Bool): Unit {
+        if (settled) {
+            return
+        }
+        settled = true
+        settle(reusable)
+    }
 }
 
 func nativeH2ProtocolTransportException(origin: NativeH2ClientException): Exception {

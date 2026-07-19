@@ -71,6 +71,8 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
     let reader: NativeH1TransportReader
     let transport: NativeByteTransport
     let mode: String
+    let reusable: Bool
+    let settleHook: ?((Bool) -> Unit)
     var remaining: Int64
     var chunkRemaining: Int64 = 0
     var closed: Bool = false
@@ -79,12 +81,16 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
         transport: NativeByteTransport,
         prefetched: Array<UInt8>,
         mode: String,
-        remaining: Int64
+        remaining: Int64,
+        reusable!: Bool = false,
+        settleHook!: ?((Bool) -> Unit) = None
     ) {
         this.transport = transport
         this.reader = NativeH1TransportReader(transport, prefetched)
         this.mode = mode
         this.remaining = remaining
+        this.reusable = reusable
+        this.settleHook = settleHook
     }
 
     public override func read(outBuf: Array<Byte>): Int64 {
@@ -106,11 +112,19 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
     }
 
     public func close(): Unit {
+        finish(false)
+    }
+
+    func finish(completed: Bool): Unit {
         if (closed) {
             return
         }
         closed = true
-        try { transport.close() } catch (_: Exception) {}
+        if (let Some(settle) <- settleHook) {
+            settle(completed && reusable)
+        } else {
+            try { transport.close() } catch (_: Exception) {}
+        }
     }
 
     public func isClosed(): Bool {
@@ -119,7 +133,7 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
 
     func readLengthBody(outBuf: Array<Byte>): Int64 {
         if (remaining <= 0) {
-            close()
+            finish(true)
             return 0
         }
         let count = reader.readAtMost(outBuf, remaining)
@@ -128,7 +142,7 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
         }
         remaining -= count
         if (remaining == 0) {
-            close()
+            finish(true)
         }
         count
     }
@@ -136,7 +150,7 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
     func readCloseDelimitedBody(outBuf: Array<Byte>): Int64 {
         let count = reader.readAtMost(outBuf, outBuf.size)
         if (count <= 0) {
-            close()
+            finish(false)
             return 0
         }
         count
@@ -159,7 +173,7 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
                 }
                 if (chunkRemaining == 0) {
                     consumeTrailers()
-                    close()
+                    finish(true)
                     return total
                 }
             }
@@ -199,13 +213,15 @@ func sendNativeH1RequestOverTransport(
     body: Array<UInt8>,
     bodyStream: ?InputStream,
     bodyStreamLength: Int64,
-    transport: NativeByteTransport
+    transport: NativeByteTransport,
+    reusable!: Bool = false,
+    settleHook!: ?((Bool) -> Unit) = None
 ): ClientResponse {
     let target = parseNativeH1Target(url)
     var transferred = false
     try {
         let contentLength = if (bodyStream.isSome()) { bodyStreamLength } else { body.size }
-        transport.write(buildNativeH1RequestHead(method, target, headers, contentLength, false))
+        transport.write(buildNativeH1RequestHead(method, target, headers, contentLength, reusable))
         match (bodyStream) {
             case Some(stream) => writeNativeH1TransportStream(transport, stream, bodyStreamLength)
             case None =>
@@ -213,7 +229,12 @@ func sendNativeH1RequestOverTransport(
                     transport.write(body)
                 }
         }
-        let response = readNativeH1TransportResponse(transport, method)
+        let response = readNativeH1TransportResponse(
+            transport,
+            method,
+            reusable: reusable,
+            settleHook: settleHook
+        )
         transferred = true
         response
     } finally {
@@ -277,7 +298,9 @@ func readNativeH1TransportResponseHeader(
 
 func readNativeH1TransportResponse(
     transport: NativeByteTransport,
-    method: String
+    method: String,
+    reusable!: Bool = false,
+    settleHook!: ?((Bool) -> Unit) = None
 ): ClientResponse {
     var readResult = readNativeH1TransportResponseHeader(transport)
     var parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
@@ -295,20 +318,48 @@ func readNativeH1TransportResponse(
     }
     let statusValue = parsedHead.status
     let headers: HttpHeaders = parsedHead.headers
+    var responseReusable = reusable && statusValue != 101 &&
+        !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" || statusValue == 204 || statusValue == 304) {
-        transport.close()
+        responseReusable = responseReusable && readResult.prefetchedBody.size == 0
+        if (let Some(settle) <- settleHook) {
+            settle(responseReusable)
+        } else {
+            transport.close()
+        }
         return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream([]))
     }
     let stream = if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
-        NativeH1TransportResponseInputStream(transport, readResult.prefetchedBody, "chunked", -1)
+        NativeH1TransportResponseInputStream(
+            transport,
+            readResult.prefetchedBody,
+            "chunked",
+            -1,
+            reusable: responseReusable,
+            settleHook: settleHook
+        )
     } else if (let Some(lengthText) <- headers.getFirst("content-length")) {
         let length = parseNativeH1Decimal(lengthText)
         if (length < 0) {
             throw Exception("native H1 response Content-Length is invalid")
         }
-        NativeH1TransportResponseInputStream(transport, readResult.prefetchedBody, "length", length)
+        NativeH1TransportResponseInputStream(
+            transport,
+            readResult.prefetchedBody,
+            "length",
+            length,
+            reusable: responseReusable,
+            settleHook: settleHook
+        )
     } else {
-        NativeH1TransportResponseInputStream(transport, readResult.prefetchedBody, "close", -1)
+        NativeH1TransportResponseInputStream(
+            transport,
+            readResult.prefetchedBody,
+            "close",
+            -1,
+            reusable: false,
+            settleHook: settleHook
+        )
     }
     ClientResponse(
         UInt16(statusValue),

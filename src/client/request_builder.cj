@@ -30,6 +30,8 @@ public class RequestBuilder {
     let _writeTimeout: Duration
     let _nativeH1Pool: NativeH1ClientConnectionPool
     var _nativeH2Pool = NativeH2ClientConnectionPool(0)
+    var _nativeTlsH1Pool = NativeTlsH1ConnectionPool(0)
+    var _nativeTlsH2Pool = NativeTlsH2ConnectionPool(0)
     let _defaultNativeTlsConfig: ?NativeTls13ClientConfig
     let _captureObserveHook: ?ClientObserveHook
     let _captureTransportTouchpointHook: ?ClientTransportTouchpointHook
@@ -118,6 +120,15 @@ public class RequestBuilder {
 
     func attachNativeH2Pool(pool: NativeH2ClientConnectionPool): RequestBuilder {
         _nativeH2Pool = pool
+        this
+    }
+
+    func attachNativeTlsPools(
+        h1Pool: NativeTlsH1ConnectionPool,
+        h2Pool: NativeTlsH2ConnectionPool
+    ): RequestBuilder {
+        _nativeTlsH1Pool = h1Pool
+        _nativeTlsH2Pool = h2Pool
         this
     }
 
@@ -630,7 +641,9 @@ public class RequestBuilder {
                             nativeRequestBodyStreamLength,
                             _readTimeout,
                             _writeTimeout,
-                            tlsConfig
+                            tlsConfig,
+                            h1Pool: Some(_nativeTlsH1Pool),
+                            h2Pool: Some(_nativeTlsH2Pool)
                         )
                     } else {
                         sendNativeH1Request(
@@ -663,7 +676,9 @@ public class RequestBuilder {
                             _readTimeout,
                             _writeTimeout,
                             tlsConfig,
-                            expectedAlpn: "h2"
+                            expectedAlpn: "h2",
+                            h1Pool: Some(_nativeTlsH1Pool),
+                            h2Pool: Some(_nativeTlsH2Pool)
                         )
                     } else {
                         sendNativeH2Request(
