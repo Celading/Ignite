@@ -23,6 +23,7 @@ let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_S
 
 public class SocketServerEngineShellRuntimeControl {
     let _mtx = Mutex()
+    let _runtimeCounters = SocketServerRuntimeCounters()
     var _shutdownRequested: Bool = false
     var _listener: ?TcpServerSocket = None
 
@@ -58,6 +59,38 @@ public class SocketServerEngineShellRuntimeControl {
         synchronized(_mtx) {
             _shutdownRequested
         }
+    }
+
+    func connectionAccepted(): Unit {
+        _runtimeCounters.connectionAccepted()
+    }
+
+    func connectionClosed(): Unit {
+        _runtimeCounters.connectionClosed()
+    }
+
+    func keepAliveWaitStarted(): Unit {
+        _runtimeCounters.keepAliveWaitStarted()
+    }
+
+    func keepAliveWaitFinished(): Unit {
+        _runtimeCounters.keepAliveWaitFinished()
+    }
+
+    func requestStarted(): Unit {
+        _runtimeCounters.requestStarted()
+    }
+
+    func requestCompleted(): Unit {
+        _runtimeCounters.requestCompleted()
+    }
+
+    func requestRejected(started: Bool): Unit {
+        _runtimeCounters.requestRejected(started)
+    }
+
+    public func runtimeCounterSnapshot(): ServerRuntimeCounterSnapshot {
+        _runtimeCounters.snapshot()
     }
 }
 
@@ -613,11 +646,13 @@ func serveSocketServerEngineShellTurns(
         try {
             let accepted = listener.accept()
             acceptedConnectionCount += 1
+            control.connectionAccepted()
             spawn {
                 serveSocketServerEngineShellAcceptedConnection(
                     accepted,
                     app,
-                    option
+                    option,
+                    control
                 )
             }
         } catch (e: Exception) {
@@ -679,33 +714,48 @@ func socketServerEngineShellParsePositiveInt64(text: String): ?Int64 {
 func serveSocketServerEngineShellAcceptedConnection(
     accepted: TcpSocket,
     app: App,
-    option: ServerEngineListenOption
+    option: ServerEngineListenOption,
+    control: SocketServerEngineShellRuntimeControl
 ): Unit {
     try {
         accepted.writeTimeout = Some(option.writeTimeout)
         serveSocketServerEngineShellSocketTurns(
             accepted,
             app,
-            option
+            option,
+            control
         )
     } finally {
         if (!accepted.isClosed()) {
             accepted.close()
         }
+        control.connectionClosed()
     }
 }
 
 func serveSocketServerEngineShellSocketTurns(
     socket: TcpSocket,
     app: App,
-    option: ServerEngineListenOption
+    option: ServerEngineListenOption,
+    control: SocketServerEngineShellRuntimeControl
 ): Unit {
     var moreTurns = true
+    var keepAliveWaitActive = false
     let requestHeadReadBuffer = Array<UInt8>(4096, repeat: 0)
     while (moreTurns) {
+        if (keepAliveWaitActive) {
+            control.keepAliveWaitStarted()
+        }
+        var requestStarted = false
         try {
             socket.readTimeout = Some(option.readHeaderTimeout)
             let request = readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
+            if (keepAliveWaitActive) {
+                control.keepAliveWaitFinished()
+                keepAliveWaitActive = false
+            }
+            control.requestStarted()
+            requestStarted = true
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
@@ -723,6 +773,8 @@ func serveSocketServerEngineShellSocketTurns(
                     seed,
                     socket.remoteAddress.toString()
                 )
+                control.requestRejected(true)
+                requestStarted = false
                 moreTurns = false
                 continue
             }
@@ -735,6 +787,8 @@ func serveSocketServerEngineShellSocketTurns(
             )
             app.handleRequest(carrier)
             if (carrier.nativeWebSocketUpgraded()) {
+                control.requestCompleted()
+                requestStarted = false
                 moreTurns = false
                 continue
             }
@@ -745,14 +799,46 @@ func serveSocketServerEngineShellSocketTurns(
                 carrier,
                 closeAfterWrite
             )
-            if (!keepAliveAfterWrite) {
+            control.requestCompleted()
+            requestStarted = false
+            if (keepAliveAfterWrite) {
+                keepAliveWaitActive = true
+            } else {
                 moreTurns = false
             }
         } catch (_: SocketServerEngineShellException) {
+            let wasKeepAliveWait = keepAliveWaitActive
+            if (keepAliveWaitActive) {
+                control.keepAliveWaitFinished()
+                keepAliveWaitActive = false
+            }
+            if (requestStarted) {
+                control.requestRejected(true)
+                requestStarted = false
+            } else if (!wasKeepAliveWait) {
+                control.requestRejected(false)
+            }
             // bad-request turn containment: malformed or incomplete request-head
             // or shell-owned body-stage error on this accepted socket — stop
             // the keep-alive loop and let the caller close the socket
             moreTurns = false
+        } catch (e: Exception) {
+            let wasKeepAliveWait = keepAliveWaitActive
+            if (keepAliveWaitActive) {
+                control.keepAliveWaitFinished()
+                keepAliveWaitActive = false
+            }
+            if (requestStarted) {
+                control.requestRejected(true)
+                requestStarted = false
+            } else if (!wasKeepAliveWait) {
+                control.requestRejected(false)
+            }
+            throw e
+        } finally {
+            if (requestStarted) {
+                control.requestRejected(true)
+            }
         }
     }
 }

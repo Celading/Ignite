@@ -30,6 +30,9 @@ Run commands from the repository root that contains `cjpm.toml`.
 7. `manual/samples/handlefortest`
    - Multi-process stress probe for `App.handleForTest(...)`
    - Reuses one shared lease root so cross-process port planning can be exercised from files alone
+8. `manual/samples/native_h1_small_heap_hardening`
+   - Bounded `256mb` / `512mb` cleartext Native H1 pressure proof
+   - Records runtime counters, RSS, FD, socket settlement, and request errors
 
 For repeatable performance sampling after the functional samples pass, use
 [`../benchmark`](../benchmark). It is a repository-owned 0800 baseline rather
@@ -58,6 +61,9 @@ than a public cross-framework ranking.
   - Middleware composition and request flow
 - `manual/samples/brotli_interop`
   - Validate that the safe-Cangjie Brotli RAW/RLE Preview is decoded exactly by the system `brotli` tool
+- `manual/samples/native_h1_small_heap_hardening`
+  - Mixed prepared HTML, polling, reused HTTP/1.1 sessions, and slow-request load
+  - A hardening receipt rather than a public cross-framework benchmark
 
 ## Typical commands
 
@@ -70,6 +76,7 @@ than a public cross-framework ranking.
 ./manual/samples/h2wire/probe.sh
 ./manual/samples/h2wire/h2spec_smoke.sh
 ./manual/samples/handlefortest/probe.sh
+./manual/samples/native_h1_small_heap_hardening/probe.sh
 ./manual/benchmark/run.sh
 ```
 

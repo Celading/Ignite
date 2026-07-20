@@ -131,7 +131,7 @@ public class ProxyMiddlewareTestSuite {
         let upstreamPort = choosePort(1855)
         let proxyPort = choosePort(1856)
 
-        let proxy = App(config: Config())
+        let proxy = App(config: Config(enableIoDriverRequestDiagnostics: true))
         proxy.use({ ctx =>
             ctx.next()
             exposeProxyIoDriverLocalsAsTestHeaders(ctx)
@@ -181,7 +181,10 @@ public class ProxyMiddlewareTestSuite {
             _ = ctx.sendString("saved=${saved}")
         })
 
-        let proxy = App(config: Config(bodyLimit: 8 * 1024 * 1024))
+        let proxy = App(config: Config(
+            bodyLimit: 8 * 1024 * 1024,
+            enableIoDriverRequestDiagnostics: true
+        ))
         proxy.use({ ctx =>
             ctx.next()
             exposeProxyIoDriverLocalsAsTestHeaders(ctx)

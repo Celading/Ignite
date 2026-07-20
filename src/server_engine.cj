@@ -3468,7 +3468,7 @@ public class AppTlsDefaultSelectionMutationGate {
     }
 }
 
-public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouchpointOverride {
+public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouchpointOverride & ServerRuntimeObservabilityProvider {
     let _runtimeControl = SocketServerEngineShellRuntimeControl()
     let _selectionLabel: String
     let _tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
@@ -3623,6 +3623,10 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             socketServerEngineShellAcceptedConnectionLimit(_selectionLabel),
             tlsAcceptedSessionReadyHook: _tlsAcceptedSessionReadyHook
         )
+    }
+
+    public override func runtimeCounterSnapshot(): ServerRuntimeCounterSnapshot {
+        _runtimeControl.runtimeCounterSnapshot()
     }
 
     public override func shutdown(): Unit {

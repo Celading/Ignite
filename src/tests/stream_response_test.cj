@@ -32,7 +32,7 @@ public class StreamResponseTestSuite {
     @TestCase
     public func testSendStreamRecordsIoDriverStreamSeamDecisionInLocals(): Unit {
         let payload = "ignite-stream-iodriver"
-        let app = App(config: Config())
+        let app = App(config: Config(enableIoDriverRequestDiagnostics: true))
         app.get("/stream-iodriver", { ctx =>
             let stream = SendStreamBytesInput(toSendStreamByteArray(payload.toArray()))
             let _ = ctx.sendStream(
@@ -59,6 +59,31 @@ public class StreamResponseTestSuite {
             resp.header("x-test-iodriver-event-first") ?? "",
             "shape=http-response,driver=ignite-stream-seam,path=stable-stream-seam,zeroCopy=false,benchmark=false"
         )
+        @Assert(resp.body, payload)
+    }
+
+    @TestCase
+    public func testSendStreamDefaultDiagnosticsKeepOnlyCompactSelectionLocals(): Unit {
+        let payload = "ignite-stream-compact-iodriver"
+        let app = App(config: Config())
+        app.get("/stream-compact-iodriver", { ctx =>
+            let stream = SendStreamBytesInput(toSendStreamByteArray(payload.toArray()))
+            let _ = ctx.sendStream(
+                stream,
+                contentType: "text/plain; charset=utf-8",
+                contentLength: Some(payload.size)
+            )
+            exposeIoDriverLocalsAsTestHeaders(ctx)
+        })
+
+        let resp = app.handleForTest("GET", "/stream-compact-iodriver")
+        @Assert(resp.header("x-test-iodriver-selected") ?? "", "ignite-stream-seam")
+        @Assert(resp.header("x-test-iodriver-public-path") ?? "", "stable-stream-seam")
+        @Assert(resp.header("x-test-iodriver-shape") ?? "", "http-response")
+        @Assert(resp.header("x-test-iodriver-zero-copy") ?? "", "")
+        @Assert(resp.header("x-test-iodriver-benchmark") ?? "", "")
+        @Assert(resp.header("x-test-iodriver-events") ?? "", "")
+        @Assert(resp.header("x-test-iodriver-event-count") ?? "", "0")
         @Assert(resp.body, payload)
     }
 

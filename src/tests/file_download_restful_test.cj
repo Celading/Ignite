@@ -192,7 +192,7 @@ public class FileDownloadAndRestfulTestSuite {
         let payload = buildLargeAsciiPayload()
         writeTextFile(fixturePath, payload)
 
-        let app = App(config: Config())
+        let app = App(config: Config(enableIoDriverRequestDiagnostics: true))
         app.get("/download-wrapper-iodriver", { ctx =>
             let _ = ctx.download(fixturePath, filename: "wrapped.txt")
             exposeDownloadIoDriverLocalsAsTestHeaders(ctx)
@@ -217,7 +217,7 @@ public class FileDownloadAndRestfulTestSuite {
         let payload = buildLargeAsciiPayload()
         writeTextFile(fixturePath, payload)
 
-        let app = App(config: Config())
+        let app = App(config: Config(enableIoDriverRequestDiagnostics: true))
         app.get("/file-iodriver", { ctx =>
             let _ = ctx.sendFile(fixturePath)
             exposeDownloadIoDriverLocalsAsTestHeaders(ctx)
@@ -248,7 +248,7 @@ public class FileDownloadAndRestfulTestSuite {
         let payload = buildLargeAsciiPayload()
         writeTextFile(fixturePath, payload)
 
-        let app = App(config: Config())
+        let app = App(config: Config(enableIoDriverRequestDiagnostics: true))
         app.get("/range-iodriver", { ctx =>
             let _ = ctx.sendFileRange(fixturePath)
             exposeDownloadIoDriverLocalsAsTestHeaders(ctx)

@@ -190,10 +190,17 @@ app.listen("0.0.0.0", 443)
 - 如果你要更稳妥的生产接入，仍可优先考虑现有默认路径或在反向代理层完成 TLS 终结
 
 IG0800 preview 中，明文 HTTP/1.1 默认使用 Ignite native H1；如需显式回滚
-到 stdx server，可设置 `serverPreferredBackendHint: "stdx-default"`。native TLS
-仍是实验入口，只有同时设置 `serverPreferredBackendHint: "native-h1"` 与
+到 stdx server，新代码可设置 `serverBackendPolicy: ServerBackendPolicy.Stdx`，
+旧的 `serverPreferredBackendHint: "stdx-default"` 仍保持兼容。native TLS
+仍是实验入口，只有同时设置 `serverBackendPolicy: ServerBackendPolicy.NativeH1` 与
 `allowExperimentalServerBackend: true` 才会启用，不能据此宣称浏览器级 TLS/H2
 兼容已经完成。
+
+运行中可通过 `app.serverRuntimeSnapshot()` 读取最终 backend、选择/降级原因和
+cleartext Native H1 生命周期计数。该快照不会把 stdx、TLS 或 H2 的状态映射成
+Native H1 指标；需要每请求 IoDriver 详细事件时再显式开启
+`enableIoDriverRequestDiagnostics`，默认热路径只保留选择 backend、公开路径和
+transfer shape 三个轻量字段。
 
 部署时还要特别注意：
 

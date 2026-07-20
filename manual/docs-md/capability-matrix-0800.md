@@ -43,9 +43,10 @@
 
 | 能力 | 状态 | 0800 行为 | 当前边界 |
 | --- | --- | --- | --- |
-| server backend 选择 | 0800 默认 | 明文默认 native H1；`stdx-default` 可回滚。 | `native-h1` 配合 `allowExperimentalServerBackend=true` 才允许实验 native TLS 候选。 |
+| server backend 选择 | 0800 默认 | 明文默认 native H1；`ServerBackendPolicy.Auto/NativeH1/Stdx` 提供类型化策略，旧字符串 hint 保持兼容。 | `NativeH1` 配合 `allowExperimentalServerBackend=true` 才允许实验 native TLS 候选。 |
+| server runtime 可观测性 | 0800 默认 | `App.serverRuntimeSnapshot()` 提供最终 backend、选择/降级原因和 cleartext Native H1 连接/请求计数。 | 不覆盖 stdx、TLS、自定义 engine 或 H2；当前没有隐藏请求队列，因此 `requestQueueDepth=0`。 |
 | 超时与 body limit | 0800 默认 | native H1 消费 `bodyLimit`、read/write/header/idle timeout。 | `readHeaderTimeout`、`idleTimeout` 当前需在构造后赋值。 |
-| IoDriver / lisi | Provider hold | 已有能力描述、策略与 probe 接点。 | 未替换底层 `std.net.TcpSocket`，不能宣称已获得 io_uring/IOCP/kqueue 的生产收益。 |
+| IoDriver / lisi | Provider hold | 已有能力描述、策略与 probe 接点；内置 stream/file/proxy 决策在 App/module 边界缓存，默认请求只投影轻量字段。 | `enableIoDriverRequestDiagnostics=true` 才恢复每请求详细事件；底层仍未替换 `std.net.TcpSocket`，不能宣称已获得 io_uring/IOCP/kqueue 的生产收益。 |
 | SeaJson | 0800 默认 | `jsonSeaStream` 使用 SeaJson 原生 writer 和有界桥接。 | 兼容 stdx JSON 的入口仍保留，未做到全项目 JSON 零 stdx。 |
 | stdx 总体依赖 | Provider hold | native H1/H2、SeaJson 与动态 gzip/deflate/Zstd/Brotli baseline 已缩小核心耦合。 | TLS 默认、部分 JSON/代理/平台链接仍使用 stdx。 |
 

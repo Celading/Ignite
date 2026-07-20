@@ -22,6 +22,49 @@ import std.fs.{Directory, File, OpenMode, Path, exists, removeIfExists}
 import std.io.InputStream
 import ignite.security as security
 
+let _proxyIoDriverProbeCatalog = ProxyIoDriverProbeCatalog()
+
+class ProxyIoDriverProbeCatalog {
+    let _requestUpload = buildProxyIoDriverProbeReport("proxy-request-upload", true)
+    let _downstream = buildProxyIoDriverProbeReport("proxy-downstream", true)
+    let _localError = buildProxyIoDriverProbeReport("proxy-local-error-response", false)
+
+    func reportFor(transferShape: String, requiresKernelCopy: Bool): api2.IoDriverProbeReport {
+        if (transferShape == "proxy-request-upload" && requiresKernelCopy) {
+            return _requestUpload
+        }
+        if (transferShape == "proxy-downstream" && requiresKernelCopy) {
+            return _downstream
+        }
+        if (transferShape == "proxy-local-error-response" && !requiresKernelCopy) {
+            return _localError
+        }
+        buildProxyIoDriverProbeReport(transferShape, requiresKernelCopy)
+    }
+}
+
+func buildProxyIoDriverProbeReport(
+    transferShape: String,
+    requiresKernelCopy: Bool
+): api2.IoDriverProbeReport {
+    api2.buildIoDriverProbeReport(
+        api2.IoDriverPolicyRequest(
+            "http-proxy",
+            "sequential",
+            transferShape,
+            requiresKernelCopy,
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            1,
+            "ignite-proxy-runtime"
+        )
+    )
+}
+
 public let IGNITE_PROXY_REQUEST_BODY_MODE_LOCAL_KEY: String = "__ignite_proxy_request_body_mode"
 public let IGNITE_PROXY_REQUEST_BODY_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_bytes"
 public let IGNITE_PROXY_REQUEST_BODY_LIMIT_BYTES_LOCAL_KEY: String = "__ignite_proxy_request_body_limit_bytes"
@@ -435,28 +478,16 @@ func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
 }
 
 func recordProxyIoDriverProbe(ctx: Ctx, transferShape: String): Unit {
-    let report = api2.buildIoDriverProbeReport(
-        api2.IoDriverPolicyRequest(
-            "http-proxy",
-            "sequential",
-            transferShape,
-            true,
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            1,
-            "protocol=${ctx.protocol};method=${ctx.method}"
-        )
-    )
+    let report = _proxyIoDriverProbeCatalog.reportFor(transferShape, true)
     ctx.setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
     ctx.setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
+    if (!ctx.app().config.enableIoDriverRequestDiagnostics) {
+        return
+    }
     ctx.setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
     ctx.setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
     ctx.setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
-    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
     ctx.setLocal(
         IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
         joinProxyIoDriverLocalValues(report.runtimeLimitations)
@@ -469,28 +500,19 @@ func recordProxyRequestUploadIoDriverProbe(ctx: Ctx): Unit {
 }
 
 func recordProxyLocalErrorResponseIoDriverProbe(ctx: Ctx): Unit {
-    let report = api2.buildIoDriverProbeReport(
-        api2.IoDriverPolicyRequest(
-            "http-proxy",
-            "sequential",
-            "proxy-local-error-response",
-            false,
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            1,
-            "protocol=${ctx.protocol};method=${ctx.method}"
-        )
+    let report = _proxyIoDriverProbeCatalog.reportFor(
+        "proxy-local-error-response",
+        false
     )
     ctx.setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
     ctx.setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, "proxy-local-error-response")
+    if (!ctx.app().config.enableIoDriverRequestDiagnostics) {
+        return
+    }
     ctx.setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
     ctx.setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
     ctx.setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
-    ctx.setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, "proxy-local-error-response")
     ctx.setLocal(
         IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
         joinProxyIoDriverLocalValues(report.runtimeLimitations)

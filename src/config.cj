@@ -110,11 +110,15 @@ public struct Config {
     public var tlsKeyFile: String = ""
     /// 为 true 时启用 jinguiSSL TLS precheck；为 false 时仅使用 stdx TLS 构造路径（保留回退能力）。
     public var enableTlsPrecheck: Bool = true
-    /// 服务器端传输后端偏好；留空时明文默认 native H1，TLS 在 provider 完整前回退 stdx。
+    /// 兼容服务器后端 hint；仅在 serverBackendPolicy 为 Auto 时参与选择。
     /// `stdx-default` 可显式回滚；`native-h1` 配合 allowExperimentalServerBackend 可试用 native TLS。
     public var serverPreferredBackendHint: String = ""
     /// 服务器端是否允许实验性后端参与选路；当前主要用于显式启用 native TLS。
     public var allowExperimentalServerBackend: Bool = false
+    /// 类型化后端策略；Auto 继续兼容 serverPreferredBackendHint。
+    public var serverBackendPolicy: ServerBackendPolicy = ServerBackendPolicy.Auto
+    /// 为 true 时构造完整的每请求 IoDriver 事件；默认热路径只保留轻量选择字段。
+    public var enableIoDriverRequestDiagnostics: Bool = false
 
     public var allowRouteOverwrite: Bool = false
 
@@ -155,7 +159,9 @@ public struct Config {
         enableSwaggerCache!: Bool = true,
         jsonEncoder!: ?JsonEncoder = None,
         serverPreferredBackendHint!: String = "",
-        allowExperimentalServerBackend!: Bool = false
+        allowExperimentalServerBackend!: Bool = false,
+        serverBackendPolicy!: ServerBackendPolicy = ServerBackendPolicy.Auto,
+        enableIoDriverRequestDiagnostics!: Bool = false
     ) {
         this.appName = appName
         this.appVersion = appVersion
@@ -187,6 +193,8 @@ public struct Config {
         this.enableTlsPrecheck = enableTlsPrecheck
         this.serverPreferredBackendHint = serverPreferredBackendHint
         this.allowExperimentalServerBackend = allowExperimentalServerBackend
+        this.serverBackendPolicy = serverBackendPolicy
+        this.enableIoDriverRequestDiagnostics = enableIoDriverRequestDiagnostics
         this.allowRouteOverwrite = allowRouteOverwrite
         this.enableSwaggerCache = enableSwaggerCache
         this.jsonEncoder = jsonEncoder
@@ -225,7 +233,9 @@ public struct Config {
         enableSwaggerCache!: Bool = true,
         jsonEncoder!: ?JsonEncoder = None,
         serverPreferredBackendHint!: String = "",
-        allowExperimentalServerBackend!: Bool = false
+        allowExperimentalServerBackend!: Bool = false,
+        serverBackendPolicy!: ServerBackendPolicy = ServerBackendPolicy.Auto,
+        enableIoDriverRequestDiagnostics!: Bool = false
     ) {
         this.appName = appName
         this.appVersion = appVersion
@@ -257,6 +267,8 @@ public struct Config {
         this.enableTlsPrecheck = enableTlsPrecheck
         this.serverPreferredBackendHint = serverPreferredBackendHint
         this.allowExperimentalServerBackend = allowExperimentalServerBackend
+        this.serverBackendPolicy = serverBackendPolicy
+        this.enableIoDriverRequestDiagnostics = enableIoDriverRequestDiagnostics
         this.allowRouteOverwrite = allowRouteOverwrite
         this.enableSwaggerCache = enableSwaggerCache
         this.jsonEncoder = jsonEncoder

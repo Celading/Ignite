@@ -939,28 +939,19 @@ public class Ctx {
         transferShape: String,
         positionedRead: Bool
     ): Unit {
-        let report = api2.buildIoDriverProbeReport(
-            api2.IoDriverPolicyRequest(
-                "http",
-                "sequential",
-                transferShape,
-                true,
-                positionedRead,
-                false,
-                false,
-                false,
-                "",
-                false,
-                1,
-                "protocol=${protocol};method=${method}"
-            )
+        let report = _app.ioDriverProbeReportForHttpStream(
+            transferShape,
+            positionedRead
         )
         setLocal(IGNITE_IO_DRIVER_SELECTED_LOCAL_KEY, report.decision.selectedDriver)
         setLocal(IGNITE_IO_DRIVER_PUBLIC_PATH_LOCAL_KEY, report.decision.publicPath)
+        setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
+        if (!_app.config.enableIoDriverRequestDiagnostics) {
+            return
+        }
         setLocal(IGNITE_IO_DRIVER_RISK_LEVEL_LOCAL_KEY, report.decision.riskLevel)
         setLocal(IGNITE_IO_DRIVER_BENCHMARK_REQUIRED_LOCAL_KEY, report.benchmarkRequired.toString())
         setLocal(IGNITE_IO_DRIVER_ZERO_COPY_CLAIM_LOCAL_KEY, report.canClaimZeroCopy.toString())
-        setLocal(IGNITE_IO_DRIVER_TRANSFER_SHAPE_LOCAL_KEY, transferShape)
         setLocal(
             IGNITE_IO_DRIVER_RUNTIME_LIMITATIONS_LOCAL_KEY,
             joinIoDriverLocalValues(report.runtimeLimitations)

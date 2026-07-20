@@ -69,7 +69,7 @@ public func buildAppServerEngineSelectionPolicyDecision(
     config: Config
 ): AppServerEngineSelectionPolicyDecision {
     let tlsConfigured = config.tlsCertFile.size > 0 || config.tlsKeyFile.size > 0
-    let hint = normalizeAppServerBackendHint(config.serverPreferredBackendHint)
+    let hint = normalizeAppServerBackendHint(resolveAppServerBackendHint(config))
     if (isAppStdxServerBackendHint(hint)) {
         return AppServerEngineSelectionPolicyDecision(
             "stdx-http-server",
@@ -112,10 +112,7 @@ public func buildAppServerEngineSelectionPolicyDecision(
             false
         )
     }
-    if (
-        config.allowExperimentalServerBackend &&
-        isAppNativeH1ServerBackendHint(hint)
-    ) {
+    if (isAppNativeH1ServerBackendHint(hint)) {
         return AppServerEngineSelectionPolicyDecision(
             "ignite-native-h1",
             "config-opt-in",
@@ -145,6 +142,30 @@ func normalizeAppServerBackendHint(raw: String): String {
     raw.trimAscii().toAsciiLower()
 }
 
+func resolveAppServerBackendHint(config: Config): String {
+    match (config.serverBackendPolicy) {
+        case ServerBackendPolicy.NativeH1 => "native-h1"
+        case ServerBackendPolicy.Stdx => "stdx-default"
+        case ServerBackendPolicy.Auto => config.serverPreferredBackendHint
+    }
+}
+
+func appServerBackendPolicyName(config: Config): String {
+    match (config.serverBackendPolicy) {
+        case ServerBackendPolicy.NativeH1 => "native-h1"
+        case ServerBackendPolicy.Stdx => "stdx"
+        case ServerBackendPolicy.Auto =>
+            let hint = normalizeAppServerBackendHint(config.serverPreferredBackendHint)
+            if (isAppNativeH1ServerBackendHint(hint)) {
+                return "native-h1"
+            }
+            if (isAppStdxServerBackendHint(hint)) {
+                return "stdx"
+            }
+            "auto"
+    }
+}
+
 func isAppNativeH1ServerBackendHint(hint: String): Bool {
     hint == "native-h1" || hint == "ignite-native-h1"
 }
@@ -157,6 +178,7 @@ public class App {
     public let config: Config
     public let router: Router
     var _engine: ServerEngine = SocketServerEngineShell(selectionLabel: "default-cleartext")
+    let _ioDriverHttpProbeCatalog = IoDriverHttpProbeCatalog()
     var _swaggerInfo: SwaggerInfo = SwaggerInfo()
     var _errorHandler: ?ErrorHandler = None
     var _shutdownHooks: ArrayList<() -> Unit> = ArrayList<() -> Unit>()
@@ -514,6 +536,62 @@ public class App {
         _lastServerTransportTouchpoint
     }
 
+    public func serverRuntimeSnapshot(): ServerRuntimeSnapshot {
+        let decision = buildAppServerEngineSelectionPolicyDecision(config)
+        var selectedBackend = decision.selectedEngineId
+        var selectedReason = decision.selectedReason
+        var fallbackReason = if (decision.stdxRollbackSelected && decision.tlsConfigured) {
+            decision.selectedReason
+        } else {
+            ""
+        }
+        match (_lastServerTransportTouchpoint) {
+            case Some(touchpoint) =>
+                selectedBackend = if (touchpoint.selectedBackend == "ignite-socket-server-shell") {
+                    "ignite-native-h1"
+                } else {
+                    touchpoint.selectedBackend
+                }
+                selectedReason = touchpoint.selectedReason
+                fallbackReason = if (selectedBackend == "stdx-http-server") {
+                    touchpoint.fallbackReason
+                } else {
+                    ""
+                }
+            case None => ()
+        }
+
+        var counters = ServerRuntimeCounterSnapshot()
+        var metricsAvailable = false
+        if (!decision.tlsConfigured && decision.nativeSocketShellSelected) {
+            if (let Some(provider) <- (_engine as ServerRuntimeObservabilityProvider)) {
+                counters = provider.runtimeCounterSnapshot()
+                metricsAvailable = true
+            }
+        }
+
+        ServerRuntimeSnapshot(
+            appServerBackendPolicyName(config),
+            selectedBackend,
+            selectedReason,
+            fallbackReason,
+            metricsAvailable,
+            if (metricsAvailable) { "native-h1-cleartext" } else { "unavailable" },
+            counters
+        )
+    }
+
+    func ioDriverProbeReportForHttpStream(
+        transferShape: String,
+        positionedRead: Bool
+    ): api2.IoDriverProbeReport {
+        _ioDriverHttpProbeCatalog.reportFor(transferShape, positionedRead)
+    }
+
+    func ioDriverProbeCatalogInitializedReportCount(): Int64 {
+        _ioDriverHttpProbeCatalog.initializedReportCount()
+    }
+
     public func lastServerStartupObserveEvent(): ?ServerStartupObserveEvent {
         _lastServerStartupObserveEvent
     }
@@ -559,7 +637,7 @@ public class App {
     }
 
     func shouldUseConfiguredStdxServerEngineFallback(): Bool {
-        isStdxServerBackendHint(config.serverPreferredBackendHint)
+        isStdxServerBackendHint(resolveAppServerBackendHint(config))
     }
 
     func shouldUseConfiguredNativeH1ServerEngine(): Bool {
@@ -569,7 +647,7 @@ public class App {
         if (config.tlsCertFile.size > 0 || config.tlsKeyFile.size > 0) {
             return false
         }
-        isNativeH1ServerBackendHint(config.serverPreferredBackendHint)
+        isNativeH1ServerBackendHint(resolveAppServerBackendHint(config))
     }
 
     func isNativeH1ServerBackendHint(raw: String): Bool {
@@ -612,11 +690,12 @@ public class App {
             pidStr = "${getProcessId()}"
         } catch (_: Exception) { }
         let currentPid = pidStr
+        let resolvedBackendHint = resolveAppServerBackendHint(config)
         let transportRoutingBundle = buildServerTransportRoutingBundle(
             addr,
             port,
             hasTls,
-            preferredBackendHint: config.serverPreferredBackendHint,
+            preferredBackendHint: resolvedBackendHint,
             allowExperimental: config.allowExperimentalServerBackend
         )
         let transportTouchpoint = resolveServerTransportTouchpoint(
@@ -642,7 +721,7 @@ public class App {
             config.tlsCertFile,
             config.tlsKeyFile,
             config.enableTlsPrecheck,
-            serverPreferredBackendHint: config.serverPreferredBackendHint,
+            serverPreferredBackendHint: resolvedBackendHint,
             allowExperimentalServerBackend: config.allowExperimentalServerBackend,
             preparedTlsMaterialLoader: preparedTlsMaterialLoader,
             transportRoutingBundle: Some(transportRoutingBundle),
