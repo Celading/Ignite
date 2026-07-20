@@ -15,7 +15,13 @@ import jinguissl.live.{
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
-import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
+import std.net.{
+    IPSocketAddress,
+    SocketException,
+    SocketTimeoutException,
+    TcpServerSocket,
+    TcpSocket
+}
 import std.sync.Mutex
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
@@ -807,39 +813,61 @@ func serveSocketServerEngineShellSocketTurns(
                 moreTurns = false
             }
         } catch (_: SocketServerEngineShellException) {
-            let wasKeepAliveWait = keepAliveWaitActive
-            if (keepAliveWaitActive) {
-                control.keepAliveWaitFinished()
-                keepAliveWaitActive = false
-            }
-            if (requestStarted) {
-                control.requestRejected(true)
-                requestStarted = false
-            } else if (!wasKeepAliveWait) {
-                control.requestRejected(false)
-            }
+            settleSocketServerEngineShellFailedTurn(
+                control,
+                keepAliveWaitActive,
+                requestStarted
+            )
+            keepAliveWaitActive = false
+            requestStarted = false
             // bad-request turn containment: malformed or incomplete request-head
             // or shell-owned body-stage error on this accepted socket — stop
             // the keep-alive loop and let the caller close the socket
             moreTurns = false
         } catch (e: Exception) {
-            let wasKeepAliveWait = keepAliveWaitActive
-            if (keepAliveWaitActive) {
-                control.keepAliveWaitFinished()
-                keepAliveWaitActive = false
-            }
-            if (requestStarted) {
-                control.requestRejected(true)
-                requestStarted = false
-            } else if (!wasKeepAliveWait) {
-                control.requestRejected(false)
-            }
-            throw e
+            settleSocketServerEngineShellFailedTurn(
+                control,
+                keepAliveWaitActive,
+                requestStarted
+            )
+            keepAliveWaitActive = false
+            requestStarted = false
+            containSocketServerEngineShellExpectedConnectionEnd(e)
+            moreTurns = false
         } finally {
             if (requestStarted) {
                 control.requestRejected(true)
             }
         }
+    }
+}
+
+func settleSocketServerEngineShellFailedTurn(
+    control: SocketServerEngineShellRuntimeControl,
+    keepAliveWaitActive: Bool,
+    requestStarted: Bool
+): Unit {
+    if (keepAliveWaitActive) {
+        control.keepAliveWaitFinished()
+    }
+    if (requestStarted) {
+        control.requestRejected(true)
+    } else if (!keepAliveWaitActive) {
+        control.requestRejected(false)
+    }
+}
+
+func socketServerEngineShellIsExpectedConnectionEnd(error: Exception): Bool {
+    match (error) {
+        case _: SocketTimeoutException => true
+        case _: SocketException => true
+        case _ => false
+    }
+}
+
+func containSocketServerEngineShellExpectedConnectionEnd(error: Exception): Unit {
+    if (!socketServerEngineShellIsExpectedConnectionEnd(error)) {
+        throw error
     }
 }
 
