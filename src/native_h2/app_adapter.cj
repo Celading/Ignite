@@ -139,16 +139,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func requestQueryValue(key: String): ?String {
-        if (queryStringValue.size == 0) {
-            return None
-        }
-        for (part in queryStringValue.split("&")) {
-            let pair = part.split("=", 2)
-            if (pair.size > 0 && pair[0] == key) {
-                return Some(if (pair.size == 2) { pair[1] } else { "" })
-            }
-        }
-        None
+        nativeH2ReadDecodedQueryValue(queryStringValue, key)
     }
 
     public override func requestFormValue(key: String): ?String {
@@ -268,4 +259,69 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
         }
         responseBodyStreamValue = None
     }
+}
+
+func nativeH2ReadDecodedQueryValue(queryString: String, key: String): ?String {
+    if (queryString.size == 0) {
+        return None
+    }
+    for (part in queryString.split("&")) {
+        let pair = part.split("=", 2)
+        if (pair.size == 0) {
+            continue
+        }
+        let candidateKey = nativeH2DecodeQueryComponent(pair[0])
+        if (candidateKey == key) {
+            return Some(if (pair.size == 2) {
+                nativeH2DecodeQueryComponent(pair[1])
+            } else {
+                ""
+            })
+        }
+    }
+    None
+}
+
+func nativeH2DecodeQueryComponent(value: String): String {
+    let input = value.toArray()
+    let out = ArrayList<UInt8>()
+    var cursor: Int64 = 0
+    while (cursor < input.size) {
+        let current = input[cursor]
+        if (current == UInt8(0x2b)) {
+            out.add(UInt8(0x20))
+            cursor += 1
+            continue
+        }
+        if (current == UInt8(0x25) && cursor + 2 < input.size) {
+            let high = nativeH2QueryHexNibble(input[cursor + 1])
+            let low = nativeH2QueryHexNibble(input[cursor + 2])
+            if (high >= 0 && low >= 0) {
+                out.add(UInt8((high << 4) | low))
+                cursor += 3
+                continue
+            }
+        }
+        out.add(current)
+        cursor += 1
+    }
+    try {
+        String.fromUtf8(out.toArray())
+    } catch (_: Exception) {
+        value
+    }
+}
+
+func nativeH2QueryHexNibble(value: UInt8): Int64 {
+    let numeric = Int64(value)
+    if (numeric >= 0x30 && numeric <= 0x39) {
+        return numeric - 0x30
+    }
+    if (numeric >= 0x41 && numeric <= 0x46) {
+        return numeric - 0x41 + 10
+    }
+    if (numeric >= 0x61 && numeric <= 0x66) {
+        return numeric - 0x61 + 10
+    }
+    -1
 }

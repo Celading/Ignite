@@ -6,6 +6,25 @@ import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 @Test
 public class NativeH2RequestSemanticsInternalTestSuite {
     @TestCase
+    public func testAppCarrierQueryValuesMatchDecodedContract(): Unit {
+        @Assert(
+            nativeH2ReadDecodedQueryValue(
+                "path=%2FMedia%2F%E4%B8%AD%E6%96%87+Name&literal=%252F&plus=%2B",
+                "path"
+            ) ?? "",
+            "/Media/中文 Name"
+        )
+        @Assert(
+            nativeH2ReadDecodedQueryValue("literal=%252F", "literal") ?? "",
+            "%2F"
+        )
+        @Assert(
+            nativeH2ReadDecodedQueryValue("plus=%2B", "plus") ?? "",
+            "+"
+        )
+    }
+
+    @TestCase
     public func testRejectsForbiddenRequestHeaderSemantics(): Unit {
         assertNativeH2RequestHeaderRejected("X-Upper", "value")
         assertNativeH2RequestHeaderRejected("connection", "close")

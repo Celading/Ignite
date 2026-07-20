@@ -1,5 +1,6 @@
 package ignite
 
+import std.collection.ArrayList
 import std.io.InputStream
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
@@ -29,6 +30,73 @@ public interface CurrentRequestCarrier {
     func setResponseString(body: String): Unit
     func setResponseBytes(data: Array<UInt8>): Unit
     func attachResponseBodyStream(stream: InputStream): Unit
+}
+
+// Raw socket carriers do not pass through stdx URL parsing, so they must
+// provide the same decoded query-value contract as `queryForm`.
+func readDecodedUrlQueryValue(queryString: String, key: String): ?String {
+    if (queryString.size == 0) {
+        return None
+    }
+    for (part in queryString.split("&")) {
+        let pair = part.split("=", 2)
+        if (pair.size == 0) {
+            continue
+        }
+        let candidateKey = decodeUrlQueryComponent(pair[0])
+        if (candidateKey == key) {
+            return Some(if (pair.size == 2) {
+                decodeUrlQueryComponent(pair[1])
+            } else {
+                ""
+            })
+        }
+    }
+    None
+}
+
+func decodeUrlQueryComponent(value: String): String {
+    let input = value.toArray()
+    let out = ArrayList<UInt8>()
+    var cursor: Int64 = 0
+    while (cursor < input.size) {
+        let current = input[cursor]
+        if (current == UInt8(0x2b)) {
+            out.add(UInt8(0x20))
+            cursor += 1
+            continue
+        }
+        if (current == UInt8(0x25) && cursor + 2 < input.size) {
+            let high = urlQueryHexNibble(input[cursor + 1])
+            let low = urlQueryHexNibble(input[cursor + 2])
+            if (high >= 0 && low >= 0) {
+                out.add(UInt8((high << 4) | low))
+                cursor += 3
+                continue
+            }
+        }
+        out.add(current)
+        cursor += 1
+    }
+    try {
+        String.fromUtf8(out.toArray())
+    } catch (_: Exception) {
+        value
+    }
+}
+
+func urlQueryHexNibble(value: UInt8): Int64 {
+    let numeric = Int64(value)
+    if (numeric >= 0x30 && numeric <= 0x39) {
+        return numeric - 0x30
+    }
+    if (numeric >= 0x41 && numeric <= 0x46) {
+        return numeric - 0x41 + 10
+    }
+    if (numeric >= 0x61 && numeric <= 0x66) {
+        return numeric - 0x61 + 10
+    }
+    -1
 }
 
 public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {

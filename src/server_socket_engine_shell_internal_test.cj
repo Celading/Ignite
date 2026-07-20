@@ -12,6 +12,65 @@ import std.net.{
 @Test
 public class SocketServerEngineShellInternalTestSuite {
     @TestCase
+    public func testNativeQueryValuesMatchStdxPercentDecodingContract(): Unit {
+        @Assert(
+            socketServerEngineShellReadQueryValue(
+                "path=%2FMedia%2F%E4%B8%AD%E6%96%87+Name&literal=%252F&plus=%2B",
+                "path"
+            ) ?? "",
+            "/Media/中文 Name"
+        )
+        @Assert(
+            socketServerEngineShellReadQueryValue("literal=%252F", "literal") ?? "",
+            "%2F"
+        )
+        @Assert(
+            socketServerEngineShellReadQueryValue("plus=%2B", "plus") ?? "",
+            "+"
+        )
+        @Assert(
+            socketServerEngineShellReadQueryValue("na%6De=value", "name") ?? "",
+            "value"
+        )
+        @Assert(
+            socketServerEngineShellReadQueryValue("bad=%ZZ%", "bad") ?? "",
+            "%ZZ%"
+        )
+    }
+
+    @TestCase
+    public func testNativeH1DispatchExposesDecodedQueryToCtx(): Unit {
+        let fixture = SocketServerEngineShellInternalFixture(Duration.second * 2)
+        fixture.app.get("/query", { ctx =>
+            let _ = ctx.sendString(
+                (ctx.queryDefault("path", "missing")) + "|" +
+                (ctx.queryDefault("plus", "missing"))
+            )
+        })
+        fixture.start()
+        let client = fixture.connect()
+        try {
+            client.readTimeout = Some(Duration.second)
+            client.write(
+                (
+                    "GET /query?path=%2FMedia%2F%E4%B8%AD%E6%96%87+Name&plus=%2B HTTP/1.1\r\n" +
+                    "Host: example.com\r\nConnection: close\r\n\r\n"
+                ).toArray()
+            )
+            let response = readSocketServerEngineShellInternalUntil(
+                client,
+                "/Media/中文 Name|+"
+            )
+            @Assert(response.contains("HTTP/1.1 200 OK"), true)
+            @Assert(response.contains("/Media/中文 Name|+"), true)
+            fixture.awaitConnectionTask()
+        } finally {
+            fixture.closeClient(client)
+            fixture.close()
+        }
+    }
+
+    @TestCase
     public func testExpectedConnectionEndClassifierIsTyped(): Unit {
         @Assert(
             socketServerEngineShellIsExpectedConnectionEnd(

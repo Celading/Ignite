@@ -317,24 +317,7 @@ func serverJinguiAcceptedTransportReadQueryValue(
     queryString: String,
     key: String
 ): ?String {
-    let trimmed = queryString.trimAscii()
-    if (trimmed.size == 0) {
-        return None
-    }
-    let parts = trimmed.split("&")
-    for (part in parts) {
-        let kv = part.split("=", 2)
-        if (kv.size >= 1) {
-            let candidateKey = kv[0].trimAscii()
-            if (candidateKey == key) {
-                if (kv.size == 2) {
-                    return Some(kv[1])
-                }
-                return Some("")
-            }
-        }
-    }
-    None
+    readDecodedUrlQueryValue(queryString, key)
 }
 
 func buildServerJinguiAcceptedTransportLogicalRequestHeadersWithAuthority(
