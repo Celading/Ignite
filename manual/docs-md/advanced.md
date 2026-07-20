@@ -202,6 +202,14 @@ Native H1 指标；需要每请求 IoDriver 详细事件时再显式开启
 `enableIoDriverRequestDiagnostics`，默认热路径只保留选择 backend、公开路径和
 transfer shape 三个轻量字段。
 
+显式 Native TLS `RestClient` 另有独立的池生命周期边界：默认 idle 上限为
+`30s`，可用 `nativeTlsIdleTimeout(...)` 调整。`nativeTlsRuntimeSnapshot()`
+分别给出 H1/H2 的 idle、opened、reused、returned、retired、expired 计数。
+这能区分“连接正在复用”“因 idle 过期被淘汰”“调用 `close()` 后仍有 idle
+连接”等问题，但不代表 server 侧 TLS/H2 指标、浏览器兼容或公开 H2 多路并发。
+本地加固探针见
+[`manual/samples/native_tls_pool_hardening`](../samples/native_tls_pool_hardening/README.md)。
+
 部署时还要特别注意：
 
 - 一次 `app.listen(addr, port)` 只对应一条监听器

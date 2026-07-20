@@ -19,7 +19,7 @@
 | 路由、Group、中间件、Swagger | 稳定继承 | 延续 `App`、`Group`、洋葱中间件和 Swagger 入口。 | 不因 native transport 自动获得新的业务级并发策略。 |
 | 明文 HTTP/1.1 Server | 0800 默认 | 空的 `serverPreferredBackendHint` 默认选择 Ignite native H1。 | 可用 `stdx-default` 显式回滚。 |
 | HTTP/1.1 Client | Preview | `preferTransportBackend("ignite-native-h1-client")` 可显式进入 native H1，支持连接复用、流式请求体、重定向和统一错误；配合 `useNativeTls(...)` 可走 Contract-backed TLS1.3 HTTPS，并在完整消费后安全复用同源、同信任策略连接。 | `RestClient` 默认仍是稳定 stdx Client；Native HTTPS 要求调用方提供 trust anchor/hostname，部分 request hook 仍不兼容。 |
-| HTTPS / TLS | 稳定继承 + Preview | 默认继续使用稳定的 stdx TLS 路径；显式 Native H1/H2 TLS1.3 会完成 ClientHello、server-flight 验证、client Finished、application-data seal/open 与有界顺序连接复用。 | Native TLS 当前要求调用方提供 trust anchor/hostname；系统 CA、TLS1.2、session resumption、0-RTT、mTLS、公开 H2 多路并发与默认切换仍未完成。 |
+| HTTPS / TLS | 稳定继承 + Preview | 默认继续使用稳定的 stdx TLS 路径；显式 Native H1/H2 TLS1.3 会完成 ClientHello、server-flight 验证、client Finished、application-data seal/open 与有界顺序连接复用。Native TLS pool 默认 idle 上限为 30s，可通过 `nativeTlsIdleTimeout(...)` 调整，并可由 `nativeTlsRuntimeSnapshot()` 查看 H1/H2 opened/reused/retired/expired/idle 事实。 | Native TLS 当前要求调用方提供 trust anchor/hostname；快照只覆盖显式 Native TLS RestClient 池。系统 CA、TLS1.2、session resumption、0-RTT、mTLS、公开 H2 多路并发与默认切换仍未完成。 |
 | native HTTP/2 Server | Preview | `ignite.native_h2` 可在 caller 提供的 `TcpSocket` 上运行单流或多流连接，并可接入 `App`。 | 非默认 listener；未完成完整浏览器矩阵、h2spec、动态 HPACK table。 |
 | native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2；配合 `useNativeTls(...)` 和 `h2` ALPN 可走 Contract-backed TLS1.3。两条路径共享 AP4 HPACK、流控、streamed-response lease、超时、重试、Cookie 与 observe 语义；完整消费后明文与 TLS 连接都可顺序归池。 | 必须显式选择实验 backend；仅支持 buffered/replayable request body 和每连接一个公开 streamed response lease。mutation hook、默认切换与公开 RestClient 多路并发仍未完成。 |
 | H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 恢复、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭会发送 CANCEL 并淘汰连接。当前不是全场景零拷贝或公开多路 lease API。 |
@@ -45,6 +45,7 @@
 | --- | --- | --- | --- |
 | server backend 选择 | 0800 默认 | 明文默认 native H1；`ServerBackendPolicy.Auto/NativeH1/Stdx` 提供类型化策略，旧字符串 hint 保持兼容。 | `NativeH1` 配合 `allowExperimentalServerBackend=true` 才允许实验 native TLS 候选。 |
 | server runtime 可观测性 | 0800 默认 | `App.serverRuntimeSnapshot()` 提供最终 backend、选择/降级原因和 cleartext Native H1 连接/请求计数。 | 不覆盖 stdx、TLS、自定义 engine 或 H2；当前没有隐藏请求队列，因此 `requestQueueDepth=0`。 |
+| Native TLS client pool 可观测性 | Preview | `RestClient.nativeTlsRuntimeSnapshot()` 分别报告 H1/H2 idle、opened、reused、returned、retired、expired 累计计数；`RestClient.close()` 后 idle 必须归零。 | 只描述当前 RestClient 实例的顺序池生命周期，不是 server 指标、吞吐 benchmark、公开 H2 多路 lease 或跨进程监控。 |
 | 超时与 body limit | 0800 默认 | native H1 消费 `bodyLimit`、read/write/header/idle timeout。 | `readHeaderTimeout`、`idleTimeout` 当前需在构造后赋值。 |
 | IoDriver / lisi | Provider hold | 已有能力描述、策略与 probe 接点；内置 stream/file/proxy 决策在 App/module 边界缓存，默认请求只投影轻量字段。 | `enableIoDriverRequestDiagnostics=true` 才恢复每请求详细事件；底层仍未替换 `std.net.TcpSocket`，不能宣称已获得 io_uring/IOCP/kqueue 的生产收益。 |
 | SeaJson | 0800 默认 | `jsonSeaStream` 使用 SeaJson 原生 writer 和有界桥接。 | 兼容 stdx JSON 的入口仍保留，未做到全项目 JSON 零 stdx。 |

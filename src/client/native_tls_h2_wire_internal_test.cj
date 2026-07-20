@@ -99,6 +99,103 @@ public class NativeTlsH2WireInternalTestSuite {
             @Assert(first.body(), "reuse-h2-1")
             let second = client.get("https://127.0.0.1:${port}/reuse-2")
             @Assert(second.body(), "reuse-h2-2")
+            let snapshot = client.nativeTlsRuntimeSnapshot()
+            @Assert(snapshot.h2.openedConnections, Int64(1))
+            @Assert(snapshot.h2.reusedConnections, Int64(1))
+            @Assert(snapshot.h2.idleConnections, Int64(1))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientExpiresIdleNativeTlsH2SessionBeforeReuse(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 expiry test could not reserve loopback port")
+        let serverFuture = spawn {
+            for (turn in 1..3) {
+                let accepted = listener.accept()
+                accepted.readTimeout = Some(Duration.second * 3)
+                accepted.writeTimeout = Some(Duration.second * 3)
+                try {
+                    serveNativeTlsH2SingleTurnFixture(accepted, turn)
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+            .nativeTlsIdleTimeout(Duration.millisecond * 10)
+            .useNativeTls(NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            ))
+        try {
+            @Assert(client.get("https://127.0.0.1:${port}/retire-1").body(), "retire-h2-1")
+            sleep(Duration.millisecond * 30)
+            @Assert(client.get("https://127.0.0.1:${port}/retire-2").body(), "retire-h2-2")
+            let snapshot = client.nativeTlsRuntimeSnapshot()
+            @Assert(snapshot.maxIdleMs, Int64(10))
+            @Assert(snapshot.h2.openedConnections, Int64(2))
+            @Assert(snapshot.h2.reusedConnections, Int64(0))
+            @Assert(snapshot.h2.expiredConnections, Int64(1))
+            @Assert(snapshot.h2.idleConnections, Int64(1))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            @Assert(client.nativeTlsRuntimeSnapshot().h2.idleConnections, Int64(0))
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientClosePreventsInFlightNativeTlsH2ReturnToPool(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 close race test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2SingleTurnFixture(accepted, 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+            .useNativeTls(NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            ))
+        try {
+            let response = client.get("https://127.0.0.1:${port}/retire-1")
+            client.close()
+            @Assert(response.body(), "retire-h2-1")
+            let snapshot = client.nativeTlsRuntimeSnapshot().h2
+            @Assert(snapshot.idleConnections, Int64(0))
+            @Assert(snapshot.returnedConnections, Int64(0))
+            @Assert(snapshot.retiredConnections, Int64(1))
             let _ = serverFuture.get(Duration.second * 3)
         } finally {
             client.close()
@@ -140,6 +237,7 @@ public class NativeTlsH2WireInternalTestSuite {
         try {
             let first = client.get("https://127.0.0.1:${port}/retire-1")
             first.close()
+            @Assert(client.nativeTlsRuntimeSnapshot().h2.retiredConnections, Int64(1))
             let second = client.get("https://127.0.0.1:${port}/retire-2")
             @Assert(second.body(), "retire-h2-2")
             let _ = serverFuture.get(Duration.second * 3)
@@ -160,8 +258,12 @@ func serveNativeTlsH2Fixture(socket: TcpSocket): Unit {
 }
 
 func serveNativeTlsH2ReuseFixture(socket: TcpSocket): Unit {
+    serveNativeTlsH2ReuseTurnsFixture(socket, 2)
+}
+
+func serveNativeTlsH2ReuseTurnsFixture(socket: TcpSocket, turns: Int64): Unit {
     let tls = openNativeTlsH2FixtureSession(socket)
-    for (turn in 1..3) {
+    for (turn in 1..(turns + 1)) {
         let head = nativeTlsH2ReadRequestHead(tls)
         let expectedStreamId = turn * 2 - 1
         if (head.streamId != expectedStreamId) {

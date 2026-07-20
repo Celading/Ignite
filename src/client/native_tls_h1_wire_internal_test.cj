@@ -102,6 +102,153 @@ public class NativeTlsH1WireInternalTestSuite {
             @Assert(first.body(), "reuse-h1-1")
             let second = client.get("https://127.0.0.1:${port}/reuse-2")
             @Assert(second.body(), "reuse-h1-2")
+            let snapshot = client.nativeTlsRuntimeSnapshot()
+            @Assert(snapshot.h1.openedConnections, Int64(1))
+            @Assert(snapshot.h1.reusedConnections, Int64(1))
+            @Assert(snapshot.h1.idleConnections, Int64(1))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientExpiresIdleNativeTlsH1SessionBeforeReuse(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H1 expiry test could not reserve loopback port")
+        let serverFuture = spawn {
+            for (turn in 1..3) {
+                let accepted = listener.accept()
+                accepted.readTimeout = Some(Duration.second * 3)
+                accepted.writeTimeout = Some(Duration.second * 3)
+                try {
+                    serveNativeTlsH1SingleTurnFixture(accepted, turn)
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).nativeTlsIdleTimeout(Duration.millisecond * 10)
+            .useNativeTls(NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H1_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["http/1.1"],
+                requireTargetHostnameMatch: false
+            ))
+        try {
+            @Assert(client.get("https://127.0.0.1:${port}/retire-1").body(), "retire-h1-1")
+            sleep(Duration.millisecond * 30)
+            @Assert(client.get("https://127.0.0.1:${port}/retire-2").body(), "retire-h1-2")
+            let snapshot = client.nativeTlsRuntimeSnapshot()
+            @Assert(snapshot.maxIdleMs, Int64(10))
+            @Assert(snapshot.h1.openedConnections, Int64(2))
+            @Assert(snapshot.h1.reusedConnections, Int64(0))
+            @Assert(snapshot.h1.expiredConnections, Int64(1))
+            @Assert(snapshot.h1.idleConnections, Int64(1))
+            @Assert(snapshot.toJson().contains("\"expiredConnections\":1"), true)
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            @Assert(client.nativeTlsRuntimeSnapshot().h1.idleConnections, Int64(0))
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeTlsIdlePolicyUpdateKeepsInFlightPoolOwner(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H1 in-flight policy test could not reserve loopback port")
+        let serverFuture = spawn {
+            for (turn in 1..3) {
+                let accepted = listener.accept()
+                accepted.readTimeout = Some(Duration.second * 3)
+                accepted.writeTimeout = Some(Duration.second * 3)
+                try {
+                    serveNativeTlsH1SingleTurnFixture(accepted, turn)
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).useNativeTls(NativeTls13ClientConfig(
+            nativeTlsTestText("policy_root.pem"),
+            NATIVE_TLS_H1_TEST_HOST,
+            intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+            alpnProtocols: ["http/1.1"],
+            requireTargetHostnameMatch: false
+        ))
+        try {
+            let first = client.get("https://127.0.0.1:${port}/retire-1")
+            let _ = client.nativeTlsIdleTimeout(Duration.millisecond * 10)
+            @Assert(first.body(), "retire-h1-1")
+            let returned = client.nativeTlsRuntimeSnapshot()
+            @Assert(returned.maxIdleMs, Int64(10))
+            @Assert(returned.h1.returnedConnections, Int64(1))
+            @Assert(returned.h1.idleConnections, Int64(1))
+
+            sleep(Duration.millisecond * 30)
+            @Assert(client.get("https://127.0.0.1:${port}/retire-2").body(), "retire-h1-2")
+            let expired = client.nativeTlsRuntimeSnapshot().h1
+            @Assert(expired.openedConnections, Int64(2))
+            @Assert(expired.expiredConnections, Int64(1))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientClosePreventsInFlightNativeTlsH1ReturnToPool(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H1 close race test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH1SingleTurnFixture(accepted, 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).useNativeTls(NativeTls13ClientConfig(
+            nativeTlsTestText("policy_root.pem"),
+            NATIVE_TLS_H1_TEST_HOST,
+            intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+            alpnProtocols: ["http/1.1"],
+            requireTargetHostnameMatch: false
+        ))
+        try {
+            let response = client.get("https://127.0.0.1:${port}/retire-1")
+            client.close()
+            @Assert(response.body(), "retire-h1-1")
+            let snapshot = client.nativeTlsRuntimeSnapshot().h1
+            @Assert(snapshot.idleConnections, Int64(0))
+            @Assert(snapshot.returnedConnections, Int64(0))
+            @Assert(snapshot.retiredConnections, Int64(1))
             let _ = serverFuture.get(Duration.second * 3)
         } finally {
             client.close()
@@ -142,6 +289,7 @@ public class NativeTlsH1WireInternalTestSuite {
         try {
             let first = client.get("https://127.0.0.1:${port}/retire-1")
             first.close()
+            @Assert(client.nativeTlsRuntimeSnapshot().h1.retiredConnections, Int64(1))
             let second = client.get("https://127.0.0.1:${port}/retire-2")
             @Assert(second.body(), "retire-h1-2")
             let _ = serverFuture.get(Duration.second * 3)
@@ -164,15 +312,23 @@ func serveNativeTlsH1Fixture(socket: TcpSocket): Unit {
 }
 
 func serveNativeTlsH1ReuseFixture(socket: TcpSocket): Unit {
+    serveNativeTlsH1ReuseTurnsFixture(socket, 2)
+}
+
+func serveNativeTlsH1ReuseTurnsFixture(socket: TcpSocket, turns: Int64): Unit {
     let tls = openNativeTlsH1FixtureSession(socket)
-    for (turn in 1..3) {
+    for (turn in 1..(turns + 1)) {
         let requestHead = nativeTlsH1ReadUntil(tls, "\r\n\r\n".toArray(), 65536)
         let expected = "GET /reuse-${turn} HTTP/1.1".toArray()
         if (nativeH1IndexOfBytes(requestHead, expected, 0) < 0) {
             throw Exception("native TLS H1 reuse fixture received unexpected request")
         }
+        let body = "reuse-h1-${turn}"
         tls.write(
-            "HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: keep-alive\r\n\r\nreuse-h1-${turn}".toArray()
+            (
+                "HTTP/1.1 200 OK\r\nContent-Length: ${body.toArray().size}\r\n" +
+                "Connection: keep-alive\r\n\r\n" + body
+            ).toArray()
         )
     }
 }

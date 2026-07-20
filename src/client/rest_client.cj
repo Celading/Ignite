@@ -29,6 +29,7 @@ public class RestClient {
     var _lastClientObserveSnapshot: ?ClientObserveSnapshot = None
     var _readTimeout: Duration = Duration.second * 15
     var _writeTimeout: Duration = Duration.second * 15
+    var _nativeTlsPoolMaxIdleMs: Int64 = 30000
     var _nativeH1Pool = NativeH1ClientConnectionPool(10)
     var _nativeH2Pool = NativeH2ClientConnectionPool(10)
     var _nativeTlsH1Pool = NativeTlsH1ConnectionPool(10)
@@ -47,8 +48,12 @@ public class RestClient {
         _writeTimeout = writeTimeout
         _nativeH1Pool = NativeH1ClientConnectionPool(poolSize)
         _nativeH2Pool = NativeH2ClientConnectionPool(poolSize)
-        _nativeTlsH1Pool = NativeTlsH1ConnectionPool(poolSize)
-        _nativeTlsH2Pool = NativeTlsH2ConnectionPool(poolSize)
+        _nativeTlsH1Pool = NativeTlsH1ConnectionPool(
+            poolSize, maxIdleMs: _nativeTlsPoolMaxIdleMs
+        )
+        _nativeTlsH2Pool = NativeTlsH2ConnectionPool(
+            poolSize, maxIdleMs: _nativeTlsPoolMaxIdleMs
+        )
         _client = ClientBuilder()
             .readTimeout(readTimeout)
             .writeTimeout(writeTimeout)
@@ -147,6 +152,28 @@ public class RestClient {
 
     public func withNativeTls(config: NativeTls13ClientConfig): RestClient {
         useNativeTls(config)
+    }
+
+    /// Sets the maximum idle age for explicit Native TLS H1/H2 pooled sessions.
+    /// Existing idle sessions are closed before the new policy takes effect.
+    public func nativeTlsIdleTimeout(timeout: Duration): RestClient {
+        let maxIdleMs = timeout.toMilliseconds()
+        if (maxIdleMs <= 0) {
+            throw Exception("native TLS idle timeout must be positive")
+        }
+        _nativeTlsPoolMaxIdleMs = maxIdleMs
+        _nativeTlsH1Pool.updateMaxIdleMs(maxIdleMs)
+        _nativeTlsH2Pool.updateMaxIdleMs(maxIdleMs)
+        this
+    }
+
+    /// Returns bounded lifecycle counters for the explicit Native TLS pools.
+    public func nativeTlsRuntimeSnapshot(): NativeTlsClientRuntimeSnapshot {
+        NativeTlsClientRuntimeSnapshot(
+            _nativeTlsPoolMaxIdleMs,
+            _nativeTlsH1Pool.snapshot(),
+            _nativeTlsH2Pool.snapshot()
+        )
     }
 
     public func onRequest(hook: ClientRequestHook): RestClient {

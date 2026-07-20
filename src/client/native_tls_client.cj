@@ -4,6 +4,7 @@ import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
+import std.time.MonoTime
 import ignite.native_tls.{
     NativeTls13ClientConfig,
     NativeTlsApplicationProtocol,
@@ -18,6 +19,8 @@ import ignite.native_h2.NativeH2ClientConnection
 class NativeTlsH1PooledConnection {
     let transport: NativeTls13ClientTransport
     let config: NativeTls13ClientConfig
+    var idleSince: MonoTime = MonoTime.now()
+    var retired: Bool = false
 
     init(transport: NativeTls13ClientTransport, config: NativeTls13ClientConfig) {
         this.transport = transport
@@ -27,12 +30,22 @@ class NativeTlsH1PooledConnection {
     func reusable(): Bool {
         !transport.isClosed()
     }
+
+    func markIdle(): Unit {
+        idleSince = MonoTime.now()
+    }
+
+    func idleExpired(maxIdleMs: Int64): Bool {
+        maxIdleMs > 0 && (MonoTime.now() - idleSince).toMilliseconds() >= maxIdleMs
+    }
 }
 
 class NativeTlsH2PooledConnection {
     let transport: NativeTls13ClientTransport
     let protocol: NativeH2ClientConnection
     let config: NativeTls13ClientConfig
+    var idleSince: MonoTime = MonoTime.now()
+    var retired: Bool = false
 
     init(transport: NativeTls13ClientTransport, config: NativeTls13ClientConfig) {
         this.transport = transport
@@ -43,33 +56,57 @@ class NativeTlsH2PooledConnection {
     func reusable(): Bool {
         !transport.isClosed()
     }
+
+    func markIdle(): Unit {
+        idleSince = MonoTime.now()
+    }
+
+    func idleExpired(maxIdleMs: Int64): Bool {
+        maxIdleMs > 0 && (MonoTime.now() - idleSince).toMilliseconds() >= maxIdleMs
+    }
 }
 
 class NativeTlsH1ConnectionPool {
     let mtx = Mutex()
     let maxIdlePerOrigin: Int64
+    var maxIdleMs: Int64
     var idle = HashMap<String, ArrayList<NativeTlsH1PooledConnection>>()
+    var openedConnections: Int64 = 0
+    var reusedConnections: Int64 = 0
+    var returnedConnections: Int64 = 0
+    var retiredConnections: Int64 = 0
+    var expiredConnections: Int64 = 0
+    var closed: Bool = false
 
-    init(maxIdlePerOrigin: Int64) {
+    init(maxIdlePerOrigin: Int64, maxIdleMs!: Int64 = 30000) {
         this.maxIdlePerOrigin = if (maxIdlePerOrigin > 0) { maxIdlePerOrigin } else { 0 }
+        this.maxIdleMs = if (maxIdleMs > 0) { maxIdleMs } else { 1 }
     }
 
     func enabled(): Bool {
-        maxIdlePerOrigin > 0
+        var result = false
+        synchronized(mtx) { result = !closed && maxIdlePerOrigin > 0 }
+        result
     }
 
     func acquire(origin: String, config: NativeTls13ClientConfig): ?NativeTlsH1PooledConnection {
         var selected: ?NativeTlsH1PooledConnection = None
         let stale = ArrayList<NativeTlsH1PooledConnection>()
         synchronized(mtx) {
-            if (let Some(connections) <- idle.get(origin)) {
+            if (!closed && let Some(connections) <- idle.get(origin)) {
                 var index = connections.size - 1
                 while (index >= 0) {
                     let connection = connections[index]
                     if (!connection.reusable()) {
                         stale.add(connections.remove(at: index))
+                        retiredConnections += 1
+                    } else if (connection.idleExpired(maxIdleMs)) {
+                        stale.add(connections.remove(at: index))
+                        expiredConnections += 1
+                        retiredConnections += 1
                     } else if (nativeTlsConfigsMatch(connection.config, config)) {
                         selected = Some(connections.remove(at: index))
+                        reusedConnections += 1
                         break
                     }
                     index -= 1
@@ -86,33 +123,41 @@ class NativeTlsH1ConnectionPool {
     }
 
     func release(origin: String, connection: NativeTlsH1PooledConnection): Unit {
-        if (!enabled() || !connection.reusable()) {
-            closeNativeTlsH1Connection(connection)
+        if (!connection.reusable()) {
+            retire(connection)
             return
         }
         var retained = false
         synchronized(mtx) {
-            let connections = if (let Some(existing) <- idle.get(origin)) {
-                existing
-            } else {
-                let created = ArrayList<NativeTlsH1PooledConnection>()
-                idle.add(origin, created)
-                created
-            }
-            if (connections.size < maxIdlePerOrigin) {
-                connections.add(connection)
-                retained = true
+            if (!connection.retired && !closed && maxIdlePerOrigin > 0) {
+                let connections = if (let Some(existing) <- idle.get(origin)) {
+                    existing
+                } else {
+                    let created = ArrayList<NativeTlsH1PooledConnection>()
+                    idle.add(origin, created)
+                    created
+                }
+                if (connections.size < maxIdlePerOrigin) {
+                    connection.markIdle()
+                    connections.add(connection)
+                    returnedConnections += 1
+                    retained = true
+                }
             }
         }
         if (!retained) {
-            closeNativeTlsH1Connection(connection)
+            retire(connection)
         }
     }
 
     func close(): Unit {
         var closing = HashMap<String, ArrayList<NativeTlsH1PooledConnection>>()
         synchronized(mtx) {
+            closed = true
             closing = idle
+            for ((_origin, connections) in closing) {
+                retiredConnections += connections.size
+            }
             idle = HashMap<String, ArrayList<NativeTlsH1PooledConnection>>()
         }
         for ((_origin, connections) in closing) {
@@ -121,33 +166,103 @@ class NativeTlsH1ConnectionPool {
             }
         }
     }
+
+    func updateMaxIdleMs(value: Int64): Unit {
+        var closing = HashMap<String, ArrayList<NativeTlsH1PooledConnection>>()
+        synchronized(mtx) {
+            maxIdleMs = value
+            closing = idle
+            for ((_origin, connections) in closing) {
+                retiredConnections += connections.size
+            }
+            idle = HashMap<String, ArrayList<NativeTlsH1PooledConnection>>()
+        }
+        for ((_origin, connections) in closing) {
+            for (connection in connections) {
+                closeNativeTlsH1Connection(connection)
+            }
+        }
+    }
+
+    func recordOpened(): Unit {
+        synchronized(mtx) { openedConnections += 1 }
+    }
+
+    func retire(connection: NativeTlsH1PooledConnection): Unit {
+        var shouldClose = false
+        synchronized(mtx) {
+            if (!connection.retired) {
+                connection.retired = true
+                retiredConnections += 1
+                shouldClose = true
+            }
+        }
+        if (shouldClose) {
+            closeNativeTlsH1Connection(connection)
+        }
+    }
+
+    func snapshot(): NativeTlsPoolProtocolSnapshot {
+        var result = NativeTlsPoolProtocolSnapshot()
+        synchronized(mtx) {
+            var idleCount: Int64 = 0
+            for ((_origin, connections) in idle) {
+                idleCount += connections.size
+            }
+            result = NativeTlsPoolProtocolSnapshot(
+                idleConnections: idleCount,
+                openedConnections: openedConnections,
+                reusedConnections: reusedConnections,
+                returnedConnections: returnedConnections,
+                retiredConnections: retiredConnections,
+                expiredConnections: expiredConnections
+            )
+        }
+        result
+    }
 }
 
 class NativeTlsH2ConnectionPool {
     let mtx = Mutex()
     let maxIdlePerOrigin: Int64
+    var maxIdleMs: Int64
     var idle = HashMap<String, ArrayList<NativeTlsH2PooledConnection>>()
+    var openedConnections: Int64 = 0
+    var reusedConnections: Int64 = 0
+    var returnedConnections: Int64 = 0
+    var retiredConnections: Int64 = 0
+    var expiredConnections: Int64 = 0
+    var closed: Bool = false
 
-    init(maxIdlePerOrigin: Int64) {
+    init(maxIdlePerOrigin: Int64, maxIdleMs!: Int64 = 30000) {
         this.maxIdlePerOrigin = if (maxIdlePerOrigin > 0) { maxIdlePerOrigin } else { 0 }
+        this.maxIdleMs = if (maxIdleMs > 0) { maxIdleMs } else { 1 }
     }
 
     func enabled(): Bool {
-        maxIdlePerOrigin > 0
+        var result = false
+        synchronized(mtx) { result = !closed && maxIdlePerOrigin > 0 }
+        result
     }
 
     func acquire(origin: String, config: NativeTls13ClientConfig): ?NativeTlsH2PooledConnection {
         var selected: ?NativeTlsH2PooledConnection = None
         let stale = ArrayList<NativeTlsH2PooledConnection>()
         synchronized(mtx) {
-            if (let Some(connections) <- idle.get(origin)) {
+            if (!closed && let Some(connections) <- idle.get(origin)) {
                 var index = connections.size - 1
                 while (index >= 0) {
                     let connection = connections[index]
                     if (!connection.reusable()) {
                         stale.add(connections.remove(at: index))
+                        retiredConnections += 1
+                    } else if (connection.idleExpired(maxIdleMs)) {
+                        stale.add(connections.remove(at: index))
+                        expiredConnections += 1
+                        retiredConnections += 1
                     } else if (nativeTlsConfigsMatch(connection.config, config)) {
                         selected = Some(connections.remove(at: index))
+                        reusedConnections += 1
                         break
                     }
                     index -= 1
@@ -164,33 +279,41 @@ class NativeTlsH2ConnectionPool {
     }
 
     func release(origin: String, connection: NativeTlsH2PooledConnection): Unit {
-        if (!enabled() || !connection.reusable()) {
-            closeNativeTlsH2Connection(connection)
+        if (!connection.reusable()) {
+            retire(connection)
             return
         }
         var retained = false
         synchronized(mtx) {
-            let connections = if (let Some(existing) <- idle.get(origin)) {
-                existing
-            } else {
-                let created = ArrayList<NativeTlsH2PooledConnection>()
-                idle.add(origin, created)
-                created
-            }
-            if (connections.size < maxIdlePerOrigin) {
-                connections.add(connection)
-                retained = true
+            if (!connection.retired && !closed && maxIdlePerOrigin > 0) {
+                let connections = if (let Some(existing) <- idle.get(origin)) {
+                    existing
+                } else {
+                    let created = ArrayList<NativeTlsH2PooledConnection>()
+                    idle.add(origin, created)
+                    created
+                }
+                if (connections.size < maxIdlePerOrigin) {
+                    connection.markIdle()
+                    connections.add(connection)
+                    returnedConnections += 1
+                    retained = true
+                }
             }
         }
         if (!retained) {
-            closeNativeTlsH2Connection(connection)
+            retire(connection)
         }
     }
 
     func close(): Unit {
         var closing = HashMap<String, ArrayList<NativeTlsH2PooledConnection>>()
         synchronized(mtx) {
+            closed = true
             closing = idle
+            for ((_origin, connections) in closing) {
+                retiredConnections += connections.size
+            }
             idle = HashMap<String, ArrayList<NativeTlsH2PooledConnection>>()
         }
         for ((_origin, connections) in closing) {
@@ -198,6 +321,60 @@ class NativeTlsH2ConnectionPool {
                 closeNativeTlsH2Connection(connection)
             }
         }
+    }
+
+    func updateMaxIdleMs(value: Int64): Unit {
+        var closing = HashMap<String, ArrayList<NativeTlsH2PooledConnection>>()
+        synchronized(mtx) {
+            maxIdleMs = value
+            closing = idle
+            for ((_origin, connections) in closing) {
+                retiredConnections += connections.size
+            }
+            idle = HashMap<String, ArrayList<NativeTlsH2PooledConnection>>()
+        }
+        for ((_origin, connections) in closing) {
+            for (connection in connections) {
+                closeNativeTlsH2Connection(connection)
+            }
+        }
+    }
+
+    func recordOpened(): Unit {
+        synchronized(mtx) { openedConnections += 1 }
+    }
+
+    func retire(connection: NativeTlsH2PooledConnection): Unit {
+        var shouldClose = false
+        synchronized(mtx) {
+            if (!connection.retired) {
+                connection.retired = true
+                retiredConnections += 1
+                shouldClose = true
+            }
+        }
+        if (shouldClose) {
+            closeNativeTlsH2Connection(connection)
+        }
+    }
+
+    func snapshot(): NativeTlsPoolProtocolSnapshot {
+        var result = NativeTlsPoolProtocolSnapshot()
+        synchronized(mtx) {
+            var idleCount: Int64 = 0
+            for ((_origin, connections) in idle) {
+                idleCount += connections.size
+            }
+            result = NativeTlsPoolProtocolSnapshot(
+                idleConnections: idleCount,
+                openedConnections: openedConnections,
+                reusedConnections: reusedConnections,
+                returnedConnections: returnedConnections,
+                retiredConnections: retiredConnections,
+                expiredConnections: expiredConnections
+            )
+        }
+        result
     }
 }
 
@@ -231,7 +408,10 @@ func sendNativeTlsRequest(
         }
         let connection = match (pool.acquire(origin, config)) {
             case Some(existing) => existing
-            case None => openNativeTlsH2Connection(target, readTimeout, writeTimeout, config)
+            case None =>
+                let opened = openNativeTlsH2Connection(target, readTimeout, writeTimeout, config)
+                pool.recordOpened()
+                opened
         }
         return sendNativeTlsH2Request(method, url, headers, body, connection, origin, pool)
     }
@@ -247,7 +427,10 @@ func sendNativeTlsRequest(
     }
     let connection = match (pooled) {
         case Some(existing) => existing
-        case None => openNativeTlsH1Connection(target, readTimeout, writeTimeout, config)
+        case None =>
+            let opened = openNativeTlsH1Connection(target, readTimeout, writeTimeout, config)
+            pool.recordOpened()
+            opened
     }
     var transferred = false
     try {
@@ -264,7 +447,7 @@ func sendNativeTlsRequest(
                 if (safe) {
                     pool.release(origin, connection)
                 } else {
-                    closeNativeTlsH1Connection(connection)
+                    pool.retire(connection)
                 }
             }
         )
@@ -272,7 +455,7 @@ func sendNativeTlsRequest(
         response
     } finally {
         if (!transferred) {
-            closeNativeTlsH1Connection(connection)
+            pool.retire(connection)
         }
     }
 }
@@ -347,7 +530,7 @@ func sendNativeTlsH2Request(
                 if (safe) {
                     pool.release(origin, connection)
                 } else {
-                    closeNativeTlsH2Connection(connection)
+                    pool.retire(connection)
                 }
             }
         )
@@ -355,7 +538,7 @@ func sendNativeTlsH2Request(
         response
     } finally {
         if (!transferred) {
-            closeNativeTlsH2Connection(connection)
+            pool.retire(connection)
         }
     }
 }
