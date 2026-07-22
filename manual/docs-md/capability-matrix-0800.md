@@ -23,7 +23,7 @@
 | native HTTP/2 Server | Preview | `ignite.native_h2` 可在 caller 提供的 `TcpSocket` 上运行单流或多流连接，并可接入 `App`。 | 非默认 listener；未完成完整浏览器矩阵、h2spec、动态 HPACK table。 |
 | native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2；配合 `useNativeTls(...)` 和 `h2` ALPN 可走 Contract-backed TLS1.3。两条路径共享 AP4 HPACK、流控、streamed-response lease、超时、重试、Cookie 与 observe 语义；完整消费后明文与 TLS 连接都可顺序归池。 | 必须显式选择实验 backend；仅支持 buffered/replayable request body 和每连接一个公开 streamed response lease。mutation hook、默认切换与公开 RestClient 多路并发仍未完成。 |
 | H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 恢复、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭会发送 CANCEL 并淘汰连接。当前不是全场景零拷贝或公开多路 lease API。 |
-| WebSocket | 0800 默认 | H1 native upgrade 支持文本、二进制、Ping/Pong、Close、分片与子协议选择。 | H2 extended CONNECT 尚未提供。 |
+| WebSocket | 0800 默认 | H1 native upgrade 支持文本、二进制、Ping/Pong、Close、分片与子协议选择；严格拒绝未协商 RSV、保留 opcode、非规范长度和非法文本 UTF-8，支持可配置入站消息上限，并串行化并发 writer。 | 默认入站上限为 1 MiB；H2 extended CONNECT、Native WSS、permessage-deflate、客户端 Dialer、Autobahn/浏览器/长窗口规模证明尚未提供。 |
 | SSE | 0800 默认 | `ctx.sse()` 进入 native H1 长响应主路径。 | 显式 flush/close 的跨后端一致契约仍需继续收紧。 |
 
 ## 请求、响应与数据

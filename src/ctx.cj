@@ -869,20 +869,37 @@ public class Ctx {
     // ── WebSocket ──
 
     public func upgradeWebSocket(): WsConn {
-        _responded = true
-        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket([])
-        }
-        let ws = _currentRequestCarrier.upgradeWebSocketRaw()
-        WsConn(ws)
+        upgradeWebSocketWithOptions(WebSocketOptions())
     }
 
     public func upgradeWebSocketWithSubProtocols(subProtocols: Array<String>): WsConn {
+        upgradeWebSocketWithSubProtocolsAndOptions(
+            subProtocols,
+            WebSocketOptions()
+        )
+    }
+
+    public func upgradeWebSocketWithOptions(options: WebSocketOptions): WsConn {
         _responded = true
         if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket(subProtocols)
+            return nativeCarrier.upgradeNativeWebSocket([], options)
         }
-        upgradeStdxWebSocketWithSubProtocols(_currentRequestCarrier, subProtocols)
+        let ws = _currentRequestCarrier.upgradeWebSocketRaw()
+        WsConn(
+            ws,
+            maxIncomingMessageBytes: options.maxIncomingMessageBytes
+        )
+    }
+
+    public func upgradeWebSocketWithSubProtocolsAndOptions(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        _responded = true
+        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
+            return nativeCarrier.upgradeNativeWebSocket(subProtocols, options)
+        }
+        upgradeStdxWebSocketWithSubProtocols(_currentRequestCarrier, subProtocols, options)
     }
 
     // ── Internal HttpContext access ──

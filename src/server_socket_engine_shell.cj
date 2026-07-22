@@ -1685,7 +1685,10 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         )
     }
 
-    public override func upgradeNativeWebSocket(subProtocols: Array<String>): WsConn {
+    public override func upgradeNativeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
         let socket = nativeWebSocketSocket ?? throw SocketServerEngineShellException(
             "socket server engine shell request does not own an upgradeable cleartext socket"
         )
@@ -1698,7 +1701,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
             requestHeaderValue("sec-websocket-version") ?? "",
             requestHeaderValue("sec-websocket-key") ?? "",
             requestHeaderValue("sec-websocket-protocol") ?? "",
-            subProtocols
+            subProtocols,
+            options
         )
         nativeWebSocketUpgradedValue = true
         WsConn(connection)

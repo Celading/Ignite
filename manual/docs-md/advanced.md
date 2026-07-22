@@ -53,7 +53,23 @@ app.ws("/chat", { conn =>
 })
 ```
 
-这适合聊天室、实时通知、设备控制面等轻量实时场景。
+需要更大的入站消息时，显式给出边界：
+
+```cangjie
+app.ws(
+    "/chat",
+    WebSocketOptions(maxIncomingMessageBytes: 4 * 1024 * 1024),
+    { conn =>
+        let msg = conn.readMessage()
+        if (msg.isText) { conn.writeText(msg.text()) }
+    }
+)
+```
+
+默认入站上限是 `1 MiB`。同一连接保持一个活动 `readMessage()`；多个 writer
+可以并发调用，Ignite 会按完整帧串行写出。当前 Native 路径适合聊天室、实时
+通知、设备控制面等 H1 场景，但不等同于 H2 extended CONNECT、WSS 或
+permessage-deflate。
 
 ## SSE
 

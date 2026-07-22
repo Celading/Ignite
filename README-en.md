@@ -548,6 +548,12 @@ app.ws("/chat", { conn =>
 })
 ```
 
+Native H1 WebSocket defaults to a `1 MiB` incoming-message limit. Use
+`WebSocketOptions(maxIncomingMessageBytes: ...)` for an explicit larger bound.
+Keep one active reader per connection; concurrent writers are serialized at
+whole-frame boundaries. H2 extended CONNECT, native WSS, permessage-deflate,
+and client dialing remain outside this Preview surface.
+
 ### Server-Sent Events (SSE)
 
 ```cangjie

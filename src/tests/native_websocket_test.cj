@@ -192,6 +192,133 @@ public class NativeWebSocketTestSuite {
             closeNativeWebSocketTest(socket, app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsRsvWithoutNegotiatedExtension(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2011,
+            maskedNativeWebSocketFrame(1, "x".toArray(), firstByteFlags: 0x40),
+            1002
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsReservedOpcode(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2027,
+            maskedNativeWebSocketFrame(3, "x".toArray()),
+            1002
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsNonCanonicalPayloadLength(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2039,
+            maskedNativeWebSocketNonCanonical16BitFrame("x".toArray()),
+            1002
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsNonCanonical64BitPayloadLength(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2047,
+            maskedNativeWebSocketNonCanonical64BitFrame("x".toArray()),
+            1002
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsInvalidTextUtf8With1007(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2053,
+            maskedNativeWebSocketFrame(1, [UInt8(0xC3), UInt8(0x28)]),
+            1007
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketRejectsInvalidCloseReasonUtf8With1007(): Unit {
+        assertNativeWebSocketProtocolClose(
+            2063,
+            maskedNativeWebSocketFrame(
+                8,
+                [UInt8(0x03), UInt8(0xE8), UInt8(0xC3), UInt8(0x28)]
+            ),
+            1007
+        )
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketAppliesConfiguredMessageLimitWith1009(): Unit {
+        let port = chooseNativeWebSocketPort(2069)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws(
+            "/native-ws-limit",
+            WebSocketOptions(maxIncomingMessageBytes: 4),
+            { conn => let _ = conn.readMessage() }
+        )
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        try {
+            writeNativeWebSocketUpgradeRequest(socket, port, "/native-ws-limit")
+            let _ = readNativeWebSocketResponseHead(socket)
+            socket.write(maskedNativeWebSocketTextFrame("12345"))
+            let close = readNativeWebSocketServerFrame(socket)
+            @Assert(close.opcode, Int64(8))
+            @Assert(nativeWebSocketTestCloseCode(close.payload), UInt16(1009))
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1WebSocketSerializesConcurrentLargeWriters(): Unit {
+        let port = chooseNativeWebSocketPort(2081)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.ws(
+            "/native-ws-concurrent-write",
+            WebSocketOptions(maxIncomingMessageBytes: 128 * 1024),
+            { conn =>
+                let _ = conn.readMessage()
+                let firstPayload = Array<UInt8>(70000, repeat: UInt8(0x41))
+                let secondPayload = Array<UInt8>(70000, repeat: UInt8(0x42))
+                let firstWriter = spawn { conn.writeBinary(firstPayload) }
+                let secondWriter = spawn { conn.writeBinary(secondPayload) }
+                let _ = firstWriter.get(Duration.second * 5)
+                let _ = secondWriter.get(Duration.second * 5)
+                conn.close()
+            }
+        )
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let socket = connectNativeWebSocketWithRetry(port)
+        socket.readTimeout = Some(Duration.second * 5)
+        try {
+            writeNativeWebSocketUpgradeRequest(
+                socket,
+                port,
+                "/native-ws-concurrent-write"
+            )
+            let _ = readNativeWebSocketResponseHead(socket)
+            socket.write(maskedNativeWebSocketTextFrame("start"))
+            let first = readNativeWebSocketServerFrame(socket)
+            let second = readNativeWebSocketServerFrame(socket)
+            @Assert(first.opcode, Int64(2))
+            @Assert(second.opcode, Int64(2))
+            @Assert(first.payload.size, Int64(70000))
+            @Assert(second.payload.size, Int64(70000))
+            let ordered =
+                nativeWebSocketTestPayloadIs(first.payload, UInt8(0x41)) &&
+                nativeWebSocketTestPayloadIs(second.payload, UInt8(0x42))
+            let reversed =
+                nativeWebSocketTestPayloadIs(first.payload, UInt8(0x42)) &&
+                nativeWebSocketTestPayloadIs(second.payload, UInt8(0x41))
+            @Assert(ordered || reversed, true)
+        } finally {
+            closeNativeWebSocketTest(socket, app, serverFuture)
+        }
+    }
 }
 
 struct NativeWebSocketTestFrame {
@@ -244,17 +371,57 @@ func maskedNativeWebSocketTextFrame(text: String): Array<UInt8> {
 func maskedNativeWebSocketFrame(
     opcode: Int64,
     payload: Array<UInt8>,
-    fin!: Bool = true
+    fin!: Bool = true,
+    firstByteFlags!: Int64 = 0
 ): Array<UInt8> {
     let mask = [UInt8(0x37), UInt8(0xFA), UInt8(0x21), UInt8(0x3D)]
     let out = Array<UInt8>(payload.size + 6, repeat: 0)
-    out[0] = UInt8((if (fin) { 0x80 } else { 0x00 }) | opcode)
+    out[0] = UInt8(
+        (if (fin) { 0x80 } else { 0x00 }) | firstByteFlags | opcode
+    )
     out[1] = UInt8(0x80 | payload.size)
     var i: Int64 = 0
     while (i < 4) { out[i + 2] = mask[i]; i += 1 }
     i = 0
     while (i < payload.size) {
         out[i + 6] = payload[i] ^ mask[i % 4]
+        i += 1
+    }
+    out
+}
+
+func maskedNativeWebSocketNonCanonical16BitFrame(
+    payload: Array<UInt8>
+): Array<UInt8> {
+    let mask = [UInt8(0x37), UInt8(0xFA), UInt8(0x21), UInt8(0x3D)]
+    let out = Array<UInt8>(payload.size + 8, repeat: 0)
+    out[0] = UInt8(0x81)
+    out[1] = UInt8(0x80 | 126)
+    out[2] = UInt8((payload.size >> 8) & 0xFF)
+    out[3] = UInt8(payload.size & 0xFF)
+    var i: Int64 = 0
+    while (i < 4) { out[i + 4] = mask[i]; i += 1 }
+    i = 0
+    while (i < payload.size) {
+        out[i + 8] = payload[i] ^ mask[i % 4]
+        i += 1
+    }
+    out
+}
+
+func maskedNativeWebSocketNonCanonical64BitFrame(
+    payload: Array<UInt8>
+): Array<UInt8> {
+    let mask = [UInt8(0x37), UInt8(0xFA), UInt8(0x21), UInt8(0x3D)]
+    let out = Array<UInt8>(payload.size + 14, repeat: 0)
+    out[0] = UInt8(0x81)
+    out[1] = UInt8(0x80 | 127)
+    out[9] = UInt8(payload.size)
+    var i: Int64 = 0
+    while (i < 4) { out[i + 10] = mask[i]; i += 1 }
+    i = 0
+    while (i < payload.size) {
+        out[i + 14] = payload[i] ^ mask[i % 4]
         i += 1
     }
     out
@@ -304,8 +471,45 @@ func readNativeWebSocketServerFrame(socket: TcpSocket): NativeWebSocketTestFrame
     if (size == 126) {
         let ext = readNativeWebSocketTestExact(socket, 2)
         size = (Int64(ext[0]) << 8) | Int64(ext[1])
+    } else if (size == 127) {
+        let ext = readNativeWebSocketTestExact(socket, 8)
+        size = 0
+        for (b in ext) { size = (size << 8) | Int64(b) }
     }
     NativeWebSocketTestFrame(opcode, readNativeWebSocketTestExact(socket, size))
+}
+
+func assertNativeWebSocketProtocolClose(
+    offset: Int64,
+    frame: Array<UInt8>,
+    expectedStatus: UInt16
+): Unit {
+    let port = chooseNativeWebSocketPort(offset)
+    let app = App(config: Config(enableNetworkChangeNotice: false))
+    app.ws("/native-ws-protocol-close", { conn => let _ = conn.readMessage() })
+    let serverFuture = spawn { app.listen("127.0.0.1", port) }
+    let socket = connectNativeWebSocketWithRetry(port)
+    try {
+        writeNativeWebSocketUpgradeRequest(
+            socket,
+            port,
+            "/native-ws-protocol-close"
+        )
+        let _ = readNativeWebSocketResponseHead(socket)
+        socket.write(frame)
+        let close = readNativeWebSocketServerFrame(socket)
+        @Assert(close.opcode, Int64(8))
+        @Assert(nativeWebSocketTestCloseCode(close.payload), expectedStatus)
+    } finally {
+        closeNativeWebSocketTest(socket, app, serverFuture)
+    }
+}
+
+func nativeWebSocketTestPayloadIs(payload: Array<UInt8>, expected: UInt8): Bool {
+    for (b in payload) {
+        if (b != expected) { return false }
+    }
+    true
 }
 
 func readNativeWebSocketTestExact(socket: TcpSocket, size: Int64): Array<UInt8> {

@@ -3,22 +3,34 @@ package ignite
 import jinguissl.contract.{HashAlgorithm, contractHash}
 import std.collection.ArrayList
 import std.net.TcpSocket
+import std.sync.Mutex
 
 let NATIVE_WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-let NATIVE_WEBSOCKET_MAX_MESSAGE_BYTES: Int64 = 1024 * 1024
-
+let NATIVE_WEBSOCKET_SMALL_FRAME_COALESCE_BYTES: Int64 = 4 * 1024
 class NativeWebSocketProtocolException <: Exception {
-    init(message: String) { super(message) }
+    let closeStatus: UInt16
+
+    init(message: String, closeStatus!: UInt16 = 1002) {
+        super(message)
+        this.closeStatus = closeStatus
+    }
 }
 
 class NativeWebSocketConnection {
     let socket: TcpSocket
     let selectedSubProtocol: String
+    let maxIncomingMessageBytes: Int64
+    let writeMutex = Mutex()
     var closed: Bool = false
 
-    init(socket: TcpSocket, selectedSubProtocol!: String = "") {
+    init(
+        socket: TcpSocket,
+        selectedSubProtocol!: String = "",
+        maxIncomingMessageBytes!: Int64 = DEFAULT_WEBSOCKET_MAX_MESSAGE_BYTES
+    ) {
         this.socket = socket
         this.selectedSubProtocol = selectedSubProtocol
+        this.maxIncomingMessageBytes = maxIncomingMessageBytes
     }
 
     public prop subProtocol: String {
@@ -31,7 +43,10 @@ class NativeWebSocketConnection {
         var started = false
         try {
             while (true) {
-                let frame = readNativeWebSocketFrame(socket)
+                let frame = readNativeWebSocketFrame(
+                    socket,
+                    maxIncomingMessageBytes
+                )
                 match (frame.opcode) {
                     case 0 =>
                         if (!started) {
@@ -39,9 +54,13 @@ class NativeWebSocketConnection {
                                 "native WebSocket continuation arrived before a data frame"
                             )
                         }
-                        appendNativeWebSocketPayload(data, frame.payload)
+                        appendNativeWebSocketPayload(
+                            data,
+                            frame.payload,
+                            maxIncomingMessageBytes
+                        )
                         if (frame.fin) {
-                            return WsMessage(messageType: messageType, data: data.toArray())
+                            return finishNativeWebSocketMessage(messageType, data)
                         }
                     case 1 =>
                         if (started) {
@@ -51,9 +70,13 @@ class NativeWebSocketConnection {
                         }
                         started = true
                         messageType = WsMessageType.Text
-                        appendNativeWebSocketPayload(data, frame.payload)
+                        appendNativeWebSocketPayload(
+                            data,
+                            frame.payload,
+                            maxIncomingMessageBytes
+                        )
                         if (frame.fin) {
-                            return WsMessage(messageType: messageType, data: data.toArray())
+                            return finishNativeWebSocketMessage(messageType, data)
                         }
                     case 2 =>
                         if (started) {
@@ -63,15 +86,19 @@ class NativeWebSocketConnection {
                         }
                         started = true
                         messageType = WsMessageType.Binary
-                        appendNativeWebSocketPayload(data, frame.payload)
+                        appendNativeWebSocketPayload(
+                            data,
+                            frame.payload,
+                            maxIncomingMessageBytes
+                        )
                         if (frame.fin) {
-                            return WsMessage(messageType: messageType, data: data.toArray())
+                            return finishNativeWebSocketMessage(messageType, data)
                         }
                     case 8 =>
                         validateNativeWebSocketClosePayload(frame.payload)
                         echoNativeWebSocketClose(frame.payload)
                         return WsMessage(messageType: WsMessageType.Close, data: frame.payload)
-                    case 9 => writeNativeWebSocketFrame(socket, 10, frame.payload)
+                    case 9 => writeFrame(10, frame.payload)
                     case 10 => ()
                     case _ => throw NativeWebSocketProtocolException(
                         "native WebSocket received unsupported opcode ${frame.opcode}"
@@ -79,40 +106,45 @@ class NativeWebSocketConnection {
                 }
             }
         } catch (e: NativeWebSocketProtocolException) {
-            close(1002, "protocol error")
+            try {
+                close(e.closeStatus, nativeWebSocketCloseReason(e.closeStatus))
+            } catch (_: Exception) {}
             throw e
         }
         throw Exception("native WebSocket read loop ended unexpectedly")
     }
 
     func echoNativeWebSocketClose(payload: Array<UInt8>): Unit {
-        if (!closed && !socket.isClosed()) {
-            writeNativeWebSocketFrame(socket, 8, payload)
+        var shouldClose = false
+        synchronized(writeMutex) {
+            if (!closed && !socket.isClosed()) {
+                writeNativeWebSocketFrame(socket, 8, payload)
+            }
+            if (!closed) {
+                closed = true
+                shouldClose = true
+            }
         }
-        closed = true
-        if (!socket.isClosed()) { socket.close() }
+        if (shouldClose && !socket.isClosed()) { socket.close() }
     }
 
     func writeText(text: String): Unit {
-        ensureOpen()
-        writeNativeWebSocketFrame(socket, 1, text.toArray())
+        writeFrame(1, text.toArray())
     }
 
     func writeBinary(data: Array<UInt8>): Unit {
-        ensureOpen()
-        writeNativeWebSocketFrame(socket, 2, data)
+        writeFrame(2, data)
     }
 
     func ping(data: Array<UInt8>): Unit {
-        ensureOpen()
         if (data.size > 125) {
             throw Exception("native WebSocket ping payload exceeds 125 bytes")
         }
-        writeNativeWebSocketFrame(socket, 9, data)
+        writeFrame(9, data)
     }
 
     func close(status: UInt16, reason: String): Unit {
-        if (closed) { return }
+        validateNativeWebSocketCloseStatus(Int64(status))
         let reasonBytes = reason.toArray()
         if (reasonBytes.size > 123) {
             throw Exception("native WebSocket close reason exceeds 123 bytes")
@@ -125,12 +157,27 @@ class NativeWebSocketConnection {
             payload[i + 2] = reasonBytes[i]
             i += 1
         }
-        writeNativeWebSocketFrame(socket, 8, payload)
-        closed = true
-        if (!socket.isClosed()) { socket.close() }
+        var shouldClose = false
+        synchronized(writeMutex) {
+            if (!closed) {
+                if (!socket.isClosed()) {
+                    writeNativeWebSocketFrame(socket, 8, payload)
+                }
+                closed = true
+                shouldClose = true
+            }
+        }
+        if (shouldClose && !socket.isClosed()) { socket.close() }
     }
 
-    func ensureOpen(): Unit {
+    func writeFrame(opcode: Int64, payload: Array<UInt8>): Unit {
+        synchronized(writeMutex) {
+            ensureOpenLocked()
+            writeNativeWebSocketFrame(socket, opcode, payload)
+        }
+    }
+
+    func ensureOpenLocked(): Unit {
         if (closed || socket.isClosed()) {
             throw Exception("native WebSocket connection is closed")
         }
@@ -158,7 +205,8 @@ func openNativeWebSocketConnection(
     websocketVersion: String,
     websocketKey: String,
     offeredSubProtocols: String,
-    allowedSubProtocols: Array<String>
+    allowedSubProtocols: Array<String>,
+    options: WebSocketOptions
 ): NativeWebSocketConnection {
     if (method.trimAscii().toAsciiUpper() != "GET") {
         throw Exception("native WebSocket upgrade requires GET")
@@ -197,7 +245,11 @@ func openNativeWebSocketConnection(
         "Sec-WebSocket-Accept: ${accept}\r\n" +
         protocolHeader + "\r\n").toArray()
     )
-    NativeWebSocketConnection(socket, selectedSubProtocol: selectedSubProtocol)
+    NativeWebSocketConnection(
+        socket,
+        selectedSubProtocol: selectedSubProtocol,
+        maxIncomingMessageBytes: options.maxIncomingMessageBytes
+    )
 }
 
 func selectNativeWebSocketSubProtocol(
@@ -216,10 +268,24 @@ func selectNativeWebSocketSubProtocol(
     ""
 }
 
-func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
+func readNativeWebSocketFrame(
+    socket: TcpSocket,
+    maxIncomingMessageBytes: Int64
+): NativeWebSocketFrame {
     let head = readNativeWebSocketExact(socket, 2)
-    let fin = (Int64(head[0]) & 0x80) != 0
-    let opcode = Int64(head[0]) & 0x0F
+    let firstByte = Int64(head[0])
+    let fin = (firstByte & 0x80) != 0
+    if ((firstByte & 0x70) != 0) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket received RSV bits without a negotiated extension"
+        )
+    }
+    let opcode = firstByte & 0x0F
+    if (!nativeWebSocketOpcodeSupported(opcode)) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket received unsupported opcode ${opcode}"
+        )
+    }
     let masked = (Int64(head[1]) & 0x80) != 0
     if (!masked) {
         throw NativeWebSocketProtocolException("native WebSocket client frame must be masked")
@@ -228,6 +294,11 @@ func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
     if (payloadLength == 126) {
         let ext = readNativeWebSocketExact(socket, 2)
         payloadLength = (Int64(ext[0]) << 8) | Int64(ext[1])
+        if (payloadLength < 126) {
+            throw NativeWebSocketProtocolException(
+                "native WebSocket payload length used a non-canonical 16-bit encoding"
+            )
+        }
     } else if (payloadLength == 127) {
         let ext = readNativeWebSocketExact(socket, 8)
         if ((Int64(ext[0]) & 0x80) != 0) {
@@ -237,9 +308,17 @@ func readNativeWebSocketFrame(socket: TcpSocket): NativeWebSocketFrame {
         }
         payloadLength = 0
         for (b in ext) { payloadLength = (payloadLength << 8) | Int64(b) }
+        if (payloadLength <= 65535) {
+            throw NativeWebSocketProtocolException(
+                "native WebSocket payload length used a non-canonical 64-bit encoding"
+            )
+        }
     }
-    if (payloadLength > NATIVE_WEBSOCKET_MAX_MESSAGE_BYTES) {
-        throw NativeWebSocketProtocolException("native WebSocket frame exceeds bounded message limit")
+    if (opcode < 8 && payloadLength > maxIncomingMessageBytes) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket frame exceeds configured maxIncomingMessageBytes",
+            closeStatus: 1009
+        )
     }
     if (opcode >= 8 && (!fin || payloadLength > 125)) {
         throw NativeWebSocketProtocolException(
@@ -264,44 +343,54 @@ func validateNativeWebSocketClosePayload(payload: Array<UInt8>): Unit {
     }
     if (payload.size < 2) { return }
     let status = (Int64(payload[0]) << 8) | Int64(payload[1])
-    let standard = status >= 1000 && status <= 1014 &&
-        status != 1004 && status != 1005 && status != 1006
-    let application = status >= 3000 && status <= 4999
-    if (!standard && !application) {
-        throw NativeWebSocketProtocolException(
-            "native WebSocket close payload contains invalid status ${status}"
-        )
-    }
+    validateNativeWebSocketCloseStatus(status)
     if (payload.size > 2) {
         try {
             let _ = String.fromUtf8(payload[2..payload.size])
         } catch (_: Exception) {
             throw NativeWebSocketProtocolException(
-                "native WebSocket close reason is not valid UTF-8"
+                "native WebSocket close reason is not valid UTF-8",
+                closeStatus: 1007
             )
         }
     }
 }
 
 func writeNativeWebSocketFrame(socket: TcpSocket, opcode: Int64, payload: Array<UInt8>): Unit {
-    let out = ArrayList<UInt8>()
-    out.add(UInt8(0x80 | opcode))
+    let header = ArrayList<UInt8>()
+    header.add(UInt8(0x80 | opcode))
     if (payload.size <= 125) {
-        out.add(UInt8(payload.size))
+        header.add(UInt8(payload.size))
     } else if (payload.size <= 65535) {
-        out.add(UInt8(126))
-        out.add(UInt8((payload.size >> 8) & 0xFF))
-        out.add(UInt8(payload.size & 0xFF))
+        header.add(UInt8(126))
+        header.add(UInt8((payload.size >> 8) & 0xFF))
+        header.add(UInt8(payload.size & 0xFF))
     } else {
-        out.add(UInt8(127))
+        header.add(UInt8(127))
         var shift: Int64 = 56
         while (shift >= 0) {
-            out.add(UInt8((payload.size >> shift) & 0xFF))
+            header.add(UInt8((payload.size >> shift) & 0xFF))
             shift -= 8
         }
     }
-    appendNativeWebSocketPayload(out, payload)
-    socket.write(out.toArray())
+    let headerBytes = header.toArray()
+    if (payload.size <= NATIVE_WEBSOCKET_SMALL_FRAME_COALESCE_BYTES) {
+        let frame = Array<UInt8>(headerBytes.size + payload.size, repeat: 0)
+        var i: Int64 = 0
+        while (i < headerBytes.size) {
+            frame[i] = headerBytes[i]
+            i += 1
+        }
+        var payloadOffset: Int64 = 0
+        while (payloadOffset < payload.size) {
+            frame[headerBytes.size + payloadOffset] = payload[payloadOffset]
+            payloadOffset += 1
+        }
+        socket.write(frame)
+        return
+    }
+    socket.write(headerBytes)
+    socket.write(payload)
 }
 
 func readNativeWebSocketExact(socket: TcpSocket, size: Int64): Array<UInt8> {
@@ -321,11 +410,62 @@ func readNativeWebSocketExact(socket: TcpSocket, size: Int64): Array<UInt8> {
     out
 }
 
-func appendNativeWebSocketPayload(out: ArrayList<UInt8>, payload: Array<UInt8>): Unit {
-    if (out.size + payload.size > NATIVE_WEBSOCKET_MAX_MESSAGE_BYTES + 16) {
-        throw Exception("native WebSocket message exceeds bounded message limit")
+func appendNativeWebSocketPayload(
+    out: ArrayList<UInt8>,
+    payload: Array<UInt8>,
+    maxIncomingMessageBytes: Int64
+): Unit {
+    if (out.size + payload.size > maxIncomingMessageBytes) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket message exceeds configured maxIncomingMessageBytes",
+            closeStatus: 1009
+        )
     }
     for (b in payload) { out.add(b) }
+}
+
+func finishNativeWebSocketMessage(
+    messageType: WsMessageType,
+    data: ArrayList<UInt8>
+): WsMessage {
+    let payload = data.toArray()
+    match (messageType) {
+        case Text =>
+            try {
+                let _ = String.fromUtf8(payload)
+            } catch (_: Exception) {
+                throw NativeWebSocketProtocolException(
+                    "native WebSocket text message is not valid UTF-8",
+                    closeStatus: 1007
+                )
+            }
+        case _ => ()
+    }
+    WsMessage(messageType: messageType, data: payload)
+}
+
+func nativeWebSocketOpcodeSupported(opcode: Int64): Bool {
+    opcode == 0 || opcode == 1 || opcode == 2 || opcode == 8 ||
+        opcode == 9 || opcode == 10
+}
+
+func validateNativeWebSocketCloseStatus(status: Int64): Unit {
+    let standard = status >= 1000 && status <= 1014 &&
+        status != 1004 && status != 1005 && status != 1006
+    let application = status >= 3000 && status <= 4999
+    if (!standard && !application) {
+        throw NativeWebSocketProtocolException(
+            "native WebSocket close payload contains invalid status ${status}"
+        )
+    }
+}
+
+func nativeWebSocketCloseReason(status: UInt16): String {
+    match (status) {
+        case 1007 => "invalid utf-8"
+        case 1009 => "message too large"
+        case _ => "protocol error"
+    }
 }
 
 func nativeWebSocketHeaderHasToken(value: String, expected: String): Bool {

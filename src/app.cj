@@ -381,13 +381,29 @@ public class App {
     // ── WebSocket ──
 
     public func ws(path: String, handler: WsHandler): App {
-        ws(path, [], handler)
+        ws(path, [], WebSocketOptions(), handler)
     }
 
     public func ws(path: String, subProtocols: Array<String>, handler: WsHandler): App {
+        ws(path, subProtocols, WebSocketOptions(), handler)
+    }
+
+    public func ws(path: String, options: WebSocketOptions, handler: WsHandler): App {
+        ws(path, [], options, handler)
+    }
+
+    public func ws(
+        path: String,
+        subProtocols: Array<String>,
+        options: WebSocketOptions,
+        handler: WsHandler
+    ): App {
         let wsFunc: Handler = { ctx: Ctx =>
             try {
-                let conn = ctx.upgradeWebSocketWithSubProtocols(subProtocols)
+                let conn = ctx.upgradeWebSocketWithSubProtocolsAndOptions(
+                    subProtocols,
+                    options
+                )
                 handler(conn)
             } catch (e: Exception) {
                 println("[Ignite] WebSocket error: ${e.message}")

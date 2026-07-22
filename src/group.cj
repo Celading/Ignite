@@ -95,14 +95,30 @@ public class Group {
     // ── WebSocket ──
 
     public func ws(path: String, handler: WsHandler): Group {
-        ws(path, [], handler)
+        ws(path, [], WebSocketOptions(), handler)
     }
 
     public func ws(path: String, subProtocols: Array<String>, handler: WsHandler): Group {
+        ws(path, subProtocols, WebSocketOptions(), handler)
+    }
+
+    public func ws(path: String, options: WebSocketOptions, handler: WsHandler): Group {
+        ws(path, [], options, handler)
+    }
+
+    public func ws(
+        path: String,
+        subProtocols: Array<String>,
+        options: WebSocketOptions,
+        handler: WsHandler
+    ): Group {
         let fullPath = joinPath(_prefix, path)
         let wsFunc: Handler = { ctx: Ctx =>
             try {
-                let conn = ctx.upgradeWebSocketWithSubProtocols(subProtocols)
+                let conn = ctx.upgradeWebSocketWithSubProtocolsAndOptions(
+                    subProtocols,
+                    options
+                )
                 handler(conn)
             } catch (e: Exception) {
                 println("[Ignite] WebSocket error: ${e.message}")
