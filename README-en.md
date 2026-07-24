@@ -52,14 +52,14 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 ## Current Status (0.8.2 Preview)
 
 - Cleartext HTTP/1.1 now defaults to Ignite native H1, with an explicit `stdx-default` rollback.
-- Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions; WebSocket adds bounded messages, strict frame admission, and serialized concurrent writers.
-- Native H2 server/client include bounded multiplexing, flow-control recovery, lifecycle slices, and the current repository h2spec profile, but remain an explicit Preview rather than a complete browser, proxy, or long-window compatibility claim.
+- Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions; ordinary `app.ws(...)` uses the Ignite-owned WebSocket under Native H1, with bounded messages, strict frame admission, and serialized writers.
+- Native H2 server/client include bounded multiplexing, flow-control recovery, lifecycle slices, and the current repository h2spec profile, but the server requires an explicit cleartext prior-knowledge engine and does not provide H2 WebSocket.
 - HTTPS keeps the stable stdx TLS path by default; JinguiSSL native TLS/ALPN remains experimental opt-in.
 - Native TLS client pools now expose bounded idle lifecycle snapshots, while native H1 exposes backend selection, fallback reasons, connection/request counters, and expected timeout/reset containment.
 - SeaJson exposes a `JsonWriterEncodable -> OutputStream` path; classic `ctx.json(String)` still sends a complete string.
 - Dynamic gzip/deflate now use Ignite-owned safe Cangjie codecs; Zstd and Brotli have opt-in RAW/RLE Preview baselines, while precompressed `.zst/.br` assets remain supported.
 
-See [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md) for the complete 0800 boundary and rollback notes. The public milestone timeline remains in `CHANGELOG.MD` and `CHANGELOG-en.MD`.
+See [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md) for the complete 0800 boundary and rollback notes, and [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md) for the executable Native H2 server/client path. The public milestone timeline remains in `CHANGELOG.MD` and `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -716,7 +716,7 @@ let app = App(config: Config(
 app.listen("0.0.0.0", 443)
 ```
 
-**HTTP/2**: With TLS, the server negotiates `h2`. Verify with `curl -sI --http2 https://localhost:3443/`.
+**HTTP/2**: The stable stdx HTTPS path may negotiate `h2`; verify it with `curl -sI --http2 https://localhost:3443/`. This is not the Ignite Native H2 ServerEngine, which currently accepts cleartext prior knowledge only.
 
 `enableTlsPrecheck` can be set to `false` to fallback to the current "default TLS build only" path. Use this mainly for emergency troubleshooting windows.
 

@@ -107,6 +107,9 @@ HTTPS 默认仍走稳定的 stdx TLS 路径。JinguiSSL Contract 已经是 Ignit
 
 ### HTTP/2
 
+Native H2 的最短可运行 ServerEngine、RestClient 与 H1/H2 差异见
+[`h2-quickstart-0800.md`](h2-quickstart-0800.md)。
+
 native H2 preview 已经具备：
 
 - Server/Client preface 与 SETTINGS 往返
