@@ -41,13 +41,13 @@
 ## 当前状态（0.8.1 Preview）
 
 - 明文 HTTP/1.1 默认进入 Ignite native H1，保留 `stdx-default` 显式回滚入口。
-- 原生 H1 Client、WebSocket、SSE、流式响应与请求体上限已经进入真实 socket 回归面。
-- 原生 H2 Server/Client 已具备受限多路复用、流控恢复和生命周期切片，但仍是显式 preview，不宣称浏览器/h2spec 全兼容。
+- 原生 H1 Client、WebSocket、SSE、流式响应与请求体上限已经进入真实 socket 回归面；普通 `app.ws(...)` 在 Native H1 backend 下就是 Ignite 自研 WebSocket，不需要第二个开关。
+- 原生 H2 Server/Client 已具备受限多路复用、流控恢复和生命周期切片，但 Server 需要显式安装 cleartext prior-knowledge engine；它不是浏览器 HTTPS 默认路径，也不包含 H2 WebSocket。
 - HTTPS 默认继续使用稳定的 stdx TLS 路径；JinguiSSL native TLS/ALPN 仍需显式实验开关。
 - SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径；传统 `ctx.json(String)` 仍是完整字符串响应。
 - 动态 gzip/deflate 已切换为 Ignite 自有安全仓颉 codec；Zstd 与 Brotli 提供默认关闭的 RAW/RLE Preview，静态 `.zst/.br` 副本继续保留。
 
-完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。
+完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。Native H2 的可运行 Server/Client 入口与 H1/H2 差异见 [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md)。
 
 ```
     ┌─────────────────────────────────────────┐
@@ -130,6 +130,27 @@ main() {
 
 如果你要继续往下走，推荐顺序是 `hello -> api -> swagger -> client`。  
 更完整的首跑顺序、样例选择、中心仓配置和常见失败修复，请看 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md) 与 [`manual/samples/README.md`](manual/samples/README.md)。
+
+### Native H2 Preview 快速启动
+
+普通 `app.listen(...)` 默认是 Native H1。要运行 Native H2 明文
+prior-knowledge server，需要显式安装 engine：
+
+```cangjie
+import ignite.*
+import ignite.native_h2.useExperimentalNativeH2ServerEngine
+
+main() {
+    let app = App()
+    useExperimentalNativeH2ServerEngine(app)
+    app.get("/", { ctx => _ = ctx.sendString("hello from native h2") })
+    app.listen("127.0.0.1", 3000)
+}
+```
+
+验证：`curl --http2-prior-knowledge http://127.0.0.1:3000/`。该入口不接受
+TLS 配置，也不提供 H2 WebSocket；完整说明见
+[`h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md)。
 
 ## 特性亮点
 

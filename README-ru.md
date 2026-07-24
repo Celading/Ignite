@@ -51,13 +51,13 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 ## Текущее состояние (0.8.1 Preview)
 
 - HTTP/1.1 без TLS по умолчанию использует native H1 Ignite; доступен явный откат через `stdx-default`.
-- Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами.
-- Native H2 server/client поддерживают ограниченное мультиплексирование, flow control и lifecycle, но пока остаются preview без заявления о полной совместимости с браузерами и h2spec.
+- Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами; обычный `app.ws(...)` использует реализацию Ignite при выбранном Native H1.
+- Native H2 server/client поддерживают ограниченное мультиплексирование, flow control и lifecycle, но server требует явного cleartext prior-knowledge engine и не предоставляет H2 WebSocket.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.
 - Динамические gzip/deflate используют безопасные codec Ignite на Cangjie; Zstd и Brotli имеют отключённые по умолчанию RAW/RLE Preview, а статические `.zst/.br` файлы по-прежнему поддерживаются.
 
-Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
+Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md), а исполняемый путь Native H2 server/client — в [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -631,7 +631,7 @@ let app = App(config: Config(
 app.listen("0.0.0.0", 443)
 ```
 
-**HTTP/2:** при включённом TLS сервер согласует `h2`. Проверка: `curl -sI --http2 https://localhost:3443/`.
+**HTTP/2:** стабильный stdx HTTPS-маршрут может согласовать `h2`; проверка: `curl -sI --http2 https://localhost:3443/`. Это не Native H2 ServerEngine Ignite: он сейчас принимает только cleartext prior knowledge.
 
 `enableTlsPrecheck` можно отключить (`false`) для отката на текущий путь "только default TLS build". Рекомендуется только для аварийной диагностики.
 
