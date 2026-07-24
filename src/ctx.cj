@@ -6,7 +6,7 @@ import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
 import ignite.api2
 import ignite.security
-import stdx.net.http.HttpContext
+import stdx.net.http.{HttpContext, HttpHeaders}
 import stdx.encoding.json.JsonValue
 import stdx.encoding.json.stream.{
     JsonWriter as StdxJsonWriter,
@@ -362,6 +362,12 @@ public class Ctx {
         this
     }
 
+    /// Append one response header value without replacing existing values.
+    public func addHeader(key: String, value: String): Ctx {
+        addResponseHeaderTracked(key, value)
+        this
+    }
+
     public func json(body: String): Ctx {
         setResponseHeaderTracked("content-type", "application/json; charset=utf-8")
         _currentRequestCarrier.setResponseString(body)
@@ -620,7 +626,7 @@ public class Ctx {
         if (normalizedSameSite.size > 0) {
             cookieStr += "; SameSite=${normalizedSameSite}"
         }
-        setResponseHeaderTracked("set-cookie", cookieStr)
+        addResponseHeaderTracked("set-cookie", cookieStr)
         this
     }
 
@@ -1036,6 +1042,13 @@ public class Ctx {
     func setResponseHeaderTracked(key: String, value: String): Unit {
         rememberResponseHeader(key, value)
         _currentRequestCarrier.setResponseHeader(key, value)
+    }
+
+    func addResponseHeaderTracked(key: String, value: String): Unit {
+        rememberResponseHeader(key, value)
+        let headers = HttpHeaders()
+        headers.add(key, value)
+        _currentRequestCarrier.addResponseHeaders(headers)
     }
 
     // ── Internal setup ──

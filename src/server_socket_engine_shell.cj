@@ -25,6 +25,11 @@ import std.net.{
 import std.sync.Mutex
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 
+let SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT: Int64 = 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT: Int64 = 16 * 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_TOTAL_LIMIT: Int64 = 16 * 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT: Int64 = 100
+
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
 
 public class SocketServerEngineShellRuntimeControl {
@@ -1058,7 +1063,12 @@ func socketServerEngineShellDecodeChunkedBody(
     let decoded = ArrayList<UInt8>()
     var cursor: Int64 = 0
     while (true) {
-        let sizeLineEnd = socketServerEngineShellEnsureCrlfLine(socket, network, cursor)
+        let sizeLineEnd = socketServerEngineShellEnsureCrlfLine(
+            socket,
+            network,
+            cursor,
+            SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT
+        )
         let chunkSize = socketServerEngineShellParseChunkSizeLine(network, cursor, sizeLineEnd)
         cursor = sizeLineEnd + 2
         if (chunkSize == 0) {
@@ -1125,10 +1135,29 @@ func socketServerEngineShellConsumeChunkedTrailers(
     start: Int64
 ): Int64 {
     var cursor = start
+    var totalBytes: Int64 = 0
+    var fieldCount: Int64 = 0
     while (true) {
-        let lineEnd = socketServerEngineShellEnsureCrlfLine(socket, network, cursor)
+        let lineEnd = socketServerEngineShellEnsureCrlfLine(
+            socket,
+            network,
+            cursor,
+            SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT
+        )
+        totalBytes += lineEnd - cursor + 2
+        if (totalBytes > SOCKET_SERVER_ENGINE_SHELL_TRAILER_TOTAL_LIMIT) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunked trailers exceed the aggregate metadata limit"
+            )
+        }
         if (lineEnd == cursor) {
             return lineEnd + 2
+        }
+        fieldCount += 1
+        if (fieldCount > SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunked trailers exceed the field-count limit"
+            )
         }
         socketServerEngineShellValidateChunkedTrailerLine(network, cursor, lineEnd)
         cursor = lineEnd + 2
@@ -1163,12 +1192,23 @@ func socketServerEngineShellValidateChunkedTrailerLine(
 func socketServerEngineShellEnsureCrlfLine(
     socket: TcpSocket,
     network: ArrayList<UInt8>,
-    start: Int64
+    start: Int64,
+    maxLineBytes: Int64
 ): Int64 {
     while (true) {
         let found = socketServerEngineShellFindCrlf(network, start)
         if (found >= 0) {
+            if (found - start > maxLineBytes) {
+                throw SocketServerEngineShellException(
+                    "socket server engine shell chunk metadata line exceeds the configured limit"
+                )
+            }
             return found
+        }
+        if (network.size - start > maxLineBytes + 1) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunk metadata line exceeds the configured limit"
+            )
         }
         if (socketServerEngineShellReadMore(socket, network) <= 0) {
             throw SocketServerEngineShellException(
@@ -1647,7 +1687,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     let remoteAddress: String
     let requestHeadersValue: HttpHeaders
     let requestBodyBytesValue: Array<UInt8>
-    let responseHeadersValue: HashMap<String, String>
+    let responseHeadersValue: HashMap<String, ArrayList<String>>
     let nativeWebSocketSocket: ?TcpSocket
     var responseBodyBytesValue: Array<UInt8> = Array<UInt8>(0, repeat: 0)
     var responseBodyAppendBufferValue: ?ArrayList<UInt8> = None
@@ -1667,7 +1707,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.remoteAddress = remoteAddress
         this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request)
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
-        this.responseHeadersValue = HashMap<String, String>()
+        this.responseHeadersValue = HashMap<String, ArrayList<String>>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
         this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
         this.responseBodyAppendBufferValue = None
@@ -1779,13 +1819,17 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func setResponseHeader(key: String, value: String): Unit {
-        responseHeadersValue.add(key.trimAscii().toAsciiLower(), value.trimAscii())
+        validateSocketHttp11ResponseHeaderName(key)
+        validateSocketHttp11ResponseHeaderValue(value)
+        let values = ArrayList<String>()
+        values.add(value.trimAscii())
+        responseHeadersValue.add(key.toAsciiLower(), values)
     }
 
     public override func addResponseHeaders(headers: HttpHeaders): Unit {
         for ((name, values) in headers) {
             for (value in values) {
-                setResponseHeader(name, value)
+                appendResponseHeader(name, value)
             }
         }
     }
@@ -1817,19 +1861,38 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public func responseHeader(name: String): ?String {
-        responseHeadersValue.get(name.trimAscii().toAsciiLower())
+        match (responseHeadersValue.get(name.trimAscii().toAsciiLower())) {
+            case Some(values) =>
+                if (values.size == 0) { None } else { Some(values[values.size - 1]) }
+            case None => None
+        }
     }
 
     public func responseHeadersForSocket(): Array<SocketHttp11Header> {
         let out = ArrayList<SocketHttp11Header>()
-        for ((name, value) in responseHeadersValue) {
+        for ((name, values) in responseHeadersValue) {
             let normalized = name.trimAscii().toAsciiLower()
             if (normalized == "content-length" || normalized == "transfer-encoding" || normalized == "connection") {
                 continue
             }
-            out.add(SocketHttp11Header(normalized, value.trimAscii()))
+            for (value in values) {
+                out.add(SocketHttp11Header(normalized, value))
+            }
         }
         out.toArray()
+    }
+
+    func appendResponseHeader(key: String, value: String): Unit {
+        validateSocketHttp11ResponseHeaderName(key)
+        validateSocketHttp11ResponseHeaderValue(value)
+        let normalized = key.toAsciiLower()
+        match (responseHeadersValue.get(normalized)) {
+            case Some(values) => values.add(value.trimAscii())
+            case None =>
+                let values = ArrayList<String>()
+                values.add(value.trimAscii())
+                responseHeadersValue.add(normalized, values)
+        }
     }
 
     public func responseBodyBytes(): Array<UInt8> {

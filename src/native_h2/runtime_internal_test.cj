@@ -3,6 +3,7 @@ package ignite.native_h2
 import ignite.{App, Config}
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
 import std.sync.AtomicBool
+import stdx.net.http.HttpHeaders
 
 @Test
 public class NativeH2RuntimeInternalTestSuite {
@@ -237,6 +238,39 @@ public class NativeH2RuntimeInternalTestSuite {
         }
         @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
         @Assert(trailerCount, 2)
+
+        let responseHeaders = HttpHeaders()
+        responseHeaders.add("set-cookie", "first=one; Path=/")
+        responseHeaders.add("set-cookie", "second=two; Path=/")
+        carrier.addResponseHeaders(responseHeaders)
+        let response = carrier.response()
+        var responseCookieCount: Int64 = 0
+        var responseCookieJoined = ""
+        for (header in response.headers) {
+            if (header.name == "set-cookie") {
+                responseCookieCount += 1
+                if (responseCookieJoined.size > 0) { responseCookieJoined += "," }
+                responseCookieJoined += header.value
+            }
+        }
+        @Assert(responseCookieCount, 2)
+        @Assert(
+            responseCookieJoined,
+            "first=one; Path=/,second=two; Path=/"
+        )
+        @Assert(nativeH2EncodeResponseHead(response.status, response.headers).size > 0, true)
+    }
+
+    @TestCase
+    public func testNativeH2ResponseHeaderAdmissionRejectsUnsafeMetadata(): Unit {
+        assertNativeH2ResponseHeaderFailure(
+            "x bad",
+            "value"
+        )
+        assertNativeH2ResponseHeaderFailure(
+            "x-safe",
+            "value\r\nx-injected: yes"
+        )
     }
 
     @TestCase
@@ -1767,6 +1801,17 @@ func assertNativeH2HpackCompressionFailure(
     } catch (e: NativeH2ProtocolException) {
         rejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
             e.message.contains(expectedMessage)
+    }
+    @Assert(rejected, true)
+}
+
+func assertNativeH2ResponseHeaderFailure(name: String, value: String): Unit {
+    var rejected = false
+    try {
+        let header = NativeH2Header(name, value)
+        let _ = nativeH2EncodeResponseHead(200, [header])
+    } catch (_: Exception) {
+        rejected = true
     }
     @Assert(rejected, true)
 }

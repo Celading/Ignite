@@ -73,7 +73,9 @@ public class NativeH2Header {
     public let value: String
 
     public init(name: String, value: String) {
-        this.name = name.trimAscii().toAsciiLower()
+        nativeH2ValidateHeaderName(name, true, false)
+        nativeH2ValidateHeaderValue(value)
+        this.name = name.toAsciiLower()
         this.value = value.trimAscii()
     }
 }
@@ -1289,6 +1291,8 @@ func nativeH2EncodeResponseHead(
     nativeH2AppendBytes(out, nativeH2EncodeStatus(status))
     for (header in headers) {
         let name = header.name
+        nativeH2ValidateHeaderName(name, false, true)
+        nativeH2ValidateHeaderValue(header.value)
         if (name == "connection" || name == "keep-alive" || name == "proxy-connection" ||
             name == "transfer-encoding" || name == "upgrade" || name == "te") {
             continue

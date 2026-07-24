@@ -78,7 +78,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     let queryStringValue: String
     let requestHeadersValue: HttpHeaders
     let requestTrailersValue: HttpHeaders
-    let responseHeadersValue = HashMap<String, String>()
+    let responseHeadersValue = HashMap<String, ArrayList<String>>()
     var responseStatusValue: UInt16 = 200
     var responseBodyValue = ArrayList<UInt8>()
     var responseBodyStreamValue: ?InputStream = None
@@ -176,13 +176,17 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func setResponseHeader(key: String, value: String): Unit {
-        responseHeadersValue.add(key.trimAscii().toAsciiLower(), value.trimAscii())
+        let normalized = nativeH2NormalizeAppResponseHeaderName(key)
+        nativeH2ValidateHeaderValue(value)
+        let values = ArrayList<String>()
+        values.add(value.trimAscii())
+        responseHeadersValue.add(normalized, values)
     }
 
     public override func addResponseHeaders(headers: HttpHeaders): Unit {
         for ((name, values) in headers) {
             for (value in values) {
-                setResponseHeader(name, value)
+                appendResponseHeader(name, value)
             }
         }
     }
@@ -206,14 +210,28 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     func response(): NativeH2SingleStreamResponse {
         consumeResponseStream()
         let headers = ArrayList<NativeH2Header>()
-        for ((name, value) in responseHeadersValue) {
-            headers.add(NativeH2Header(name, value))
+        for ((name, values) in responseHeadersValue) {
+            for (value in values) {
+                headers.add(NativeH2Header(name, value))
+            }
         }
         NativeH2SingleStreamResponse(
             status: responseStatusValue,
             headers: headers.toArray(),
             body: responseBodyValue.toArray()
         )
+    }
+
+    func appendResponseHeader(key: String, value: String): Unit {
+        let normalized = nativeH2NormalizeAppResponseHeaderName(key)
+        nativeH2ValidateHeaderValue(value)
+        match (responseHeadersValue.get(normalized)) {
+            case Some(values) => values.add(value.trimAscii())
+            case None =>
+                let values = ArrayList<String>()
+                values.add(value.trimAscii())
+                responseHeadersValue.add(normalized, values)
+        }
     }
 
     func appendResponseBytes(data: Array<UInt8>): Unit {
@@ -258,6 +276,56 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
             }
         }
         responseBodyStreamValue = None
+    }
+}
+
+func nativeH2NormalizeAppResponseHeaderName(name: String): String {
+    nativeH2ValidateHeaderName(name, false, false)
+    name.toAsciiLower()
+}
+
+func nativeH2ValidateHeaderName(
+    name: String,
+    allowPseudo: Bool,
+    requireLowercase: Bool
+): Unit {
+    let bytes = name.toArray()
+    if (bytes.size == 0) {
+        throw Exception("native H2 header name cannot be empty")
+    }
+    var cursor: Int64 = 0
+    if (bytes[0] == UInt8(0x3a)) {
+        if (!allowPseudo || bytes.size == 1) {
+            throw Exception("native H2 response ordinary header name cannot be pseudo")
+        }
+        cursor = 1
+    }
+    while (cursor < bytes.size) {
+        let byte = bytes[cursor]
+        let alphaNumeric = (byte >= UInt8(0x30) && byte <= UInt8(0x39)) ||
+            (byte >= UInt8(0x41) && byte <= UInt8(0x5a)) ||
+            (byte >= UInt8(0x61) && byte <= UInt8(0x7a))
+        let punctuation = byte == UInt8(0x21) || byte == UInt8(0x23) ||
+            byte == UInt8(0x24) || byte == UInt8(0x25) || byte == UInt8(0x26) ||
+            byte == UInt8(0x27) || byte == UInt8(0x2a) || byte == UInt8(0x2b) ||
+            byte == UInt8(0x2d) || byte == UInt8(0x2e) || byte == UInt8(0x5e) ||
+            byte == UInt8(0x5f) || byte == UInt8(0x60) || byte == UInt8(0x7c) ||
+            byte == UInt8(0x7e)
+        if (!alphaNumeric && !punctuation) {
+            throw Exception("native H2 response header name contains an invalid token byte")
+        }
+        if (requireLowercase && byte >= UInt8(0x41) && byte <= UInt8(0x5a)) {
+            throw Exception("native H2 encoded response header names must be lowercase")
+        }
+        cursor += 1
+    }
+}
+
+func nativeH2ValidateHeaderValue(value: String): Unit {
+    for (byte in value.toArray()) {
+        if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
+            throw Exception("native H2 response header value contains a forbidden control byte")
+        }
     }
 }
 
