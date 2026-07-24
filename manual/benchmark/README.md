@@ -1,6 +1,6 @@
-# Ignite 0.8.1 Benchmark Baseline
+# Ignite 0.8.2 Benchmark Baseline
 
-This directory owns the public Benchmark track for the `IgniteNEXT` 0.8.1
+This directory owns the public Benchmark track for the `Ignite0800` 0.8.2
 line. Public results compare only Ignite native and the explicit stdx rollback
 backend. Competitor comparisons stay in the workspace-internal Benchmark lab.
 

@@ -3,6 +3,16 @@
 ## Ignite `0800`
 > Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
 
+### v0.8.2 `Ignite Preview`
+
+- `+Feature` Native TLS H1/H2 client pools now enforce a default 30-second idle bound, exact-policy reuse, expiry/close retirement, and instance-local lifecycle snapshots
+- `+Feature` Cleartext native H1 exposes stable backend policy, final selection/fallback reasons, connection/request counters, and contains expected timeout/reset termination at the connection-task boundary
+- `+Feature` Native H1, Jingui accepted transport, and Native H2 share one form-query component decode, avoiding application-side compensating double decode
+- `+Feature` Native H1 WebSocket adds complete-message bounds, strict RSV/opcode/masking/length/UTF-8/Close admission, fragmentation, subprotocol selection, and serialized concurrent writers
+- `+Validation` WebSocket focused `14/14`, full serial `1537/1537`, and the repository h2spec profile `145 passed / 1 skipped / 0 failed`; canonical regression/build are rerun before publication
+- `=Boundary` WSS, H2 extended CONNECT, permessage-deflate, client Dialer, system CA, TLS1.2/resumption, mTLS, browser/proxy/long-window matrices, and AP9/lisi provider acceptance remain open
+- `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, 0800 Manual, and bilingual changelog are aligned to `0.8.2`
+
 ### v0.8.1 `Ignite Preview`
 
 - `+Feature` Buffered and streamed dynamic gzip/deflate responses now use an Ignite-owned safe Cangjie DEFLATE/GZIP codec; product paths no longer construct `stdx.compress.zlib` codecs

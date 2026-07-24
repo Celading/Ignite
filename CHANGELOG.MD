@@ -3,6 +3,16 @@
 ## Ignite `0800`
 > 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
 
+### v0.8.2 `Ignite Preview`
+
+- `+特性` Native TLS H1/H2 Client pool 增加默认 30 秒 idle 上限、同策略连接复用、过期/关闭淘汰与实例级生命周期快照
+- `+特性` 明文 Native H1 增加稳定 backend 策略、最终选择/降级原因、连接与请求计数，并在连接任务边界收敛预期 timeout/reset
+- `+特性` Native H1、Jingui accepted transport 与 Native H2 统一 query component 单次 form 解码，避免应用层补偿性 double-decode
+- `+特性` Native H1 WebSocket 增加入站完整消息上限、严格 RSV/opcode/masking/length/UTF-8/Close 校验、分片、子协议与并发 writer 串行化
+- `+验证` WebSocket focused `14/14`、完整 serial `1537/1537`、当前仓库 h2spec profile `145 passed / 1 skipped / 0 failed`；本版发布前重新运行 canonical regression/build
+- `=边界` WSS、H2 extended CONNECT、permessage-deflate、客户端 Dialer、系统 CA、TLS1.2/resumption、mTLS、浏览器/代理/长窗口矩阵与 AP9/lisi provider acceptance 仍未完成
+- `=杂项` 包版本、框架常量、Banner、Benchmark、三语 README、0800 Manual 与双语 changelog 更新到 `0.8.2`
+
 ### v0.8.1 `Ignite Preview`
 
 - `+特性` 动态 gzip/deflate 的缓冲与流式响应改用 Ignite 自有安全仓颉 DEFLATE/GZIP codec，不再在产品路径构造 `stdx.compress.zlib`

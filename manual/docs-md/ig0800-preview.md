@@ -1,6 +1,6 @@
-# Ignite 0.8.1 Preview
+# Ignite 0.8.2 Preview
 
-`0.8.1` 延续 Ignite 自研传输预览，把动态 gzip/deflate codec 收回 Ignite 自有安全仓颉实现，并提供显式 opt-in 的动态 Zstd RAW/RLE baseline。它不是“已经完全脱离 stdx”或“完整高压缩比 Zstd 已完成”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
+`0.8.2` 延续 Ignite 自研传输预览，在 `0.8.1` 自有 gzip/deflate 与动态 Zstd/Brotli baseline 之上，补齐 Native TLS pool 生命周期、Native H1 backend 可观测性、预期断连收敛、query 单次解码和 WebSocket production-core。它不是“已经完全脱离 stdx”或“全部协议都已 LTS”的宣言，而是把已经经过真实 socket/wire 回归的能力开放出来，并保留明确回滚路径。
 
 配套入口：
 
@@ -36,6 +36,7 @@ seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
 - 流式响应、HEAD、静态文件与 Range
 - 可显式选择的 native H1 Client：连接复用、流式 body、重定向与错误归一
 - WebSocket、SSE 和明确连接关闭语义
+- backend 最终选择/降级原因、连接/请求计数和预期 timeout/reset 收敛
 
 需要回滚时：
 
@@ -117,12 +118,13 @@ native H2 preview 已经具备：
 - 70,000-byte 双并发响应与重复连接生命周期回归
 - 显式 `RestClient` 明文 prior-knowledge backend
 - streamed response lease、完整消费归池和提前关闭取消/淘汰
+- 当前仓库 h2spec profile `145 passed / 1 skipped / 0 failed`
 
 当前没有证明：
 
 - Chrome/Firefox/Safari 完整矩阵
 - 浏览器、反向代理和长时压力的完整互操作矩阵
-- HPACK 与 SETTINGS 的全部边角语义
+- 浏览器/代理互操作、动态 HPACK table 与更多 SETTINGS 边角语义
 - TLS + ALPN 下 native H2 成为默认生产路径
 - 公开 RestClient 多路并发 response lease
 - H2 extended CONNECT WebSocket
@@ -160,7 +162,7 @@ ctx.jsonSeaStream({ writer =>
 
 ## 仍需保留的 stdx 面
 
-`0.8.1` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度应以源码依赖和测试为准，不以“native preview”标题推导为完全替代。
+`0.8.2` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度应以源码依赖和测试为准，不以“native preview”标题推导为完全替代。
 
 ## 推荐验证顺序
 

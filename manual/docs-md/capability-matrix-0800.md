@@ -1,6 +1,6 @@
-# Ignite 0.8.1 能力矩阵
+# Ignite 0.8.2 能力矩阵
 
-这张表描述 `IgniteNEXT` 当前 `0.8.1 Preview` 的公开能力状态。它回答的是“现在可以怎样使用”，不是未来路线图。
+这张表描述 `Ignite0800` 当前 `0.8.2 Preview` 的公开能力状态。它回答的是“现在可以怎样使用”，不是未来路线图。
 
 ## 状态说明
 
@@ -20,7 +20,7 @@
 | 明文 HTTP/1.1 Server | 0800 默认 | 空的 `serverPreferredBackendHint` 默认选择 Ignite native H1。 | 可用 `stdx-default` 显式回滚。 |
 | HTTP/1.1 Client | Preview | `preferTransportBackend("ignite-native-h1-client")` 可显式进入 native H1，支持连接复用、流式请求体、重定向和统一错误；配合 `useNativeTls(...)` 可走 Contract-backed TLS1.3 HTTPS，并在完整消费后安全复用同源、同信任策略连接。 | `RestClient` 默认仍是稳定 stdx Client；Native HTTPS 要求调用方提供 trust anchor/hostname，部分 request hook 仍不兼容。 |
 | HTTPS / TLS | 稳定继承 + Preview | 默认继续使用稳定的 stdx TLS 路径；显式 Native H1/H2 TLS1.3 会完成 ClientHello、server-flight 验证、client Finished、application-data seal/open 与有界顺序连接复用。Native TLS pool 默认 idle 上限为 30s，可通过 `nativeTlsIdleTimeout(...)` 调整，并可由 `nativeTlsRuntimeSnapshot()` 查看 H1/H2 opened/reused/retired/expired/idle 事实。 | Native TLS 当前要求调用方提供 trust anchor/hostname；快照只覆盖显式 Native TLS RestClient 池。系统 CA、TLS1.2、session resumption、0-RTT、mTLS、公开 H2 多路并发与默认切换仍未完成。 |
-| native HTTP/2 Server | Preview | `ignite.native_h2` 可在 caller 提供的 `TcpSocket` 上运行单流或多流连接，并可接入 `App`。 | 非默认 listener；未完成完整浏览器矩阵、h2spec、动态 HPACK table。 |
+| native HTTP/2 Server | Preview | `ignite.native_h2` 可在 caller 提供的 `TcpSocket` 上运行单流或多流连接，并可接入 `App`；当前仓库 h2spec profile 为 `145 passed / 1 skipped / 0 failed`。 | 非默认 listener；未完成完整浏览器/代理矩阵、动态 HPACK table 和长窗口生产证明。 |
 | native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2；配合 `useNativeTls(...)` 和 `h2` ALPN 可走 Contract-backed TLS1.3。两条路径共享 AP4 HPACK、流控、streamed-response lease、超时、重试、Cookie 与 observe 语义；完整消费后明文与 TLS 连接都可顺序归池。 | 必须显式选择实验 backend；仅支持 buffered/replayable request body 和每连接一个公开 streamed response lease。mutation hook、默认切换与公开 RestClient 多路并发仍未完成。 |
 | H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 恢复、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭会发送 CANCEL 并淘汰连接。当前不是全场景零拷贝或公开多路 lease API。 |
 | WebSocket | 0800 默认 | H1 native upgrade 支持文本、二进制、Ping/Pong、Close、分片与子协议选择；严格拒绝未协商 RSV、保留 opcode、非规范长度和非法文本 UTF-8，支持可配置入站消息上限，并串行化并发 writer。 | 默认入站上限为 1 MiB；H2 extended CONNECT、Native WSS、permessage-deflate、客户端 Dialer、Autobahn/浏览器/长窗口规模证明尚未提供。 |

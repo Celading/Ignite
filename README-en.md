@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.1-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.2-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.8.1</span>                     │
+│                  <span style="color:#88C0D0;">Ignite v0.8.2</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.1</i></span> │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.2</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -34,7 +34,8 @@
 </p>
 
 <p align="center">
-  <a href="https://atomgit.com/Cinexus/ignite-cangjie">Repository</a> ·
+  <a href="https://gitcode.com/cinyu/ignite-cangjie">GitCode</a> ·
+  <a href="https://github.com/Celading/Ignite">GitHub mirror</a> ·
   <a href="https://pkg.cangjie-lang.cn/package/ignite">Package registry</a>
 </p>
 
@@ -48,12 +49,13 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.8.1 Preview)
+## Current Status (0.8.2 Preview)
 
 - Cleartext HTTP/1.1 now defaults to Ignite native H1, with an explicit `stdx-default` rollback.
-- Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions.
-- Native H2 server/client include bounded multiplexing, flow-control recovery, and lifecycle slices, but remain an explicit preview rather than a browser/h2spec compatibility claim.
+- Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions; WebSocket adds bounded messages, strict frame admission, and serialized concurrent writers.
+- Native H2 server/client include bounded multiplexing, flow-control recovery, lifecycle slices, and the current repository h2spec profile, but remain an explicit Preview rather than a complete browser, proxy, or long-window compatibility claim.
 - HTTPS keeps the stable stdx TLS path by default; JinguiSSL native TLS/ALPN remains experimental opt-in.
+- Native TLS client pools now expose bounded idle lifecycle snapshots, while native H1 exposes backend selection, fallback reasons, connection/request counters, and expected timeout/reset containment.
 - SeaJson exposes a `JsonWriterEncodable -> OutputStream` path; classic `ctx.json(String)` still sends a complete string.
 - Dynamic gzip/deflate now use Ignite-owned safe Cangjie codecs; Zstd and Brotli have opt-in RAW/RLE Preview baselines, while precompressed `.zst/.br` assets remain supported.
 
