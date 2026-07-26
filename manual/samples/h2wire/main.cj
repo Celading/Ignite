@@ -1,4 +1,5 @@
 import ignite.*
+import ignite.native_h2.useExperimentalNativeTlsH2SocketServerEngine
 import std.env.getVariable
 import std.fs.{exists, File, OpenMode}
 
@@ -34,6 +35,7 @@ main() {
         tlsKeyFile: keyFile,
         writeTimeout: effectiveWriteTimeout
     ))
+    useExperimentalNativeTlsH2SocketServerEngine(app)
 
     app.get("/", { ctx =>
         _ = ctx.json(#"{"ok":true,"sample":"h2wire","route":"root"}"#)
