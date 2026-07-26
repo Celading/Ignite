@@ -422,7 +422,7 @@ public func serveNativeH2Connection(
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
             handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
-            nativeH2HarvestCompletedHandlers(socket, handlers, outbound)
+            nativeH2HarvestCompletedHandlers(socket, handlers, outbound, peerSettings)
             connectionSendWindow = nativeH2FlushOutbound(
                 socket, outbound, connectionSendWindow,
                 peerSettings.maxFramePayload
@@ -622,7 +622,10 @@ public func serveNativeH2Connection(
                         socket,
                         NativeH2Frame(
                             UInt8(0x1), UInt8(0x5), frame.streamId,
-                            nativeH2EncodeResponseHead(UInt16(413), Array<NativeH2Header>())
+                            nativeH2EncodeResponseHead(
+                                UInt16(413), Array<NativeH2Header>(),
+                                peerSettings.maxHeaderListSize
+                            )
                         )
                     )
                     nativeH2ReplenishDiscardedRequestData(socket, flowControlledSize)
@@ -950,7 +953,8 @@ func nativeH2CompleteInboundStream(
 func nativeH2HarvestCompletedHandlers(
     socket: TcpSocket,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
-    outbound: HashMap<Int64, NativeH2OutboundStream>
+    outbound: HashMap<Int64, NativeH2OutboundStream>,
+    peerSettings: NativeH2PeerSettings
 ): Unit {
     let completed = ArrayList<Int64>()
     for ((streamId, pending) in handlers) {
@@ -965,7 +969,10 @@ func nativeH2HarvestCompletedHandlers(
                     UInt8(0x1),
                     if (bodyForbidden) { UInt8(0x5) } else { UInt8(0x4) },
                     streamId,
-                    nativeH2EncodeResponseHead(response.status, response.headers)
+                    nativeH2EncodeResponseHead(
+                        response.status, response.headers,
+                        peerSettings.maxHeaderListSize
+                    )
                 )
             )
             if (!bodyForbidden) {
@@ -1278,8 +1285,10 @@ func nativeH2EncodeStatus(status: UInt16): Array<UInt8> {
             if (numeric < 200 || numeric > 999) {
                 throw Exception("native H2 first-slice response status must be between 200 and 999")
             }
-            let value = status.toString().toArray()
-            [UInt8(0x08), UInt8(value.size), value[0], value[1], value[2]]
+            let out = ArrayList<UInt8>()
+            nativeH2HpackAppendInteger(out, 8, 4, UInt8(0))
+            nativeH2HpackAppendString(out, status.toString(), true)
+            out.toArray()
     }
 }
 
@@ -1287,7 +1296,17 @@ func nativeH2EncodeResponseHead(
     status: UInt16,
     headers: Array<NativeH2Header>
 ): Array<UInt8> {
+    nativeH2EncodeResponseHead(status, headers, None)
+}
+
+func nativeH2EncodeResponseHead(
+    status: UInt16,
+    headers: Array<NativeH2Header>,
+    maxHeaderListSize: ?Int64
+): Array<UInt8> {
     let out = ArrayList<UInt8>()
+    var headerListSize: Int64 = 42
+    nativeH2RequirePeerHeaderListCapacity(headerListSize, maxHeaderListSize)
     nativeH2AppendBytes(out, nativeH2EncodeStatus(status))
     for (header in headers) {
         let name = header.name
@@ -1298,20 +1317,35 @@ func nativeH2EncodeResponseHead(
             continue
         }
         let nameBytes = name.toArray()
-        let valueBytes = header.value.toArray()
-        if (nameBytes.size == 0 || nameBytes.size >= 127 || valueBytes.size >= 127) {
-            throw Exception("native H2 first-slice response header exceeds single-byte HPACK limits")
+        if (nameBytes.size == 0) {
+            throw Exception("native H2 application response header name cannot be empty")
         }
         if (nameBytes[0] == UInt8(0x3a)) {
             throw Exception("native H2 application response headers cannot add pseudo-headers")
         }
-        out.add(UInt8(0))
-        out.add(UInt8(nameBytes.size))
-        nativeH2AppendBytes(out, nameBytes)
-        out.add(UInt8(valueBytes.size))
-        nativeH2AppendBytes(out, valueBytes)
+        headerListSize += nameBytes.size + header.value.toArray().size + 32
+        nativeH2RequirePeerHeaderListCapacity(headerListSize, maxHeaderListSize)
+        nativeH2HpackAppendInteger(out, 0, 4, UInt8(0))
+        nativeH2HpackAppendString(out, name, true)
+        nativeH2HpackAppendString(out, header.value, true)
+        if (out.size > 65536) {
+            throw Exception("native H2 response header block exceeds 64 KiB")
+        }
     }
     out.toArray()
+}
+
+func nativeH2RequirePeerHeaderListCapacity(
+    headerListSize: Int64,
+    maxHeaderListSize: ?Int64
+): Unit {
+    if (let Some(limit) <- maxHeaderListSize) {
+        if (headerListSize > limit) {
+            throw Exception(
+                "native H2 response header list exceeds peer SETTINGS_MAX_HEADER_LIST_SIZE"
+            )
+        }
+    }
 }
 
 func nativeH2AppendBytes(out: ArrayList<UInt8>, input: Array<UInt8>): Unit {

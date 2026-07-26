@@ -31,6 +31,18 @@ public class NativeH2SettingsInternalTestSuite {
     }
 
     @TestCase
+    public func testPeerSettingsCarryHeaderTableAndHeaderListLimits(): Unit {
+        let settings = NativeH2PeerSettings()
+        let _ = settings.apply([
+            UInt8(0), UInt8(1), UInt8(0), UInt8(0), UInt8(0x02), UInt8(0),
+            UInt8(0), UInt8(6), UInt8(0), UInt8(0), UInt8(0x08), UInt8(0)
+        ])
+
+        @Assert(settings.headerTableSize, 512)
+        @Assert(settings.maxHeaderListSize ?? -1, 2048)
+    }
+
+    @TestCase
     public func testPeerSettingsRejectInvalidKnownValues(): Unit {
         @Assert(
             nativeH2SettingsErrorCode([

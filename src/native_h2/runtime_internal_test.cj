@@ -306,6 +306,65 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testHpackHuffmanRoundTripsUtf8OutsideVisibleAsciiSubset(): Unit {
+        let value = "caf\u{00e9}-\u{2713}"
+        let payload = nativeH2EncodeResponseHead(200, [
+            NativeH2Header("x-unicode", value)
+        ])
+
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+
+        @Assert(decoded.status, UInt16(200))
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, "x-unicode")
+        @Assert(decoded.headers[0].value, value)
+    }
+
+    @TestCase
+    public func testResponseHeadSupportsVariableLengthHeaderNameAndValue(): Unit {
+        let nameBytes = Array<UInt8>(140, repeat: UInt8(0x78))
+        let valueBytes = Array<UInt8>(600, repeat: UInt8(0x61))
+        let name = String.fromUtf8(nameBytes)
+        let value = String.fromUtf8(valueBytes)
+
+        let payload = nativeH2EncodeResponseHead(200, [NativeH2Header(name, value)])
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, name)
+        @Assert(decoded.headers[0].value, value)
+        @Assert(payload.size < nameBytes.size + valueBytes.size, true)
+    }
+
+    @TestCase
+    public func testHpackHeaderListLimitsFailClosedOnDecodeAndEncode(): Unit {
+        let payload = nativeH2EncodeResponseHead(200, [
+            NativeH2Header("x-limit", "abcdefghijklmnopqrstuvwxyz")
+        ])
+        var decodeRejected = false
+        try {
+            let _ = NativeH2HpackDecoderState(4096, 48).decodeResponseHead(payload)
+        } catch (e: NativeH2ProtocolException) {
+            decodeRejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
+                e.message.contains("header list exceeds")
+        }
+
+        var encodeRejected = false
+        try {
+            let _ = nativeH2EncodeResponseHead(
+                200,
+                [NativeH2Header("x-limit", "abcdefghijklmnopqrstuvwxyz")],
+                Some(Int64(48))
+            )
+        } catch (e: Exception) {
+            encodeRejected = e.message.contains("SETTINGS_MAX_HEADER_LIST_SIZE")
+        }
+
+        @Assert(decodeRejected, true)
+        @Assert(encodeRejected, true)
+    }
+
+    @TestCase
     public func testHpackDecoderRejectsUnavailableIndexLateUpdateAndTruncation(): Unit {
         assertNativeH2HpackCompressionFailure(
             [UInt8(0xbe)],
@@ -328,12 +387,11 @@ public class NativeH2RuntimeInternalTestSuite {
             NativeH2Header("x-native-h2", "accepted")
         ])
 
-        @Assert(payload[0], UInt8(0x08))
-        @Assert(payload[1], UInt8(0x03))
-        @Assert(String.fromUtf8(nativeH2Slice(payload, 2, 5)), "201")
-        @Assert(nativeH2ContainsBytes(payload, "x-native-h2".toArray()), true)
-        @Assert(nativeH2ContainsBytes(payload, "accepted".toArray()), true)
-        @Assert(nativeH2ContainsBytes(payload, "connection".toArray()), false)
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+        @Assert(decoded.status, UInt16(201))
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, "x-native-h2")
+        @Assert(decoded.headers[0].value, "accepted")
     }
 
     @TestCase
@@ -438,8 +496,16 @@ public class NativeH2RuntimeInternalTestSuite {
             @Assert(responseHeaders.streamId, 1)
             @Assert(responseHeaders.payload.size > 1, true)
             @Assert(responseHeaders.payload[0], UInt8(0x88))
-            @Assert(nativeH2ContainsBytes(responseHeaders.payload, "content-type".toArray()), true)
-            @Assert(nativeH2ContainsBytes(responseHeaders.payload, "text/plain; charset=utf-8".toArray()), true)
+            let decodedResponseHead = NativeH2HpackDecoderState()
+                .decodeResponseHead(responseHeaders.payload)
+            @Assert(decodedResponseHead.status, UInt16(200))
+            var responseContentType = ""
+            for (header in decodedResponseHead.headers) {
+                if (header.name == "content-type") {
+                    responseContentType = header.value
+                }
+            }
+            @Assert(responseContentType, "text/plain; charset=utf-8")
             @Assert(responseDataFirst.frameType, UInt8(0x0))
             @Assert(responseDataFirst.flags, UInt8(0))
             @Assert(responseDataFirst.streamId, 1)
