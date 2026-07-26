@@ -94,6 +94,30 @@ class NativeH2HpackDynamicTable {
         entries[entries.size - 1 - offset]
     }
 
+    func exactIndex(name: String, value: String): ?Int64 {
+        var offset: Int64 = 0
+        while (offset < entries.size) {
+            let entry = entries[entries.size - 1 - offset]
+            if (entry.name == name && entry.value == value) {
+                return Some(NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX + offset)
+            }
+            offset += 1
+        }
+        None
+    }
+
+    func nameIndex(name: String): ?Int64 {
+        var offset: Int64 = 0
+        while (offset < entries.size) {
+            let entry = entries[entries.size - 1 - offset]
+            if (entry.name == name) {
+                return Some(NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX + offset)
+            }
+            offset += 1
+        }
+        None
+    }
+
     func evictToLimit(): Unit {
         while (currentSize > maxSize && entries.size > 0) {
             let removed = entries.remove(at: Int64(0))
@@ -102,8 +126,150 @@ class NativeH2HpackDynamicTable {
     }
 
     func entrySize(entry: NativeH2HpackField): Int64 {
-        entry.name.size + entry.value.size + 32
+        entry.name.toArray().size + entry.value.toArray().size + 32
     }
+}
+
+class NativeH2HpackEncoderState {
+    let dynamicTable: NativeH2HpackDynamicTable
+    var pendingMinimumSize: ?Int64 = None
+    var pendingFinalSize: ?Int64 = None
+
+    init(maxDynamicTableSize!: Int64 = NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE) {
+        dynamicTable = NativeH2HpackDynamicTable(
+            NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
+        )
+        dynamicTable.updateMaxSize(
+            nativeH2HpackBoundEncoderTableSize(maxDynamicTableSize)
+        )
+    }
+
+    func updatePeerMaxSize(value: Int64): Unit {
+        let bounded = nativeH2HpackBoundEncoderTableSize(value)
+        if (bounded == dynamicTable.maxSize) {
+            return
+        }
+        if (let Some(currentMinimum) <- pendingMinimumSize) {
+            if (bounded < currentMinimum) {
+                pendingMinimumSize = Some(bounded)
+            }
+        } else {
+            pendingMinimumSize = Some(bounded)
+        }
+        pendingFinalSize = Some(bounded)
+        dynamicTable.updateMaxSize(bounded)
+    }
+
+    func beginHeaderBlock(out: ArrayList<UInt8>): Unit {
+        if (let Some(finalSize) <- pendingFinalSize) {
+            if (let Some(minimumSize) <- pendingMinimumSize) {
+                if (minimumSize != finalSize) {
+                    nativeH2HpackAppendInteger(out, minimumSize, 5, UInt8(0x20))
+                }
+            }
+            nativeH2HpackAppendInteger(out, finalSize, 5, UInt8(0x20))
+        }
+        pendingMinimumSize = None
+        pendingFinalSize = None
+    }
+
+    func appendField(out: ArrayList<UInt8>, name: String, value: String): Unit {
+        if (let Some(index) <- nativeH2HpackExactIndex(name, value, dynamicTable)) {
+            nativeH2HpackAppendInteger(out, index, 7, UInt8(0x80))
+            return
+        }
+        let nameIndex = nativeH2HpackNameIndex(name, dynamicTable)
+        if (nativeH2HpackSensitiveName(name)) {
+            nativeH2HpackAppendLiteral(
+                out, name, value, nameIndex, 4, UInt8(0x10)
+            )
+            return
+        }
+        let field = NativeH2HpackField(name, value)
+        if (nativeH2HpackShouldIndex(name) &&
+            dynamicTable.entrySize(field) <= dynamicTable.maxSize) {
+            nativeH2HpackAppendLiteral(
+                out, name, value, nameIndex, 6, UInt8(0x40)
+            )
+            dynamicTable.add(name, value)
+            return
+        }
+        nativeH2HpackAppendLiteral(out, name, value, nameIndex, 4, UInt8(0))
+    }
+
+    func dynamicEntryCount(): Int64 {
+        dynamicTable.entries.size
+    }
+}
+
+func nativeH2HpackBoundEncoderTableSize(value: Int64): Int64 {
+    if (value < 0) {
+        throw Exception("native H2 HPACK encoder table size cannot be negative")
+    }
+    if (value > NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE) {
+        return NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
+    }
+    value
+}
+
+func nativeH2HpackExactIndex(
+    name: String,
+    value: String,
+    dynamicTable: NativeH2HpackDynamicTable
+): ?Int64 {
+    var index: Int64 = 1
+    while (index < NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX) {
+        let field = nativeH2HpackStaticField(index)
+        if (field.name == name && field.value == value) {
+            return Some(index)
+        }
+        index += 1
+    }
+    dynamicTable.exactIndex(name, value)
+}
+
+func nativeH2HpackNameIndex(
+    name: String,
+    dynamicTable: NativeH2HpackDynamicTable
+): ?Int64 {
+    if (let Some(index) <- dynamicTable.nameIndex(name)) {
+        return Some(index)
+    }
+    var index: Int64 = 1
+    while (index < NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX) {
+        if (nativeH2HpackStaticField(index).name == name) {
+            return Some(index)
+        }
+        index += 1
+    }
+    None
+}
+
+func nativeH2HpackAppendLiteral(
+    out: ArrayList<UInt8>,
+    name: String,
+    value: String,
+    nameIndex: ?Int64,
+    prefixBits: Int64,
+    firstPrefix: UInt8
+): Unit {
+    match (nameIndex) {
+        case Some(index) =>
+            nativeH2HpackAppendInteger(out, index, prefixBits, firstPrefix)
+        case None =>
+            nativeH2HpackAppendInteger(out, 0, prefixBits, firstPrefix)
+            nativeH2HpackAppendString(out, name, true)
+    }
+    nativeH2HpackAppendString(out, value, true)
+}
+
+func nativeH2HpackSensitiveName(name: String): Bool {
+    name == "authorization" || name == "proxy-authorization" ||
+        name == "cookie" || name == "set-cookie"
+}
+
+func nativeH2HpackShouldIndex(name: String): Bool {
+    name != "date" && name != "content-length"
 }
 
 class NativeH2HpackDecoderState {

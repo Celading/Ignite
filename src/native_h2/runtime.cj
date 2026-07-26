@@ -604,6 +604,9 @@ func nativeH2ServeTransportConnection(
     let discardedRequestStreams = HashMap<Int64, Bool>()
     let frameReader = NativeH2FrameReader()
     let hpackDecoder = NativeH2HpackDecoderState()
+    let hpackEncoder = NativeH2HpackEncoderState(
+        maxDynamicTableSize: peerSettings.headerTableSize
+    )
     var pendingRequestHead: ?NativeH2PendingRequestHead = None
     var discardedDrainHeaderStreamId: ?Int64 = None
     var lastSeenClientStreamId: Int64 = 0
@@ -618,7 +621,13 @@ func nativeH2ServeTransportConnection(
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
             handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
-            nativeH2HarvestCompletedHandlers(socket, handlers, outbound, peerSettings)
+            nativeH2HarvestCompletedHandlers(
+                socket,
+                handlers,
+                outbound,
+                peerSettings,
+                hpackEncoder
+            )
             connectionSendWindow = nativeH2FlushOutbound(
                 socket, outbound, connectionSendWindow,
                 peerSettings.maxFramePayload
@@ -772,7 +781,13 @@ func nativeH2ServeTransportConnection(
             }
             if (frame.frameType == UInt8(0x4)) {
                 nativeH2HandleSettingsFrame(
-                    socket, frame, peerSettings, streams, handlers, outbound
+                    socket,
+                    frame,
+                    peerSettings,
+                    streams,
+                    handlers,
+                    outbound,
+                    hpackEncoder
                 )
                 continue
             }
@@ -881,7 +896,8 @@ func nativeH2ServeTransportConnection(
                             UInt8(0x1), UInt8(0x5), frame.streamId,
                             nativeH2EncodeResponseHead(
                                 UInt16(413), Array<NativeH2Header>(),
-                                peerSettings.maxHeaderListSize
+                                peerSettings.maxHeaderListSize,
+                                hpackEncoder
                             )
                         )
                     )
@@ -1219,7 +1235,8 @@ func nativeH2HarvestCompletedHandlers(
     socket: NativeH2DuplexTransport,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
     outbound: HashMap<Int64, NativeH2OutboundStream>,
-    peerSettings: NativeH2PeerSettings
+    peerSettings: NativeH2PeerSettings,
+    hpackEncoder: NativeH2HpackEncoderState
 ): Unit {
     let completed = ArrayList<Int64>()
     for ((streamId, pending) in handlers) {
@@ -1236,7 +1253,8 @@ func nativeH2HarvestCompletedHandlers(
                     streamId,
                     nativeH2EncodeResponseHead(
                         response.status, response.headers,
-                        peerSettings.maxHeaderListSize
+                        peerSettings.maxHeaderListSize,
+                        hpackEncoder
                     )
                 )
             )
@@ -1457,7 +1475,8 @@ func nativeH2HandleSettingsFrame(
     peerSettings: NativeH2PeerSettings,
     streams: HashMap<Int64, NativeH2InboundStream>,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
-    outbound: HashMap<Int64, NativeH2OutboundStream>
+    outbound: HashMap<Int64, NativeH2OutboundStream>,
+    hpackEncoder: NativeH2HpackEncoderState
 ): Unit {
     if (frame.streamId != 0) {
         nativeH2ProtocolFailure("native H2 SETTINGS must use stream 0")
@@ -1471,7 +1490,11 @@ func nativeH2HandleSettingsFrame(
         }
         return
     }
+    let previousHeaderTableSize = peerSettings.headerTableSize
     let windowDeltas = peerSettings.apply(frame.payload)
+    if (peerSettings.headerTableSize != previousHeaderTableSize) {
+        hpackEncoder.updatePeerMaxSize(peerSettings.headerTableSize)
+    }
     for (delta in windowDeltas) {
         for ((_streamId, stream) in streams) {
             stream.sendWindow = nativeH2AdjustedSendWindow(stream.sendWindow, delta)
@@ -1617,7 +1640,12 @@ func nativeH2EncodeResponseHead(
     status: UInt16,
     headers: Array<NativeH2Header>
 ): Array<UInt8> {
-    nativeH2EncodeResponseHead(status, headers, None)
+    nativeH2EncodeResponseHead(
+        status,
+        headers,
+        None,
+        NativeH2HpackEncoderState()
+    )
 }
 
 func nativeH2EncodeResponseHead(
@@ -1625,9 +1653,24 @@ func nativeH2EncodeResponseHead(
     headers: Array<NativeH2Header>,
     maxHeaderListSize: ?Int64
 ): Array<UInt8> {
+    nativeH2EncodeResponseHead(
+        status,
+        headers,
+        maxHeaderListSize,
+        NativeH2HpackEncoderState()
+    )
+}
+
+func nativeH2EncodeResponseHead(
+    status: UInt16,
+    headers: Array<NativeH2Header>,
+    maxHeaderListSize: ?Int64,
+    hpackEncoder: NativeH2HpackEncoderState
+): Array<UInt8> {
     let out = ArrayList<UInt8>()
     var headerListSize: Int64 = 42
     nativeH2RequirePeerHeaderListCapacity(headerListSize, maxHeaderListSize)
+    hpackEncoder.beginHeaderBlock(out)
     nativeH2AppendBytes(out, nativeH2EncodeStatus(status))
     for (header in headers) {
         let name = header.name
@@ -1646,9 +1689,7 @@ func nativeH2EncodeResponseHead(
         }
         headerListSize += nameBytes.size + header.value.toArray().size + 32
         nativeH2RequirePeerHeaderListCapacity(headerListSize, maxHeaderListSize)
-        nativeH2HpackAppendInteger(out, 0, 4, UInt8(0))
-        nativeH2HpackAppendString(out, name, true)
-        nativeH2HpackAppendString(out, header.value, true)
+        hpackEncoder.appendField(out, name, header.value)
         if (out.size > 65536) {
             throw Exception("native H2 response header block exceeds 64 KiB")
         }
