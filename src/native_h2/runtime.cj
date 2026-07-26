@@ -1,6 +1,7 @@
 package ignite.native_h2
 
 import std.collection.{ArrayList, HashMap}
+import std.io.InputStream
 import std.net.{SocketTimeoutException, TcpSocket}
 import std.sync.AtomicBool
 import std.time.MonoTime
@@ -56,15 +57,18 @@ public class NativeH2SingleStreamResponse {
     public let status: UInt16
     public let headers: Array<NativeH2Header>
     public let body: Array<UInt8>
+    public let bodyStream: ?InputStream
 
     public init(
         status!: UInt16 = 200,
         headers!: Array<NativeH2Header> = Array<NativeH2Header>(),
-        body!: Array<UInt8> = Array<UInt8>()
+        body!: Array<UInt8> = Array<UInt8>(),
+        bodyStream!: ?InputStream = None
     ) {
         this.status = status
         this.headers = nativeH2CloneHeaders(headers)
         this.body = nativeH2Clone(body)
+        this.bodyStream = bodyStream
     }
 }
 
@@ -315,17 +319,100 @@ class NativeH2PendingRequestHead {
 class NativeH2OutboundStream {
     let streamId: Int64
     let body: Array<UInt8>
+    let bodyStream: ?InputStream
     var offset: Int64 = 0
     var sendWindow: Int64
+    var streamChunk = Array<UInt8>()
+    var streamChunkOffset: Int64 = 0
+    var streamEnded = false
+    var streamClosed = false
 
-    init(streamId: Int64, body: Array<UInt8>, sendWindow: Int64) {
+    init(
+        streamId: Int64,
+        body: Array<UInt8>,
+        bodyStream: ?InputStream,
+        sendWindow: Int64
+    ) {
         this.streamId = streamId
         this.body = nativeH2Clone(body)
+        this.bodyStream = bodyStream
         this.sendWindow = sendWindow
     }
 
-    func remaining(): Int64 {
+    func ensureAvailable(maxRead: Int64): Unit {
+        if (bodyStream.isNone() || streamEnded || streamChunkOffset < streamChunk.size) {
+            return
+        }
+        let stream = bodyStream ?? return
+        let chunk = Array<Byte>(maxRead, repeat: 0)
+        let count = stream.read(chunk)
+        streamChunk = Array<UInt8>()
+        streamChunkOffset = 0
+        if (count <= 0) {
+            streamEnded = true
+            close()
+            return
+        }
+        streamChunk = Array<UInt8>(count, repeat: 0)
+        var i: Int64 = 0
+        while (i < count) {
+            streamChunk[i] = UInt8(chunk[i])
+            i += 1
+        }
+    }
+
+    func remainingBuffered(): Int64 {
+        if (bodyStream.isSome()) {
+            return streamChunk.size - streamChunkOffset
+        }
         body.size - offset
+    }
+
+    func payload(count: Int64): Array<UInt8> {
+        if (bodyStream.isSome()) {
+            return nativeH2Slice(
+                streamChunk,
+                streamChunkOffset,
+                streamChunkOffset + count
+            )
+        }
+        nativeH2Slice(body, offset, offset + count)
+    }
+
+    func advance(count: Int64): Unit {
+        if (bodyStream.isSome()) {
+            streamChunkOffset += count
+            if (streamChunkOffset >= streamChunk.size) {
+                streamChunk = Array<UInt8>()
+                streamChunkOffset = 0
+            }
+            return
+        }
+        offset += count
+    }
+
+    func completed(): Bool {
+        if (bodyStream.isSome()) {
+            return streamEnded && remainingBuffered() == 0
+        }
+        remainingBuffered() == 0
+    }
+
+    func canEndWithPayload(count: Int64): Bool {
+        bodyStream.isNone() && count == remainingBuffered()
+    }
+
+    func close(): Unit {
+        if (streamClosed) {
+            return
+        }
+        streamClosed = true
+        if (let Some(stream) <- bodyStream) {
+            match (stream) {
+                case resource: Resource => resource.close()
+                case _ => ()
+            }
+        }
     }
 }
 
@@ -744,7 +831,9 @@ public func serveNativeH2TransportConnection(
                 if (let Some(pending) <- handlers.remove(frame.streamId)) {
                     pending.future.cancel()
                 }
-                let _ = outbound.remove(frame.streamId)
+                if (let Some(stream) <- outbound.remove(frame.streamId)) {
+                    stream.close()
+                }
                 continue
             }
             if (frame.frameType == UInt8(0x2)) {
@@ -801,6 +890,9 @@ public func serveNativeH2TransportConnection(
     } finally {
         for ((_streamId, pending) in handlers) {
             pending.future.cancel()
+        }
+        for ((_streamId, stream) in outbound) {
+            stream.close()
         }
         socket.updateReadTimeout(originalReadTimeout)
     }
@@ -1004,8 +1096,15 @@ func nativeH2HarvestCompletedHandlers(
             if (!bodyForbidden) {
                 outbound.add(
                     streamId,
-                    NativeH2OutboundStream(streamId, response.body, pending.sendWindow)
+                    NativeH2OutboundStream(
+                        streamId,
+                        response.body,
+                        response.bodyStream,
+                        pending.sendWindow
+                    )
                 )
+            } else {
+                nativeH2CloseResponseStream(response.bodyStream)
             }
             completed.add(streamId)
         }
@@ -1031,11 +1130,12 @@ func nativeH2FlushOutbound(
         progressed = false
         let completed = ArrayList<Int64>()
         for ((_streamId, stream) in outbound) {
-            if (stream.remaining() == 0) {
+            if (stream.completed()) {
                 nativeH2WriteFrame(
                     socket,
                     NativeH2Frame(UInt8(0x0), UInt8(0x1), stream.streamId, Array<UInt8>())
                 )
+                stream.close()
                 completed.add(stream.streamId)
                 progressed = true
                 continue
@@ -1043,26 +1143,41 @@ func nativeH2FlushOutbound(
             if (stream.sendWindow <= 0 || connectionWindow <= 0) {
                 continue
             }
+            stream.ensureAvailable(maxFramePayload)
+            if (stream.completed()) {
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(UInt8(0x0), UInt8(0x1), stream.streamId, Array<UInt8>())
+                )
+                stream.close()
+                completed.add(stream.streamId)
+                progressed = true
+                continue
+            }
             let count = min(
-                min(stream.remaining(), maxFramePayload),
+                min(stream.remainingBuffered(), maxFramePayload),
                 min(stream.sendWindow, connectionWindow)
             )
-            let end = stream.offset + count
-            let flags = if (end == stream.body.size) { UInt8(0x1) } else { UInt8(0) }
+            let flags = if (stream.canEndWithPayload(count)) {
+                UInt8(0x1)
+            } else {
+                UInt8(0)
+            }
             nativeH2WriteFrame(
                 socket,
                 NativeH2Frame(
                     UInt8(0x0),
                     flags,
                     stream.streamId,
-                    nativeH2Slice(stream.body, stream.offset, end)
+                    stream.payload(count)
                 )
             )
-            stream.offset = end
+            stream.advance(count)
             stream.sendWindow -= count
             connectionWindow -= count
             progressed = true
-            if (stream.remaining() == 0) {
+            if (stream.completed()) {
+                stream.close()
                 completed.add(stream.streamId)
             }
         }
@@ -1166,7 +1281,18 @@ func nativeH2ResetStreamForFlowError(
     if (let Some(pending) <- handlers.remove(streamId)) {
         pending.future.cancel()
     }
-    let _ = outbound.remove(streamId)
+    if (let Some(stream) <- outbound.remove(streamId)) {
+        stream.close()
+    }
+}
+
+func nativeH2CloseResponseStream(stream: ?InputStream): Unit {
+    if (let Some(value) <- stream) {
+        match (value) {
+            case resource: Resource => resource.close()
+            case _ => ()
+        }
+    }
 }
 
 func nativeH2ErrorCodePayload(errorCode: Int64): Array<UInt8> {

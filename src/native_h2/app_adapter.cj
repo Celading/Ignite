@@ -224,17 +224,19 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     func response(): NativeH2SingleStreamResponse {
-        consumeResponseStream()
         let headers = ArrayList<NativeH2Header>()
         for ((name, values) in responseHeadersValue) {
             for (value in values) {
                 headers.add(NativeH2Header(name, value))
             }
         }
+        let stream = responseBodyStreamValue
+        responseBodyStreamValue = None
         NativeH2SingleStreamResponse(
             status: responseStatusValue,
             headers: headers.toArray(),
-            body: responseBodyValue.toArray()
+            body: responseBodyValue.toArray(),
+            bodyStream: stream
         )
     }
 
@@ -259,29 +261,6 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     func replaceResponseBytes(data: Array<UInt8>): Unit {
         responseBodyValue = ArrayList<UInt8>()
         appendResponseBytes(data)
-    }
-
-    func consumeResponseStream(): Unit {
-        if (let Some(stream) <- responseBodyStreamValue) {
-            let chunk = Array<Byte>(16384, repeat: 0)
-            try {
-                while (true) {
-                    let count = stream.read(chunk)
-                    if (count <= 0) {
-                        break
-                    }
-                    let data = Array<UInt8>(count, repeat: 0)
-                    var i: Int64 = 0
-                    while (i < count) {
-                        data[i] = UInt8(chunk[i])
-                        i += 1
-                    }
-                    appendResponseBytes(data)
-                }
-            } finally {
-                closeResponseStream()
-            }
-        }
     }
 
     func closeResponseStream(): Unit {

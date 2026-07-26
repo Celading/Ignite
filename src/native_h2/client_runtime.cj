@@ -209,6 +209,7 @@ public class NativeH2ClientConnection {
     var activeStreamLease: ?NativeH2ClientStreamLease = None
     var initialized = false
     var finished = false
+    var retiring = false
     var nextStreamId: Int64 = 1
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
 
@@ -227,7 +228,7 @@ public class NativeH2ClientConnection {
     public func sendBatch(
         requests: Array<NativeH2ClientRequest>
     ): Array<NativeH2ClientResponse> {
-        if (finished) {
+        if (finished || retiring) {
             throw Exception("native H2 client connection is finished")
         }
         if (activeStreamLease.isSome()) {
@@ -280,6 +281,7 @@ public class NativeH2ClientConnection {
             )
         }
         finished = true
+        retiring = false
     }
 }
 
