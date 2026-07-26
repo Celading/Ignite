@@ -15,6 +15,7 @@ import jinguissl.live.{
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
+import lisi.io.IoOperationContext
 import std.net.{
     IPSocketAddress,
     SocketException,
@@ -576,24 +577,21 @@ func writeSocketServerEngineShellTlsH1StreamResponse(
             writer.takeHeadBytes()
         )
         if (plan.writesPayloadBody()) {
-            let buf = Array<Byte>(4096, repeat: 0)
-            while (true) {
-                let n = stream.read(buf)
-                if (n <= 0) {
-                    break
-                }
-                let chunk = Array<UInt8>(n, repeat: 0)
-                var i: Int64 = 0
-                while (i < n) {
-                    chunk[i] = UInt8(buf[i])
-                    i += 1
-                }
+            let transportWriter = openSinkBackedResponseTransportWriter({ chunk =>
                 writeSocketServerEngineShellTlsH1ApplicationData(
                     socket,
                     session,
                     writer.writeBodyChunk(chunk)
                 )
-            }
+            })
+            let _ = pumpIgniteInputStreamToResponseTransport(
+                stream,
+                transportWriter,
+                4096,
+                65536,
+                8,
+                IoOperationContext(false, false)
+            )
         }
         writeSocketServerEngineShellTlsH1ApplicationData(
             socket,
@@ -1528,23 +1526,20 @@ func writeSocketServerEngineShellStreamResponse(
             socket.write(head)
         }
         if (plan.writesPayloadBody()) {
-            let buf = Array<Byte>(4096, repeat: 0)
-            while (true) {
-                let n = stream.read(buf)
-                if (n <= 0) {
-                    break
-                }
-                let chunk = Array<UInt8>(n, repeat: 0)
-                var i: Int64 = 0
-                while (i < n) {
-                    chunk[i] = UInt8(buf[i])
-                    i += 1
-                }
+            let transportWriter = openSinkBackedResponseTransportWriter({ chunk =>
                 let wire = writer.writeBodyChunk(chunk)
                 if (wire.size > 0) {
                     socket.write(wire)
                 }
-            }
+            })
+            let _ = pumpIgniteInputStreamToResponseTransport(
+                stream,
+                transportWriter,
+                4096,
+                65536,
+                8,
+                IoOperationContext(false, false)
+            )
         }
         let tail = writer.finish()
         if (tail.size > 0) {

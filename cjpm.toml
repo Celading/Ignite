@@ -32,6 +32,7 @@
   # If a future hosted projection is prepared, it must target the split contract/core/runtime family.
   jinguissl = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
   seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
+  lisi = { git = "https://gitcode.com/cinyu/lisi.git", branch = "lio-j002-provider-contract-v1" }
   # ignite-cjpm-projection:end
 
 [target.x86_64-w64-mingw32]
