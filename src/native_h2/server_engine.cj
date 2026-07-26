@@ -21,6 +21,7 @@ public class NativeH2ServerEngineException <: Exception {
 public class NativeH2ServerEngine <:
     ServerEngine & ServerEngineTransportTouchpointOverride {
     let control = SocketServerEngineShellRuntimeControl()
+    let connectionControl = NativeH2ConnectionControl()
 
     public override func overrideTransportTouchpoint(
         addr: String,
@@ -58,11 +59,18 @@ public class NativeH2ServerEngine <:
         )
         listener.bind()
         control.attachListener(listener)
+        connectionControl.reset()
         try {
             if (let Some(cb) <- onReady) {
                 cb(ServerEngineReadySignal())
             }
-            serveNativeH2AppConnections(listener, option, app, control)
+            serveNativeH2AppConnections(
+                listener,
+                option,
+                app,
+                control,
+                connectionControl
+            )
         } finally {
             if (!listener.isClosed()) {
                 listener.close()
@@ -72,7 +80,15 @@ public class NativeH2ServerEngine <:
     }
 
     public override func shutdown(): Unit {
+        let timeout = Duration.second * 5
+        connectionControl.requestDrain(timeout: timeout)
         control.requestShutdown()
+        if (!connectionControl.awaitDrained(timeout: timeout)) {
+            connectionControl.requestClose()
+            let _ = connectionControl.awaitDrained(
+                timeout: Duration.millisecond * 100
+            )
+        }
     }
 }
 
@@ -93,13 +109,24 @@ func serveNativeH2AppConnections(
     listener: TcpServerSocket,
     option: ServerEngineListenOption,
     app: App,
-    control: SocketServerEngineShellRuntimeControl
+    control: SocketServerEngineShellRuntimeControl,
+    connectionControl: NativeH2ConnectionControl
 ): Unit {
     while (!control.shutdownRequested()) {
         try {
             let accepted = listener.accept()
+            connectionControl.connectionOpened()
             spawn {
-                serveNativeH2AcceptedAppConnection(accepted, option, app)
+                try {
+                    serveNativeH2AcceptedAppConnection(
+                        accepted,
+                        option,
+                        app,
+                        connectionControl
+                    )
+                } finally {
+                    connectionControl.connectionClosed()
+                }
             }
         } catch (e: Exception) {
             if (control.shutdownRequested()) {
@@ -113,15 +140,17 @@ func serveNativeH2AppConnections(
 func serveNativeH2AcceptedAppConnection(
     accepted: TcpSocket,
     option: ServerEngineListenOption,
-    app: App
+    app: App,
+    connectionControl: NativeH2ConnectionControl
 ): Unit {
     try {
         accepted.readTimeout = Some(option.readTimeout)
         accepted.writeTimeout = Some(option.writeTimeout)
-        serveNativeH2AppConnection(
+        serveTrackedNativeH2AppConnection(
             accepted,
             app,
-            remoteAddress: accepted.remoteAddress.toString()
+            accepted.remoteAddress.toString(),
+            connectionControl
         )
     } catch (_: Exception) {
         // A connection failure must not terminate the listener or sibling H2 connections.

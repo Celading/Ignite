@@ -51,6 +51,19 @@ public func serveNativeH2AppTransportConnection(
         maxRequestBodySize: app.config.bodyLimit)
 }
 
+func serveTrackedNativeH2AppConnection(
+    socket: TcpSocket,
+    app: App,
+    remoteAddress: String,
+    control: NativeH2ConnectionControl
+): Unit {
+    nativeH2ServeTransportConnection(NativeH2TcpTransport(socket), { request =>
+        let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
+        app.handleRequest(carrier)
+        carrier.response()
+    }, control: Some(control), maxRequestBodySize: app.config.bodyLimit)
+}
+
 class NativeH2AppBytesInputStream <: InputStream {
     let bytes: Array<UInt8>
     var offset: Int64 = 0

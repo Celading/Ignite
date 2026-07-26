@@ -3,7 +3,7 @@ package ignite.native_h2
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.{SocketTimeoutException, TcpSocket}
-import std.sync.AtomicBool
+import std.sync.{AtomicBool, AtomicInt64, Mutex}
 import std.time.MonoTime
 
 let NATIVE_H2_PREFACE = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".toArray()
@@ -19,6 +19,7 @@ let NATIVE_H2_ERROR_PROTOCOL: Int64 = 1
 let NATIVE_H2_ERROR_FLOW_CONTROL: Int64 = 3
 let NATIVE_H2_ERROR_STREAM_CLOSED: Int64 = 5
 let NATIVE_H2_ERROR_FRAME_SIZE: Int64 = 6
+let NATIVE_H2_ERROR_REFUSED_STREAM: Int64 = 7
 let NATIVE_H2_ERROR_CANCEL: Int64 = 8
 let NATIVE_H2_ERROR_COMPRESSION: Int64 = 9
 
@@ -89,6 +90,10 @@ public type NativeH2SingleStreamHandler =
 
 public class NativeH2ConnectionControl {
     let closeRequested = AtomicBool(false)
+    let drainRequested = AtomicBool(false)
+    let activeConnections = AtomicInt64(0)
+    let drainStateMutex = Mutex()
+    var drainTimeoutValue = Duration.second * 30
 
     public func requestClose(): Unit {
         closeRequested.store(true)
@@ -96,6 +101,54 @@ public class NativeH2ConnectionControl {
 
     public func isCloseRequested(): Bool {
         closeRequested.load()
+    }
+
+    public func requestDrain(timeout!: Duration = Duration.second * 30): Unit {
+        synchronized(drainStateMutex) {
+            drainTimeoutValue = timeout
+        }
+        drainRequested.store(true)
+    }
+
+    public func isDrainRequested(): Bool {
+        drainRequested.load()
+    }
+
+    public func drainTimeout(): ?Duration {
+        if (!drainRequested.load()) {
+            return None
+        }
+        synchronized(drainStateMutex) {
+            Some(drainTimeoutValue)
+        }
+    }
+
+    public func activeConnectionCount(): Int64 {
+        activeConnections.load()
+    }
+
+    public func awaitDrained(timeout!: Duration = Duration.second * 30): Bool {
+        let startedAt = MonoTime.now()
+        while (activeConnections.load() > 0) {
+            if (MonoTime.now() - startedAt >= timeout) {
+                return false
+            }
+            sleep(Duration.millisecond * 5)
+        }
+        true
+    }
+
+    func reset(): Unit {
+        closeRequested.store(false)
+        drainRequested.store(false)
+    }
+
+    func connectionOpened(): Unit {
+        let _ = activeConnections.fetchAdd(1)
+    }
+
+    func connectionClosed(): Unit {
+        let _ = activeConnections.fetchAdd(-1)
     }
 }
 
@@ -488,6 +541,31 @@ public func serveNativeH2TransportConnection(
     control!: ?NativeH2ConnectionControl = None,
     maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
 ): Unit {
+    if (let Some(connectionControl) <- control) {
+        connectionControl.connectionOpened()
+    }
+    try {
+        nativeH2ServeTransportConnection(
+            socket,
+            handler,
+            maxCompletedStreams: maxCompletedStreams,
+            control: control,
+            maxRequestBodySize: maxRequestBodySize
+        )
+    } finally {
+        if (let Some(connectionControl) <- control) {
+            connectionControl.connectionClosed()
+        }
+    }
+}
+
+func nativeH2ServeTransportConnection(
+    socket: NativeH2DuplexTransport,
+    handler: NativeH2SingleStreamHandler,
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+): Unit {
     if (maxCompletedStreams < 0) {
         throw Exception("native H2 maxCompletedStreams cannot be negative")
     }
@@ -527,11 +605,16 @@ public func serveNativeH2TransportConnection(
     let frameReader = NativeH2FrameReader()
     let hpackDecoder = NativeH2HpackDecoderState()
     var pendingRequestHead: ?NativeH2PendingRequestHead = None
-    var lastOpenedStreamId: Int64 = 0
+    var discardedDrainHeaderStreamId: ?Int64 = None
+    var lastSeenClientStreamId: Int64 = 0
+    var lastAcceptedStreamId: Int64 = 0
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
     let originalReadTimeout = socket.currentReadTimeout()
     var lastSocketProgressAt = MonoTime.now()
+    var drainStartedAt: ?MonoTime = None
+    var drainTimeout: ?Duration = None
+    var drainGoAwaySent = false
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
             handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
@@ -548,10 +631,42 @@ public func serveNativeH2TransportConnection(
                             UInt8(0x7),
                             UInt8(0),
                             0,
-                            nativeH2GoAwayPayload(lastOpenedStreamId, NATIVE_H2_ERROR_NO_ERROR)
+                            nativeH2GoAwayPayload(lastAcceptedStreamId, NATIVE_H2_ERROR_NO_ERROR)
                         )
                     )
                     return
+                }
+                if (let Some(timeout) <- connectionControl.drainTimeout()) {
+                    if (drainStartedAt.isNone()) {
+                        drainStartedAt = Some(MonoTime.now())
+                        drainTimeout = Some(timeout)
+                    }
+                    if (!drainGoAwaySent) {
+                        nativeH2WriteFrame(
+                            socket,
+                            NativeH2Frame(
+                                UInt8(0x7),
+                                UInt8(0),
+                                0,
+                                nativeH2GoAwayPayload(
+                                    lastAcceptedStreamId,
+                                    NATIVE_H2_ERROR_NO_ERROR
+                                )
+                            )
+                        )
+                        drainGoAwaySent = true
+                    }
+                    if (pendingRequestHead.isNone() && streams.size == 0 &&
+                        handlers.size == 0 && outbound.size == 0) {
+                        return
+                    }
+                    if (let Some(startedAt) <- drainStartedAt) {
+                        if (let Some(limit) <- drainTimeout) {
+                            if (MonoTime.now() - startedAt >= limit) {
+                                return
+                            }
+                        }
+                    }
                 }
             }
             if (maxCompletedStreams > 0 && completedStreams >= maxCompletedStreams &&
@@ -589,6 +704,18 @@ public func serveNativeH2TransportConnection(
             let frame = match (nextFrame) {
                 case Some(value) => value
                 case None => return
+            }
+            if (let Some(discardedStreamId) <- discardedDrainHeaderStreamId) {
+                if (frame.frameType != UInt8(0x9) ||
+                    frame.streamId != discardedStreamId) {
+                    nativeH2ProtocolFailure(
+                        "native H2 refused stream requires contiguous CONTINUATION frames"
+                    )
+                }
+                if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
+                    discardedDrainHeaderStreamId = None
+                }
+                continue
             }
             if (let Some(pending) <- pendingRequestHead) {
                 if (frame.frameType != UInt8(0x9)) {
@@ -677,18 +804,35 @@ public func serveNativeH2TransportConnection(
                     }
                     continue
                 }
-                if (frame.streamId <= lastOpenedStreamId) {
+                if (frame.streamId <= lastSeenClientStreamId) {
                     nativeH2ProtocolFailure(
                         "native H2 HEADERS references an unknown or closed stream"
                     )
+                }
+                lastSeenClientStreamId = frame.streamId
+                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                if (drainStartedAt.isSome()) {
+                    nativeH2WriteFrame(
+                        socket,
+                        NativeH2Frame(
+                            UInt8(0x3), UInt8(0), frame.streamId,
+                            nativeH2ErrorCodePayload(NATIVE_H2_ERROR_REFUSED_STREAM)
+                        )
+                    )
+                    if (!endStream) {
+                        discardedRequestStreams.add(frame.streamId, true)
+                    }
+                    if ((frame.flags & UInt8(0x4)) == UInt8(0)) {
+                        discardedDrainHeaderStreamId = Some(frame.streamId)
+                    }
+                    continue
                 }
                 if (streams.size + handlers.size + outbound.size +
                     discardedRequestStreams.size >=
                     NATIVE_H2_MAX_CONCURRENT_STREAMS) {
                     throw Exception("native H2 concurrent stream limit exceeded")
                 }
-                lastOpenedStreamId = frame.streamId
-                let endStream = (frame.flags & UInt8(0x1)) != UInt8(0)
+                lastAcceptedStreamId = frame.streamId
                 if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
                     if (let Some(head) <- nativeH2DecodeRequestHeadOrReset(
                         socket, hpackDecoder, frame.streamId, headerBlock
@@ -795,7 +939,7 @@ public func serveNativeH2TransportConnection(
                         stream.sendWindow += increment
                     }
                 } else if (nativeH2WindowUpdateReferencesClosedClientStream(
-                    frame.streamId, lastOpenedStreamId
+                    frame.streamId, lastSeenClientStreamId
                 )) {
                     // Flow-control feedback can arrive after our END_STREAM.
                     continue
@@ -823,7 +967,10 @@ public func serveNativeH2TransportConnection(
                         NATIVE_H2_ERROR_FRAME_SIZE
                     )
                 }
-                if (nativeH2ResetReferencesIdleStream(frame.streamId, lastOpenedStreamId)) {
+                if (nativeH2ResetReferencesIdleStream(
+                    frame.streamId,
+                    lastSeenClientStreamId
+                )) {
                     nativeH2ProtocolFailure("native H2 RST_STREAM references an idle stream")
                 }
                 let _ = streams.remove(frame.streamId)
@@ -883,7 +1030,7 @@ public func serveNativeH2TransportConnection(
                 UInt8(0x7),
                 UInt8(0),
                 0,
-                nativeH2GoAwayPayload(lastOpenedStreamId, e.errorCode)
+                nativeH2GoAwayPayload(lastAcceptedStreamId, e.errorCode)
             )
         )
         throw e
