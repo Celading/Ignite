@@ -113,7 +113,8 @@ func runSocketServerEngineShellListen(
     control: SocketServerEngineShellRuntimeControl,
     acceptedConnectionLimit: Int64,
     tlsAcceptedSessionReadyHook!:
-        ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
+        ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None,
+    nativeTlsH2RuntimeHook!: ?ServerNativeTlsH2RuntimeHook = None
 ): Unit {
     if (socketServerEngineShellTlsIngressEnabled(option)) {
         runSocketServerEngineShellTlsListen(
@@ -122,7 +123,8 @@ func runSocketServerEngineShellListen(
             onReady,
             control,
             acceptedConnectionLimit,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
         return
     }
@@ -164,7 +166,8 @@ func runSocketServerEngineShellTlsListen(
     onReady: ?((ServerEngineReadySignal) -> Unit),
     control: SocketServerEngineShellRuntimeControl,
     acceptedConnectionLimit: Int64,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${option.addr}:${option.port}"))
     listener.bind()
@@ -180,7 +183,8 @@ func runSocketServerEngineShellTlsListen(
             app,
             acceptedConnectionLimit,
             control,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
     } finally {
         if (!listener.isClosed()) {
@@ -196,7 +200,8 @@ func serveSocketServerEngineShellTlsTurns(
     app: App,
     acceptedConnectionLimit: Int64,
     control: SocketServerEngineShellRuntimeControl,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     var acceptedConnectionCount: Int64 = 0
     while (
@@ -211,7 +216,8 @@ func serveSocketServerEngineShellTlsTurns(
                 listener,
                 option,
                 app,
-                tlsAcceptedSessionReadyHook
+                tlsAcceptedSessionReadyHook,
+                nativeTlsH2RuntimeHook
             )
             acceptedConnectionCount += 1
         } catch (e: Exception) {
@@ -227,7 +233,8 @@ func serveSocketServerEngineShellTlsTurn(
     listener: TcpServerSocket,
     option: ServerEngineListenOption,
     app: App,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let accepted = listener.accept()
     try {
@@ -235,7 +242,8 @@ func serveSocketServerEngineShellTlsTurn(
             accepted,
             option,
             app,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
     } finally {
         if (!accepted.isClosed()) {
@@ -248,7 +256,8 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
     accepted: TcpSocket,
     option: ServerEngineListenOption,
     app: App,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let capture =
         option.captureJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHello(
@@ -303,6 +312,15 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
             session,
             option,
             app
+        )
+        return
+    }
+    if (let Some(runtimeHook) <- nativeTlsH2RuntimeHook) {
+        runtimeHook(
+            accepted,
+            ready,
+            app,
+            accepted.remoteAddress.toString()
         )
         return
     }

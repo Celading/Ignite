@@ -134,7 +134,7 @@ class NativeH2FrameReader {
     var streamId: Int64 = 0
     var bytesRead: Int64 = 0
 
-    func readNext(socket: TcpSocket): ?NativeH2Frame {
+    func readNext(socket: NativeH2DuplexTransport): ?NativeH2Frame {
         while (headerOffset < header.size) {
             let chunk = Array<UInt8>(header.size - headerOffset, repeat: 0)
             let count = socket.read(chunk)
@@ -356,8 +356,19 @@ public func serveNativeH2SingleStream(
     handler: NativeH2SingleStreamHandler,
     maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
 ): Unit {
-    serveNativeH2Connection(
-        socket, handler,
+    serveNativeH2SingleStreamTransport(
+        NativeH2TcpTransport(socket), handler,
+        maxRequestBodySize: maxRequestBodySize
+    )
+}
+
+public func serveNativeH2SingleStreamTransport(
+    transport: NativeH2DuplexTransport,
+    handler: NativeH2SingleStreamHandler,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+): Unit {
+    serveNativeH2TransportConnection(
+        transport, handler,
         maxCompletedStreams: 1,
         maxRequestBodySize: maxRequestBodySize
     )
@@ -370,6 +381,21 @@ public func serveNativeH2SingleStream(
 /// timeout fires, or a protocol error is raised.
 public func serveNativeH2Connection(
     socket: TcpSocket,
+    handler: NativeH2SingleStreamHandler,
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+): Unit {
+    serveNativeH2TransportConnection(
+        NativeH2TcpTransport(socket), handler,
+        maxCompletedStreams: maxCompletedStreams,
+        control: control,
+        maxRequestBodySize: maxRequestBodySize
+    )
+}
+
+public func serveNativeH2TransportConnection(
+    socket: NativeH2DuplexTransport,
     handler: NativeH2SingleStreamHandler,
     maxCompletedStreams!: Int64 = 0,
     control!: ?NativeH2ConnectionControl = None,
@@ -417,7 +443,7 @@ public func serveNativeH2Connection(
     var lastOpenedStreamId: Int64 = 0
     var completedStreams: Int64 = 0
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
-    let originalReadTimeout = socket.readTimeout
+    let originalReadTimeout = socket.currentReadTimeout()
     var lastSocketProgressAt = MonoTime.now()
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
@@ -448,11 +474,11 @@ public func serveNativeH2Connection(
             }
 
             let pollingCoordinator = handlers.size > 0 || control.isSome()
-            socket.readTimeout = if (pollingCoordinator) {
+            socket.updateReadTimeout(if (pollingCoordinator) {
                 Some(nativeH2CoordinatorPollTimeout(originalReadTimeout))
             } else {
                 originalReadTimeout
-            }
+            })
             var nextFrame: ?NativeH2Frame = None
             let progressBeforeRead = frameReader.bytesRead
             try {
@@ -776,7 +802,7 @@ public func serveNativeH2Connection(
         for ((_streamId, pending) in handlers) {
             pending.future.cancel()
         }
-        socket.readTimeout = originalReadTimeout
+        socket.updateReadTimeout(originalReadTimeout)
     }
 }
 
@@ -902,7 +928,7 @@ func nativeH2GoAwayPayload(lastStreamId: Int64, errorCode: Int64): Array<UInt8> 
 }
 
 func nativeH2DecodeRequestHeadOrReset(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     decoder: NativeH2HpackDecoderState,
     streamId: Int64,
     payload: Array<UInt8>
@@ -922,7 +948,7 @@ func nativeH2DecodeRequestHeadOrReset(
 }
 
 func nativeH2CompleteInboundStream(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     streams: HashMap<Int64, NativeH2InboundStream>,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
     stream: NativeH2InboundStream,
@@ -951,7 +977,7 @@ func nativeH2CompleteInboundStream(
 }
 
 func nativeH2HarvestCompletedHandlers(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
     outbound: HashMap<Int64, NativeH2OutboundStream>,
     peerSettings: NativeH2PeerSettings
@@ -994,7 +1020,7 @@ func nativeH2ResponseBodyForbidden(method: String, status: UInt16): Bool {
 }
 
 func nativeH2FlushOutbound(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     outbound: HashMap<Int64, NativeH2OutboundStream>,
     initialConnectionWindow: Int64,
     maxFramePayload: Int64
@@ -1076,7 +1102,7 @@ func nativeH2WindowUpdateReferencesClosedClientStream(
 }
 
 func nativeH2ReplenishConsumedRequestData(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     streamId: Int64,
     consumed: Int64,
     endStream: Bool
@@ -1090,7 +1116,10 @@ func nativeH2ReplenishConsumedRequestData(
     }
 }
 
-func nativeH2ReplenishDiscardedRequestData(socket: TcpSocket, discarded: Int64): Unit {
+func nativeH2ReplenishDiscardedRequestData(
+    socket: NativeH2DuplexTransport,
+    discarded: Int64
+): Unit {
     if (discarded > 0) {
         nativeH2WriteFrame(socket, nativeH2WindowUpdateFrame(0, discarded))
     }
@@ -1120,7 +1149,7 @@ func nativeH2FlowWindowWouldOverflow(current: Int64, increment: Int64): Bool {
 }
 
 func nativeH2ResetStreamForFlowError(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     streamId: Int64,
     streams: HashMap<Int64, NativeH2InboundStream>,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
@@ -1150,7 +1179,7 @@ func nativeH2ErrorCodePayload(errorCode: Int64): Array<UInt8> {
 }
 
 func nativeH2HandleSettingsFrame(
-    socket: TcpSocket,
+    socket: NativeH2DuplexTransport,
     frame: NativeH2Frame,
     peerSettings: NativeH2PeerSettings,
     streams: HashMap<Int64, NativeH2InboundStream>,
@@ -1184,14 +1213,18 @@ func nativeH2HandleSettingsFrame(
     nativeH2WriteFrame(socket, NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>()))
 }
 
-func nativeH2ReadFrame(socket: TcpSocket): NativeH2Frame {
+func nativeH2ReadFrame(socket: NativeH2DuplexTransport): NativeH2Frame {
     match (nativeH2ReadFrameOrEof(socket)) {
         case Some(frame) => frame
         case None => throw Exception("native H2 socket closed before the next frame")
     }
 }
 
-func nativeH2ReadFrameOrEof(socket: TcpSocket): ?NativeH2Frame {
+func nativeH2ReadFrame(socket: TcpSocket): NativeH2Frame {
+    nativeH2ReadFrame(NativeH2TcpTransport(socket))
+}
+
+func nativeH2ReadFrameOrEof(socket: NativeH2DuplexTransport): ?NativeH2Frame {
     let header = Array<UInt8>(9, repeat: 0)
     var offset: Int64 = 0
     while (offset < header.size) {
@@ -1228,7 +1261,11 @@ func nativeH2ReadFrameOrEof(socket: TcpSocket): ?NativeH2Frame {
     ))
 }
 
-func nativeH2WriteFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
+func nativeH2ReadFrameOrEof(socket: TcpSocket): ?NativeH2Frame {
+    nativeH2ReadFrameOrEof(NativeH2TcpTransport(socket))
+}
+
+func nativeH2WriteFrame(socket: NativeH2DuplexTransport, frame: NativeH2Frame): Unit {
     let length = frame.payload.size
     if (length > NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD) {
         throw Exception("native H2 response frame exceeds the default 16 KiB limit")
@@ -1251,7 +1288,14 @@ func nativeH2WriteFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
     socket.write(wire)
 }
 
-func nativeH2ReadExactly(socket: TcpSocket, length: Int64): Array<UInt8> {
+func nativeH2WriteFrame(socket: TcpSocket, frame: NativeH2Frame): Unit {
+    nativeH2WriteFrame(NativeH2TcpTransport(socket), frame)
+}
+
+func nativeH2ReadExactly(
+    socket: NativeH2DuplexTransport,
+    length: Int64
+): Array<UInt8> {
     let out = Array<UInt8>(length, repeat: 0)
     var offset: Int64 = 0
     while (offset < length) {
@@ -1269,6 +1313,10 @@ func nativeH2ReadExactly(socket: TcpSocket, length: Int64): Array<UInt8> {
         offset += n
     }
     out
+}
+
+func nativeH2ReadExactly(socket: TcpSocket, length: Int64): Array<UInt8> {
+    nativeH2ReadExactly(NativeH2TcpTransport(socket), length)
 }
 
 func nativeH2EncodeStatus(status: UInt16): Array<UInt8> {

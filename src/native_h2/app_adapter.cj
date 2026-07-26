@@ -27,7 +27,23 @@ public func serveNativeH2AppConnection(
     maxCompletedStreams!: Int64 = 0,
     control!: ?NativeH2ConnectionControl = None
 ): Unit {
-    serveNativeH2Connection(socket, { request =>
+    serveNativeH2AppTransportConnection(
+        NativeH2TcpTransport(socket), app,
+        remoteAddress: remoteAddress,
+        maxCompletedStreams: maxCompletedStreams,
+        control: control
+    )
+}
+
+/// Serves native H2 App traffic over an already-decoded byte transport.
+public func serveNativeH2AppTransportConnection(
+    transport: NativeH2DuplexTransport,
+    app: App,
+    remoteAddress!: String = "",
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None
+): Unit {
+    serveNativeH2TransportConnection(transport, { request =>
         let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
         app.handleRequest(carrier)
         carrier.response()
