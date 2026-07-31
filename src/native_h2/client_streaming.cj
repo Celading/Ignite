@@ -157,8 +157,8 @@ func nativeH2ClientOpenStreamedResponse(
     if (connection.finished || connection.retiring) {
         throw Exception("native H2 client connection is finished")
     }
-    if (connection.activeStreamLease.isSome()) {
-        throw Exception("native H2 client connection already has a streamed response lease")
+    if (connection.activeStreamLease.isSome() || connection.activeMultiplexSession) {
+        throw Exception("native H2 client connection already has an active response owner")
     }
     if (!connection.initialized) {
         connection.transport.write(NATIVE_H2_PREFACE)

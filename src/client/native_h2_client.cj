@@ -5,6 +5,8 @@ import ignite.native_h2.{
     NativeH2ClientException,
     NativeH2ClientRequest,
     NativeH2ClientResponse,
+    NativeH2MultiplexResponse,
+    NativeH2MultiplexSession,
     NativeH2ClientStreamedResponse,
     NativeH2Header
 }
@@ -51,6 +53,156 @@ public class NativeH2BatchRequest {
 
     func bodySnapshot(): Array<UInt8> {
         cloneNativeH1Bytes(requestBody)
+    }
+}
+
+/// Explicit Preview session for independent cleartext H2 response leases.
+public class NativeH2Session {
+    let origin: String
+    let resolveUrl: (String) -> String
+    let defaultHeaders: HashMap<String, String>
+    let cookieStore: ?CookieStore
+    let protocol: NativeH2MultiplexSession
+    let connection: NativeH2PooledConnection
+    let pool: NativeH2ClientConnectionPool
+    let responseHooks: ArrayList<ClientResponseHook>
+    let errorHooks: ArrayList<ClientErrorHook>
+    let closeHook: () -> Unit
+    let mtx = Mutex()
+    var closed = false
+
+    init(
+        origin: String,
+        resolveUrl: (String) -> String,
+        defaultHeaders: HashMap<String, String>,
+        cookieStore: ?CookieStore,
+        protocol: NativeH2MultiplexSession,
+        connection: NativeH2PooledConnection,
+        pool: NativeH2ClientConnectionPool,
+        responseHooks: ArrayList<ClientResponseHook>,
+        errorHooks: ArrayList<ClientErrorHook>,
+        closeHook: () -> Unit
+    ) {
+        this.origin = origin
+        this.resolveUrl = resolveUrl
+        this.defaultHeaders = defaultHeaders
+        this.cookieStore = cookieStore
+        this.protocol = protocol
+        this.connection = connection
+        this.pool = pool
+        this.responseHooks = responseHooks
+        this.errorHooks = errorHooks
+        this.closeHook = closeHook
+    }
+
+    /// Submits one bodyless request and returns after its final response head arrives.
+    ///
+    /// Multiple callers may invoke this method concurrently. Each returned body is
+    /// an independent one-pass lease coordinated by one connection-owned reader.
+    public func send(request: NativeH2BatchRequest): ClientResponse {
+        try {
+            let resolvedUrl = resolveUrl(request.url)
+            let target = parseNativeH1Target(resolvedUrl)
+            if (target.scheme != "http") {
+                throw Exception(
+                    "native H2 session currently requires cleartext http:// prior knowledge"
+                )
+            }
+            if (nativeH1PoolOrigin(target) != origin) {
+                throw Exception("native H2 session request must retain its opened origin")
+            }
+            let body = request.bodySnapshot()
+            if (body.size > 0) {
+                throw Exception("native H2 session does not yet support request bodies")
+            }
+
+            let headers = cloneNativeH1Headers(defaultHeaders)
+            for ((name, value) in request.headersSnapshot()) {
+                removeNativeH1Header(headers, name.trimAscii().toAsciiLower())
+                headers.add(name, value)
+            }
+            synchronized(mtx) {
+                if (closed) {
+                    throw Exception("native H2 session is closed")
+                }
+                if (let Some(store) <- cookieStore) {
+                    if (!nativeH1HasHeader(headers, "cookie")) {
+                        let cookie = store.getCookieHeader(resolvedUrl)
+                        if (cookie.size > 0) {
+                            headers.add("cookie", cookie)
+                        }
+                    }
+                }
+            }
+
+            let nativeResponse = try {
+                protocol.send(
+                    NativeH2ClientRequest(
+                        request.method,
+                        "http",
+                        target.hostHeader,
+                        target.requestTarget,
+                        headers: nativeH2RequestHeaders(headers)
+                    )
+                )
+            } catch (e: NativeH2ClientException) {
+                throw nativeH2ProtocolTransportException(e)
+            }
+            let response = adaptNativeH2MultiplexResponse(nativeResponse)
+            try {
+                synchronized(mtx) {
+                    if (let Some(store) <- cookieStore) {
+                        store.addFromResponse(resolvedUrl, response)
+                    }
+                }
+                for (hook in responseHooks) {
+                    hook(response)
+                }
+                response
+            } catch (e: Exception) {
+                response.close()
+                throw e
+            }
+        } catch (e: Exception) {
+            for (hook in errorHooks) {
+                hook(e)
+            }
+            throw e
+        }
+    }
+
+    public func activeStreams(): Int64 {
+        protocol.activeStreams()
+    }
+
+    public func maxConcurrentStreams(): Int64 {
+        protocol.maxConcurrentStreams()
+    }
+
+    public func close(): Unit {
+        var shouldClose = false
+        synchronized(mtx) {
+            if (!closed) {
+                closed = true
+                shouldClose = true
+            }
+        }
+        if (!shouldClose) {
+            return
+        }
+        try {
+            try {
+                if (protocol.close() && connection.reusable()) {
+                    pool.release(origin, connection)
+                } else {
+                    closeNativeH2Connection(connection)
+                }
+            } catch (_: Exception) {
+                closeNativeH2Connection(connection)
+            }
+        } finally {
+            closeHook()
+        }
     }
 }
 
@@ -401,6 +553,19 @@ func adaptNativeH2BufferedResponse(response: NativeH2ClientResponse): ClientResp
         response.status,
         headers,
         NativeH1ClientBytesInputStream(response.body)
+    )
+}
+
+func adaptNativeH2MultiplexResponse(response: NativeH2MultiplexResponse): ClientResponse {
+    let headers = HttpHeaders()
+    for (header in response.headers) {
+        headers.add(header.name, header.value)
+    }
+    ClientResponse(
+        response.status,
+        headers,
+        response.bodyStream(),
+        closeHook: { => response.close() }
     )
 }
 

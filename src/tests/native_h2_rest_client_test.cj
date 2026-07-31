@@ -353,6 +353,240 @@ public class NativeH2RestClientTestSuite {
         }
     }
 
+    @TestCase
+    public func testPublicSessionOverlapsIndependentBodiesAndReusesConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 session test could not reserve a port")
+        let tracker = NativeH2RestBatchTracker()
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(
+                    accepted,
+                    { request =>
+                        tracker.enter(request.streamId)
+                        try {
+                            let marker = nativeH2RestBatchRequestHeader(request, "x-session-id")
+                            if (marker == "slow") {
+                                sleep(Duration.millisecond * 80)
+                            } else {
+                                sleep(Duration.millisecond * 10)
+                            }
+                            let headers = [
+                                NativeH2Header("x-session-stream", request.streamId.toString())
+                            ]
+                            let body = if (marker == "slow") {
+                                Array<UInt8>(65535, repeat: UInt8(0x73))
+                            } else {
+                                marker.toArray()
+                            }
+                            NativeH2SingleStreamResponse(
+                                status: 200,
+                                headers: headers,
+                                body: body
+                            )
+                        } finally {
+                            tracker.leave()
+                        }
+                    },
+                    maxCompletedStreams: 3
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 4)
+        try {
+            let slowFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("GET", "/mux")
+                        .header("x-session-id", "slow")
+                )
+            }
+            waitForNativeH2RestStreams(tracker, 1)
+            let fastFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("GET", "/mux")
+                        .header("x-session-id", "fast")
+                )
+            }
+
+            let fast = fastFuture.get(Duration.second * 5)
+            @Assert(fast.body(), "fast")
+            @Assert(nativeH2RestHeader(fast, "x-session-stream"), "3")
+
+            let slow = slowFuture.get(Duration.second * 5)
+            @Assert(nativeH2RestHeader(slow, "x-session-stream"), "1")
+            @Assert(slow.bodyBytes().size, Int64(65535))
+            @Assert(session.activeStreams(), Int64(0))
+            session.close()
+
+            let reused = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+            try {
+                let response = reused.send(
+                    NativeH2BatchRequest("GET", "/mux")
+                        .header("x-session-id", "reused")
+                )
+                @Assert(response.body(), "reused")
+                @Assert(nativeH2RestHeader(response, "x-session-stream"), "5")
+            } finally {
+                reused.close()
+            }
+            let _ = serverFuture.get(Duration.second * 5)
+            @Assert(tracker.maxConcurrent() >= 2, true)
+            @Assert(tracker.seenStreams(), Int64(3))
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testPublicSessionCancelPreservesSiblingAndRetiresConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 cancellation test could not reserve a port")
+        let accepts = NativeH2RestClientCounter()
+        let serverFuture = spawn {
+            let first = listener.accept()
+            let _ = accepts.next()
+            try {
+                try {
+                    serveNativeH2Connection(
+                        first,
+                        { request =>
+                            let marker = nativeH2RestBatchRequestHeader(
+                                request, "x-session-id"
+                            )
+                            if (marker == "sibling") {
+                                sleep(Duration.millisecond * 80)
+                            }
+                            NativeH2SingleStreamResponse(
+                                status: 200,
+                                headers: [NativeH2Header(
+                                    "x-session-stream", request.streamId.toString()
+                                )],
+                                body: if (marker == "cancel") {
+                                    Array<UInt8>(70000, repeat: UInt8(0x63))
+                                } else {
+                                    marker.toArray()
+                                }
+                            )
+                        },
+                        maxCompletedStreams: 2
+                    )
+                } catch (_: Exception) {}
+            } finally {
+                try { first.close() } catch (_: Exception) {}
+            }
+
+            let second = listener.accept()
+            let _ = accepts.next()
+            try {
+                try {
+                    serveNativeH2Connection(
+                        second,
+                        { request =>
+                            NativeH2SingleStreamResponse(
+                                status: 200,
+                                headers: [NativeH2Header(
+                                    "x-session-stream", request.streamId.toString()
+                                )],
+                                body: "fresh".toArray()
+                            )
+                        },
+                        maxCompletedStreams: 1
+                    )
+                } catch (_: Exception) {}
+            } finally {
+                try { second.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 4)
+        try {
+            let cancelFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("GET", "/cancel")
+                        .header("x-session-id", "cancel")
+                )
+            }
+            sleep(Duration.millisecond * 20)
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("GET", "/sibling")
+                        .header("x-session-id", "sibling")
+                )
+            }
+            waitForNativeH2SessionActive(session, 2)
+            let cancelled = cancelFuture.get(Duration.second * 5)
+            @Assert(nativeH2RestHeader(cancelled, "x-session-stream"), "1")
+            cancelled.close()
+
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.body(), "sibling")
+            @Assert(nativeH2RestHeader(sibling, "x-session-stream"), "3")
+            session.close()
+
+            let freshSession = client.openNativeH2Session(base)
+            @Assert(accepts.current(), Int64(2))
+            freshSession.close()
+            client.close()
+            let _ = serverFuture.get(Duration.second * 5)
+            @Assert(accepts.current(), Int64(2))
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testRestClientCloseSettlesForgottenNativeH2Session(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 session ownership test could not reserve a port")
+        let connectionClosed = AtomicBool(false)
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                try {
+                    serveNativeH2Connection(
+                        accepted,
+                        { _ => NativeH2SingleStreamResponse(body: "unused".toArray()) }
+                    )
+                } catch (_: Exception) {}
+            } finally {
+                connectionClosed.store(true)
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base)
+        try {
+            @Assert(session.activeStreams(), Int64(0))
+            client.close()
+            let _ = serverFuture.get(Duration.second * 5)
+            @Assert(connectionClosed.load(), true)
+            session.close()
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
     func nativeH2RestClient(): RestClient {
         RestClient(
             readTimeout: Duration.second * 2,
@@ -382,6 +616,34 @@ public class NativeH2RestClientTestSuite {
         }
         if (!ready.load()) {
             throw Exception("Native H2 RestClient fixture did not become ready")
+        }
+    }
+
+    func waitForNativeH2RestStreams(
+        tracker: NativeH2RestBatchTracker,
+        expected: Int64
+    ): Unit {
+        var attempts: Int64 = 0
+        while (tracker.seenStreams() < expected && attempts < 400) {
+            sleep(Duration.millisecond * 5)
+            attempts += 1
+        }
+        if (tracker.seenStreams() < expected) {
+            throw Exception("Native H2 session fixture did not observe the expected stream")
+        }
+    }
+
+    func waitForNativeH2SessionActive(
+        session: NativeH2Session,
+        expected: Int64
+    ): Unit {
+        var attempts: Int64 = 0
+        while (session.activeStreams() < expected && attempts < 400) {
+            sleep(Duration.millisecond * 5)
+            attempts += 1
+        }
+        if (session.activeStreams() < expected) {
+            throw Exception("Native H2 session did not reserve the expected streams")
         }
     }
 

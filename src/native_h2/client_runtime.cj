@@ -207,6 +207,7 @@ public class NativeH2ClientConnection {
     let responseDecoder = NativeH2HpackDecoderState()
     let peerSettings = NativeH2PeerSettings()
     var activeStreamLease: ?NativeH2ClientStreamLease = None
+    var activeMultiplexSession = false
     var initialized = false
     var finished = false
     var retiring = false
@@ -231,8 +232,8 @@ public class NativeH2ClientConnection {
         if (finished || retiring) {
             throw Exception("native H2 client connection is finished")
         }
-        if (activeStreamLease.isSome()) {
-            throw Exception("native H2 client connection has an active streamed response")
+        if (activeStreamLease.isSome() || activeMultiplexSession) {
+            throw Exception("native H2 client connection has an active response owner")
         }
         let (responses, followingStreamId, followingConnectionSendWindow) =
             nativeH2ClientSendBatch(
@@ -261,13 +262,20 @@ public class NativeH2ClientConnection {
         nativeH2ClientOpenStreamedResponse(this, request)
     }
 
+    /// Opens one explicit multi-stream response session on this connection.
+    public func openMultiplexSession(
+        maxConcurrentStreams!: Int64 = NATIVE_H2_MULTIPLEX_STREAM_LIMIT
+    ): NativeH2MultiplexSession {
+        NativeH2MultiplexSession(this, maxConcurrentStreams)
+    }
+
     /// Emits NO_ERROR GOAWAY but leaves physical transport close to the caller.
     public func finish(): Unit {
         if (finished) {
             return
         }
-        if (activeStreamLease.isSome()) {
-            throw Exception("native H2 client cannot finish with an active streamed response")
+        if (activeStreamLease.isSome() || activeMultiplexSession) {
+            throw Exception("native H2 client cannot finish with an active response owner")
         }
         if (initialized) {
             nativeH2ClientWriteFrame(

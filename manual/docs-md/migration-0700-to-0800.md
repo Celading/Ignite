@@ -85,7 +85,7 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API 与 bodyless multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
 let client = RestClient(
@@ -108,6 +108,29 @@ client.close()
 只支持 cleartext `http://`。依赖 `onRequest` / `onRequestHook` 改写 stdx
 builder 的调用仍应留在稳定路径。
 
+需要独立并发 response lease 时，可以显式打开：
+
+```cangjie
+let session = client.openNativeH2Session(
+    "http://127.0.0.1:8080",
+    maxConcurrentStreams: 8
+)
+try {
+    let a = spawn { session.send(NativeH2BatchRequest("GET", "/a")) }
+    let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
+    println(a.get(Duration.second * 5).body())
+    println(b.get(Duration.second * 5).body())
+} finally {
+    session.close()
+}
+```
+
+该 session 只支持同一 cleartext origin 的无 body 请求，每个 stream 最多保留
+65,535 字节未读数据。本地 active stream 上限最多 32，并继续服从 peer
+SETTINGS。完整消费允许连接复用；任一 response 提前关闭会发送 CANCEL，已打开
+兄弟 stream 可继续，但连接会在 session 收口时淘汰。它仍不包含 TLS multiplex、
+retry/redirect、request body、priority 或逐 stream deadline。
+
 适合的 0800 使用方式：
 
 - 协议实验和 wire fixture。
@@ -118,7 +141,7 @@ builder 的调用仍应留在稳定路径。
 
 - 对外宣称完整浏览器 H2 兼容。
 - 直接替换生产网关。
-- 依赖 TLS/ALPN 默认路径、任意 RestClient 多路 streamed lease 或 H2 WebSocket。
+- 依赖 TLS/ALPN 默认路径、任意生产级 H2 调度或 H2 WebSocket。
 
 ## 7. 检查静态压缩部署
 

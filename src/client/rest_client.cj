@@ -2,6 +2,7 @@ package ignite.client
 
 import stdx.net.http.{Client, ClientBuilder}
 import std.collection.{ArrayList, HashMap}
+import std.sync.Mutex
 import std.unicode.*
 import ignite.api2
 import ignite.security as security
@@ -34,6 +35,9 @@ public class RestClient {
     var _nativeH2Pool = NativeH2ClientConnectionPool(10)
     var _nativeTlsH1Pool = NativeTlsH1ConnectionPool(10)
     var _nativeTlsH2Pool = NativeTlsH2ConnectionPool(10)
+    let _nativeH2SessionMutex = Mutex()
+    var _nativeH2Sessions = HashMap<Int64, NativeH2Session>()
+    var _nativeH2NextSessionId: Int64 = 1
 
     public init() {
         _client = ClientBuilder().build()
@@ -445,6 +449,104 @@ public class RestClient {
         }
     }
 
+    /// Opens one explicit cleartext H2 connection for independent response leases.
+    ///
+    /// The Preview session supports concurrent bodyless requests on one origin.
+    /// Request bodies, TLS, retry/redirect replay, and request/observe/touchpoint
+    /// hooks remain outside this first session contract.
+    public func openNativeH2Session(
+        originUrl: String,
+        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
+    ): NativeH2Session {
+        try {
+            if (!_allowExperimentalTransport) {
+                throw Exception(
+                    "native H2 session requires allowExperimentalTransport()"
+                )
+            }
+            if (_preferredTransportBackendHint.trimAscii() != NATIVE_H2_CLIENT_BACKEND) {
+                throw Exception(
+                    "native H2 session requires preferTransportBackend(\"${NATIVE_H2_CLIENT_BACKEND}\")"
+                )
+            }
+            if (_requestHooks.size > 0 || _observeHooks.size > 0 ||
+                _transportTouchpointHooks.size > 0) {
+                throw Exception(
+                    "native H2 session does not yet support request, observe, or transport touchpoint hooks"
+                )
+            }
+            if (maxConcurrentStreams <= 0 ||
+                maxConcurrentStreams > NATIVE_H2_REST_BATCH_LIMIT) {
+                throw Exception(
+                    "native H2 session maxConcurrentStreams must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
+                )
+            }
+
+            let resolvedOrigin = resolveUrl(originUrl)
+            let target = parseNativeH1Target(resolvedOrigin)
+            if (target.scheme != "http") {
+                throw Exception(
+                    "native H2 session currently requires cleartext http:// prior knowledge"
+                )
+            }
+            let origin = nativeH1PoolOrigin(target)
+            let connection = match (_nativeH2Pool.acquire(origin)) {
+                case Some(existing) => existing
+                case None => openNativeH2Connection(target, _readTimeout, _writeTimeout)
+            }
+            connection.socket.readTimeout = Some(_readTimeout)
+            connection.socket.writeTimeout = Some(_writeTimeout)
+
+            var transferred = false
+            try {
+                let protocol = connection.protocol.openMultiplexSession(
+                    maxConcurrentStreams: maxConcurrentStreams
+                )
+                let defaults = cloneNativeH1Headers(_defaultHeaders)
+                let responseHooks = ArrayList<ClientResponseHook>()
+                for (hook in _responseHooks) {
+                    responseHooks.add(hook)
+                }
+                let errorHooks = ArrayList<ClientErrorHook>()
+                for (hook in _errorHooks) {
+                    errorHooks.add(hook)
+                }
+                var sessionId: Int64 = 0
+                synchronized(_nativeH2SessionMutex) {
+                    sessionId = _nativeH2NextSessionId
+                    _nativeH2NextSessionId += 1
+                }
+                let capturedSessionId = sessionId
+                let session = NativeH2Session(
+                    origin,
+                    { value => resolveUrl(value) },
+                    defaults,
+                    _cookieStore,
+                    protocol,
+                    connection,
+                    _nativeH2Pool,
+                    responseHooks,
+                    errorHooks,
+                    { => removeNativeH2Session(capturedSessionId) }
+                )
+                synchronized(_nativeH2SessionMutex) {
+                    _nativeH2Sessions.add(sessionId, session)
+                }
+                transferred = true
+                session
+            } finally {
+                if (!transferred) {
+                    closeNativeH2Connection(connection)
+                }
+            }
+        } catch (e: Exception) {
+            for (hook in _errorHooks) {
+                hook(e)
+            }
+            throw e
+        }
+    }
+
     public func request(): RequestBuilder {
         let builder = RequestBuilder(
             _client,
@@ -478,11 +580,27 @@ public class RestClient {
     }
 
     public func close(): Unit {
+        let sessions = ArrayList<NativeH2Session>()
+        synchronized(_nativeH2SessionMutex) {
+            for ((_sessionId, session) in _nativeH2Sessions) {
+                sessions.add(session)
+            }
+            _nativeH2Sessions = HashMap<Int64, NativeH2Session>()
+        }
+        for (session in sessions) {
+            session.close()
+        }
         _nativeH1Pool.close()
         _nativeH2Pool.close()
         _nativeTlsH1Pool.close()
         _nativeTlsH2Pool.close()
         _client.close()
+    }
+
+    func removeNativeH2Session(sessionId: Int64): Unit {
+        synchronized(_nativeH2SessionMutex) {
+            let _ = _nativeH2Sessions.remove(sessionId)
+        }
     }
 
     // keep local URL helpers for future client-only extensions
