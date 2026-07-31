@@ -1,4 +1,4 @@
-# 从 Ignite 0.7.7 升级到 0.8.1 Preview
+# 从 Ignite 0.7.7 升级到 0.8.2 Preview
 
 0800 保留 0700 的应用层使用方式，但默认明文传输、流式 JSON 和低层协议入口发生了变化。建议按下面顺序升级，不要一次打开所有 Preview 选项。
 
@@ -85,10 +85,14 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`，但它只处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
-let client = RestClient()
+let client = RestClient(
+    readTimeout: Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize: 4
+)
     .allowExperimentalTransport()
     .preferTransportBackend("ignite-native-h2-client")
 
@@ -98,8 +102,11 @@ client.close()
 ```
 
 完整消费 response body 后连接可归池复用；提前关闭 response 会取消 stream
-并淘汰连接。不要把当前单 lease 池化行为描述成公开多路并发 API；依赖
-`onRequest` / `onRequestHook` 改写 stdx builder 的调用仍应留在稳定路径。
+并淘汰连接。需要明确的同源多路批次时，使用
+`sendNativeH2Batch([NativeH2BatchRequest(...)])`：每批最多 32 个请求、每响应
+最多缓冲 1 MiB、整批完成后才归池。它不是任意异步 streamed lease，且当前
+只支持 cleartext `http://`。依赖 `onRequest` / `onRequestHook` 改写 stdx
+builder 的调用仍应留在稳定路径。
 
 适合的 0800 使用方式：
 
@@ -111,7 +118,7 @@ client.close()
 
 - 对外宣称完整浏览器 H2 兼容。
 - 直接替换生产网关。
-- 依赖 TLS/ALPN 默认路径、公开 RestClient 多路 lease 或 H2 WebSocket。
+- 依赖 TLS/ALPN 默认路径、任意 RestClient 多路 streamed lease 或 H2 WebSocket。
 
 ## 7. 检查静态压缩部署
 

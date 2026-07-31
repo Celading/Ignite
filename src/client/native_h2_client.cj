@@ -4,6 +4,7 @@ import ignite.native_h2.{
     NativeH2ClientConnection,
     NativeH2ClientException,
     NativeH2ClientRequest,
+    NativeH2ClientResponse,
     NativeH2ClientStreamedResponse,
     NativeH2Header
 }
@@ -15,6 +16,43 @@ import stdx.net.http.HttpHeaders
 import ignite.transport.NativeByteTransport
 
 let NATIVE_H2_CLIENT_BACKEND = "ignite-native-h2-client"
+let NATIVE_H2_REST_BATCH_LIMIT: Int64 = 32
+
+/// One buffered request inside an explicit RestClient H2 multiplex turn.
+public class NativeH2BatchRequest {
+    public let method: String
+    public let url: String
+    let requestHeaders = HashMap<String, String>()
+    var requestBody = Array<UInt8>()
+
+    public init(method: String, url: String) {
+        this.method = method
+        this.url = url
+    }
+
+    public func header(name: String, value: String): NativeH2BatchRequest {
+        removeNativeH1Header(requestHeaders, name.trimAscii().toAsciiLower())
+        requestHeaders.add(name, value)
+        this
+    }
+
+    public func bodyBytes(data: Array<UInt8>): NativeH2BatchRequest {
+        requestBody = cloneNativeH1Bytes(data)
+        this
+    }
+
+    public func bodyString(data: String): NativeH2BatchRequest {
+        bodyBytes(data.toArray())
+    }
+
+    func headersSnapshot(): HashMap<String, String> {
+        cloneNativeH1Headers(requestHeaders)
+    }
+
+    func bodySnapshot(): Array<UInt8> {
+        cloneNativeH1Bytes(requestBody)
+    }
+}
 
 class NativeH2PooledConnection {
     let socket: TcpSocket
@@ -95,6 +133,105 @@ class NativeH2ClientConnectionPool {
                 }
             }
             idle = HashMap<String, ArrayList<NativeH2PooledConnection>>()
+        }
+    }
+}
+
+func executeNativeH2Batch(
+    requests: Array<NativeH2BatchRequest>,
+    resolveUrl: (String) -> String,
+    defaultHeaders: HashMap<String, String>,
+    cookieStore: ?CookieStore,
+    readTimeout: Duration,
+    writeTimeout: Duration,
+    pool: NativeH2ClientConnectionPool
+): Array<ClientResponse> {
+    if (requests.size == 0) {
+        throw Exception("native H2 RestClient batch cannot be empty")
+    }
+    if (requests.size > NATIVE_H2_REST_BATCH_LIMIT) {
+        throw Exception(
+            "native H2 RestClient batch exceeds ${NATIVE_H2_REST_BATCH_LIMIT} requests"
+        )
+    }
+
+    let resolvedUrls = ArrayList<String>()
+    let nativeRequests = ArrayList<NativeH2ClientRequest>()
+    var origin = ""
+    for (request in requests) {
+        let resolvedUrl = resolveUrl(request.url)
+        let target = parseNativeH1Target(resolvedUrl)
+        if (target.scheme != "http") {
+            throw Exception(
+                "native H2 RestClient batch currently requires cleartext http:// prior knowledge"
+            )
+        }
+        let currentOrigin = nativeH1PoolOrigin(target)
+        if (origin.size == 0) {
+            origin = currentOrigin
+        } else if (currentOrigin != origin) {
+            throw Exception("native H2 RestClient batch requires one resolved origin")
+        }
+
+        let headers = cloneNativeH1Headers(defaultHeaders)
+        for ((name, value) in request.headersSnapshot()) {
+            removeNativeH1Header(headers, name.trimAscii().toAsciiLower())
+            headers.add(name, value)
+        }
+        if (let Some(store) <- cookieStore) {
+            if (!nativeH1HasHeader(headers, "cookie")) {
+                let cookie = store.getCookieHeader(resolvedUrl)
+                if (cookie.size > 0) {
+                    headers.add("cookie", cookie)
+                }
+            }
+        }
+        let body = request.bodySnapshot()
+        if (body.size > 0 && !nativeH1HasHeader(headers, "content-length")) {
+            headers.add("content-length", body.size.toString())
+        }
+        resolvedUrls.add(resolvedUrl)
+        nativeRequests.add(
+            NativeH2ClientRequest(
+                request.method,
+                "http",
+                target.hostHeader,
+                target.requestTarget,
+                body: body,
+                headers: nativeH2RequestHeaders(headers)
+            )
+        )
+    }
+
+    let firstTarget = parseNativeH1Target(resolvedUrls[0])
+    let connection = match (pool.acquire(origin)) {
+        case Some(existing) => existing
+        case None => openNativeH2Connection(firstTarget, readTimeout, writeTimeout)
+    }
+    connection.socket.readTimeout = Some(readTimeout)
+    connection.socket.writeTimeout = Some(writeTimeout)
+
+    var settled = false
+    try {
+        let nativeResponses = try {
+            connection.protocol.sendBatch(nativeRequests.toArray())
+        } catch (e: NativeH2ClientException) {
+            throw nativeH2ProtocolTransportException(e)
+        }
+        let responses = ArrayList<ClientResponse>()
+        for (i in 0..nativeResponses.size) {
+            let response = adaptNativeH2BufferedResponse(nativeResponses[i])
+            if (let Some(store) <- cookieStore) {
+                store.addFromResponse(resolvedUrls[i], response)
+            }
+            responses.add(response)
+        }
+        pool.release(origin, connection)
+        settled = true
+        responses.toArray()
+    } finally {
+        if (!settled) {
+            closeNativeH2Connection(connection)
         }
     }
 }
@@ -252,6 +389,18 @@ func adaptNativeH2Response(
                 closeNativeH2Connection(connection)
             }
         }
+    )
+}
+
+func adaptNativeH2BufferedResponse(response: NativeH2ClientResponse): ClientResponse {
+    let headers = HttpHeaders()
+    for (header in response.headers) {
+        headers.add(header.name, header.value)
+    }
+    ClientResponse(
+        response.status,
+        headers,
+        NativeH1ClientBytesInputStream(response.body)
     )
 }
 

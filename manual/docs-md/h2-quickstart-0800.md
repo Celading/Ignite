@@ -82,6 +82,44 @@ let client = RestClient(poolSize: 4)
 这里的 Native TLS Client 需要调用方提供 trust anchor 与 hostname。系统 CA、
 TLS1.2、session resumption、mTLS 和默认切换仍未完成。
 
+### 有界 RestClient batch multiplex
+
+受控明文 H2 服务可以在一个物理连接内显式发送一批请求：
+
+```cangjie
+let client = RestClient(
+    readTimeout: Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize: 4
+)
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+
+try {
+    let responses = client.sendNativeH2Batch([
+        NativeH2BatchRequest("GET", "http://127.0.0.1:3000/a"),
+        NativeH2BatchRequest("GET", "http://127.0.0.1:3000/b")
+    ])
+    println(responses[0].status)
+    println(responses[1].status)
+} finally {
+    client.close()
+}
+```
+
+边界如下：
+
+- 每批最多 32 个请求，并遵守服务端声明的并发 stream 上限；
+- 所有 URL 必须解析到同一个 cleartext `http://` origin；
+- handler 可以并发推进，但返回数组保持请求顺序；
+- 每个响应最多缓冲 1 MiB，整批成功后连接才归池；
+- 支持 default headers、CookieStore、response hook 和 error hook；
+- 不支持 TLS batch、streamed body、retry/redirect 重放、逐请求 cancellation；
+- request、observe、transport-touchpoint hook 会 fail closed。
+
+这是一条明确的 buffered batch API，不会把普通 `request().send()` 变成任意
+并发 streamed lease。
+
 ## WebSocket 到底是不是 Native
 
 公开 API 不区分 `NativeWebSocket` 类型：
@@ -140,7 +178,7 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 | `ctx.writer()` / JSON stream | 真正增量 socket 写出 | App adapter 当前会先聚合完整响应 |
 | 动态压缩流 | H1 有真实 wire 回归 | 尚不能宣称 App 层真流式等价 |
 | server runtime snapshot | 有 Native H1 计数 | 当前不覆盖 H2 |
-| RestClient streamed response | H1 支持 | 支持一个公开 lease，提前关闭发送 CANCEL |
+| RestClient response | H1 支持 streamed response | 单 streamed lease；另有显式 buffered batch multiplex |
 | TLS Server | 默认 stdx；Native 候选实验 | Native H2 ServerEngine 不接受 TLS 配置 |
 | TLS Client | 显式 Native TLS1.3 | 显式 Native TLS1.3 + `h2` ALPN |
 

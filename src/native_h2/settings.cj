@@ -4,6 +4,7 @@ import std.collection.ArrayList
 
 let NATIVE_H2_SETTING_HEADER_TABLE_SIZE: Int64 = 1
 let NATIVE_H2_SETTING_ENABLE_PUSH: Int64 = 2
+let NATIVE_H2_SETTING_MAX_CONCURRENT_STREAMS: Int64 = 3
 let NATIVE_H2_SETTING_INITIAL_WINDOW_SIZE: Int64 = 4
 let NATIVE_H2_SETTING_MAX_FRAME_SIZE: Int64 = 5
 let NATIVE_H2_SETTING_MAX_HEADER_LIST_SIZE: Int64 = 6
@@ -11,6 +12,7 @@ let NATIVE_H2_MAX_FRAME_PAYLOAD: Int64 = 16777215
 
 class NativeH2PeerSettings {
     var headerTableSize: Int64 = NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
+    var maxConcurrentStreams: ?Int64 = None
     var initialStreamWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
     var maxFramePayload: Int64 = NATIVE_H2_DEFAULT_MAX_FRAME_PAYLOAD
     var maxHeaderListSize: ?Int64 = None
@@ -40,6 +42,8 @@ class NativeH2PeerSettings {
                         "native H2 SETTINGS_ENABLE_PUSH must be zero or one"
                     )
                 }
+            } else if (settingId == NATIVE_H2_SETTING_MAX_CONCURRENT_STREAMS) {
+                maxConcurrentStreams = Some(value)
             } else if (settingId == NATIVE_H2_SETTING_INITIAL_WINDOW_SIZE) {
                 if (value > NATIVE_H2_MAX_FLOW_WINDOW) {
                     nativeH2ProtocolFailure(

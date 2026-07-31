@@ -335,6 +335,7 @@ func nativeH2ClientSendBatch(
         )
         nativeH2ClientCompleteSettingsHandshake(transport, peerSettings)
     }
+    nativeH2ClientRequireBatchWithinPeerLimit(requests.size, peerSettings)
 
     let connection = NativeH2ClientConnectionState(
         initialStreamId,
@@ -544,6 +545,19 @@ func nativeH2ClientSendBatch(
         responses.add(stream.response())
     }
     (responses.toArray(), connection.nextStreamId, connection.connectionSendWindow)
+}
+
+func nativeH2ClientRequireBatchWithinPeerLimit(
+    requestCount: Int64,
+    peerSettings: NativeH2PeerSettings
+): Unit {
+    if (let Some(limit) <- peerSettings.maxConcurrentStreams) {
+        if (requestCount > limit) {
+            throw Exception(
+                "native H2 client request batch exceeds peer concurrent stream limit ${limit}"
+            )
+        }
+    }
 }
 
 func nativeH2ClientFlushRequestBodies(

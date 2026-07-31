@@ -35,11 +35,30 @@ public class NativeH2SettingsInternalTestSuite {
         let settings = NativeH2PeerSettings()
         let _ = settings.apply([
             UInt8(0), UInt8(1), UInt8(0), UInt8(0), UInt8(0x02), UInt8(0),
+            UInt8(0), UInt8(3), UInt8(0), UInt8(0), UInt8(0), UInt8(7),
             UInt8(0), UInt8(6), UInt8(0), UInt8(0), UInt8(0x08), UInt8(0)
         ])
 
         @Assert(settings.headerTableSize, 512)
+        @Assert(settings.maxConcurrentStreams ?? -1, 7)
         @Assert(settings.maxHeaderListSize ?? -1, 2048)
+    }
+
+    @TestCase
+    public func testClientBatchHonorsPeerConcurrentStreamLimit(): Unit {
+        let settings = NativeH2PeerSettings()
+        let _ = settings.apply([
+            UInt8(0), UInt8(3), UInt8(0), UInt8(0), UInt8(0), UInt8(2)
+        ])
+
+        nativeH2ClientRequireBatchWithinPeerLimit(2, settings)
+        var message = ""
+        try {
+            nativeH2ClientRequireBatchWithinPeerLimit(3, settings)
+        } catch (e: Exception) {
+            message = e.message
+        }
+        @Assert(message.contains("peer concurrent stream limit 2"), true)
     }
 
     @TestCase

@@ -397,6 +397,54 @@ public class RestClient {
         request().method("PATCH").url(url).body(body).send()
     }
 
+    /// Sends one bounded same-origin request batch over a single cleartext H2 connection.
+    ///
+    /// This Preview API buffers each response and preserves request order. It does not
+    /// promise arbitrary concurrent streamed leases, retry/redirect replay, or TLS batch
+    /// transport. Request/observe/touchpoint hooks are rejected rather than silently skipped.
+    public func sendNativeH2Batch(
+        requests: Array<NativeH2BatchRequest>
+    ): Array<ClientResponse> {
+        try {
+            if (!_allowExperimentalTransport) {
+                throw Exception(
+                    "native H2 RestClient batch requires allowExperimentalTransport()"
+                )
+            }
+            if (_preferredTransportBackendHint.trimAscii() != NATIVE_H2_CLIENT_BACKEND) {
+                throw Exception(
+                    "native H2 RestClient batch requires preferTransportBackend(\"${NATIVE_H2_CLIENT_BACKEND}\")"
+                )
+            }
+            if (_requestHooks.size > 0 || _observeHooks.size > 0 ||
+                _transportTouchpointHooks.size > 0) {
+                throw Exception(
+                    "native H2 RestClient batch does not yet support request, observe, or transport touchpoint hooks"
+                )
+            }
+            let responses = executeNativeH2Batch(
+                requests,
+                { value => resolveUrl(value) },
+                _defaultHeaders,
+                _cookieStore,
+                _readTimeout,
+                _writeTimeout,
+                _nativeH2Pool
+            )
+            for (response in responses) {
+                for (hook in _responseHooks) {
+                    hook(response)
+                }
+            }
+            responses
+        } catch (e: Exception) {
+            for (hook in _errorHooks) {
+                hook(e)
+            }
+            throw e
+        }
+    }
+
     public func request(): RequestBuilder {
         let builder = RequestBuilder(
             _client,
