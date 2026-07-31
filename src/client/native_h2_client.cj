@@ -56,7 +56,7 @@ public class NativeH2BatchRequest {
     }
 }
 
-/// Explicit Preview session for independent cleartext H2 response leases.
+/// Explicit Preview session for independent cleartext H2 request/response leases.
 public class NativeH2Session {
     let origin: String
     let resolveUrl: (String) -> String
@@ -95,7 +95,7 @@ public class NativeH2Session {
         this.closeHook = closeHook
     }
 
-    /// Submits one bodyless request and returns after its final response head arrives.
+    /// Submits one buffered request and returns after its final response head arrives.
     ///
     /// Multiple callers may invoke this method concurrently. Each returned body is
     /// an independent one-pass lease coordinated by one connection-owned reader.
@@ -112,9 +112,6 @@ public class NativeH2Session {
                 throw Exception("native H2 session request must retain its opened origin")
             }
             let body = request.bodySnapshot()
-            if (body.size > 0) {
-                throw Exception("native H2 session does not yet support request bodies")
-            }
 
             let headers = cloneNativeH1Headers(defaultHeaders)
             for ((name, value) in request.headersSnapshot()) {
@@ -134,6 +131,9 @@ public class NativeH2Session {
                     }
                 }
             }
+            if (body.size > 0 && !nativeH1HasHeader(headers, "content-length")) {
+                headers.add("content-length", body.size.toString())
+            }
 
             let nativeResponse = try {
                 protocol.send(
@@ -142,6 +142,7 @@ public class NativeH2Session {
                         "http",
                         target.hostHeader,
                         target.requestTarget,
+                        body: body,
                         headers: nativeH2RequestHeaders(headers)
                     )
                 )

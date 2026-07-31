@@ -120,7 +120,7 @@ try {
 这是一条明确的 buffered batch API，不会把普通 `request().send()` 变成任意
 并发 streamed lease。
 
-### 独立 response lease multiplex session
+### 独立 request/response lease multiplex session
 
 如果多个调用方需要在同一个 cleartext H2 连接上独立读取 response body，使用
 显式 session，而不是让多个线程直接争抢 socket：
@@ -140,7 +140,11 @@ let session = client.openNativeH2Session(
 )
 try {
     let slow = spawn {
-        session.send(NativeH2BatchRequest("GET", "/slow"))
+        session.send(
+            NativeH2BatchRequest("POST", "/slow")
+                .header("content-type", "text/plain")
+                .bodyString("buffered payload")
+        )
     }
     let fast = spawn {
         session.send(NativeH2BatchRequest("GET", "/fast"))
@@ -156,14 +160,18 @@ try {
 
 这条路径的边界是：
 
-- 只支持同一 cleartext `http://` origin 和无 body 请求；
+- 只支持同一 cleartext `http://` origin；request body 必须是有界、可回放的
+  buffered bytes/string，缺少 `content-length` 时由 session 自动补齐；
 - 本地最多 32 个 active stream，并服从 peer concurrent-stream limit；
 - 一个 connection-owned reader 分发 frame，调用方不会并发读取 socket；
+- request DATA 同时服从 connection 和 stream send window；`WINDOW_UPDATE` 与
+  `SETTINGS_INITIAL_WINDOW_SIZE` 会继续推进尚未发完的 upload；
 - 每个 stream 的未读 body 上限为 65,535 字节；连接窗口独立补充，慢 stream
   不会阻止窗口内的兄弟 response 完成；
 - 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
-  已打开的兄弟 stream，但 session 结束时淘汰物理连接；
-- 不支持 TLS session、request body、retry/redirect、逐 stream deadline、
+  已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
+  在未知 peer 消费状态下复用；
+- 不支持 TLS session、streamed request body、retry/redirect、逐 stream deadline、
   priority、request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用

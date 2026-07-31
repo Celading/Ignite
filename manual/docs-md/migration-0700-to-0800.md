@@ -85,7 +85,7 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API 与 bodyless multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API 与支持 buffered request body 的 multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
 let client = RestClient(
@@ -116,7 +116,9 @@ let session = client.openNativeH2Session(
     maxConcurrentStreams: 8
 )
 try {
-    let a = spawn { session.send(NativeH2BatchRequest("GET", "/a")) }
+    let a = spawn {
+        session.send(NativeH2BatchRequest("POST", "/a").bodyString("payload"))
+    }
     let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
     println(a.get(Duration.second * 5).body())
     println(b.get(Duration.second * 5).body())
@@ -125,17 +127,20 @@ try {
 }
 ```
 
-该 session 只支持同一 cleartext origin 的无 body 请求，每个 stream 最多保留
-65,535 字节未读数据。本地 active stream 上限最多 32，并继续服从 peer
-SETTINGS。完整消费允许连接复用；任一 response 提前关闭会发送 CANCEL，已打开
-兄弟 stream 可继续，但连接会在 session 收口时淘汰。它仍不包含 TLS multiplex、
-retry/redirect、request body、priority 或逐 stream deadline。
+该 session 只支持同一 cleartext origin；request body 必须是 buffered、可回放的
+bytes/string，DATA 会服从 connection/stream send window，并由 `WINDOW_UPDATE`
+或 SETTINGS 初始窗口变化继续推进。每个 stream 最多保留 65,535 字节未读响应
+数据。本地 active stream 上限最多 32，并继续服从 peer SETTINGS。完整消费允许
+连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
+request body 尚未发完，连接会进入 retiring。它仍不包含 TLS multiplex、
+retry/redirect、streamed request body、priority 或逐 stream deadline。
 
 适合的 0800 使用方式：
 
 - 协议实验和 wire fixture。
 - 内部受控连接、代理或 transport adapter。
-- 验证多 stream、flow-control、response lease、完整消费归池和提前关闭淘汰行为。
+- 验证多 stream、双层 request send-window、response lease、完整消费归池和提前
+  关闭淘汰行为。
 
 暂不适合：
 

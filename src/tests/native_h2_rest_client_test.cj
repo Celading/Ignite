@@ -448,6 +448,108 @@ public class NativeH2RestClientTestSuite {
     }
 
     @TestCase
+    public func testPublicSessionUploadsBufferedBodiesConcurrentlyAndReusesConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 session upload test could not reserve a port")
+        let tracker = NativeH2RestBatchTracker()
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(
+                    accepted,
+                    { request =>
+                        tracker.enter(request.streamId)
+                        try {
+                            let marker = nativeH2RestBatchRequestHeader(
+                                request, "x-upload-id"
+                            )
+                            if (marker == "large") {
+                                @Assert(request.body.size, Int64(70000))
+                                @Assert(request.body[0], UInt8(0x75))
+                                sleep(Duration.millisecond * 80)
+                            } else {
+                                @Assert(String.fromUtf8(request.body), marker)
+                                sleep(Duration.millisecond * 10)
+                            }
+                            @Assert(
+                                nativeH2RestBatchRequestHeader(request, "content-length"),
+                                request.body.size.toString()
+                            )
+                            NativeH2SingleStreamResponse(
+                                status: 201,
+                                headers: [NativeH2Header(
+                                    "x-upload-stream", request.streamId.toString()
+                                )],
+                                body: (marker + ":" + request.body.size.toString()).toArray()
+                            )
+                        } finally {
+                            tracker.leave()
+                        }
+                    },
+                    maxCompletedStreams: 3
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 4)
+        try {
+            let largeFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("POST", "/upload")
+                        .header("x-upload-id", "large")
+                        .bodyBytes(Array<UInt8>(70000, repeat: UInt8(0x75)))
+                )
+            }
+            waitForNativeH2SessionActive(session, 1)
+            let smallFuture = spawn {
+                session.send(
+                    NativeH2BatchRequest("POST", "/upload")
+                        .header("x-upload-id", "small")
+                        .bodyString("small")
+                )
+            }
+
+            let small = smallFuture.get(Duration.second * 5)
+            @Assert(small.status, UInt16(201))
+            @Assert(small.body(), "small:5")
+            @Assert(nativeH2RestHeader(small, "x-upload-stream"), "3")
+
+            let large = largeFuture.get(Duration.second * 5)
+            @Assert(large.status, UInt16(201))
+            @Assert(large.body(), "large:70000")
+            @Assert(nativeH2RestHeader(large, "x-upload-stream"), "1")
+            @Assert(session.activeStreams(), Int64(0))
+            session.close()
+
+            let reused = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+            try {
+                let response = reused.send(
+                    NativeH2BatchRequest("POST", "/upload")
+                        .header("x-upload-id", "reused")
+                        .bodyString("reused")
+                )
+                @Assert(response.body(), "reused:6")
+                @Assert(nativeH2RestHeader(response, "x-upload-stream"), "5")
+            } finally {
+                reused.close()
+            }
+            let _ = serverFuture.get(Duration.second * 5)
+            @Assert(tracker.maxConcurrent() >= 2, true)
+            @Assert(tracker.seenStreams(), Int64(3))
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testPublicSessionCancelPreservesSiblingAndRetiresConnection(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()

@@ -449,11 +449,11 @@ public class RestClient {
         }
     }
 
-    /// Opens one explicit cleartext H2 connection for independent response leases.
+    /// Opens one explicit cleartext H2 connection for independent request/response leases.
     ///
-    /// The Preview session supports concurrent bodyless requests on one origin.
-    /// Request bodies, TLS, retry/redirect replay, and request/observe/touchpoint
-    /// hooks remain outside this first session contract.
+    /// The Preview session supports concurrent buffered requests on one origin.
+    /// Streamed request bodies, TLS, retry/redirect replay, and
+    /// request/observe/touchpoint hooks remain outside this session contract.
     public func openNativeH2Session(
         originUrl: String,
         maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
