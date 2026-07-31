@@ -149,20 +149,22 @@ app.ws("/chat", { conn =>
 
 - RFC 静态表与有界动态表状态；
 - HPACK integer、literal、indexed field 与 table-size update 处理；
-- 可见 ASCII header 字符的 Huffman 解码子集；
-- 非法 padding 和不支持符号的 fail-closed 拒绝。
+- RFC 7541 Appendix B 的 257 项 code table，包括 EOS；
+- 完整 256-octet symbol 的 Huffman 编解码；公开 `String` 恢复要求合法 UTF-8；
+- 非法 code、EOS 出现在 payload 中和非法 padding 的 fail-closed 拒绝；
+- outbound 仅在 Huffman 结果更短时启用，并对敏感 Header 使用 never-index。
 
-当前没有：
+当前边界：
 
-- 完整 RFC 7541 Appendix B 的 256 符号 + EOS 解码表；
-- outbound HPACK Huffman encoder；
-- “所有合法 header octet 都已覆盖”的完整声明。
+- Jingui accepted-transport compatibility parser 仍不是同一条完整 HPACK 路径；
+- 动态表和 Header-list 大小受本地上限与 peer SETTINGS 共同约束；
+- 当前 2048-turn byte profile 只证明重复 Header 的编码形态，不外推通用吞吐排名。
 
 这里描述的是 `ignite.native_h2` 主实现。另一个 Jingui accepted-transport
 compatibility parser 当前仍会拒绝 Huffman string，不能把两条路径混成同一能力。
 
-Native H2 当前发送 literal/non-Huffman 字符串。这个实现足以覆盖现有已验收
-profile，但不等于完整 HPACK Huffman 实现。
+Native H2 主实现已经具备完整 HPACK Huffman codec，并在编码更短时选择
+Huffman；重复 ordinary Header 还可以进入 connection-owned dynamic table。
 
 注意：动态 Zstd/Brotli 文档里的 Huffman 是压缩算法能力，不是 HPACK
 Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码能力。
