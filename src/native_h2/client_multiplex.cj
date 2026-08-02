@@ -6,6 +6,8 @@ import std.sync.Mutex
 
 let NATIVE_H2_MULTIPLEX_STREAM_LIMIT: Int64 = 32
 let NATIVE_H2_MULTIPLEX_BUFFER_LIMIT: Int64 = 65535
+let NATIVE_H2_MULTIPLEX_UPLOAD_BUFFER_LIMIT: Int64 = 32768
+let NATIVE_H2_MULTIPLEX_UPLOAD_READ_CHUNK: Int64 = 8192
 
 /// One response carried by an explicit connection-owned multiplex session.
 public class NativeH2MultiplexResponse {
@@ -71,6 +73,100 @@ class H2MuxStreamState {
     }
 }
 
+class H2MuxOutboundBody {
+    let streamId: Int64
+    let bufferedBody: Array<UInt8>
+    let source: ?InputStream
+    let contentLength: Int64
+    let chunks = ArrayList<Array<UInt8>>()
+    var chunkOffset: Int64 = 0
+    var producedBytes: Int64 = 0
+    var sentBytes: Int64 = 0
+    var queuedBytes: Int64 = 0
+    var sendWindow: Int64
+    var sourceDone = false
+    var cancelled = false
+
+    init(streamId: Int64, body: Array<UInt8>, sendWindow: Int64) {
+        this.streamId = streamId
+        bufferedBody = body
+        source = None
+        contentLength = body.size
+        producedBytes = body.size
+        sourceDone = true
+        this.sendWindow = sendWindow
+    }
+
+    init(
+        streamId: Int64,
+        source: InputStream,
+        contentLength: Int64,
+        sendWindow: Int64
+    ) {
+        this.streamId = streamId
+        bufferedBody = Array<UInt8>()
+        this.source = Some(source)
+        this.contentLength = contentLength
+        this.sendWindow = sendWindow
+    }
+
+    func streamed(): Bool {
+        source.isSome()
+    }
+
+    func remaining(): Int64 {
+        contentLength - sentBytes
+    }
+
+    func available(): Int64 {
+        if (!streamed()) {
+            return remaining()
+        }
+        if (chunks.size == 0) {
+            return 0
+        }
+        chunks[0].size - chunkOffset
+    }
+
+    func nextReadSize(): Int64 {
+        let sourceRemaining = contentLength - producedBytes
+        let bufferRemaining = NATIVE_H2_MULTIPLEX_UPLOAD_BUFFER_LIMIT - queuedBytes
+        if (cancelled || sourceRemaining <= 0 || bufferRemaining <= 0) {
+            return 0
+        }
+        min(min(sourceRemaining, bufferRemaining), NATIVE_H2_MULTIPLEX_UPLOAD_READ_CHUNK)
+    }
+
+    func appendProduced(chunk: Array<UInt8>): Unit {
+        chunks.add(chunk)
+        producedBytes += chunk.size
+        queuedBytes += chunk.size
+        if (producedBytes == contentLength) {
+            sourceDone = true
+        }
+    }
+
+    func takePayload(count: Int64): Array<UInt8> {
+        if (!streamed()) {
+            let end = sentBytes + count
+            let payload = nativeH2Slice(bufferedBody, sentBytes, end)
+            sentBytes = end
+            return payload
+        }
+        let chunk = chunks[0]
+        let end = chunkOffset + count
+        let payload = nativeH2Slice(chunk, chunkOffset, end)
+        chunkOffset = end
+        sentBytes += count
+        queuedBytes -= count
+        if (chunkOffset == chunk.size) {
+            let _ = chunks.remove(at: 0)
+            chunkOffset = 0
+        }
+        payload
+    }
+}
+
 class H2MuxResponseInputStream <: InputStream & Resource {
     let session: NativeH2MultiplexSession
     let state: H2MuxStreamState
@@ -116,7 +212,7 @@ public class NativeH2MultiplexSession {
     let writeMutex = Mutex()
     let streams = HashMap<Int64, H2MuxStreamState>()
     let cancelledStreams = HashMap<Int64, H2MuxStreamState>()
-    let outbound = HashMap<Int64, NativeH2ClientOutboundStream>()
+    let outbound = HashMap<Int64, H2MuxOutboundBody>()
     let outboundOrder = ArrayList<Int64>()
     let localLimit: Int64
     var pendingResponseHead: ?NativeH2PendingResponseHead = None
@@ -157,7 +253,39 @@ public class NativeH2MultiplexSession {
 
     public func send(request: NativeH2ClientRequest): NativeH2MultiplexResponse {
         let requestHead = nativeH2EncodeClientRequestHead(request)
-        let state = reserveAndWriteRequest(requestHead, request.body)
+        let state = reserveAndWriteRequest(
+            requestHead,
+            request.body,
+            None,
+            request.body.size
+        )
+        awaitResponse(state)
+    }
+
+    public func sendStream(
+        request: NativeH2ClientRequest,
+        bodyStream: InputStream,
+        contentLength: Int64
+    ): NativeH2MultiplexResponse {
+        if (contentLength < 0) {
+            throw IllegalArgumentException("contentLength must be >= 0")
+        }
+        if (request.body.size > 0) {
+            throw IllegalArgumentException(
+                "native H2 streamed request cannot also carry a buffered body"
+            )
+        }
+        let requestHead = nativeH2EncodeClientRequestHead(request, contentLength)
+        let state = reserveAndWriteRequest(
+            requestHead,
+            Array<UInt8>(),
+            Some(bodyStream),
+            contentLength
+        )
+        awaitResponse(state)
+    }
+
+    func awaitResponse(state: H2MuxStreamState): NativeH2MultiplexResponse {
         try {
             let head = awaitHead(state)
             NativeH2MultiplexResponse(
@@ -349,8 +477,12 @@ public class NativeH2MultiplexSession {
 
     func reserveAndWriteRequest(
         requestHead: Array<UInt8>,
-        body: Array<UInt8>
+        body: Array<UInt8>,
+        bodyStream: ?InputStream,
+        bodyLength: Int64
     ): H2MuxStreamState {
+        var reserved: ?H2MuxStreamState = None
+        var streamedOutbound: ?H2MuxOutboundBody = None
         synchronized(stateMutex) {
             if (closed || connection.finished || connection.retiring) {
                 throw Exception("native H2 multiplex session is closed or retiring")
@@ -364,20 +496,29 @@ public class NativeH2MultiplexSession {
             let state = H2MuxStreamState(connection.nextStreamId)
             connection.nextStreamId += 2
             streams.add(state.streamId, state)
-            if (body.size > 0) {
-                outbound.add(
-                    state.streamId,
-                    NativeH2ClientOutboundStream(
+            if (bodyLength > 0) {
+                let outboundBody = match (bodyStream) {
+                    case Some(source) => H2MuxOutboundBody(
+                        state.streamId,
+                        source,
+                        bodyLength,
+                        connection.peerSettings.initialStreamWindow
+                    )
+                    case None => H2MuxOutboundBody(
                         state.streamId,
                         body,
                         connection.peerSettings.initialStreamWindow
                     )
-                )
+                }
+                outbound.add(state.streamId, outboundBody)
                 outboundOrder.add(state.streamId)
+                if (outboundBody.streamed()) {
+                    streamedOutbound = Some(outboundBody)
+                }
             }
             try {
                 synchronized(writeMutex) {
-                    let flags = if (body.size == 0) { UInt8(0x5) } else { UInt8(0x4) }
+                    let flags = if (bodyLength == 0) { UInt8(0x5) } else { UInt8(0x4) }
                     nativeH2ClientWriteFrame(
                         connection.transport,
                         NativeH2Frame(UInt8(0x1), flags, state.streamId, requestHead)
@@ -391,8 +532,12 @@ public class NativeH2MultiplexSession {
                 try { connection.transport.close() } catch (_: Exception) {}
                 throw e
             }
-            state
+            reserved = Some(state)
         }
+        if (let Some(stream) <- streamedOutbound) {
+            startStreamProducer(stream)
+        }
+        reserved ?? throw Exception("native H2 multiplex request reservation failed")
     }
 
     func admissionLimit(): Int64 {
@@ -430,19 +575,147 @@ public class NativeH2MultiplexSession {
             streamIds.add(outboundOrder[index])
             offset += 1
         }
-        connection.connectionSendWindow = nativeH2ClientFlushRequestBodies(
-            connection.transport,
-            outbound,
-            streamIds,
-            connection.connectionSendWindow,
-            connection.peerSettings.maxFramePayload
-        )
+        var connectionWindow = connection.connectionSendWindow
+        var progressed = true
+        while (progressed && connectionWindow > 0 && outbound.size > 0) {
+            progressed = false
+            let completed = ArrayList<Int64>()
+            for (streamId in streamIds) {
+                if (let Some(stream) <- outbound.get(streamId)) {
+                    let available = stream.available()
+                    if (stream.sendWindow <= 0 || available <= 0) {
+                        continue
+                    }
+                    let count = min(
+                        min(available, connection.peerSettings.maxFramePayload),
+                        min(stream.sendWindow, connectionWindow)
+                    )
+                    let payload = stream.takePayload(count)
+                    let flags = if (stream.remaining() == 0) {
+                        UInt8(0x1)
+                    } else {
+                        UInt8(0)
+                    }
+                    nativeH2ClientWriteFrame(
+                        connection.transport,
+                        NativeH2Frame(
+                            UInt8(0x0),
+                            flags,
+                            stream.streamId,
+                            payload
+                        )
+                    )
+                    stream.sendWindow -= count
+                    connectionWindow -= count
+                    progressed = true
+                    if (stream.remaining() == 0) {
+                        completed.add(stream.streamId)
+                    }
+                }
+            }
+            for (streamId in completed) {
+                let _ = outbound.remove(streamId)
+            }
+        }
+        connection.connectionSendWindow = connectionWindow
         outboundCursor = if (count > 1) {
             (outboundCursor + 1) % count
         } else {
             0
         }
         compactOutboundOrderLocked()
+    }
+
+    func startStreamProducer(stream: H2MuxOutboundBody): Unit {
+        match (stream.source) {
+            case Some(source) =>
+                let _ = spawn {
+                    while (true) {
+                        var wanted: Int64 = 0
+                        var stopped = false
+                        synchronized(stateMutex) {
+                            if (closed || stream.cancelled || !outbound.contains(stream.streamId)) {
+                                stopped = true
+                            } else if (stream.sourceDone) {
+                                stopped = true
+                            } else {
+                                wanted = stream.nextReadSize()
+                            }
+                        }
+                        if (stopped) {
+                            return
+                        }
+                        if (wanted <= 0) {
+                            sleep(Duration.millisecond)
+                            continue
+                        }
+                        let chunk = Array<UInt8>(wanted, repeat: UInt8(0))
+                        let count = try {
+                            source.read(chunk)
+                        } catch (e: Exception) {
+                            failStreamProducer(
+                                stream.streamId,
+                                "native H2 request body stream read failed: " + e.message
+                            )
+                            return
+                        }
+                        if (count <= 0) {
+                            failStreamProducer(
+                                stream.streamId,
+                                "native H2 request body stream ended before Content-Length"
+                            )
+                            return
+                        }
+                        if (count > wanted) {
+                            failStreamProducer(
+                                stream.streamId,
+                                "native H2 request body stream exceeded its bounded read"
+                            )
+                            return
+                        }
+                        let produced = if (count == wanted) {
+                            chunk
+                        } else {
+                            nativeH2Slice(chunk, 0, count)
+                        }
+                        synchronized(stateMutex) {
+                            if (closed || stream.cancelled || !outbound.contains(stream.streamId)) {
+                                return
+                            }
+                            stream.appendProduced(produced)
+                            flushOutboundLocked()
+                        }
+                    }
+                }
+            case None => ()
+        }
+    }
+
+    func failStreamProducer(streamId: Int64, message: String): Unit {
+        var reset = false
+        synchronized(stateMutex) {
+            if (let Some(stream) <- outbound.get(streamId)) {
+                stream.cancelled = true
+                dropOutboundLocked(streamId)
+                if (let Some(state) <- streams.get(streamId)) {
+                    state.failureMessage = message
+                    state.cancelled = true
+                    state.released = true
+                    let _ = streams.remove(streamId)
+                    cancelledStreams.add(streamId, state)
+                }
+                reusable = false
+                connection.retiring = true
+                reset = true
+            }
+        }
+        if (reset) {
+            try {
+                writeReset(streamId)
+            } catch (e: Exception) {
+                failSession("native H2 streamed upload cancellation failed: " + e.message)
+            }
+        }
     }
 
     func dropOutboundLocked(streamId: Int64): Unit {
@@ -575,9 +848,7 @@ public class NativeH2MultiplexSession {
         if (frame.frameType == UInt8(0x4)) {
             synchronized(stateMutex) {
                 synchronized(writeMutex) {
-                    nativeH2ClientApplySettings(
-                        connection.transport, frame, connection.peerSettings, outbound
-                    )
+                    applySettingsWithWriterLocked(frame)
                     flushOutboundWithWriterLocked()
                 }
             }
@@ -671,6 +942,36 @@ public class NativeH2MultiplexSession {
             )
         }
         // Unknown extension and irrelevant control frames remain ignorable.
+    }
+
+    func applySettingsWithWriterLocked(frame: NativeH2Frame): Unit {
+        if (frame.streamId != 0) {
+            nativeH2ClientProtocolFailure(
+                frame.streamId,
+                NATIVE_H2_ERROR_PROTOCOL,
+                "native H2 multiplex received SETTINGS on a stream"
+            )
+        }
+        if ((frame.flags & UInt8(0x1)) != UInt8(0)) {
+            if (frame.payload.size != 0) {
+                nativeH2ClientProtocolFailure(
+                    0,
+                    NATIVE_H2_ERROR_FRAME_SIZE,
+                    "native H2 multiplex SETTINGS ACK must be empty"
+                )
+            }
+            return
+        }
+        let windowDeltas = connection.peerSettings.apply(frame.payload)
+        for (delta in windowDeltas) {
+            for ((_streamId, stream) in outbound) {
+                stream.sendWindow = nativeH2AdjustedSendWindow(stream.sendWindow, delta)
+            }
+        }
+        nativeH2ClientWriteFrame(
+            connection.transport,
+            NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+        )
     }
 
     func applyHeaderBlock(streamId: Int64, endStream: Bool, payload: Array<UInt8>): Unit {

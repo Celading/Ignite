@@ -859,6 +859,16 @@ func nativeH2ClientSettingsPayload(): Array<UInt8> {
 }
 
 func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt8> {
+    nativeH2EncodeClientRequestHead(request, request.body.size)
+}
+
+func nativeH2EncodeClientRequestHead(
+    request: NativeH2ClientRequest,
+    expectedBodyLength: Int64
+): Array<UInt8> {
+    if (expectedBodyLength < 0) {
+        throw Exception("native H2 client request body length cannot be negative")
+    }
     nativeH2ClientRequireToken(request.method, "method")
     if (request.scheme != "http" && request.scheme != "https") {
         throw Exception("native H2 client scheme must be http or https")
@@ -902,7 +912,7 @@ func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt
         )
     }
     if (let Some(length) <- contentLength) {
-        if (length != request.body.size) {
+        if (length != expectedBodyLength) {
             throw Exception("native H2 client content-length does not match request body")
         }
     }

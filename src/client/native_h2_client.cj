@@ -26,6 +26,8 @@ public class NativeH2BatchRequest {
     public let url: String
     let requestHeaders = HashMap<String, String>()
     var requestBody = Array<UInt8>()
+    var requestBodyStream: ?InputStream = None
+    var requestBodyStreamLength: Int64 = 0
 
     public init(method: String, url: String) {
         this.method = method
@@ -40,11 +42,30 @@ public class NativeH2BatchRequest {
 
     public func bodyBytes(data: Array<UInt8>): NativeH2BatchRequest {
         requestBody = cloneNativeH1Bytes(data)
+        requestBodyStream = None
+        requestBodyStreamLength = 0
         this
     }
 
     public func bodyString(data: String): NativeH2BatchRequest {
         bodyBytes(data.toArray())
+    }
+
+    /// Attaches a one-pass request stream with an exact Content-Length.
+    ///
+    /// The caller retains ownership of the stream. Native H2 consumes it once
+    /// and never replays it for retries or redirects.
+    public func bodyStream(
+        stream: InputStream,
+        contentLength: Int64
+    ): NativeH2BatchRequest {
+        if (contentLength < 0) {
+            throw IllegalArgumentException("contentLength must be >= 0")
+        }
+        requestBody = Array<UInt8>()
+        requestBodyStream = Some(stream)
+        requestBodyStreamLength = contentLength
+        this
     }
 
     func headersSnapshot(): HashMap<String, String> {
@@ -53,6 +74,14 @@ public class NativeH2BatchRequest {
 
     func bodySnapshot(): Array<UInt8> {
         cloneNativeH1Bytes(requestBody)
+    }
+
+    func bodyStreamSnapshot(): ?InputStream {
+        requestBodyStream
+    }
+
+    func bodyStreamLengthSnapshot(): Int64 {
+        requestBodyStreamLength
     }
 }
 
@@ -95,7 +124,8 @@ public class NativeH2Session {
         this.closeHook = closeHook
     }
 
-    /// Submits one buffered request and returns after its final response head arrives.
+    /// Submits one buffered or exact-length streamed request and returns after
+    /// its final response head arrives.
     ///
     /// Multiple callers may invoke this method concurrently. Each returned body is
     /// an independent one-pass lease coordinated by one connection-owned reader.
@@ -112,6 +142,12 @@ public class NativeH2Session {
                 throw Exception("native H2 session request must retain its opened origin")
             }
             let body = request.bodySnapshot()
+            let bodyStream = request.bodyStreamSnapshot()
+            let bodyLength = if (bodyStream.isSome()) {
+                request.bodyStreamLengthSnapshot()
+            } else {
+                body.size
+            }
 
             let headers = cloneNativeH1Headers(defaultHeaders)
             for ((name, value) in request.headersSnapshot()) {
@@ -131,21 +167,28 @@ public class NativeH2Session {
                     }
                 }
             }
-            if (body.size > 0 && !nativeH1HasHeader(headers, "content-length")) {
-                headers.add("content-length", body.size.toString())
+            if ((bodyLength > 0 || bodyStream.isSome()) &&
+                !nativeH1HasHeader(headers, "content-length")) {
+                headers.add("content-length", bodyLength.toString())
             }
 
             let nativeResponse = try {
-                protocol.send(
-                    NativeH2ClientRequest(
-                        request.method,
-                        "http",
-                        target.hostHeader,
-                        target.requestTarget,
-                        body: body,
-                        headers: nativeH2RequestHeaders(headers)
-                    )
+                let nativeRequest = NativeH2ClientRequest(
+                    request.method,
+                    "http",
+                    target.hostHeader,
+                    target.requestTarget,
+                    body: body,
+                    headers: nativeH2RequestHeaders(headers)
                 )
+                match (bodyStream) {
+                    case Some(stream) => protocol.sendStream(
+                        nativeRequest,
+                        stream,
+                        bodyLength
+                    )
+                    case None => protocol.send(nativeRequest)
+                }
             } catch (e: NativeH2ClientException) {
                 throw nativeH2ProtocolTransportException(e)
             }

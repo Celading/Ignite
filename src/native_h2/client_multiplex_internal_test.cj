@@ -1,7 +1,64 @@
 package ignite.native_h2
 
+import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 import std.sync.{AtomicBool, AtomicInt64}
+
+class NativeH2MultiplexChunkedInput <: InputStream {
+    let data: Array<UInt8>
+    let chunkSize: Int64
+    let delayMs: Int64
+    let eofGate: ?AtomicBool
+    let consumed = AtomicInt64(0)
+    let maxRequested = AtomicInt64(0)
+    var offset: Int64 = 0
+
+    init(
+        data: Array<UInt8>,
+        chunkSize!: Int64 = 4096,
+        delayMs!: Int64 = 0,
+        eofGate!: ?AtomicBool = None
+    ) {
+        this.data = data
+        this.chunkSize = chunkSize
+        this.delayMs = delayMs
+        this.eofGate = eofGate
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (offset >= data.size || outBuf.size == 0) {
+            if (outBuf.size > 0) {
+                if (let Some(gate) <- eofGate) {
+                    while (!gate.load()) {
+                        sleep(Duration.millisecond)
+                    }
+                }
+            }
+            return 0
+        }
+        if (outBuf.size > maxRequested.load()) {
+            maxRequested.store(outBuf.size)
+        }
+        if (delayMs > 0) {
+            sleep(Duration.millisecond * delayMs)
+        }
+        let count = min(min(outBuf.size, chunkSize), data.size - offset)
+        for (index in 0..count) {
+            outBuf[index] = data[offset + index]
+        }
+        offset += count
+        consumed.store(offset)
+        count
+    }
+
+    func bytesRead(): Int64 {
+        consumed.load()
+    }
+
+    func largestRequestedRead(): Int64 {
+        maxRequested.load()
+    }
+}
 
 @Test
 public class NativeH2MultiplexInternalTestSuite {
@@ -316,6 +373,346 @@ public class NativeH2MultiplexInternalTestSuite {
             @Assert(session.close(), false)
             let _ = serverFuture.get(Duration.second * 5)
         } finally {
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testKnownLengthStreamUsesBoundedProducerAndWindowFeedback(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 streamed upload test could not reserve a port")
+        let allowRemainder = AtomicBool(false)
+        let serverStage = AtomicInt64(0)
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                var largeBytes: Int64 = 0
+                var siblingHeadSeen = false
+                while (largeBytes < NATIVE_H2_INITIAL_FLOW_WINDOW || !siblingHeadSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x1) && frame.streamId == 1) {
+                        @Assert(frame.flags, UInt8(0x4))
+                    } else if (frame.frameType == UInt8(0x1) && frame.streamId == 3) {
+                        @Assert(frame.flags, UInt8(0x5))
+                        siblingHeadSeen = true
+                    } else {
+                        @Assert(frame.frameType, UInt8(0x0))
+                        @Assert(frame.streamId, Int64(1))
+                        @Assert(frame.flags & UInt8(0x1), UInt8(0))
+                        for (value in frame.payload) {
+                            @Assert(value, UInt8(0x73))
+                        }
+                        largeBytes += frame.payload.size
+                    }
+                }
+                @Assert(largeBytes, NATIVE_H2_INITIAL_FLOW_WINDOW)
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+                serverStage.store(1)
+
+                while (!allowRemainder.load()) {
+                    sleep(Duration.millisecond * 2)
+                }
+                let remaining = Int64(100000) - largeBytes
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(1, remaining))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(0, remaining))
+                while (largeBytes < 100000) {
+                    let data = nativeH2ReadFrame(accepted)
+                    @Assert(data.frameType, UInt8(0x0))
+                    @Assert(data.streamId, Int64(1))
+                    for (value in data.payload) {
+                        @Assert(value, UInt8(0x73))
+                    }
+                    largeBytes += data.payload.size
+                    if (largeBytes < 100000) {
+                        @Assert(data.flags & UInt8(0x1), UInt8(0))
+                    } else {
+                        @Assert(data.flags & UInt8(0x1), UInt8(0x1))
+                    }
+                }
+                nativeH2MultiplexWriteResponse(accepted, 1, "streamed")
+                serverStage.store(2)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        let source = NativeH2MultiplexChunkedInput(
+            Array<UInt8>(100000, repeat: UInt8(0x73)),
+            chunkSize: 4096,
+            delayMs: 1
+        )
+        try {
+            let largeFuture = spawn {
+                session.sendStream(
+                    NativeH2ClientRequest(
+                        "POST", "http", "127.0.0.1:${port}", "/streamed",
+                        headers: [NativeH2Header("content-length", "100000")]
+                    ),
+                    source,
+                    100000
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+
+            var buffered: Int64 = 0
+            synchronized(session.stateMutex) {
+                if (let Some(upload) <- session.outbound.get(1)) {
+                    buffered = upload.queuedBytes
+                }
+            }
+            @Assert(buffered <= NATIVE_H2_MULTIPLEX_UPLOAD_BUFFER_LIMIT, true)
+            @Assert(source.bytesRead() < Int64(100000), true)
+            @Assert(
+                source.largestRequestedRead() <= NATIVE_H2_MULTIPLEX_UPLOAD_READ_CHUNK,
+                true
+            )
+
+            allowRemainder.store(true)
+            let large = try {
+                largeFuture.get(Duration.second * 5)
+            } catch (e: Exception) {
+                throw Exception(
+                    "Native H2 streamed upload failed at server stage ${serverStage.load()}: " +
+                        e.message
+                )
+            }
+            @Assert(large.header("x-multiplex-result") ?? "", "streamed")
+            large.close()
+            @Assert(source.bytesRead(), Int64(100000))
+            @Assert(session.outbound.size, Int64(0))
+            @Assert(session.outboundOrder.size, Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(session.close(), true)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            allowRemainder.store(true)
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testStreamEarlyResponseStopsProducerAndPreservesSibling(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 streamed early-response test could not reserve a port")
+        let serverStage = AtomicInt64(0)
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                var siblingHeadSeen = false
+                var streamedBytes: Int64 = 0
+                while (!siblingHeadSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x1) && frame.streamId == 3) {
+                        @Assert(frame.flags, UInt8(0x5))
+                        siblingHeadSeen = true
+                    } else if (frame.frameType == UInt8(0x1) && frame.streamId == 1) {
+                        @Assert(frame.flags, UInt8(0x4))
+                    } else {
+                        @Assert(frame.frameType, UInt8(0x0))
+                        @Assert(frame.streamId, Int64(1))
+                        @Assert(frame.flags & UInt8(0x1), UInt8(0))
+                        streamedBytes += frame.payload.size
+                        serverStage.store(1)
+                    }
+                }
+                @Assert(streamedBytes > 0, true)
+                nativeH2MultiplexWriteResponse(accepted, 1, "early-streamed")
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+
+                var resetSeen = false
+                while (!resetSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x3) && frame.streamId == 1) {
+                        @Assert(
+                            nativeH2ClientDecode32Bit(frame.payload, 0),
+                            NATIVE_H2_ERROR_CANCEL
+                        )
+                        resetSeen = true
+                    } else {
+                        @Assert(frame.frameType, UInt8(0x0))
+                        @Assert(frame.streamId, Int64(1))
+                        @Assert(frame.flags & UInt8(0x1), UInt8(0))
+                        streamedBytes += frame.payload.size
+                    }
+                }
+                @Assert(streamedBytes <= NATIVE_H2_INITIAL_FLOW_WINDOW, true)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        let source = NativeH2MultiplexChunkedInput(
+            Array<UInt8>(100000, repeat: UInt8(0x72)),
+            chunkSize: 4096,
+            delayMs: 1
+        )
+        try {
+            let streamedFuture = spawn {
+                session.sendStream(
+                    NativeH2ClientRequest(
+                        "POST", "http", "127.0.0.1:${port}", "/early-streamed",
+                        headers: [NativeH2Header("content-length", "100000")]
+                    ),
+                    source,
+                    100000
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            var attempts: Int64 = 0
+            while (serverStage.load() < 1 && attempts < 400) {
+                sleep(Duration.millisecond * 5)
+                attempts += 1
+            }
+            if (serverStage.load() < 1) {
+                throw Exception("Native H2 streamed early-response test saw no request DATA")
+            }
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+
+            let early = streamedFuture.get(Duration.second * 5)
+            @Assert(early.header("x-multiplex-result") ?? "", "early-streamed")
+            early.close()
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+
+            @Assert(source.bytesRead() < Int64(100000), true)
+            @Assert(session.outbound.size, Int64(0))
+            @Assert(session.outboundOrder.size, Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(connection.retiring, true)
+            @Assert(session.close(), false)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testStreamEarlyEofCancelsOnlyItsStreamAndPreservesSibling(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 streamed EOF test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                var siblingHeadSeen = false
+                var resetSeen = false
+                var streamedBytes: Int64 = 0
+                while (!siblingHeadSeen || !resetSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x1) && frame.streamId == 3) {
+                        siblingHeadSeen = true
+                    } else if (frame.frameType == UInt8(0x3) && frame.streamId == 1) {
+                        @Assert(
+                            nativeH2ClientDecode32Bit(frame.payload, 0),
+                            NATIVE_H2_ERROR_CANCEL
+                        )
+                        resetSeen = true
+                    } else if (frame.frameType == UInt8(0x0) && frame.streamId == 1) {
+                        @Assert(frame.flags & UInt8(0x1), UInt8(0))
+                        streamedBytes += frame.payload.size
+                    }
+                }
+                @Assert(streamedBytes, Int64(4000))
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        let allowEof = AtomicBool(false)
+        let shortSource = NativeH2MultiplexChunkedInput(
+            Array<UInt8>(4000, repeat: UInt8(0x65)),
+            chunkSize: 1000,
+            eofGate: Some(allowEof)
+        )
+        try {
+            let failedFuture = spawn {
+                session.sendStream(
+                    NativeH2ClientRequest(
+                        "POST", "http", "127.0.0.1:${port}", "/short",
+                        headers: [NativeH2Header("content-length", "10000")]
+                    ),
+                    shortSource,
+                    10000
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 2)
+            allowEof.store(true)
+            var failure = ""
+            try {
+                let _ = failedFuture.get(Duration.second * 5)
+            } catch (e: Exception) {
+                failure = e.message
+            }
+            @Assert(failure.contains("ended before Content-Length"), true)
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+            @Assert(session.outbound.size, Int64(0))
+            @Assert(session.outboundOrder.size, Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(connection.retiring, true)
+            @Assert(session.close(), false)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            allowEof.store(true)
             let _ = session.close()
             try { socket.close() } catch (_: Exception) {}
             try { listener.close() } catch (_: Exception) {}

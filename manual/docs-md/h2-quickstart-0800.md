@@ -149,9 +149,16 @@ try {
     let fast = spawn {
         session.send(NativeH2BatchRequest("GET", "/fast"))
     }
+    let upload = spawn {
+        session.send(
+            NativeH2BatchRequest("POST", "/upload")
+                .bodyStream(input, exactLength)
+        )
+    }
 
     println(fast.get(Duration.second * 5).body())
     println(slow.get(Duration.second * 5).body())
+    println(upload.get(Duration.second * 5).body())
 } finally {
     session.close()
     client.close()
@@ -160,8 +167,13 @@ try {
 
 这条路径的边界是：
 
-- 只支持同一 cleartext `http://` origin；request body 必须是有界、可回放的
-  buffered bytes/string，缺少 `content-length` 时由 session 自动补齐；
+- 只支持同一 cleartext `http://` origin；request body 可以是 buffered
+  bytes/string，或 `bodyStream(input, exactLength)` 指定的精确长度 one-pass
+  stream；缺少 `content-length` 时由 session 自动补齐；
+- stream producer 每次最多读取 8 KiB、每 stream 最多预取 32 KiB，读取用户
+  `InputStream` 时不持有 session-state 或 writer mutex；调用方继续持有 stream，
+  Ignite 不会关闭或为 retry/redirect 重放它；取消在一次 `read` 返回后生效，可能
+  阻塞的 source 应由调用方提供可取消或有界超时的读取实现；
 - 本地最多 32 个 active stream，并服从 peer concurrent-stream limit；
 - 一个 connection-owned reader 分发 frame，调用方不会并发读取 socket；
 - request DATA 同时服从 connection 和 stream send window；`WINDOW_UPDATE` 与
@@ -171,8 +183,9 @@ try {
 - 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
   已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
   在未知 peer 消费状态下复用；
-- 不支持 TLS session、streamed request body、retry/redirect、逐 stream deadline、
-  priority、request/observe/transport-touchpoint hook。
+- 不支持 TLS session、未知长度 request stream、自动 RequestBuilder H2
+  streaming、retry/redirect、逐 stream deadline、priority、
+  request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用
 `try/finally` 明确归还资源。

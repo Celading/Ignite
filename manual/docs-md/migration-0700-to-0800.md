@@ -85,7 +85,7 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API 与支持 buffered request body 的 multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API，以及支持 buffered body 与精确长度 one-pass request stream 的 multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
 let client = RestClient(
@@ -120,20 +120,32 @@ try {
         session.send(NativeH2BatchRequest("POST", "/a").bodyString("payload"))
     }
     let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
+    let streamed = spawn {
+        session.send(
+            NativeH2BatchRequest("POST", "/streamed")
+                .bodyStream(input, exactLength)
+        )
+    }
     println(a.get(Duration.second * 5).body())
     println(b.get(Duration.second * 5).body())
+    println(streamed.get(Duration.second * 5).body())
 } finally {
     session.close()
 }
 ```
 
-该 session 只支持同一 cleartext origin；request body 必须是 buffered、可回放的
-bytes/string，DATA 会服从 connection/stream send window，并由 `WINDOW_UPDATE`
+该 session 只支持同一 cleartext origin；request body 可以是 buffered bytes/string，
+或 `bodyStream(input, exactLength)` 指定的精确长度 one-pass stream。stream producer
+每次最多读取 8 KiB、每 stream 最多预取 32 KiB，并且不会在读取用户 stream 时
+持有协议锁。Ignite 不会关闭 source；取消在一次 `read` 返回后生效，因此可能阻塞
+的 source 应由调用方提供可取消或有界超时的读取实现。DATA 会服从
+connection/stream send window，并由 `WINDOW_UPDATE`
 或 SETTINGS 初始窗口变化继续推进。每个 stream 最多保留 65,535 字节未读响应
 数据。本地 active stream 上限最多 32，并继续服从 peer SETTINGS。完整消费允许
 连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
-request body 尚未发完，连接会进入 retiring。它仍不包含 TLS multiplex、
-retry/redirect、streamed request body、priority 或逐 stream deadline。
+request body 尚未发完，连接会进入 retiring。它仍不包含 TLS multiplex、未知长度
+request stream、自动 RequestBuilder H2 streaming、retry/redirect 重放、priority
+或逐 stream deadline。
 
 适合的 0800 使用方式：
 

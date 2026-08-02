@@ -550,6 +550,60 @@ public class NativeH2RestClientTestSuite {
     }
 
     @TestCase
+    public func testPublicSessionStreamsKnownLengthRequestBody(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 public streamed upload test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(
+                    accepted,
+                    { request =>
+                        @Assert(request.body.size, Int64(70000))
+                        @Assert(request.body[0], UInt8(0))
+                        @Assert(request.body[250], UInt8(250))
+                        @Assert(request.body[251], UInt8(0))
+                        @Assert(
+                            nativeH2RestBatchRequestHeader(request, "content-length"),
+                            "70000"
+                        )
+                        NativeH2SingleStreamResponse(
+                            status: 201,
+                            body: "streamed:70000".toArray()
+                        )
+                    },
+                    maxCompletedStreams: 1
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+        let source = NativeH1ClientGeneratedRequestStream(70000)
+        try {
+            let response = session.send(
+                NativeH2BatchRequest("POST", "/streamed-upload")
+                    .bodyStream(source, 70000)
+            )
+            @Assert(response.status, UInt16(201))
+            @Assert(response.body(), "streamed:70000")
+            @Assert(source.offset, Int64(70000))
+            @Assert(source.readCount > 1, true)
+            session.close()
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testPublicSessionCancelPreservesSiblingAndRetiresConnection(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
