@@ -28,6 +28,7 @@ public class NativeH2BatchRequest {
     var requestBody = Array<UInt8>()
     var requestBodyStream: ?InputStream = None
     var requestBodyStreamLength: Int64 = 0
+    var requestBodyStreamHasKnownLength = false
 
     public init(method: String, url: String) {
         this.method = method
@@ -44,6 +45,7 @@ public class NativeH2BatchRequest {
         requestBody = cloneNativeH1Bytes(data)
         requestBodyStream = None
         requestBodyStreamLength = 0
+        requestBodyStreamHasKnownLength = false
         this
     }
 
@@ -65,6 +67,19 @@ public class NativeH2BatchRequest {
         requestBody = Array<UInt8>()
         requestBodyStream = Some(stream)
         requestBodyStreamLength = contentLength
+        requestBodyStreamHasKnownLength = true
+        this
+    }
+
+    /// Attaches a one-pass request stream whose length is determined by EOF.
+    ///
+    /// The caller retains ownership of the stream. Native H2 consumes it once,
+    /// does not replay it for retries or redirects, and never closes it.
+    public func bodyStream(stream: InputStream): NativeH2BatchRequest {
+        requestBody = Array<UInt8>()
+        requestBodyStream = Some(stream)
+        requestBodyStreamLength = 0
+        requestBodyStreamHasKnownLength = false
         this
     }
 
@@ -82,6 +97,10 @@ public class NativeH2BatchRequest {
 
     func bodyStreamLengthSnapshot(): Int64 {
         requestBodyStreamLength
+    }
+
+    func bodyStreamHasKnownLengthSnapshot(): Bool {
+        requestBodyStreamHasKnownLength
     }
 }
 
@@ -124,8 +143,8 @@ public class NativeH2Session {
         this.closeHook = closeHook
     }
 
-    /// Submits one buffered or exact-length streamed request and returns after
-    /// its final response head arrives.
+    /// Submits one buffered or streamed request and returns after its final
+    /// response head arrives.
     ///
     /// Multiple callers may invoke this method concurrently. Each returned body is
     /// an independent one-pass lease coordinated by one connection-owned reader.
@@ -143,6 +162,7 @@ public class NativeH2Session {
             }
             let body = request.bodySnapshot()
             let bodyStream = request.bodyStreamSnapshot()
+            let bodyStreamHasKnownLength = request.bodyStreamHasKnownLengthSnapshot()
             let bodyLength = if (bodyStream.isSome()) {
                 request.bodyStreamLengthSnapshot()
             } else {
@@ -167,7 +187,9 @@ public class NativeH2Session {
                     }
                 }
             }
-            if ((bodyLength > 0 || bodyStream.isSome()) &&
+            if (bodyStream.isSome() && !bodyStreamHasKnownLength) {
+                removeNativeH1Header(headers, "content-length")
+            } else if ((bodyLength > 0 || bodyStream.isSome()) &&
                 !nativeH1HasHeader(headers, "content-length")) {
                 headers.add("content-length", bodyLength.toString())
             }
@@ -182,11 +204,11 @@ public class NativeH2Session {
                     headers: nativeH2RequestHeaders(headers)
                 )
                 match (bodyStream) {
-                    case Some(stream) => protocol.sendStream(
-                        nativeRequest,
-                        stream,
-                        bodyLength
-                    )
+                    case Some(stream) => if (bodyStreamHasKnownLength) {
+                        protocol.sendStream(nativeRequest, stream, bodyLength)
+                    } else {
+                        protocol.sendStream(nativeRequest, stream)
+                    }
                     case None => protocol.send(nativeRequest)
                 }
             } catch (e: NativeH2ClientException) {

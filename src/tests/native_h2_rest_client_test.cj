@@ -4,6 +4,7 @@ import ignite.*
 import ignite.client.*
 import ignite.native_h2.*
 import std.collection.ArrayList
+import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket}
 import std.sync.{AtomicBool, Mutex}
 
@@ -28,6 +29,42 @@ class NativeH2RestClientCounter {
             currentValue = value
         }
         currentValue
+    }
+}
+
+class NativeH2RestOwnedRequestStream <: InputStream & Resource {
+    let data: Array<UInt8>
+    var offset: Int64 = 0
+    var readCount: Int64 = 0
+    var largestRequested: Int64 = 0
+    var closed = false
+
+    init(data: Array<UInt8>) {
+        this.data = data
+    }
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        if (offset >= data.size || outBuf.size == 0) {
+            return 0
+        }
+        if (outBuf.size > largestRequested) {
+            largestRequested = outBuf.size
+        }
+        let count = min(outBuf.size, data.size - offset)
+        for (index in 0..count) {
+            outBuf[index] = data[offset + index]
+        }
+        offset += count
+        readCount += 1
+        count
+    }
+
+    public func close(): Unit {
+        closed = true
+    }
+
+    public func isClosed(): Bool {
+        closed
     }
 }
 
@@ -595,6 +632,73 @@ public class NativeH2RestClientTestSuite {
             @Assert(source.offset, Int64(70000))
             @Assert(source.readCount > 1, true)
             session.close()
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testPublicSessionStreamsUnknownLengthWithoutContentLength(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 public unknown-length upload test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                serveNativeH2Connection(
+                    accepted,
+                    { request =>
+                        @Assert(request.body.size, Int64(70000))
+                        @Assert(request.body[0], UInt8(0))
+                        @Assert(request.body[250], UInt8(250))
+                        @Assert(request.body[251], UInt8(0))
+                        @Assert(
+                            nativeH2RestBatchRequestHeader(request, "content-length"),
+                            ""
+                        )
+                        NativeH2SingleStreamResponse(
+                            status: 201,
+                            body: "unknown-length:70000".toArray()
+                        )
+                    },
+                    maxCompletedStreams: 1
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+        let data = Array<UInt8>(70000, repeat: UInt8(0))
+        for (index in 0..70000) {
+            data[index] = UInt8(index % 251)
+        }
+        let source = NativeH2RestOwnedRequestStream(data)
+        try {
+            let response = session.send(
+                NativeH2BatchRequest("POST", "/unknown-length-upload")
+                    .header("content-length", "999")
+                    .bodyStream(source)
+            )
+            @Assert(response.status, UInt16(201))
+            @Assert(response.body(), "unknown-length:70000")
+            @Assert(source.offset, Int64(70000))
+            @Assert(source.readCount > 1, true)
+            @Assert(
+                source.largestRequested <= 8192,
+                true
+            )
+            @Assert(source.isClosed(), false)
+            session.close()
+            @Assert(source.isClosed(), false)
+            source.close()
+            @Assert(source.isClosed(), true)
             let _ = serverFuture.get(Duration.second * 5)
         } finally {
             session.close()

@@ -60,6 +60,28 @@ class NativeH2MultiplexChunkedInput <: InputStream {
     }
 }
 
+class NativeH2MultiplexBlockedEofInput <: InputStream {
+    let entered = AtomicBool(false)
+    let released = AtomicBool(false)
+
+    public override func read(outBuf: Array<Byte>): Int64 {
+        let _ = outBuf
+        entered.store(true)
+        while (!released.load()) {
+            sleep(Duration.millisecond)
+        }
+        0
+    }
+
+    func readStarted(): Bool {
+        entered.load()
+    }
+
+    func release(): Unit {
+        released.store(true)
+    }
+}
+
 @Test
 public class NativeH2MultiplexInternalTestSuite {
     @TestCase
@@ -514,7 +536,218 @@ public class NativeH2MultiplexInternalTestSuite {
     }
 
     @TestCase
-    public func testStreamEarlyResponseStopsProducerAndPreservesSibling(): Unit {
+    public func testUnknownLengthStreamUsesBoundedProducerAndWindowFeedback(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 unknown-length upload test could not reserve a port")
+        let allowRemainder = AtomicBool(false)
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                var uploaded: Int64 = 0
+                var siblingHeadSeen = false
+                while (uploaded < NATIVE_H2_INITIAL_FLOW_WINDOW || !siblingHeadSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x1) && frame.streamId == 1) {
+                        @Assert(frame.flags, UInt8(0x4))
+                    } else if (frame.frameType == UInt8(0x1) && frame.streamId == 3) {
+                        @Assert(frame.flags, UInt8(0x5))
+                        siblingHeadSeen = true
+                    } else {
+                        @Assert(frame.frameType, UInt8(0x0))
+                        @Assert(frame.streamId, Int64(1))
+                        @Assert(frame.flags & UInt8(0x1), UInt8(0))
+                        for (value in frame.payload) {
+                            @Assert(value, UInt8(0x74))
+                        }
+                        uploaded += frame.payload.size
+                    }
+                }
+                @Assert(uploaded, NATIVE_H2_INITIAL_FLOW_WINDOW)
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+
+                while (!allowRemainder.load()) {
+                    sleep(Duration.millisecond * 2)
+                }
+                let remaining = Int64(100000) - uploaded
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(1, remaining))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(0, remaining))
+                var endStreamFrames: Int64 = 0
+                while (endStreamFrames == 0) {
+                    let data = nativeH2ReadFrame(accepted)
+                    @Assert(data.frameType, UInt8(0x0))
+                    @Assert(data.streamId, Int64(1))
+                    for (value in data.payload) {
+                        @Assert(value, UInt8(0x74))
+                    }
+                    uploaded += data.payload.size
+                    if ((data.flags & UInt8(0x1)) != UInt8(0)) {
+                        endStreamFrames += 1
+                    }
+                }
+                @Assert(uploaded, Int64(100000))
+                @Assert(endStreamFrames, Int64(1))
+                nativeH2MultiplexWriteResponse(accepted, 1, "unknown-length")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        let source = NativeH2MultiplexChunkedInput(
+            Array<UInt8>(100000, repeat: UInt8(0x74)),
+            chunkSize: 4096,
+            delayMs: 1
+        )
+        try {
+            let uploadFuture = spawn {
+                session.sendStream(
+                    NativeH2ClientRequest(
+                        "POST", "http", "127.0.0.1:${port}", "/unknown-length"
+                    ),
+                    source
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+
+            var buffered: Int64 = 0
+            synchronized(session.stateMutex) {
+                if (let Some(upload) <- session.outbound.get(1)) {
+                    buffered = upload.queuedBytes
+                }
+            }
+            @Assert(buffered <= NATIVE_H2_MULTIPLEX_UPLOAD_BUFFER_LIMIT, true)
+            @Assert(source.bytesRead() < Int64(100000), true)
+            @Assert(
+                source.largestRequestedRead() <= NATIVE_H2_MULTIPLEX_UPLOAD_READ_CHUNK,
+                true
+            )
+
+            allowRemainder.store(true)
+            let upload = uploadFuture.get(Duration.second * 5)
+            @Assert(upload.header("x-multiplex-result") ?? "", "unknown-length")
+            upload.close()
+            @Assert(source.bytesRead(), Int64(100000))
+            @Assert(session.outbound.size, Int64(0))
+            @Assert(session.outboundOrder.size, Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(session.close(), true)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            allowRemainder.store(true)
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testUnknownLengthBlockedSourceDoesNotHoldProtocolLock(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 blocked-source test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                let uploadHead = nativeH2ReadFrame(accepted)
+                @Assert(uploadHead.frameType, UInt8(0x1))
+                @Assert(uploadHead.streamId, Int64(1))
+                @Assert(uploadHead.flags, UInt8(0x4))
+
+                let siblingHead = nativeH2ReadFrame(accepted)
+                @Assert(siblingHead.frameType, UInt8(0x1))
+                @Assert(siblingHead.streamId, Int64(3))
+                @Assert(siblingHead.flags, UInt8(0x5))
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+                nativeH2MultiplexWriteResponse(accepted, 1, "blocked-source")
+
+                let reset = nativeH2ReadFrame(accepted)
+                @Assert(reset.frameType, UInt8(0x3))
+                @Assert(reset.streamId, Int64(1))
+                @Assert(
+                    nativeH2ClientDecode32Bit(reset.payload, 0),
+                    NATIVE_H2_ERROR_CANCEL
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        let source = NativeH2MultiplexBlockedEofInput()
+        try {
+            let uploadFuture = spawn {
+                session.sendStream(
+                    NativeH2ClientRequest(
+                        "POST", "http", "127.0.0.1:${port}", "/blocked-source"
+                    ),
+                    source
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            var attempts: Int64 = 0
+            while (!source.readStarted() && attempts < 400) {
+                sleep(Duration.millisecond * 5)
+                attempts += 1
+            }
+            if (!source.readStarted()) {
+                throw Exception("Native H2 blocked-source test did not begin the source read")
+            }
+
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+            let sibling = siblingFuture.get(Duration.second * 5)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+
+            let upload = uploadFuture.get(Duration.second * 5)
+            @Assert(upload.header("x-multiplex-result") ?? "", "blocked-source")
+            upload.close()
+            @Assert(session.outbound.size, Int64(0))
+            @Assert(session.outboundOrder.size, Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(connection.retiring, true)
+            @Assert(session.close(), false)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            source.release()
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testUnknownLengthStreamEarlyResponseStopsProducerAndPreservesSibling(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
         let port = (listener.localAddress as IPSocketAddress)?.port ??
@@ -582,11 +815,9 @@ public class NativeH2MultiplexInternalTestSuite {
             let streamedFuture = spawn {
                 session.sendStream(
                     NativeH2ClientRequest(
-                        "POST", "http", "127.0.0.1:${port}", "/early-streamed",
-                        headers: [NativeH2Header("content-length", "100000")]
+                        "POST", "http", "127.0.0.1:${port}", "/early-streamed"
                     ),
-                    source,
-                    100000
+                    source
                 )
             }
             nativeH2WaitForMultiplexStreams(session, 1)
