@@ -461,6 +461,47 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testCompressMiddlewareRejectsExplicitIdentityRefusalOverRealHttp(): Unit {
+        let representation = "identity-refused-representation"
+        let handlerRuns = ArrayList<String>()
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            zstdEnabled: true,
+            brotliEnabled: true,
+            skipIfNoGain: false
+        )))
+        app.get("/identity-refused", { ctx =>
+            handlerRuns.add("representation")
+            _ = ctx.sendString(representation)
+        })
+
+        let port = choosePort(451)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused",
+                "gzip;q=0, deflate;q=0, zstd;q=0, br;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 406)
+            @Assert(resp.encoding, "")
+            @Assert(resp.body.size, Int64(0))
+            @Assert(handlerRuns.size, Int64(0))
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareWildcardUsesOnlyEnabledEncoding(): Unit {
         let payload = "wildcard-single-enabled-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())

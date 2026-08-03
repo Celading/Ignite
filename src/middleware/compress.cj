@@ -66,7 +66,12 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
     let nativeLevel = nativeCompressionLevel(config.level)
 
     { ctx: Ctx =>
-        let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
+        let negotiation = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
+        if (negotiation.identityRefused && negotiation.encoding.size == 0) {
+            _ = ctx.status(406).sendString("")
+            return
+        }
+        let encoding = negotiation.encoding
         if (encoding.size > 0) {
             registerStreamCompressionPlan(
                 ctx,
@@ -135,10 +140,20 @@ func normalizeBufferSize(raw: Int64): Int64 {
     raw
 }
 
-func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): String {
+class CompressionNegotiation {
+    let encoding: String
+    let identityRefused: Bool
+
+    init(encoding: String, identityRefused: Bool) {
+        this.encoding = encoding
+        this.identityRefused = identityRefused
+    }
+}
+
+func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): CompressionNegotiation {
     let acceptEncoding = acceptEncodingRaw.trimAscii().toAsciiLower()
     if (acceptEncoding.size == 0) {
-        return ""
+        return CompressionNegotiation("", false)
     }
 
     var qGzip: Int64 = -1
@@ -146,6 +161,7 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     var qZstd: Int64 = -1
     var qBrotli: Int64 = -1
     var qWildcard: Int64 = -1
+    var qIdentity: Int64 = -1
 
     for (part in acceptEncoding.split(",")) {
         let item = part.trimAscii()
@@ -178,6 +194,8 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
             qBrotli = quality
         } else if (name == "*") {
             qWildcard = quality
+        } else if (name == "identity") {
+            qIdentity = quality
         }
     }
 
@@ -208,37 +226,37 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     }
 
     if (qGzip <= 0 && qDeflate <= 0 && qZstd <= 0 && qBrotli <= 0) {
-        return ""
+        return CompressionNegotiation("", qIdentity == 0)
     }
 
     if (qBrotli > qGzip && qBrotli > qDeflate && qBrotli > qZstd) {
-        return "br"
+        return CompressionNegotiation("br", qIdentity == 0)
     }
     if (qZstd > qGzip && qZstd > qDeflate && qZstd > qBrotli) {
-        return "zstd"
+        return CompressionNegotiation("zstd", qIdentity == 0)
     }
 
     if (config.preferGzip) {
         if (qGzip >= qDeflate && qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
-            return "gzip"
+            return CompressionNegotiation("gzip", qIdentity == 0)
         }
         if (qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
-            return "deflate"
+            return CompressionNegotiation("deflate", qIdentity == 0)
         }
-        if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
-        if (qBrotli > 0) { return "br" }
-        return ""
+        if (qZstd >= qBrotli && qZstd > 0) { return CompressionNegotiation("zstd", qIdentity == 0) }
+        if (qBrotli > 0) { return CompressionNegotiation("br", qIdentity == 0) }
+        return CompressionNegotiation("", qIdentity == 0)
     }
 
     if (qDeflate >= qGzip && qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
-        return "deflate"
+        return CompressionNegotiation("deflate", qIdentity == 0)
     }
     if (qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
-        return "gzip"
+        return CompressionNegotiation("gzip", qIdentity == 0)
     }
-    if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
-    if (qBrotli > 0) { return "br" }
-    ""
+    if (qZstd >= qBrotli && qZstd > 0) { return CompressionNegotiation("zstd", qIdentity == 0) }
+    if (qBrotli > 0) { return CompressionNegotiation("br", qIdentity == 0) }
+    CompressionNegotiation("", qIdentity == 0)
 }
 
 // Parses RFC7231 qvalue in [0,1], returned as int in [0,1000].
