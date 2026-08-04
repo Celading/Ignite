@@ -337,6 +337,34 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testCompressMiddlewareRequiresEncodingWhenIdentityRefusedBelowMinBytes(): Unit {
+        let payload = "tiny"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
+        app.get("/identity-refused-small", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(303)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused-small",
+                "gzip;q=1, deflate;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "gzip")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareDeflateFallback(): Unit {
         let payload = "deflate-fallback-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
@@ -431,11 +459,11 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
-    public func testCompressMiddlewareRespectsZeroQValues(): Unit {
+    public func testCompressMiddlewareAllowsExplicitIdentityOverWildcardRefusal(): Unit {
         let payload = "no-compress-q-zero-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
         app.use(compressMiddleware(config: CompressConfig(minBytes: 8, skipIfNoGain: false)))
-        app.get("/q-zero", { ctx => ctx.sendString(payload) })
+        app.get("/explicit-identity", { ctx => ctx.sendString(payload) })
 
         let port = choosePort(439)
         let serverFuture = spawn {
@@ -443,13 +471,42 @@ public class CompressMiddlewareTestSuite {
         }
 
         try {
-            let resp = sendSnapshotWithRetry(
-                "http://127.0.0.1:${port}/q-zero",
-                "gzip;q=0, deflate;q=0, *;q=0"
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/explicit-identity",
+                "gzip;q=0, deflate;q=0, *;q=0, identity;q=1"
             )
             @Assert(resp.status, 200)
             @Assert(resp.encoding, "")
             @Assert(String.fromUtf8(resp.body), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRejectsWildcardOnlyIdentityRefusalOverRealHttp(): Unit {
+        let handlerRuns = ArrayList<String>()
+        let app = App(config: Config())
+        app.use(compressMiddleware())
+        app.get("/wildcard-identity-refused", { ctx =>
+            handlerRuns.add("representation")
+            _ = ctx.sendString("unacceptable")
+        })
+
+        let port = choosePort(443)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(port, "/wildcard-identity-refused", "*;q=0")
+            @Assert(resp.status, 406)
+            @Assert(resp.encoding, "")
+            @Assert(resp.body.size, Int64(0))
+            @Assert(handlerRuns.size, Int64(0))
         } finally {
             app.shutdown()
             try {
@@ -728,6 +785,40 @@ public class CompressMiddlewareTestSuite {
             @Assert(contains(resp.vary, "Accept-Encoding"), true)
             @Assert(resp.transferEncoding, "chunked")
             @Assert(resp.contentLength, "")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRequiresEncodingForUnknownStreamWhenIdentityRefused(): Unit {
+        let payload = "tiny-stream"
+        let app = App(config: Config())
+        app.use(compressMiddleware())
+        app.get("/identity-refused-stream", { ctx =>
+            _ = ctx.sendStream(
+                SendStreamBytesInput(toSendStreamByteArray(payload.toArray())),
+                contentType: "text/plain; charset=utf-8"
+            )
+        })
+
+        let port = choosePort(497)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused-stream",
+                "gzip;q=1, deflate;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "gzip")
+            @Assert(resp.transferEncoding, "chunked")
             @Assert(decompressBody(resp.body, resp.encoding), payload)
         } finally {
             app.shutdown()
