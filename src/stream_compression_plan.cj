@@ -3,7 +3,6 @@ package ignite
 import std.io.InputStream
 
 let IGNITE_STREAM_COMPRESSION_PLAN_LOCAL_KEY = "__ignite_stream_compression_plan"
-let IGNITE_TRUSTED_PRECOMPRESSED_ENCODING_LOCAL_KEY = "__ignite_trusted_precompressed_encoding"
 
 /// Minimal non-buffered compression plan for `sendStream(...)`-based responses.
 ///
@@ -53,13 +52,11 @@ func currentMandatoryStreamCompressionPlan(ctx: Ctx): ?StreamCompressionPlan {
 }
 
 func registerTrustedPrecompressedEncoding(ctx: Ctx, encoding: String): Unit {
-    ctx.setLocal(IGNITE_TRUSTED_PRECOMPRESSED_ENCODING_LOCAL_KEY, encoding.trimAscii().toAsciiLower())
+    ctx.registerTrustedPrecompressedEncodingForCurrentResponse(encoding)
 }
 
 func isTrustedPrecompressedEncoding(ctx: Ctx, encoding: String, plan: StreamCompressionPlan): Bool {
-    let normalized = encoding.trimAscii().toAsciiLower()
-    normalized.size > 0 && normalized == plan.encoding &&
-        (ctx.getLocal(IGNITE_TRUSTED_PRECOMPRESSED_ENCODING_LOCAL_KEY) ?? "") == normalized
+    ctx.consumeTrustedPrecompressedEncodingForCurrentResponse(encoding, plan.encoding)
 }
 
 func compressStreamPlanBytes(data: Array<UInt8>, plan: StreamCompressionPlan): Array<UInt8> {

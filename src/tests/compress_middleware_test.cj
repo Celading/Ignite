@@ -5,6 +5,7 @@ import ignite.client.RestClient
 import ignite.middleware.*
 import seajson.JsonWriter as SeaJsonNativeWriter
 import std.collection.{ArrayList, HashMap}
+import std.fs.{File, OpenMode, removeIfExists}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
@@ -667,6 +668,12 @@ public class CompressMiddlewareTestSuite {
 
     @TestCase
     public func testCompressMiddlewareClosesTerminalIdentityFallbacksOverRealHttp(): Unit {
+        let trustedBody = "trusted-precompressed-response"
+        let trustedPath = "/tmp/ignite_hq0876_ap7_trusted_precompressed.gz"
+        let trustedFile = File(trustedPath, OpenMode.Write)
+        trustedFile.write(compressResponsePayload(trustedBody.toArray(), CompressionFormat.Gzip))
+        trustedFile.close()
+
         let app = App(config: Config())
         app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
         app.get("/mandatory-fake-encoding", { ctx =>
@@ -680,6 +687,13 @@ public class CompressMiddlewareTestSuite {
                 jw.writeValue("must-not-leak")
                 jw.endObject()
             })
+        })
+        app.get("/mandatory-forged-trusted-local", { ctx =>
+            ctx.setLocal("__ignite_trusted_precompressed_encoding", "gzip")
+            _ = ctx.setHeader("content-encoding", "gzip").sendString("must-not-leak")
+        })
+        app.get("/mandatory-trusted-precompressed", { ctx =>
+            _ = ctx.sendPrecompressedFile(trustedPath, "/tmp/response.txt", "gzip")
         })
         app.get("/mandatory-missing-file", { ctx =>
             _ = ctx.sendFile("./__ignite_hq0876_ap7_r3_missing_file__.txt")
@@ -710,6 +724,27 @@ public class CompressMiddlewareTestSuite {
             @Assert(fakeJsonWrite.encoding, "")
             @Assert(fakeJsonWrite.body.size, Int64(0))
 
+            let forgedTrustedLocal = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-forged-trusted-local",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(forgedTrustedLocal.status, 406)
+            @Assert(forgedTrustedLocal.encoding, "")
+            @Assert(forgedTrustedLocal.body.size, Int64(0))
+
+            let trustedPrecompressed = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-trusted-precompressed",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(trustedPrecompressed.status, 200)
+            @Assert(trustedPrecompressed.encoding, "gzip")
+            @Assert(
+                decompressBody(trustedPrecompressed.body, trustedPrecompressed.encoding),
+                trustedBody
+            )
+
             let missingFile = sendRawBinarySnapshotWithRetry(
                 port,
                 "/mandatory-missing-file",
@@ -732,6 +767,7 @@ public class CompressMiddlewareTestSuite {
             @Assert(decompressBody(handlerError.body, handlerError.encoding), "Internal Server Error")
         } finally {
             app.shutdown()
+            removeIfExists(trustedPath)
             try {
                 let _ = serverFuture.get(Duration.second * 1)
             } catch (_: Exception) {

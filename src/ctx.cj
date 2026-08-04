@@ -132,6 +132,7 @@ public class Ctx {
     var _multipartForm: ?MultipartForm = None
     var _responseBody: ?String = None
     var _pathOverride: ?String = None
+    var _trustedPrecompressedEncoding: ?String = None
 
     public init(currentRequestCarrier: CurrentRequestCarrier, app: App) {
         this._currentRequestCarrier = currentRequestCarrier
@@ -1013,6 +1014,21 @@ public class Ctx {
             case text: String => _locals.add(key, text)
             case _ => let _ = _locals.remove(key)
         }
+    }
+
+    func registerTrustedPrecompressedEncodingForCurrentResponse(encoding: String): Unit {
+        _trustedPrecompressedEncoding = Some(encoding.trimAscii().toAsciiLower())
+    }
+
+    func consumeTrustedPrecompressedEncodingForCurrentResponse(
+        encoding: String,
+        expectedEncoding: String
+    ): Bool {
+        let normalized = encoding.trimAscii().toAsciiLower()
+        let expected = expectedEncoding.trimAscii().toAsciiLower()
+        let trusted = _trustedPrecompressedEncoding
+        _trustedPrecompressedEncoding = None
+        normalized.size > 0 && normalized == expected && trusted == Some(normalized)
     }
 
     func recordIoDriverProbeForHttpStream(
