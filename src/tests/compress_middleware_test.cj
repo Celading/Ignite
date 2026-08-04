@@ -666,6 +666,81 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testCompressMiddlewareClosesTerminalIdentityFallbacksOverRealHttp(): Unit {
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
+        app.get("/mandatory-fake-encoding", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity").sendString("must-not-leak")
+        })
+        app.get("/mandatory-fake-json-write", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity")
+            _ = ctx.jsonWrite({ jw =>
+                jw.startObject()
+                jw.writeName("msg")
+                jw.writeValue("must-not-leak")
+                jw.endObject()
+            })
+        })
+        app.get("/mandatory-missing-file", { ctx =>
+            _ = ctx.sendFile("./__ignite_hq0876_ap7_r3_missing_file__.txt")
+        })
+        app.get("/mandatory-handler-error", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity")
+            throw Exception("mandatory handler failure")
+        })
+
+        let port = choosePort(463)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let fakeEncoding = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-fake-encoding",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(fakeEncoding.status, 406)
+            @Assert(fakeEncoding.encoding, "")
+            @Assert(fakeEncoding.body.size, Int64(0))
+
+            let fakeJsonWrite = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-fake-json-write",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(fakeJsonWrite.status, 406)
+            @Assert(fakeJsonWrite.encoding, "")
+            @Assert(fakeJsonWrite.body.size, Int64(0))
+
+            let missingFile = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-missing-file",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(missingFile.status, 404)
+            @Assert(missingFile.encoding, "gzip")
+            @Assert(
+                decompressBody(missingFile.body, missingFile.encoding),
+                "File not found: ./__ignite_hq0876_ap7_r3_missing_file__.txt"
+            )
+
+            let handlerError = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-handler-error",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(handlerError.status, 500)
+            @Assert(handlerError.encoding, "gzip")
+            @Assert(decompressBody(handlerError.body, handlerError.encoding), "Internal Server Error")
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareWildcardUsesOnlyEnabledEncoding(): Unit {
         let payload = "wildcard-single-enabled-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
