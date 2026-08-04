@@ -73,6 +73,10 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
         }
         let encoding = negotiation.encoding
         let encodingMandatory = negotiation.identityRefused && encoding.size > 0
+        if (encodingMandatory && (ctx.header("range") ?? "").trimAscii().size > 0) {
+            _ = ctx.status(406).setHeader("content-length", "0").send(Array<UInt8>(0, repeat: 0))
+            return
+        }
         if (encoding.size > 0) {
             registerStreamCompressionPlan(
                 ctx,
@@ -82,7 +86,8 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                     config.setVaryHeader,
                     if (encodingMandatory) { false } else { config.skipIfNoGain },
                     nativeLevel,
-                    bufferSize
+                    bufferSize,
+                    mandatory: encodingMandatory
                 )
             )
         }
@@ -110,6 +115,9 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                     compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
                 }
             } catch (_: Exception) {
+                if (encodingMandatory) {
+                    _ = ctx.status(500).setHeader("content-length", "0").sendString("")
+                }
                 return
             }
 

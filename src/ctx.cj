@@ -395,6 +395,21 @@ public class Ctx {
     }
 
     public func send(data: Array<UInt8>): Ctx {
+        let alreadyEncoded = (responseHeader("content-encoding") ?? "").trimAscii().size > 0
+        if (!alreadyEncoded) {
+            if (let Some(plan) <- currentMandatoryStreamCompressionPlan(this)) {
+                try {
+                    let compressed = compressStreamPlanBytes(data, plan)
+                    applyStreamCompressionHeaders(plan)
+                    setResponseHeaderTracked("content-length", "${compressed.size}")
+                    _currentRequestCarrier.setResponseBytes(compressed)
+                } catch (_: Exception) {
+                    rejectMandatoryStreamCompressionFallback(500)
+                }
+                _responded = true
+                return this
+            }
+        }
         _currentRequestCarrier.setResponseBytes(data)
         _responded = true
         this
@@ -402,6 +417,12 @@ public class Ctx {
 
     /// Send a reusable body that was encoded or copied once at construction.
     public func sendPrepared(body: PreparedResponseBody): Ctx {
+        let alreadyEncoded = (responseHeader("content-encoding") ?? "").trimAscii().size > 0
+        if (!alreadyEncoded) {
+            if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+                return send(body.copyBytes())
+            }
+        }
         applyPreparedResponseBody(_currentRequestCarrier, body)
         _responded = true
         this
@@ -424,14 +445,7 @@ public class Ctx {
         if (let Some(plan) <- currentStreamCompressionPlan(this, contentLength)) {
             effectiveStream = wrapStreamWithCompressionPlan(stream, plan)
             effectiveContentLength = None
-            if (plan.setVaryHeader) {
-                let existingVary = responseHeader("vary") ?? ""
-                let mergedVary = mergeVaryAcceptEncoding(existingVary)
-                if (mergedVary != existingVary.trimAscii()) {
-                    setResponseHeaderTracked("vary", mergedVary)
-                }
-            }
-            setResponseHeaderTracked("content-encoding", plan.encoding)
+            applyStreamCompressionHeaders(plan)
         }
         match (effectiveContentLength) {
             case Some(size) =>
@@ -743,6 +757,15 @@ public class Ctx {
         if (let Some((resolvedPath, totalSize)) <- resolveExistingFile(filePath)) {
             recordIoDriverProbeForHttpStream("http-download", true)
             let contentType = detectMimeType(resolvedPath)
+            if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+                if ((responseHeader("content-encoding") ?? "").trimAscii().size == 0 && totalSize > 0) {
+                    return sendStream(
+                        FileSegmentInputStream(resolvedPath, start: 0, length: -1),
+                        contentType: contentType,
+                        contentLength: Some(totalSize)
+                    )
+                }
+            }
             setResponseHeaderTracked("content-type", contentType)
             setResponseHeaderTracked("content-length", "${totalSize}")
             setResponseHeaderTracked("accept-ranges", "bytes")
@@ -770,10 +793,19 @@ public class Ctx {
         originalPath: String,
         encoding: String
     ): Ctx {
+        let normalizedEncoding = encoding.trimAscii().toAsciiLower()
+        if (let Some(plan) <- currentMandatoryStreamCompressionPlan(this)) {
+            if (normalizedEncoding != plan.encoding) {
+                rejectMandatoryStreamCompressionFallback(406)
+                return this
+            }
+        }
+        if (let Some(_) <- resolveExistingFile(encodedPath)) {
+            setResponseHeaderTracked("content-encoding", normalizedEncoding)
+        }
         sendFile(encodedPath)
         if (_statusCode == 200) {
             setResponseHeaderTracked("content-type", detectMimeType(originalPath))
-            setResponseHeaderTracked("content-encoding", encoding)
             setResponseHeaderTracked("vary", "Accept-Encoding")
             setResponseHeaderTracked("accept-ranges", "none")
         }
@@ -791,6 +823,13 @@ public class Ctx {
     }
 
     public func sendFileRange(filePath: String): Ctx {
+        if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+            if ((header("range") ?? "").trimAscii().size > 0) {
+                rejectMandatoryStreamCompressionFallback(406)
+                return this
+            }
+            return sendFile(filePath)
+        }
         if (let Some((resolvedPath, totalSize)) <- resolveExistingFile(filePath)) {
             let contentType = detectMimeType(resolvedPath)
 
@@ -854,6 +893,10 @@ public class Ctx {
     public func transportWriter(): ResponseTransportWriter {
         _responded = true
         setLocal("__ignite_response_kind", "transport-stream")
+        if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+            rejectMandatoryStreamCompressionFallback(406)
+            return openDiscardingResponseTransportWriter()
+        }
         openResponseTransportWriter(_currentRequestCarrier)
     }
 
@@ -863,12 +906,20 @@ public class Ctx {
 
     public func writer(): ResponseWriter {
         _responded = true
+        if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+            rejectMandatoryStreamCompressionFallback(406)
+            return ResponseWriter(openDiscardingResponseTransportWriter())
+        }
         ResponseWriter(_currentRequestCarrier)
     }
 
     public func sse(): SseWriter {
         _responded = true
         setLocal("__ignite_response_kind", "sse")
+        if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
+            rejectMandatoryStreamCompressionFallback(406)
+            return SseWriter(_currentRequestCarrier, enabled: false)
+        }
         SseWriter(_currentRequestCarrier)
     }
 
@@ -1049,6 +1100,26 @@ public class Ctx {
         let headers = HttpHeaders()
         headers.add(key, value)
         _currentRequestCarrier.addResponseHeaders(headers)
+    }
+
+    func applyStreamCompressionHeaders(plan: StreamCompressionPlan): Unit {
+        if (plan.setVaryHeader) {
+            let existingVary = responseHeader("vary") ?? ""
+            let mergedVary = mergeVaryAcceptEncoding(existingVary)
+            if (mergedVary != existingVary.trimAscii()) {
+                setResponseHeaderTracked("vary", mergedVary)
+            }
+        }
+        setResponseHeaderTracked("content-encoding", plan.encoding)
+    }
+
+    func rejectMandatoryStreamCompressionFallback(statusCode: UInt16): Unit {
+        _currentRequestCarrier.setResponseStatus(statusCode)
+        _statusCode = statusCode
+        setResponseHeaderTracked("content-length", "0")
+        _currentRequestCarrier.setResponseBytes(Array<UInt8>(0, repeat: 0))
+        _responseBody = None
+        _responded = true
     }
 
     // ── Internal setup ──

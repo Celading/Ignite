@@ -15,6 +15,7 @@ public class StreamCompressionPlan {
     public let skipIfNoGain: Bool
     public let level: Int64
     public let bufferSize: Int64
+    public let mandatory: Bool
 
     public init(
         encoding: String,
@@ -22,13 +23,15 @@ public class StreamCompressionPlan {
         setVaryHeader: Bool,
         skipIfNoGain: Bool,
         level: Int64,
-        bufferSize: Int64
+        bufferSize: Int64,
+        mandatory!: Bool = false
     ) {
         this.encoding = encoding.trimAscii().toAsciiLower()
         this.minBytes = if (minBytes < 0) { 0 } else { minBytes }
         this.setVaryHeader = setVaryHeader
         this.skipIfNoGain = skipIfNoGain
         this.level = level
+        this.mandatory = mandatory
         this.bufferSize = if (bufferSize < 256) {
             256
         } else if (bufferSize > 65536) {
@@ -37,6 +40,30 @@ public class StreamCompressionPlan {
             bufferSize
         }
     }
+}
+
+func currentMandatoryStreamCompressionPlan(ctx: Ctx): ?StreamCompressionPlan {
+    if (let Some(plan) <- ctx.getLocalValue<StreamCompressionPlan>(IGNITE_STREAM_COMPRESSION_PLAN_LOCAL_KEY)) {
+        if (plan.mandatory && plan.encoding.size > 0) {
+            return Some(plan)
+        }
+    }
+    None
+}
+
+func compressStreamPlanBytes(data: Array<UInt8>, plan: StreamCompressionPlan): Array<UInt8> {
+    if (plan.encoding == "br") {
+        return compressBrotliResponsePayload(data)
+    }
+    if (plan.encoding == "zstd") {
+        return compressZstdResponsePayload(data)
+    }
+    let format = if (plan.encoding == "deflate") {
+        CompressionFormat.Deflate
+    } else {
+        CompressionFormat.Gzip
+    }
+    compressResponsePayload(data, format, level: plan.level)
 }
 
 func registerStreamCompressionPlan(ctx: Ctx, plan: StreamCompressionPlan): Unit {
