@@ -154,11 +154,11 @@ func nativeH2ClientOpenStreamedResponse(
     connection: NativeH2ClientConnection,
     request: NativeH2ClientRequest
 ): NativeH2ClientStreamedResponse {
-    if (connection.finished) {
+    if (connection.finished || connection.retiring) {
         throw Exception("native H2 client connection is finished")
     }
-    if (connection.activeStreamLease.isSome()) {
-        throw Exception("native H2 client connection already has a streamed response lease")
+    if (connection.activeStreamLease.isSome() || connection.activeMultiplexSession) {
+        throw Exception("native H2 client connection already has an active response owner")
     }
     if (!connection.initialized) {
         connection.transport.write(NATIVE_H2_PREFACE)
@@ -451,7 +451,11 @@ func nativeH2ClientCancelStreamLease(
             )
         )
     } catch (_: Exception) {}
-    nativeH2ClientFailStreamLease(connection, lease)
+    lease.released = true
+    connection.activeStreamLease = None
+    // Cancellation retires this Preview connection from reuse, but keeps the
+    // caller-owned transport alive long enough for an orderly GOAWAY.
+    connection.retiring = true
 }
 
 func nativeH2ClientFailStreamLease(

@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.2-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.7-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.8.2</span>                     │
+│                  <span style="color:#88C0D0;">Ignite v0.8.7</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.2</i></span> │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.7</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -49,17 +49,17 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.8.2 Preview)
+## Текущее состояние (0.8.7 Preview)
 
 - HTTP/1.1 без TLS по умолчанию использует native H1 Ignite; доступен явный откат через `stdx-default`.
-- Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами; WebSocket получил ограничение размера сообщений, строгую проверку frame и сериализацию concurrent writer.
-- Native H2 server/client поддерживают ограниченное мультиплексирование, flow control, lifecycle и текущий профиль h2spec репозитория, но остаются Preview без заявления о полной матрице браузеров, proxy и длительных нагрузок.
+- Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами; обычный `app.ws(...)` использует реализацию Ignite при выбранном Native H1.
+- Native H2 server/client поддерживают ограниченное мультиплексирование, полный HPACK Huffman, ограниченную динамическую таблицу, восстановление flow control и buffered/exact-length/unknown-length request stream; server по-прежнему требует явного cleartext prior-knowledge engine и не предоставляет H2 WebSocket.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - Native TLS client pool предоставляет ограниченный idle lifecycle и H1/H2 snapshot; native H1 показывает выбранный backend, причины fallback и счётчики соединений/запросов, а также подавляет ожидаемый шум timeout/reset.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.
 - Динамические gzip/deflate используют безопасные codec Ignite на Cangjie; Zstd и Brotli имеют отключённые по умолчанию RAW/RLE Preview, а статические `.zst/.br` файлы по-прежнему поддерживаются.
 
-Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
+Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md), а исполняемый путь Native H2 server/client — в [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐
@@ -633,7 +633,7 @@ let app = App(config: Config(
 app.listen("0.0.0.0", 443)
 ```
 
-**HTTP/2:** при включённом TLS сервер согласует `h2`. Проверка: `curl -sI --http2 https://localhost:3443/`.
+**HTTP/2:** стабильный stdx HTTPS-маршрут может согласовать `h2`; проверка: `curl -sI --http2 https://localhost:3443/`. Это не Native H2 ServerEngine Ignite: он сейчас принимает только cleartext prior knowledge.
 
 `enableTlsPrecheck` можно отключить (`false`) для отката на текущий путь "только default TLS build". Рекомендуется только для аварийной диагностики.
 

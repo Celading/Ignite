@@ -1,5 +1,12 @@
 package ignite.client
 
+import ignite.{App, Config, SocketServerEngineShell}
+import ignite.native_h2.{
+    NativeH2ClientConnection,
+    NativeH2ClientRequest,
+    nativeTlsH2RuntimeHook
+}
+import ignite.native_tls.openNativeTls13ClientTransport
 import std.collection.ArrayList
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
 import ignite.native_tls.{NativeTls13ClientConfig, NativeTls13ClientTransport}
@@ -24,6 +31,81 @@ class NativeTlsH2TestFrame {
 
 @Test
 public class NativeTlsH2WireInternalTestSuite {
+    @TestCase
+    public func testSocketServerEngineShellFeedsAcceptedTlsIntoNativeH2Runtime(): Unit {
+        let app = App(config: Config(
+            enableNetworkChangeNotice: false,
+            tlsCertFile: "testdata/native_tls/policy_leaf.pem",
+            tlsKeyFile: "testdata/native_tls/policy_leaf_key_pkcs8.pem",
+            enableTlsPrecheck: true
+        ))
+        app.get("/tls-h2-server-slow", { ctx =>
+            sleep(Duration.millisecond * 40)
+            let _ = ctx
+                .setHeader("x-ignite-native-tls-server", "h2")
+                .status(202)
+                .send(Array<UInt8>(70000, repeat: UInt8(0x73)))
+        })
+        app.get("/tls-h2-server-fast", { ctx =>
+            let _ = ctx
+                .setHeader("x-ignite-native-tls-server", "h2")
+                .status(203)
+                .send(Array<UInt8>(70000, repeat: UInt8(0x66)))
+        })
+        app.serverEngine(SocketServerEngineShell(
+            selectionLabel: "manual-opt-in-native-tls-h2",
+            nativeTlsH2RuntimeHook: nativeTlsH2RuntimeHook()
+        ))
+        let port = reserveNativeTlsH2ServerMainLoopbackPort()
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        sleep(Duration.millisecond * 120)
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.connect(timeout: Some(Duration.second * 3))
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        let handshake = openNativeTls13ClientTransport(
+            TcpSocketByteTransport(socket),
+            NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            )
+        )
+        try {
+            @Assert(handshake.negotiatedAlpn, "h2")
+            let connection = NativeH2ClientConnection(handshake.transport)
+            let responses = connection.sendBatch([
+                NativeH2ClientRequest(
+                    "GET", "https", NATIVE_TLS_H2_TEST_HOST,
+                    "/tls-h2-server-slow"
+                ),
+                NativeH2ClientRequest(
+                    "GET", "https", NATIVE_TLS_H2_TEST_HOST,
+                    "/tls-h2-server-fast"
+                )
+            ])
+            @Assert(responses.size, 2)
+            @Assert(responses[0].status, UInt16(202))
+            @Assert(responses[0].header("x-ignite-native-tls-server") ?? "", "h2")
+            @Assert(responses[0].body.size, 70000)
+            @Assert(responses[0].body[69999], UInt8(0x73))
+            @Assert(responses[1].status, UInt16(203))
+            @Assert(responses[1].header("x-ignite-native-tls-server") ?? "", "h2")
+            @Assert(responses[1].body.size, 70000)
+            @Assert(responses[1].body[69999], UInt8(0x66))
+            connection.finish()
+        } finally {
+            handshake.transport.close()
+            app.shutdown()
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
     @TestCase
     public func testRestClientCompletesNativeTlsH2WireTurn(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
@@ -246,6 +328,15 @@ public class NativeTlsH2WireInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+}
+
+func reserveNativeTlsH2ServerMainLoopbackPort(): UInt16 {
+    let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+    listener.bind()
+    let port = (listener.localAddress as IPSocketAddress)?.port ??
+        throw Exception("native TLS H2 server main test could not reserve loopback port")
+    listener.close()
+    port
 }
 
 func serveNativeTlsH2Fixture(socket: TcpSocket): Unit {

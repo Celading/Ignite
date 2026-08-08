@@ -15,6 +15,7 @@ import jinguissl.live.{
 import std.collection.{ArrayList, HashMap}
 import std.env.getVariable
 import std.io.InputStream
+import lisi.io.IoOperationContext
 import std.net.{
     IPSocketAddress,
     SocketException,
@@ -24,6 +25,11 @@ import std.net.{
 }
 import std.sync.Mutex
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+
+let SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT: Int64 = 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT: Int64 = 16 * 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_TOTAL_LIMIT: Int64 = 16 * 1024
+let SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT: Int64 = 100
 
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
 
@@ -107,7 +113,8 @@ func runSocketServerEngineShellListen(
     control: SocketServerEngineShellRuntimeControl,
     acceptedConnectionLimit: Int64,
     tlsAcceptedSessionReadyHook!:
-        ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
+        ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None,
+    nativeTlsH2RuntimeHook!: ?ServerNativeTlsH2RuntimeHook = None
 ): Unit {
     if (socketServerEngineShellTlsIngressEnabled(option)) {
         runSocketServerEngineShellTlsListen(
@@ -116,7 +123,8 @@ func runSocketServerEngineShellListen(
             onReady,
             control,
             acceptedConnectionLimit,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
         return
     }
@@ -158,7 +166,8 @@ func runSocketServerEngineShellTlsListen(
     onReady: ?((ServerEngineReadySignal) -> Unit),
     control: SocketServerEngineShellRuntimeControl,
     acceptedConnectionLimit: Int64,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("${option.addr}:${option.port}"))
     listener.bind()
@@ -174,7 +183,8 @@ func runSocketServerEngineShellTlsListen(
             app,
             acceptedConnectionLimit,
             control,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
     } finally {
         if (!listener.isClosed()) {
@@ -190,7 +200,8 @@ func serveSocketServerEngineShellTlsTurns(
     app: App,
     acceptedConnectionLimit: Int64,
     control: SocketServerEngineShellRuntimeControl,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     var acceptedConnectionCount: Int64 = 0
     while (
@@ -205,7 +216,8 @@ func serveSocketServerEngineShellTlsTurns(
                 listener,
                 option,
                 app,
-                tlsAcceptedSessionReadyHook
+                tlsAcceptedSessionReadyHook,
+                nativeTlsH2RuntimeHook
             )
             acceptedConnectionCount += 1
         } catch (e: Exception) {
@@ -221,7 +233,8 @@ func serveSocketServerEngineShellTlsTurn(
     listener: TcpServerSocket,
     option: ServerEngineListenOption,
     app: App,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let accepted = listener.accept()
     try {
@@ -229,7 +242,8 @@ func serveSocketServerEngineShellTlsTurn(
             accepted,
             option,
             app,
-            tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook
         )
     } finally {
         if (!accepted.isClosed()) {
@@ -242,7 +256,8 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
     accepted: TcpSocket,
     option: ServerEngineListenOption,
     app: App,
-    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook,
+    nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 ): Unit {
     let capture =
         option.captureJinguiAcceptedTransportSocketFragmentedTlsHandshakeClientHello(
@@ -297,6 +312,15 @@ func serveSocketServerEngineShellStableTlsH2SocketTurns(
             session,
             option,
             app
+        )
+        return
+    }
+    if (let Some(runtimeHook) <- nativeTlsH2RuntimeHook) {
+        runtimeHook(
+            accepted,
+            ready,
+            app,
+            accepted.remoteAddress.toString()
         )
         return
     }
@@ -571,24 +595,21 @@ func writeSocketServerEngineShellTlsH1StreamResponse(
             writer.takeHeadBytes()
         )
         if (plan.writesPayloadBody()) {
-            let buf = Array<Byte>(4096, repeat: 0)
-            while (true) {
-                let n = stream.read(buf)
-                if (n <= 0) {
-                    break
-                }
-                let chunk = Array<UInt8>(n, repeat: 0)
-                var i: Int64 = 0
-                while (i < n) {
-                    chunk[i] = UInt8(buf[i])
-                    i += 1
-                }
+            let transportWriter = openSinkBackedResponseTransportWriter({ chunk =>
                 writeSocketServerEngineShellTlsH1ApplicationData(
                     socket,
                     session,
                     writer.writeBodyChunk(chunk)
                 )
-            }
+            })
+            let _ = pumpIgniteInputStreamToResponseTransport(
+                stream,
+                transportWriter,
+                4096,
+                65536,
+                8,
+                IoOperationContext(false, false)
+            )
         }
         writeSocketServerEngineShellTlsH1ApplicationData(
             socket,
@@ -1058,7 +1079,12 @@ func socketServerEngineShellDecodeChunkedBody(
     let decoded = ArrayList<UInt8>()
     var cursor: Int64 = 0
     while (true) {
-        let sizeLineEnd = socketServerEngineShellEnsureCrlfLine(socket, network, cursor)
+        let sizeLineEnd = socketServerEngineShellEnsureCrlfLine(
+            socket,
+            network,
+            cursor,
+            SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT
+        )
         let chunkSize = socketServerEngineShellParseChunkSizeLine(network, cursor, sizeLineEnd)
         cursor = sizeLineEnd + 2
         if (chunkSize == 0) {
@@ -1125,10 +1151,29 @@ func socketServerEngineShellConsumeChunkedTrailers(
     start: Int64
 ): Int64 {
     var cursor = start
+    var totalBytes: Int64 = 0
+    var fieldCount: Int64 = 0
     while (true) {
-        let lineEnd = socketServerEngineShellEnsureCrlfLine(socket, network, cursor)
+        let lineEnd = socketServerEngineShellEnsureCrlfLine(
+            socket,
+            network,
+            cursor,
+            SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT
+        )
+        totalBytes += lineEnd - cursor + 2
+        if (totalBytes > SOCKET_SERVER_ENGINE_SHELL_TRAILER_TOTAL_LIMIT) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunked trailers exceed the aggregate metadata limit"
+            )
+        }
         if (lineEnd == cursor) {
             return lineEnd + 2
+        }
+        fieldCount += 1
+        if (fieldCount > SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunked trailers exceed the field-count limit"
+            )
         }
         socketServerEngineShellValidateChunkedTrailerLine(network, cursor, lineEnd)
         cursor = lineEnd + 2
@@ -1163,12 +1208,23 @@ func socketServerEngineShellValidateChunkedTrailerLine(
 func socketServerEngineShellEnsureCrlfLine(
     socket: TcpSocket,
     network: ArrayList<UInt8>,
-    start: Int64
+    start: Int64,
+    maxLineBytes: Int64
 ): Int64 {
     while (true) {
         let found = socketServerEngineShellFindCrlf(network, start)
         if (found >= 0) {
+            if (found - start > maxLineBytes) {
+                throw SocketServerEngineShellException(
+                    "socket server engine shell chunk metadata line exceeds the configured limit"
+                )
+            }
             return found
+        }
+        if (network.size - start > maxLineBytes + 1) {
+            throw SocketServerEngineShellException(
+                "socket server engine shell chunk metadata line exceeds the configured limit"
+            )
         }
         if (socketServerEngineShellReadMore(socket, network) <= 0) {
             throw SocketServerEngineShellException(
@@ -1488,23 +1544,20 @@ func writeSocketServerEngineShellStreamResponse(
             socket.write(head)
         }
         if (plan.writesPayloadBody()) {
-            let buf = Array<Byte>(4096, repeat: 0)
-            while (true) {
-                let n = stream.read(buf)
-                if (n <= 0) {
-                    break
-                }
-                let chunk = Array<UInt8>(n, repeat: 0)
-                var i: Int64 = 0
-                while (i < n) {
-                    chunk[i] = UInt8(buf[i])
-                    i += 1
-                }
+            let transportWriter = openSinkBackedResponseTransportWriter({ chunk =>
                 let wire = writer.writeBodyChunk(chunk)
                 if (wire.size > 0) {
                     socket.write(wire)
                 }
-            }
+            })
+            let _ = pumpIgniteInputStreamToResponseTransport(
+                stream,
+                transportWriter,
+                4096,
+                65536,
+                8,
+                IoOperationContext(false, false)
+            )
         }
         let tail = writer.finish()
         if (tail.size > 0) {
@@ -1647,7 +1700,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     let remoteAddress: String
     let requestHeadersValue: HttpHeaders
     let requestBodyBytesValue: Array<UInt8>
-    let responseHeadersValue: HashMap<String, String>
+    let responseHeadersValue: HashMap<String, ArrayList<String>>
     let nativeWebSocketSocket: ?TcpSocket
     var responseBodyBytesValue: Array<UInt8> = Array<UInt8>(0, repeat: 0)
     var responseBodyAppendBufferValue: ?ArrayList<UInt8> = None
@@ -1667,7 +1720,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.remoteAddress = remoteAddress
         this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request)
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
-        this.responseHeadersValue = HashMap<String, String>()
+        this.responseHeadersValue = HashMap<String, ArrayList<String>>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
         this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
         this.responseBodyAppendBufferValue = None
@@ -1779,13 +1832,17 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func setResponseHeader(key: String, value: String): Unit {
-        responseHeadersValue.add(key.trimAscii().toAsciiLower(), value.trimAscii())
+        validateSocketHttp11ResponseHeaderName(key)
+        validateSocketHttp11ResponseHeaderValue(value)
+        let values = ArrayList<String>()
+        values.add(value.trimAscii())
+        responseHeadersValue.add(key.toAsciiLower(), values)
     }
 
     public override func addResponseHeaders(headers: HttpHeaders): Unit {
         for ((name, values) in headers) {
             for (value in values) {
-                setResponseHeader(name, value)
+                appendResponseHeader(name, value)
             }
         }
     }
@@ -1817,19 +1874,38 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public func responseHeader(name: String): ?String {
-        responseHeadersValue.get(name.trimAscii().toAsciiLower())
+        match (responseHeadersValue.get(name.trimAscii().toAsciiLower())) {
+            case Some(values) =>
+                if (values.size == 0) { None } else { Some(values[values.size - 1]) }
+            case None => None
+        }
     }
 
     public func responseHeadersForSocket(): Array<SocketHttp11Header> {
         let out = ArrayList<SocketHttp11Header>()
-        for ((name, value) in responseHeadersValue) {
+        for ((name, values) in responseHeadersValue) {
             let normalized = name.trimAscii().toAsciiLower()
             if (normalized == "content-length" || normalized == "transfer-encoding" || normalized == "connection") {
                 continue
             }
-            out.add(SocketHttp11Header(normalized, value.trimAscii()))
+            for (value in values) {
+                out.add(SocketHttp11Header(normalized, value))
+            }
         }
         out.toArray()
+    }
+
+    func appendResponseHeader(key: String, value: String): Unit {
+        validateSocketHttp11ResponseHeaderName(key)
+        validateSocketHttp11ResponseHeaderValue(value)
+        let normalized = key.toAsciiLower()
+        match (responseHeadersValue.get(normalized)) {
+            case Some(values) => values.add(value.trimAscii())
+            case None =>
+                let values = ArrayList<String>()
+                values.add(value.trimAscii())
+                responseHeadersValue.add(normalized, values)
+        }
     }
 
     public func responseBodyBytes(): Array<UInt8> {

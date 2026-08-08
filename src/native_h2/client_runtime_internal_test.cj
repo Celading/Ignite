@@ -533,6 +533,9 @@ public class NativeH2ClientRuntimeInternalTestSuite {
                 @Assert(reset.frameType, UInt8(0x3))
                 @Assert(reset.streamId, streamId)
                 @Assert(nativeH2ClientDecode32Bit(reset.payload, 0), NATIVE_H2_ERROR_CANCEL)
+                let goAway = nativeH2ReadFrame(accepted)
+                @Assert(goAway.frameType, UInt8(0x7))
+                @Assert(goAway.streamId, 0)
             } finally {
                 try { accepted.close() } catch (_: Exception) {}
             }
@@ -560,6 +563,7 @@ public class NativeH2ClientRuntimeInternalTestSuite {
                 rejected = true
             }
             @Assert(rejected, true)
+            connection.finish()
             let _ = serverFuture.get(Duration.second * 2)
         } finally {
             try { socket.close() } catch (_: Exception) {}

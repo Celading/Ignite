@@ -5,6 +5,9 @@ import std.collection.ArrayList
 public enum SocketHttp11WriterErrorCode <: Equatable<SocketHttp11WriterErrorCode> & ToString {
     | InvalidStatusCode
     | InvalidKnownLength
+    | InvalidHeaderName
+    | InvalidHeaderValue
+    | InvalidReasonPhrase
     | ReservedProtocolHeader
     | BodyForbiddenByStatus
     | InvalidState
@@ -24,12 +27,15 @@ public enum SocketHttp11WriterErrorCode <: Equatable<SocketHttp11WriterErrorCode
         match (this) {
             case InvalidStatusCode => 0
             case InvalidKnownLength => 1
-            case ReservedProtocolHeader => 2
-            case BodyForbiddenByStatus => 3
-            case InvalidState => 4
-            case BodyNotAllowed => 5
-            case KnownLengthOverflow => 6
-            case KnownLengthIncomplete => 7
+            case InvalidHeaderName => 2
+            case InvalidHeaderValue => 3
+            case InvalidReasonPhrase => 4
+            case ReservedProtocolHeader => 5
+            case BodyForbiddenByStatus => 6
+            case InvalidState => 7
+            case BodyNotAllowed => 8
+            case KnownLengthOverflow => 9
+            case KnownLengthIncomplete => 10
         }
     }
 
@@ -37,6 +43,9 @@ public enum SocketHttp11WriterErrorCode <: Equatable<SocketHttp11WriterErrorCode
         match (this) {
             case InvalidStatusCode => "INVALID_STATUS_CODE"
             case InvalidKnownLength => "INVALID_KNOWN_LENGTH"
+            case InvalidHeaderName => "INVALID_HEADER_NAME"
+            case InvalidHeaderValue => "INVALID_HEADER_VALUE"
+            case InvalidReasonPhrase => "INVALID_REASON_PHRASE"
             case ReservedProtocolHeader => "RESERVED_PROTOCOL_HEADER"
             case BodyForbiddenByStatus => "BODY_FORBIDDEN_BY_STATUS"
             case InvalidState => "INVALID_STATE"
@@ -157,7 +166,7 @@ public class SocketHttp11ResponseWriteOption {
     public let closeAfterWrite: Bool
 
     public init(reasonPhrase!: String = "", closeAfterWrite!: Bool = false) {
-        this.reasonPhrase = reasonPhrase.trimAscii()
+        this.reasonPhrase = reasonPhrase
         this.closeAfterWrite = closeAfterWrite
     }
 }
@@ -414,6 +423,7 @@ public func buildSocketHttp11ResponseWritePlan(
     } else {
         0
     }
+    validateSocketHttp11ReasonPhrase(option.reasonPhrase)
     let reasonPhrase = resolveSocketHttp11ReasonPhrase(statusCode, option.reasonPhrase)
     let closeAfterWrite = request.closeAfterResponse || option.closeAfterWrite
     let responseHeaders = buildSocketHttp11PlannedResponseHeaders(
@@ -448,7 +458,9 @@ public func buildSocketHttp11ResponseWritePlan(
 func normalizeSocketHttp11ResponseHeaders(headers: Array<SocketHttp11Header>): Array<SocketHttp11Header> {
     let out = ArrayList<SocketHttp11Header>()
     for (header in headers) {
-        let name = header.name.trimAscii().toAsciiLower()
+        validateSocketHttp11ResponseHeaderName(header.name)
+        validateSocketHttp11ResponseHeaderValue(header.value)
+        let name = header.name.toAsciiLower()
         if (isSocketHttp11ReservedResponseHeader(name)) {
             throw SocketHttp11WriterException(
                 SocketHttp11WriterErrorCode.ReservedProtocolHeader,
@@ -458,6 +470,52 @@ func normalizeSocketHttp11ResponseHeaders(headers: Array<SocketHttp11Header>): A
         out.add(SocketHttp11Header(name, header.value.trimAscii()))
     }
     out.toArray()
+}
+
+func validateSocketHttp11ResponseHeaderName(name: String): Unit {
+    let bytes = name.toArray()
+    if (bytes.size == 0) {
+        throw SocketHttp11WriterException(
+            SocketHttp11WriterErrorCode.InvalidHeaderName,
+            "socket HTTP/1.1 response header name cannot be empty"
+        )
+    }
+    for (value in bytes) {
+        if (!socketHttp11TokenByteAllowed(value)) {
+            throw SocketHttp11WriterException(
+                SocketHttp11WriterErrorCode.InvalidHeaderName,
+                "socket HTTP/1.1 response header name contains an invalid token byte"
+            )
+        }
+    }
+}
+
+func validateSocketHttp11ResponseHeaderValue(value: String): Unit {
+    validateSocketHttp11ResponseMetadataText(
+        value,
+        SocketHttp11WriterErrorCode.InvalidHeaderValue,
+        "socket HTTP/1.1 response header value contains a forbidden control byte"
+    )
+}
+
+func validateSocketHttp11ReasonPhrase(value: String): Unit {
+    validateSocketHttp11ResponseMetadataText(
+        value,
+        SocketHttp11WriterErrorCode.InvalidReasonPhrase,
+        "socket HTTP/1.1 response reason phrase contains a forbidden control byte"
+    )
+}
+
+func validateSocketHttp11ResponseMetadataText(
+    value: String,
+    code: SocketHttp11WriterErrorCode,
+    message: String
+): Unit {
+    for (byte in value.toArray()) {
+        if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
+            throw SocketHttp11WriterException(code, message)
+        }
+    }
 }
 
 func resolveSocketHttp11KnownLength(bodyMode: SocketHttp11ResponseBodyMode, declaredBodyBytes: Int64): Int64 {

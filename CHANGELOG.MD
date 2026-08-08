@@ -3,6 +3,16 @@
 ## Ignite `0800`
 > 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
 
+### v0.8.7 `Ignite Preview`
+
+- `+特性` Native H2 补齐 RFC 7541 HPACK Huffman 256-octet 解码/按收益编码、EOS/padding 校验、敏感 Header never-index 与有界动态表
+- `+特性` Native TLS H2 ingress 接入现有 runtime，并补齐 H2 response streaming、graceful drain 和有界 multiplex session
+- `+特性` 显式 cleartext H2 session 支持 buffered、精确长度与 EOF 终止的 unknown-length one-pass request stream，并保持有界预取、取消和连接淘汰语义
+- `+特性` 消费 lisi transport contract，覆盖 stream/lifecycle/backpressure 适配边界；压缩路径收紧 identity refusal 与 private precompressed representation trust
+- `+验证` 本版由已接受开发检查点 `d306fad` 提升；发布分支在提交前重新运行 clean update、build、完整串行测试与公开泄漏审计
+- `=边界` TLS multiplex session、系统 CA、H2 WebSocket、完整 Brotli/Zstd entropy coding、最终调度/default flip、tag、Release、main merge与 LTS 均未声明完成
+- `=杂项` 包版本、框架常量、Banner、Benchmark、三语 README、0800 Manual 与双语 changelog 更新到 `0.8.7`
+
 ### v0.8.2 `Ignite Preview`
 
 - `+特性` Native TLS H1/H2 Client pool 增加默认 30 秒 idle 上限、同策略连接复用、过期/关闭淘汰与实例级生命周期快照

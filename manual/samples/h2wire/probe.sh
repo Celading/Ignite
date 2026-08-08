@@ -9,7 +9,6 @@ TLS_GUARD_LOG_ROOT="/tmp/ignite_sample_h2wire_tls_guard"
 VERIFY_SCRIPT="${ROOT}/manual/samples/h2wire/verify_http2.mjs"
 GUARD_STAGES_RAW="${IGNITE_H2_TLS_GUARD_STAGES:-precheck,cert_decode,mainline_build}"
 GUARD_ONLY="${IGNITE_H2_TLS_GUARD_ONLY:-0}"
-READY_MARKER="[sample/h2wire] listening on https://127.0.0.1:18444"
 
 ensure_cangjie_env() {
   if ! command -v cjpm >/dev/null 2>&1 || ! command -v cjc >/dev/null 2>&1; then
@@ -46,8 +45,20 @@ detect_stdx_static() {
   fi
 
   if [[ -n "${CANGJIE_STDX_PATH:-}" && -d "${CANGJIE_STDX_PATH}" ]]; then
+    local os_token=""
+    local arch_token=""
+    case "$(uname -s)" in
+      Darwin) os_token="darwin" ;;
+      Linux) os_token="linux" ;;
+    esac
+    case "$(uname -m)" in
+      arm64|aarch64) arch_token="aarch64" ;;
+      x86_64|amd64) arch_token="x86_64" ;;
+    esac
+
     local hit
-    hit="$(find "${CANGJIE_STDX_PATH}" -maxdepth 4 -type d -path "*/cj_stdx_*_llvm/static" | head -n 1)"
+    hit="$(find "${CANGJIE_STDX_PATH}" -maxdepth 4 -type d -name static \
+      -path "*${os_token}*${arch_token}*" -exec test -d '{}/stdx' \; -print | head -n 1)"
     if [[ -n "${hit}" ]]; then
       printf '%s\n' "${hit}"
       return 0
@@ -101,11 +112,9 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" && -f "${ROOT}/../_helper/testdata/tls/server-cert-a.pem" ]]; then
-  export IGNITE_SAMPLE_TLS_CERT="${ROOT}/../_helper/testdata/tls/server-cert-a.pem"
-fi
-if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/../_helper/testdata/tls/server-key-a.pem" ]]; then
-  export IGNITE_SAMPLE_TLS_KEY="${ROOT}/../_helper/testdata/tls/server-key-a.pem"
+if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" || -z "${IGNITE_SAMPLE_TLS_KEY:-}" ]]; then
+  echo "[sample/h2wire] set IGNITE_SAMPLE_TLS_CERT and IGNITE_SAMPLE_TLS_KEY before running the TLS probe." >&2
+  exit 1
 fi
 
 ensure_cangjie_env
@@ -130,10 +139,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 
@@ -169,62 +178,33 @@ fi
 "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID="$!"
 
-listener_ready=0
-for _ in $(seq 1 50); do
+for _ in $(seq 1 10); do
   if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
     failure_kind="$(startup_failure_kind)"
     if [[ "${failure_kind}" == "listen_permission_denied" ]]; then
-      echo "[sample/h2wire] server exited before listener-ready because bind permission was denied." >&2
+      echo "[sample/h2wire] server exited before the H2 probe because bind permission was denied." >&2
       echo "[sample/h2wire] this is sandbox/host noise, not a TLS-handshake blocker." >&2
     else
-      echo "[sample/h2wire] server exited before listener-ready banner." >&2
+      echo "[sample/h2wire] server exited before the H2 probe." >&2
       echo "[sample/h2wire] this means startup failed before any client handshake could be attempted." >&2
     fi
     print_server_log_excerpt
     exit 1
   fi
-  if [[ -f "${SERVER_LOG}" ]] && grep -Fq "${READY_MARKER}" "${SERVER_LOG}"; then
-    listener_ready=1
-    break
-  fi
   sleep 0.1
 done
 
-if [[ "${listener_ready}" != "1" ]]; then
-  failure_kind="$(startup_failure_kind)"
-  if [[ "${failure_kind}" == "listen_permission_denied" ]]; then
-    echo "[sample/h2wire] listener-ready banner never appeared because bind permission was denied." >&2
-    echo "[sample/h2wire] this is sandbox/host noise, not a TLS-handshake blocker." >&2
-  else
-    echo "[sample/h2wire] listener-ready banner never appeared." >&2
-  fi
+if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
+  echo "[sample/h2wire] server exited before the Node H2 probe." >&2
   print_server_log_excerpt
   exit 1
 fi
 
-ready=0
-for _ in $(seq 1 5); do
-  if curl -k --http2 --silent --fail "https://127.0.0.1:18444/health" >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.2
-done
-
-if [[ "${ready}" != "1" ]]; then
-  if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
-    echo "[sample/h2wire] listener-ready banner appeared, but the first TLS handshake crashed the server." >&2
-    echo "[sample/h2wire] this is the deeper runtime blocker after the stale guard is removed from the default path." >&2
-  else
-    echo "[sample/h2wire] listener-ready banner appeared, but the health probe still failed while the server stayed alive." >&2
-  fi
+if ! node "${VERIFY_SCRIPT}"; then
+  sleep 1
+  echo "[sample/h2wire] Node HTTP/2 probe failed; server diagnostics follow." >&2
   print_server_log_excerpt
   exit 1
 fi
-
-node "${VERIFY_SCRIPT}"
 
 echo "[sample/h2wire] probe passed. server log: ${SERVER_LOG}"

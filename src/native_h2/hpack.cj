@@ -94,6 +94,30 @@ class NativeH2HpackDynamicTable {
         entries[entries.size - 1 - offset]
     }
 
+    func exactIndex(name: String, value: String): ?Int64 {
+        var offset: Int64 = 0
+        while (offset < entries.size) {
+            let entry = entries[entries.size - 1 - offset]
+            if (entry.name == name && entry.value == value) {
+                return Some(NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX + offset)
+            }
+            offset += 1
+        }
+        None
+    }
+
+    func nameIndex(name: String): ?Int64 {
+        var offset: Int64 = 0
+        while (offset < entries.size) {
+            let entry = entries[entries.size - 1 - offset]
+            if (entry.name == name) {
+                return Some(NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX + offset)
+            }
+            offset += 1
+        }
+        None
+    }
+
     func evictToLimit(): Unit {
         while (currentSize > maxSize && entries.size > 0) {
             let removed = entries.remove(at: Int64(0))
@@ -102,17 +126,169 @@ class NativeH2HpackDynamicTable {
     }
 
     func entrySize(entry: NativeH2HpackField): Int64 {
-        entry.name.size + entry.value.size + 32
+        entry.name.toArray().size + entry.value.toArray().size + 32
     }
+}
+
+class NativeH2HpackEncoderState {
+    let dynamicTable: NativeH2HpackDynamicTable
+    var pendingMinimumSize: ?Int64 = None
+    var pendingFinalSize: ?Int64 = None
+
+    init(maxDynamicTableSize!: Int64 = NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE) {
+        dynamicTable = NativeH2HpackDynamicTable(
+            NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
+        )
+        dynamicTable.updateMaxSize(
+            nativeH2HpackBoundEncoderTableSize(maxDynamicTableSize)
+        )
+    }
+
+    func updatePeerMaxSize(value: Int64): Unit {
+        let bounded = nativeH2HpackBoundEncoderTableSize(value)
+        if (bounded == dynamicTable.maxSize) {
+            return
+        }
+        if (let Some(currentMinimum) <- pendingMinimumSize) {
+            if (bounded < currentMinimum) {
+                pendingMinimumSize = Some(bounded)
+            }
+        } else {
+            pendingMinimumSize = Some(bounded)
+        }
+        pendingFinalSize = Some(bounded)
+        dynamicTable.updateMaxSize(bounded)
+    }
+
+    func beginHeaderBlock(out: ArrayList<UInt8>): Unit {
+        if (let Some(finalSize) <- pendingFinalSize) {
+            if (let Some(minimumSize) <- pendingMinimumSize) {
+                if (minimumSize != finalSize) {
+                    nativeH2HpackAppendInteger(out, minimumSize, 5, UInt8(0x20))
+                }
+            }
+            nativeH2HpackAppendInteger(out, finalSize, 5, UInt8(0x20))
+        }
+        pendingMinimumSize = None
+        pendingFinalSize = None
+    }
+
+    func appendField(out: ArrayList<UInt8>, name: String, value: String): Unit {
+        if (let Some(index) <- nativeH2HpackExactIndex(name, value, dynamicTable)) {
+            nativeH2HpackAppendInteger(out, index, 7, UInt8(0x80))
+            return
+        }
+        let nameIndex = nativeH2HpackNameIndex(name, dynamicTable)
+        if (nativeH2HpackSensitiveName(name)) {
+            nativeH2HpackAppendLiteral(
+                out, name, value, nameIndex, 4, UInt8(0x10)
+            )
+            return
+        }
+        let field = NativeH2HpackField(name, value)
+        if (nativeH2HpackShouldIndex(name) &&
+            dynamicTable.entrySize(field) <= dynamicTable.maxSize) {
+            nativeH2HpackAppendLiteral(
+                out, name, value, nameIndex, 6, UInt8(0x40)
+            )
+            dynamicTable.add(name, value)
+            return
+        }
+        nativeH2HpackAppendLiteral(out, name, value, nameIndex, 4, UInt8(0))
+    }
+
+    func dynamicEntryCount(): Int64 {
+        dynamicTable.entries.size
+    }
+}
+
+func nativeH2HpackBoundEncoderTableSize(value: Int64): Int64 {
+    if (value < 0) {
+        throw Exception("native H2 HPACK encoder table size cannot be negative")
+    }
+    if (value > NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE) {
+        return NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
+    }
+    value
+}
+
+func nativeH2HpackExactIndex(
+    name: String,
+    value: String,
+    dynamicTable: NativeH2HpackDynamicTable
+): ?Int64 {
+    var index: Int64 = 1
+    while (index < NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX) {
+        let field = nativeH2HpackStaticField(index)
+        if (field.name == name && field.value == value) {
+            return Some(index)
+        }
+        index += 1
+    }
+    dynamicTable.exactIndex(name, value)
+}
+
+func nativeH2HpackNameIndex(
+    name: String,
+    dynamicTable: NativeH2HpackDynamicTable
+): ?Int64 {
+    if (let Some(index) <- dynamicTable.nameIndex(name)) {
+        return Some(index)
+    }
+    var index: Int64 = 1
+    while (index < NATIVE_H2_HPACK_FIRST_DYNAMIC_INDEX) {
+        if (nativeH2HpackStaticField(index).name == name) {
+            return Some(index)
+        }
+        index += 1
+    }
+    None
+}
+
+func nativeH2HpackAppendLiteral(
+    out: ArrayList<UInt8>,
+    name: String,
+    value: String,
+    nameIndex: ?Int64,
+    prefixBits: Int64,
+    firstPrefix: UInt8
+): Unit {
+    match (nameIndex) {
+        case Some(index) =>
+            nativeH2HpackAppendInteger(out, index, prefixBits, firstPrefix)
+        case None =>
+            nativeH2HpackAppendInteger(out, 0, prefixBits, firstPrefix)
+            nativeH2HpackAppendString(out, name, true)
+    }
+    nativeH2HpackAppendString(out, value, true)
+}
+
+func nativeH2HpackSensitiveName(name: String): Bool {
+    name == "authorization" || name == "proxy-authorization" ||
+        name == "cookie" || name == "set-cookie"
+}
+
+func nativeH2HpackShouldIndex(name: String): Bool {
+    name != "date" && name != "content-length"
 }
 
 class NativeH2HpackDecoderState {
     let dynamicTable: NativeH2HpackDynamicTable
+    let maxHeaderListSize: Int64
 
     init() {
         dynamicTable = NativeH2HpackDynamicTable(
             NATIVE_H2_HPACK_DEFAULT_DYNAMIC_TABLE_SIZE
         )
+        maxHeaderListSize = 65536
+    }
+
+    init(maxDynamicTableSize: Int64, maxHeaderListSize: Int64) {
+        if (maxHeaderListSize <= 0) {
+            nativeH2HpackFailure("native H2 HPACK header-list limit must be positive")
+        }
+        dynamicTable = NativeH2HpackDynamicTable(maxDynamicTableSize)
+        this.maxHeaderListSize = maxHeaderListSize
     }
 
     func dynamicEntryCount(): Int64 {
@@ -120,7 +296,7 @@ class NativeH2HpackDecoderState {
     }
 
     func decodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHead {
-        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable, maxHeaderListSize)
         var method = ""
         var scheme = ""
         var authority = ""
@@ -182,7 +358,7 @@ class NativeH2HpackDecoderState {
     }
 
     func decodeRequestTrailers(payload: Array<UInt8>): Array<NativeH2Header> {
-        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable, maxHeaderListSize)
         let trailers = ArrayList<NativeH2Header>()
         for (field in fields) {
             if (field.name.startsWith(":")) {
@@ -196,7 +372,7 @@ class NativeH2HpackDecoderState {
     }
 
     func decodeResponseHead(payload: Array<UInt8>): NativeH2DecodedResponseHead {
-        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable, maxHeaderListSize)
         var statusText = ""
         var regularHeaderSeen = false
         let headers = ArrayList<NativeH2Header>()
@@ -227,7 +403,7 @@ class NativeH2HpackDecoderState {
     }
 
     func decodeResponseTrailers(payload: Array<UInt8>): Array<NativeH2Header> {
-        let fields = nativeH2HpackDecodeFields(payload, dynamicTable)
+        let fields = nativeH2HpackDecodeFields(payload, dynamicTable, maxHeaderListSize)
         let trailers = ArrayList<NativeH2Header>()
         for (field in fields) {
             if (field.name.startsWith(":")) {
@@ -299,11 +475,13 @@ func nativeH2DecodeRequestHead(payload: Array<UInt8>): NativeH2DecodedRequestHea
 
 func nativeH2HpackDecodeFields(
     payload: Array<UInt8>,
-    dynamicTable: NativeH2HpackDynamicTable
+    dynamicTable: NativeH2HpackDynamicTable,
+    maxHeaderListSize: Int64
 ): Array<NativeH2HpackField> {
     let out = ArrayList<NativeH2HpackField>()
     var cursor: Int64 = 0
     var tableUpdateAllowed = true
+    var headerListSize: Int64 = 0
     while (cursor < payload.size) {
         let lead = Int64(payload[cursor])
         if ((lead & 0x80) != 0) {
@@ -311,14 +489,19 @@ func nativeH2HpackDecodeFields(
             if (indexed.value <= 0) {
                 nativeH2HpackFailure("native H2 HPACK indexed field requires index >= 1")
             }
-            out.add(nativeH2HpackFieldByIndex(indexed.value, dynamicTable))
+            let field = nativeH2HpackFieldByIndex(indexed.value, dynamicTable)
+            headerListSize = nativeH2HpackAppendDecodedField(
+                out, field, headerListSize, maxHeaderListSize
+            )
             cursor = indexed.nextCursor
             tableUpdateAllowed = false
             continue
         }
         if ((lead & 0x40) != 0) {
             let decoded = nativeH2HpackDecodeLiteral(payload, cursor, 6, dynamicTable)
-            out.add(decoded.field)
+            headerListSize = nativeH2HpackAppendDecodedField(
+                out, decoded.field, headerListSize, maxHeaderListSize
+            )
             dynamicTable.add(decoded.field.name, decoded.field.value)
             cursor = decoded.nextCursor
             tableUpdateAllowed = false
@@ -336,11 +519,29 @@ func nativeH2HpackDecodeFields(
             continue
         }
         let decoded = nativeH2HpackDecodeLiteral(payload, cursor, 4, dynamicTable)
-        out.add(decoded.field)
+        headerListSize = nativeH2HpackAppendDecodedField(
+            out, decoded.field, headerListSize, maxHeaderListSize
+        )
         cursor = decoded.nextCursor
         tableUpdateAllowed = false
     }
     out.toArray()
+}
+
+func nativeH2HpackAppendDecodedField(
+    out: ArrayList<NativeH2HpackField>,
+    field: NativeH2HpackField,
+    currentSize: Int64,
+    maxHeaderListSize: Int64
+): Int64 {
+    let fieldSize = field.name.toArray().size + field.value.toArray().size + 32
+    if (currentSize > maxHeaderListSize - fieldSize) {
+        nativeH2HpackFailure(
+            "native H2 HPACK decoded header list exceeds configured limit"
+        )
+    }
+    out.add(field)
+    currentSize + fieldSize
 }
 
 func nativeH2HpackDecodeLiteral(
@@ -414,7 +615,7 @@ func nativeH2HpackDecodeString(
         nativeH2HpackFailure("native H2 HPACK string payload is truncated")
     }
     let text = if (huffman) {
-        nativeH2HpackDecodeVisibleAsciiHuffman(
+        nativeH2HpackDecodeHuffman(
             payload, length.nextCursor, length.value, cursor
         )
     } else {
@@ -423,193 +624,6 @@ func nativeH2HpackDecodeString(
         )
     }
     NativeH2HpackStringResult(text, length.nextCursor + length.value)
-}
-
-func nativeH2HpackDecodeVisibleAsciiHuffman(
-    payload: Array<UInt8>,
-    payloadCursor: Int64,
-    payloadLength: Int64,
-    stringOffset: Int64
-): String {
-    let out = ArrayList<UInt8>()
-    var code: Int64 = 0
-    var bitCount: Int64 = 0
-    var i: Int64 = 0
-    while (i < payloadLength) {
-        let octet = Int64(payload[payloadCursor + i])
-        var bit: Int64 = 7
-        while (bit >= 0) {
-            code = (code << 1) | ((octet >> bit) & 0x01)
-            bitCount += 1
-            let symbol = nativeH2HpackVisibleAsciiSymbol(code, bitCount)
-            if (symbol >= 0) {
-                out.add(UInt8(symbol))
-                code = 0
-                bitCount = 0
-            } else if (!nativeH2HpackVisibleAsciiHasPrefix(code, bitCount)) {
-                nativeH2HpackFailure(
-                    "native H2 HPACK Huffman string has unsupported symbol at offset=${stringOffset}"
-                )
-            }
-            bit -= 1
-        }
-        i += 1
-    }
-    if (bitCount > 0) {
-        if (bitCount > 7 || code != (Int64(1) << bitCount) - 1) {
-            nativeH2HpackFailure(
-                "native H2 HPACK Huffman string has invalid padding at offset=${stringOffset}"
-            )
-        }
-    }
-    String.fromUtf8(out.toArray())
-}
-
-func nativeH2HpackVisibleAsciiHasPrefix(code: Int64, length: Int64): Bool {
-    nativeH2HpackPrefixInRange(code, length, 0x00, 0x09, 5) ||
-        nativeH2HpackPrefixInRange(code, length, 0x14, 0x2d, 6) ||
-        nativeH2HpackPrefixInRange(code, length, 0x5c, 0x7b, 7) ||
-        nativeH2HpackPrefixInRange(code, length, 0xf8, 0xfd, 8) ||
-        nativeH2HpackPrefixInRange(code, length, 0x3f8, 0x3fc, 10) ||
-        nativeH2HpackPrefixInRange(code, length, 0x7fa, 0x7fc, 11) ||
-        nativeH2HpackPrefixInRange(code, length, 0xffa, 0xffb, 12) ||
-        nativeH2HpackPrefixInRange(code, length, 0x1ff9, 0x1ffd, 13) ||
-        nativeH2HpackPrefixInRange(code, length, 0x3ffc, 0x3ffd, 14) ||
-        nativeH2HpackPrefixInRange(code, length, 0x7ffc, 0x7ffe, 15) ||
-        nativeH2HpackPrefixInRange(code, length, 0x7fff0, 0x7fff0, 19)
-}
-
-func nativeH2HpackPrefixInRange(
-    code: Int64,
-    length: Int64,
-    startCode: Int64,
-    endCode: Int64,
-    targetLength: Int64
-): Bool {
-    if (length > targetLength) {
-        return false
-    }
-    let shift = targetLength - length
-    code >= (startCode >> shift) && code <= (endCode >> shift)
-}
-
-func nativeH2HpackVisibleAsciiSymbol(code: Int64, length: Int64): Int64 {
-    if (length == 5) {
-        if (code == 0x00) { return 0x30 }
-        if (code == 0x01) { return 0x31 }
-        if (code == 0x02) { return 0x32 }
-        if (code == 0x03) { return 0x61 }
-        if (code == 0x04) { return 0x63 }
-        if (code == 0x05) { return 0x65 }
-        if (code == 0x06) { return 0x69 }
-        if (code == 0x07) { return 0x6f }
-        if (code == 0x08) { return 0x73 }
-        if (code == 0x09) { return 0x74 }
-    }
-    if (length == 6) {
-        if (code == 0x14) { return 0x20 }
-        if (code == 0x15) { return 0x25 }
-        if (code == 0x16) { return 0x2d }
-        if (code == 0x17) { return 0x2e }
-        if (code == 0x18) { return 0x2f }
-        if (code == 0x19) { return 0x33 }
-        if (code == 0x1a) { return 0x34 }
-        if (code == 0x1b) { return 0x35 }
-        if (code == 0x1c) { return 0x36 }
-        if (code == 0x1d) { return 0x37 }
-        if (code == 0x1e) { return 0x38 }
-        if (code == 0x1f) { return 0x39 }
-        if (code == 0x20) { return 0x3d }
-        if (code == 0x21) { return 0x41 }
-        if (code == 0x22) { return 0x5f }
-        if (code == 0x23) { return 0x62 }
-        if (code == 0x24) { return 0x64 }
-        if (code == 0x25) { return 0x66 }
-        if (code == 0x26) { return 0x67 }
-        if (code == 0x27) { return 0x68 }
-        if (code == 0x28) { return 0x6c }
-        if (code == 0x29) { return 0x6d }
-        if (code == 0x2a) { return 0x6e }
-        if (code == 0x2b) { return 0x70 }
-        if (code == 0x2c) { return 0x72 }
-        if (code == 0x2d) { return 0x75 }
-    }
-    if (length == 7) {
-        if (code == 0x5c) { return 0x3a }
-        if (code == 0x5d) { return 0x42 }
-        if (code == 0x5e) { return 0x43 }
-        if (code == 0x5f) { return 0x44 }
-        if (code == 0x60) { return 0x45 }
-        if (code == 0x61) { return 0x46 }
-        if (code == 0x62) { return 0x47 }
-        if (code == 0x63) { return 0x48 }
-        if (code == 0x64) { return 0x49 }
-        if (code == 0x65) { return 0x4a }
-        if (code == 0x66) { return 0x4b }
-        if (code == 0x67) { return 0x4c }
-        if (code == 0x68) { return 0x4d }
-        if (code == 0x69) { return 0x4e }
-        if (code == 0x6a) { return 0x4f }
-        if (code == 0x6b) { return 0x50 }
-        if (code == 0x6c) { return 0x51 }
-        if (code == 0x6d) { return 0x52 }
-        if (code == 0x6e) { return 0x53 }
-        if (code == 0x6f) { return 0x54 }
-        if (code == 0x70) { return 0x55 }
-        if (code == 0x71) { return 0x56 }
-        if (code == 0x72) { return 0x57 }
-        if (code == 0x73) { return 0x59 }
-        if (code == 0x74) { return 0x6a }
-        if (code == 0x75) { return 0x6b }
-        if (code == 0x76) { return 0x71 }
-        if (code == 0x77) { return 0x76 }
-        if (code == 0x78) { return 0x77 }
-        if (code == 0x79) { return 0x78 }
-        if (code == 0x7a) { return 0x79 }
-        if (code == 0x7b) { return 0x7a }
-    }
-    if (length == 8) {
-        if (code == 0xf8) { return 0x26 }
-        if (code == 0xf9) { return 0x2a }
-        if (code == 0xfa) { return 0x2c }
-        if (code == 0xfb) { return 0x3b }
-        if (code == 0xfc) { return 0x58 }
-        if (code == 0xfd) { return 0x5a }
-    }
-    if (length == 10) {
-        if (code == 0x3f8) { return 0x21 }
-        if (code == 0x3f9) { return 0x22 }
-        if (code == 0x3fa) { return 0x28 }
-        if (code == 0x3fb) { return 0x29 }
-        if (code == 0x3fc) { return 0x3f }
-    }
-    if (length == 11) {
-        if (code == 0x7fa) { return 0x27 }
-        if (code == 0x7fb) { return 0x2b }
-        if (code == 0x7fc) { return 0x7c }
-    }
-    if (length == 12) {
-        if (code == 0xffa) { return 0x23 }
-        if (code == 0xffb) { return 0x3e }
-    }
-    if (length == 13) {
-        if (code == 0x1ff9) { return 0x24 }
-        if (code == 0x1ffa) { return 0x40 }
-        if (code == 0x1ffb) { return 0x5b }
-        if (code == 0x1ffc) { return 0x5d }
-        if (code == 0x1ffd) { return 0x7e }
-    }
-    if (length == 14) {
-        if (code == 0x3ffc) { return 0x5e }
-        if (code == 0x3ffd) { return 0x7d }
-    }
-    if (length == 15) {
-        if (code == 0x7ffc) { return 0x3c }
-        if (code == 0x7ffd) { return 0x60 }
-        if (code == 0x7ffe) { return 0x7b }
-    }
-    if (length == 19 && code == 0x7fff0) { return 0x5c }
-    -1
 }
 
 func nativeH2HpackFieldByIndex(
