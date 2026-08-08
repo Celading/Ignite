@@ -128,6 +128,7 @@ fi
 COMMON_IMPORTS=(
   --import-path "${ROOT}/target/release"
   --import-path "${ROOT}/target/release/seajson"
+  --import-path "${ROOT}/target/release/lisi"
   --import-path "${STDX_STATIC}"
 )
 
@@ -151,6 +152,11 @@ while IFS= read -r path; do
   JINGUISSL_CORE_ARCHIVES+=("${path}")
 done < <(collect_package_archives "${ROOT}/target/release/jinguissl_core")
 
+declare -a LISI_ARCHIVES=()
+while IFS= read -r path; do
+  LISI_ARCHIVES+=("${path}")
+done < <(collect_package_archives "${ROOT}/target/release/lisi")
+
 declare -a STDX_ARCHIVES=()
 while IFS= read -r path; do
   STDX_ARCHIVES+=("${path}")
@@ -170,6 +176,9 @@ fi
 if [[ "${#JINGUISSL_CORE_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${JINGUISSL_CORE_ARCHIVES[@]}")
 fi
+if [[ "${#LISI_ARCHIVES[@]}" -gt 0 ]]; then
+  COMMON_LINKS+=("${LISI_ARCHIVES[@]}")
+fi
 if [[ "${#STDX_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${STDX_ARCHIVES[@]}")
 fi
@@ -188,10 +197,10 @@ fi
 
 case "$(uname -s)" in
   Darwin)
-    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
+    export DYLD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${DYLD_LIBRARY_PATH:-}"
     ;;
   Linux)
-    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LD_LIBRARY_PATH="${ROOT}/target/release/seajson:${ROOT}/target/release/ignite:${ROOT}/target/release/jinguissl:${ROOT}/target/release/jinguissl_contract:${ROOT}/target/release/jinguissl_core:${ROOT}/target/release/lisi:${STDX_STATIC}/stdx:${RUNTIME_LIB_DIR}:${LD_LIBRARY_PATH:-}"
     ;;
 esac
 

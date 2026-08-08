@@ -11,6 +11,7 @@ import jinguissl.live.{
     ContractHttpServerAttachPlan,
     ContractHttpServerAttachResult,
     ContractHttpServerAcceptedTransportSession,
+    ContractTls13IncrementalServerReadyRuntime,
     ContractHttpServerAcceptedTransportTls13X25519Request,
     ContractHttpServerLibraryStartupRequest,
     ContractTlsRecordContentType,
@@ -150,6 +151,8 @@ public type ServerJinguiAcceptedTransportSessionHook =
     (ServerJinguiAcceptedTransportSessionSnapshot) -> Unit
 public type ServerJinguiAcceptedTransportAttachedSessionReadyHook =
     (ContractHttpServerAcceptedTransportSession) -> Unit
+public type ServerNativeTlsH2RuntimeHook =
+    (TcpSocket, ContractTls13IncrementalServerReadyRuntime, App, String) -> Unit
 public type ServerJinguiAcceptedTransportAttachedSessionEncodedRequestRecordsBuilder =
     (ContractHttpServerAcceptedTransportSession) -> Array<Array<Byte>>
 public type ServerJinguiAcceptedTransportAttachedSessionEncodedRequestWireFragmentsBuilder =

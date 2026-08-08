@@ -3,6 +3,16 @@
 ## Ignite `0800`
 > Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
 
+### v0.8.7 `Ignite Preview`
+
+- `+Feature` Native H2 completes RFC 7541 HPACK Huffman 256-octet decoding, encode-when-smaller output, EOS/padding validation, sensitive-header never-index policy, and a bounded dynamic table
+- `+Feature` Native TLS H2 ingress is wired into the existing runtime, with H2 response streaming, graceful drain, and bounded multiplex sessions
+- `+Feature` Explicit cleartext H2 sessions accept buffered, exact-length, and EOF-terminated unknown-length one-pass request streams while retaining bounded prefetch, cancellation, and connection-retirement semantics
+- `+Feature` Consume the lisi transport contract across stream/lifecycle/backpressure adapter boundaries, and harden compression identity refusal plus private precompressed-representation trust
+- `+Validation` This release promotes accepted development checkpoint `d306fad`; clean update, build, full serial tests, and public-leak audit are rerun before the review branch is published
+- `=Boundary` TLS multiplex sessions, system CA, H2 WebSocket, complete Brotli/Zstd entropy coding, final scheduling/default flip, tag, Release, main merge, and LTS remain unclaimed
+- `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, 0800 Manual, and bilingual changelog are aligned to `0.8.7`
+
 ### v0.8.2 `Ignite Preview`
 
 - `+Feature` Native TLS H1/H2 client pools now enforce a default 30-second idle bound, exact-policy reuse, expiry/close retirement, and instance-local lifecycle snapshots

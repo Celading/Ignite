@@ -207,8 +207,10 @@ public class NativeH2ClientConnection {
     let responseDecoder = NativeH2HpackDecoderState()
     let peerSettings = NativeH2PeerSettings()
     var activeStreamLease: ?NativeH2ClientStreamLease = None
+    var activeMultiplexSession = false
     var initialized = false
     var finished = false
+    var retiring = false
     var nextStreamId: Int64 = 1
     var connectionSendWindow: Int64 = NATIVE_H2_INITIAL_FLOW_WINDOW
 
@@ -227,11 +229,11 @@ public class NativeH2ClientConnection {
     public func sendBatch(
         requests: Array<NativeH2ClientRequest>
     ): Array<NativeH2ClientResponse> {
-        if (finished) {
+        if (finished || retiring) {
             throw Exception("native H2 client connection is finished")
         }
-        if (activeStreamLease.isSome()) {
-            throw Exception("native H2 client connection has an active streamed response")
+        if (activeStreamLease.isSome() || activeMultiplexSession) {
+            throw Exception("native H2 client connection has an active response owner")
         }
         let (responses, followingStreamId, followingConnectionSendWindow) =
             nativeH2ClientSendBatch(
@@ -260,13 +262,20 @@ public class NativeH2ClientConnection {
         nativeH2ClientOpenStreamedResponse(this, request)
     }
 
+    /// Opens one explicit multi-stream response session on this connection.
+    public func openMultiplexSession(
+        maxConcurrentStreams!: Int64 = NATIVE_H2_MULTIPLEX_STREAM_LIMIT
+    ): NativeH2MultiplexSession {
+        NativeH2MultiplexSession(this, maxConcurrentStreams)
+    }
+
     /// Emits NO_ERROR GOAWAY but leaves physical transport close to the caller.
     public func finish(): Unit {
         if (finished) {
             return
         }
-        if (activeStreamLease.isSome()) {
-            throw Exception("native H2 client cannot finish with an active streamed response")
+        if (activeStreamLease.isSome() || activeMultiplexSession) {
+            throw Exception("native H2 client cannot finish with an active response owner")
         }
         if (initialized) {
             nativeH2ClientWriteFrame(
@@ -280,6 +289,7 @@ public class NativeH2ClientConnection {
             )
         }
         finished = true
+        retiring = false
     }
 }
 
@@ -333,6 +343,7 @@ func nativeH2ClientSendBatch(
         )
         nativeH2ClientCompleteSettingsHandshake(transport, peerSettings)
     }
+    nativeH2ClientRequireBatchWithinPeerLimit(requests.size, peerSettings)
 
     let connection = NativeH2ClientConnectionState(
         initialStreamId,
@@ -542,6 +553,19 @@ func nativeH2ClientSendBatch(
         responses.add(stream.response())
     }
     (responses.toArray(), connection.nextStreamId, connection.connectionSendWindow)
+}
+
+func nativeH2ClientRequireBatchWithinPeerLimit(
+    requestCount: Int64,
+    peerSettings: NativeH2PeerSettings
+): Unit {
+    if (let Some(limit) <- peerSettings.maxConcurrentStreams) {
+        if (requestCount > limit) {
+            throw Exception(
+                "native H2 client request batch exceeds peer concurrent stream limit ${limit}"
+            )
+        }
+    }
 }
 
 func nativeH2ClientFlushRequestBodies(
@@ -835,6 +859,16 @@ func nativeH2ClientSettingsPayload(): Array<UInt8> {
 }
 
 func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt8> {
+    nativeH2EncodeClientRequestHead(request, request.body.size)
+}
+
+func nativeH2EncodeClientRequestHead(
+    request: NativeH2ClientRequest,
+    expectedBodyLength: Int64
+): Array<UInt8> {
+    if (expectedBodyLength < 0) {
+        throw Exception("native H2 client request body length cannot be negative")
+    }
     nativeH2ClientRequireToken(request.method, "method")
     if (request.scheme != "http" && request.scheme != "https") {
         throw Exception("native H2 client scheme must be http or https")
@@ -878,7 +912,7 @@ func nativeH2EncodeClientRequestHead(request: NativeH2ClientRequest): Array<UInt
         )
     }
     if (let Some(length) <- contentLength) {
-        if (length != request.body.size) {
+        if (length != expectedBodyLength) {
             throw Exception("native H2 client content-length does not match request body")
         }
     }

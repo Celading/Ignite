@@ -1,19 +1,17 @@
 import ignite.api2
 import std.env.getVariable
-import std.fs.{exists, File, OpenMode}
+import std.fs.{File, OpenMode}
 import std.collection.ArrayList
 import stdx.crypto.x509.X509Certificate
 import stdx.crypto.keys.GeneralPrivateKey
 
-let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
-let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
 let H2_GUARD_DEFAULT_STAGE = "full"
 let H2_GUARD_STAGE_MAINLINE_BUILD = "mainline_build"
 let H2_GUARD_STAGE_LEGACY_KEY_DECODE = "legacy_key_decode"
 
 main() {
-    let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT", H2_WIRE_CERT_FALLBACK)
-    let keyFile = resolveTlsPath("IGNITE_SAMPLE_TLS_KEY", H2_WIRE_KEY_FALLBACK)
+    let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT")
+    let keyFile = resolveTlsPath("IGNITE_SAMPLE_TLS_KEY")
     if (certFile.size == 0 || keyFile.size == 0) {
         printTlsHint()
         return
@@ -91,15 +89,12 @@ func runMainlineBuild(certPem: String, keyPem: String): Unit {
     println("[sample/h2wire] tls guard mainline build ok: " + joinText(tlsConfig.supportedAlpnProtocols, ","))
 }
 
-func resolveTlsPath(envName: String, fallback: String): String {
+func resolveTlsPath(envName: String): String {
     if (let Some(path) <- getVariable(envName)) {
         let trimmed = path.trimAscii()
         if (trimmed.size > 0 && exists(trimmed)) {
             return trimmed
         }
-    }
-    if (exists(fallback)) {
-        return fallback
     }
     ""
 }
@@ -107,7 +102,6 @@ func resolveTlsPath(envName: String, fallback: String): String {
 func printTlsHint(): Unit {
     println("[sample/h2wire] missing TLS certificate or key")
     println("[sample/h2wire] set IGNITE_SAMPLE_TLS_CERT and IGNITE_SAMPLE_TLS_KEY")
-    println("[sample/h2wire] local workspace fallback is ${H2_WIRE_CERT_FALLBACK} / ${H2_WIRE_KEY_FALLBACK}")
 }
 
 func readTextFile(path: String): String {

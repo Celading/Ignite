@@ -66,17 +66,28 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
     let nativeLevel = nativeCompressionLevel(config.level)
 
     { ctx: Ctx =>
-        let encoding = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
+        let negotiation = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
+        if (negotiation.identityRefused && negotiation.encoding.size == 0) {
+            _ = ctx.status(406).sendString("")
+            return
+        }
+        let encoding = negotiation.encoding
+        let encodingMandatory = negotiation.identityRefused && encoding.size > 0
+        if (encodingMandatory && (ctx.header("range") ?? "").trimAscii().size > 0) {
+            _ = ctx.status(406).setHeader("content-length", "0").send(Array<UInt8>(0, repeat: 0))
+            return
+        }
         if (encoding.size > 0) {
             registerStreamCompressionPlan(
                 ctx,
                 StreamCompressionPlan(
                     encoding,
-                    minBytes,
+                    if (encodingMandatory) { 0 } else { minBytes },
                     config.setVaryHeader,
-                    config.skipIfNoGain,
+                    if (encodingMandatory) { false } else { config.skipIfNoGain },
                     nativeLevel,
-                    bufferSize
+                    bufferSize,
+                    mandatory: encodingMandatory
                 )
             )
         }
@@ -92,7 +103,7 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
 
         if (let Some(textBody) <- ctx.responseBody) {
             let rawBytes = textBody.toArray()
-            if (rawBytes.size < minBytes) {
+            if (!encodingMandatory && rawBytes.size < minBytes) {
                 return
             }
             let compressed = try {
@@ -104,10 +115,13 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                     compressResponsePayload(rawBytes, compressionFormat(encoding), level: nativeLevel)
                 }
             } catch (_: Exception) {
+                if (encodingMandatory) {
+                    _ = ctx.status(500).setHeader("content-length", "0").sendString("")
+                }
                 return
             }
 
-            if (config.skipIfNoGain && compressed.size >= rawBytes.size) {
+            if (!encodingMandatory && config.skipIfNoGain && compressed.size >= rawBytes.size) {
                 return
             }
 
@@ -135,10 +149,20 @@ func normalizeBufferSize(raw: Int64): Int64 {
     raw
 }
 
-func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): String {
+class CompressionNegotiation {
+    let encoding: String
+    let identityRefused: Bool
+
+    init(encoding: String, identityRefused: Bool) {
+        this.encoding = encoding
+        this.identityRefused = identityRefused
+    }
+}
+
+func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): CompressionNegotiation {
     let acceptEncoding = acceptEncodingRaw.trimAscii().toAsciiLower()
     if (acceptEncoding.size == 0) {
-        return ""
+        return CompressionNegotiation("", false)
     }
 
     var qGzip: Int64 = -1
@@ -146,6 +170,7 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     var qZstd: Int64 = -1
     var qBrotli: Int64 = -1
     var qWildcard: Int64 = -1
+    var qIdentity: Int64 = -1
 
     for (part in acceptEncoding.split(",")) {
         let item = part.trimAscii()
@@ -178,6 +203,8 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
             qBrotli = quality
         } else if (name == "*") {
             qWildcard = quality
+        } else if (name == "identity") {
+            qIdentity = quality
         }
     }
 
@@ -206,39 +233,44 @@ func negotiateEncoding(acceptEncodingRaw: String, config: CompressConfig): Strin
     if (!config.brotliEnabled) {
         qBrotli = -1
     }
+    let identityRefused = if (qIdentity >= 0) {
+        qIdentity == 0
+    } else {
+        qWildcard == 0
+    }
 
     if (qGzip <= 0 && qDeflate <= 0 && qZstd <= 0 && qBrotli <= 0) {
-        return ""
+        return CompressionNegotiation("", identityRefused)
     }
 
     if (qBrotli > qGzip && qBrotli > qDeflate && qBrotli > qZstd) {
-        return "br"
+        return CompressionNegotiation("br", identityRefused)
     }
     if (qZstd > qGzip && qZstd > qDeflate && qZstd > qBrotli) {
-        return "zstd"
+        return CompressionNegotiation("zstd", identityRefused)
     }
 
     if (config.preferGzip) {
         if (qGzip >= qDeflate && qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
-            return "gzip"
+            return CompressionNegotiation("gzip", identityRefused)
         }
         if (qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
-            return "deflate"
+            return CompressionNegotiation("deflate", identityRefused)
         }
-        if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
-        if (qBrotli > 0) { return "br" }
-        return ""
+        if (qZstd >= qBrotli && qZstd > 0) { return CompressionNegotiation("zstd", identityRefused) }
+        if (qBrotli > 0) { return CompressionNegotiation("br", identityRefused) }
+        return CompressionNegotiation("", identityRefused)
     }
 
     if (qDeflate >= qGzip && qDeflate >= qZstd && qDeflate >= qBrotli && qDeflate > 0) {
-        return "deflate"
+        return CompressionNegotiation("deflate", identityRefused)
     }
     if (qGzip >= qZstd && qGzip >= qBrotli && qGzip > 0) {
-        return "gzip"
+        return CompressionNegotiation("gzip", identityRefused)
     }
-    if (qZstd >= qBrotli && qZstd > 0) { return "zstd" }
-    if (qBrotli > 0) { return "br" }
-    ""
+    if (qZstd >= qBrotli && qZstd > 0) { return CompressionNegotiation("zstd", identityRefused) }
+    if (qBrotli > 0) { return CompressionNegotiation("br", identityRefused) }
+    CompressionNegotiation("", identityRefused)
 }
 
 // Parses RFC7231 qvalue in [0,1], returned as int in [0,1000].

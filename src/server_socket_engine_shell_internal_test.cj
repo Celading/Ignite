@@ -71,6 +71,129 @@ public class SocketServerEngineShellInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeH1PreservesRepeatedSetCookieValuesOnWire(): Unit {
+        let fixture = SocketServerEngineShellInternalFixture(Duration.second * 2)
+        fixture.app.get("/cookies", { ctx =>
+            let _ = ctx
+                .setCookie("first", "one", httpOnly: true)
+                .setCookie("second", "two", secure: true)
+                .sendString("ok")
+        })
+        fixture.start()
+        let client = fixture.connect()
+        try {
+            client.readTimeout = Some(Duration.second)
+            client.write(
+                "GET /cookies HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".toArray()
+            )
+            let response = readSocketServerEngineShellInternalUntil(client, "\r\n\r\nok")
+            @Assert(response.contains("set-cookie: first=one; Path=/; HttpOnly"), true)
+            @Assert(response.contains("set-cookie: second=two; Path=/; Secure"), true)
+            @Assert(response.split("set-cookie: ").size, 3)
+            fixture.awaitConnectionTask()
+            assertSocketServerEngineShellInternalSettled(fixture.control, 1, 0)
+        } finally {
+            fixture.closeClient(client)
+            fixture.close()
+        }
+    }
+
+    @TestCase
+    public func testNativeH1ChunkedBodyKeepsAliveAfterBoundedMetadata(): Unit {
+        let fixture = SocketServerEngineShellInternalFixture(Duration.second * 2)
+        fixture.app.post("/chunk", { ctx =>
+            let _ = ctx.sendString(ctx.bodyString())
+        })
+        fixture.app.get("/next", { ctx =>
+            let _ = ctx.sendString("next")
+        })
+        fixture.start()
+        let client = fixture.connect()
+        try {
+            client.readTimeout = Some(Duration.second)
+            client.write(
+                (
+                    "POST /chunk HTTP/1.1\r\nHost: example.com\r\n" +
+                    "Transfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n" +
+                    "4\r\nWiki\r\n5\r\npedia\r\n0\r\nX-Trace: accepted\r\n\r\n"
+                ).toArray()
+            )
+            let first = readSocketServerEngineShellInternalUntil(client, "\r\n\r\nWikipedia")
+            @Assert(first.contains("HTTP/1.1 200 OK"), true)
+            client.write(
+                "GET /next HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".toArray()
+            )
+            let second = readSocketServerEngineShellInternalUntil(client, "\r\n\r\nnext")
+            @Assert(second.contains("HTTP/1.1 200 OK"), true)
+            fixture.awaitConnectionTask()
+            assertSocketServerEngineShellInternalSettled(fixture.control, 2, 0)
+        } finally {
+            fixture.closeClient(client)
+            fixture.close()
+        }
+    }
+
+    @TestCase
+    public func testNativeH1RejectsOversizedChunkAndTrailerMetadata(): Unit {
+        let oversizedChunkLine = ArrayList<UInt8>()
+        appendSocketServerEngineShellInternalRepeatedByte(
+            oversizedChunkLine,
+            UInt8(0x61),
+            SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT + 1
+        )
+        appendSocketServerEngineShellInternalText(oversizedChunkLine, "\r\n")
+        assertSocketServerEngineShellInternalRejectsChunkMetadata(
+            oversizedChunkLine.toArray()
+        )
+
+        let oversizedTrailerLine = ArrayList<UInt8>()
+        appendSocketServerEngineShellInternalText(oversizedTrailerLine, "0\r\nX:")
+        appendSocketServerEngineShellInternalRepeatedByte(
+            oversizedTrailerLine,
+            UInt8(0x61),
+            SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT
+        )
+        appendSocketServerEngineShellInternalText(oversizedTrailerLine, "\r\n\r\n")
+        assertSocketServerEngineShellInternalRejectsChunkMetadata(
+            oversizedTrailerLine.toArray()
+        )
+
+        let oversizedTrailerTotal = ArrayList<UInt8>()
+        appendSocketServerEngineShellInternalText(oversizedTrailerTotal, "0\r\n")
+        for (index in 0..3) {
+            appendSocketServerEngineShellInternalText(
+                oversizedTrailerTotal,
+                "X-${index}:"
+            )
+            appendSocketServerEngineShellInternalRepeatedByte(
+                oversizedTrailerTotal,
+                UInt8(0x62),
+                6000
+            )
+            appendSocketServerEngineShellInternalText(oversizedTrailerTotal, "\r\n")
+        }
+        appendSocketServerEngineShellInternalText(oversizedTrailerTotal, "\r\n")
+        assertSocketServerEngineShellInternalRejectsChunkMetadata(
+            oversizedTrailerTotal.toArray()
+        )
+
+        let tooManyTrailers = ArrayList<UInt8>()
+        appendSocketServerEngineShellInternalText(tooManyTrailers, "0\r\n")
+        var field: Int64 = 0
+        while (field <= SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT) {
+            appendSocketServerEngineShellInternalText(
+                tooManyTrailers,
+                "X-${field}: value\r\n"
+            )
+            field += 1
+        }
+        appendSocketServerEngineShellInternalText(tooManyTrailers, "\r\n")
+        assertSocketServerEngineShellInternalRejectsChunkMetadata(
+            tooManyTrailers.toArray()
+        )
+    }
+
+    @TestCase
     public func testExpectedConnectionEndClassifierIsTyped(): Unit {
         @Assert(
             socketServerEngineShellIsExpectedConnectionEnd(
@@ -285,4 +408,48 @@ func assertSocketServerEngineShellInternalSettled(
     @Assert(snapshot.inFlightRequests, Int64(0))
     @Assert(snapshot.completedRequests, completedRequests)
     @Assert(snapshot.rejectedRequests, rejectedRequests)
+}
+
+func assertSocketServerEngineShellInternalRejectsChunkMetadata(metadata: Array<UInt8>): Unit {
+    let fixture = SocketServerEngineShellInternalFixture(Duration.second * 2)
+    fixture.app.post("/chunk-limit", { ctx =>
+        let _ = ctx.sendString(ctx.bodyString())
+    })
+    fixture.start()
+    let client = fixture.connect()
+    try {
+        client.write(
+            (
+                "POST /chunk-limit HTTP/1.1\r\nHost: example.com\r\n" +
+                "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            ).toArray()
+        )
+        client.write(metadata)
+        fixture.awaitConnectionTask()
+        assertSocketServerEngineShellInternalSettled(fixture.control, 0, 1)
+    } finally {
+        fixture.closeClient(client)
+        fixture.close()
+    }
+}
+
+func appendSocketServerEngineShellInternalText(
+    out: ArrayList<UInt8>,
+    value: String
+): Unit {
+    for (byte in value.toArray()) {
+        out.add(byte)
+    }
+}
+
+func appendSocketServerEngineShellInternalRepeatedByte(
+    out: ArrayList<UInt8>,
+    value: UInt8,
+    count: Int64
+): Unit {
+    var index: Int64 = 0
+    while (index < count) {
+        out.add(value)
+        index += 1
+    }
 }

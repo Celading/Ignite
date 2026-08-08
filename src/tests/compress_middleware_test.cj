@@ -5,6 +5,7 @@ import ignite.client.RestClient
 import ignite.middleware.*
 import seajson.JsonWriter as SeaJsonNativeWriter
 import std.collection.{ArrayList, HashMap}
+import std.fs.{File, OpenMode, removeIfExists}
 import std.io.InputStream
 import std.net.{TcpSocket, IPSocketAddress}
 import std.time.DateTime
@@ -337,6 +338,34 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
+    public func testCompressMiddlewareRequiresEncodingWhenIdentityRefusedBelowMinBytes(): Unit {
+        let payload = "tiny"
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
+        app.get("/identity-refused-small", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(303)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused-small",
+                "gzip;q=1, deflate;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "gzip")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
     public func testCompressMiddlewareDeflateFallback(): Unit {
         let payload = "deflate-fallback-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
@@ -431,11 +460,11 @@ public class CompressMiddlewareTestSuite {
     }
 
     @TestCase
-    public func testCompressMiddlewareRespectsZeroQValues(): Unit {
+    public func testCompressMiddlewareAllowsExplicitIdentityOverWildcardRefusal(): Unit {
         let payload = "no-compress-q-zero-payload-abcdefghijklmnopqrstuvwxyz-0123456789"
         let app = App(config: Config())
         app.use(compressMiddleware(config: CompressConfig(minBytes: 8, skipIfNoGain: false)))
-        app.get("/q-zero", { ctx => ctx.sendString(payload) })
+        app.get("/explicit-identity", { ctx => ctx.sendString(payload) })
 
         let port = choosePort(439)
         let serverFuture = spawn {
@@ -443,15 +472,302 @@ public class CompressMiddlewareTestSuite {
         }
 
         try {
-            let resp = sendSnapshotWithRetry(
-                "http://127.0.0.1:${port}/q-zero",
-                "gzip;q=0, deflate;q=0, *;q=0"
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/explicit-identity",
+                "gzip;q=0, deflate;q=0, *;q=0, identity;q=1"
             )
             @Assert(resp.status, 200)
             @Assert(resp.encoding, "")
             @Assert(String.fromUtf8(resp.body), payload)
         } finally {
             app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRejectsWildcardOnlyIdentityRefusalOverRealHttp(): Unit {
+        let handlerRuns = ArrayList<String>()
+        let app = App(config: Config())
+        app.use(compressMiddleware())
+        app.get("/wildcard-identity-refused", { ctx =>
+            handlerRuns.add("representation")
+            _ = ctx.sendString("unacceptable")
+        })
+
+        let port = choosePort(443)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(port, "/wildcard-identity-refused", "*;q=0")
+            @Assert(resp.status, 406)
+            @Assert(resp.encoding, "")
+            @Assert(resp.body.size, Int64(0))
+            @Assert(handlerRuns.size, Int64(0))
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRejectsExplicitIdentityRefusalOverRealHttp(): Unit {
+        let representation = "identity-refused-representation"
+        let handlerRuns = ArrayList<String>()
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            zstdEnabled: true,
+            brotliEnabled: true,
+            skipIfNoGain: false
+        )))
+        app.get("/identity-refused", { ctx =>
+            handlerRuns.add("representation")
+            _ = ctx.sendString(representation)
+        })
+
+        let port = choosePort(451)
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused",
+                "gzip;q=0, deflate;q=0, zstd;q=0, br;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 406)
+            @Assert(resp.encoding, "")
+            @Assert(resp.body.size, Int64(0))
+            @Assert(handlerRuns.size, Int64(0))
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareEnforcesMandatoryCodingAtResponseWriteBoundaries(): Unit {
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
+        app.get("/mandatory-bytes", { ctx =>
+            _ = ctx.send("byte-payload".toArray())
+        })
+        app.get("/mandatory-prepared", { ctx =>
+            _ = ctx.sendPrepared(PreparedResponseBody("prepared-payload"))
+        })
+        app.get("/mandatory-transport-writer", { ctx =>
+            ctx.transportWriter().write("must-not-leak".toArray())
+        })
+        app.get("/mandatory-writer", { ctx =>
+            ctx.writer().writeString("must-not-leak")
+        })
+        app.get("/mandatory-sse", { ctx =>
+            ctx.sse().sendEvent("must-not-leak")
+        })
+
+        let port = choosePort(457)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let bytesResp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-bytes",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(bytesResp.status, 200)
+            @Assert(bytesResp.encoding, "gzip")
+            @Assert(decompressBody(bytesResp.body, bytesResp.encoding), "byte-payload")
+
+            let preparedResp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-prepared",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(preparedResp.status, 200)
+            @Assert(preparedResp.encoding, "gzip")
+            @Assert(decompressBody(preparedResp.body, preparedResp.encoding), "prepared-payload")
+
+            let transportResp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-transport-writer",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(transportResp.status, 406)
+            @Assert(transportResp.body.size, Int64(0))
+
+            let writerResp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-writer",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(writerResp.status, 406)
+            @Assert(writerResp.body.size, Int64(0))
+
+            let sseResp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-sse",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(sseResp.status, 406)
+            @Assert(sseResp.body.size, Int64(0))
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRejectsRangeWhenIdentityIsRefused(): Unit {
+        let handlerRuns = ArrayList<String>()
+        let app = App(config: Config())
+        app.use(compressMiddleware())
+        app.get("/mandatory-range", { ctx =>
+            handlerRuns.add("representation")
+            _ = ctx.sendString("must-not-leak")
+        })
+
+        let port = choosePort(461)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-range",
+                "gzip;q=1, identity;q=0",
+                range: "bytes=0-3"
+            )
+            @Assert(resp.status, 406)
+            @Assert(resp.encoding, "")
+            @Assert(resp.body.size, Int64(0))
+            @Assert(handlerRuns.size, Int64(0))
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareClosesTerminalIdentityFallbacksOverRealHttp(): Unit {
+        let trustedBody = "trusted-precompressed-response"
+        let trustedPath = "/tmp/ignite_hq0876_ap7_trusted_precompressed.gz"
+        let trustedFile = File(trustedPath, OpenMode.Write)
+        trustedFile.write(compressResponsePayload(trustedBody.toArray(), CompressionFormat.Gzip))
+        trustedFile.close()
+
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 4096)))
+        app.get("/mandatory-fake-encoding", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity").sendString("must-not-leak")
+        })
+        app.get("/mandatory-fake-json-write", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity")
+            _ = ctx.jsonWrite({ jw =>
+                jw.startObject()
+                jw.writeName("msg")
+                jw.writeValue("must-not-leak")
+                jw.endObject()
+            })
+        })
+        app.get("/mandatory-forged-trusted-local", { ctx =>
+            ctx.setLocal("__ignite_trusted_precompressed_encoding", "gzip")
+            _ = ctx.setHeader("content-encoding", "gzip").sendString("must-not-leak")
+        })
+        app.get("/mandatory-trusted-precompressed", { ctx =>
+            _ = ctx.sendPrecompressedFile(trustedPath, "/tmp/response.txt", "gzip")
+        })
+        app.get("/mandatory-missing-file", { ctx =>
+            _ = ctx.sendFile("./__ignite_hq0876_ap7_r3_missing_file__.txt")
+        })
+        app.get("/mandatory-handler-error", { ctx =>
+            _ = ctx.setHeader("content-encoding", "identity")
+            throw Exception("mandatory handler failure")
+        })
+
+        let port = choosePort(463)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let fakeEncoding = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-fake-encoding",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(fakeEncoding.status, 406)
+            @Assert(fakeEncoding.encoding, "")
+            @Assert(fakeEncoding.body.size, Int64(0))
+
+            let fakeJsonWrite = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-fake-json-write",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(fakeJsonWrite.status, 406)
+            @Assert(fakeJsonWrite.encoding, "")
+            @Assert(fakeJsonWrite.body.size, Int64(0))
+
+            let forgedTrustedLocal = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-forged-trusted-local",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(forgedTrustedLocal.status, 406)
+            @Assert(forgedTrustedLocal.encoding, "")
+            @Assert(forgedTrustedLocal.body.size, Int64(0))
+
+            let trustedPrecompressed = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-trusted-precompressed",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(trustedPrecompressed.status, 200)
+            @Assert(trustedPrecompressed.encoding, "gzip")
+            @Assert(
+                decompressBody(trustedPrecompressed.body, trustedPrecompressed.encoding),
+                trustedBody
+            )
+
+            let missingFile = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-missing-file",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(missingFile.status, 404)
+            @Assert(missingFile.encoding, "gzip")
+            @Assert(
+                decompressBody(missingFile.body, missingFile.encoding),
+                "File not found: ./__ignite_hq0876_ap7_r3_missing_file__.txt"
+            )
+
+            let handlerError = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-handler-error",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(handlerError.status, 500)
+            @Assert(handlerError.encoding, "gzip")
+            @Assert(decompressBody(handlerError.body, handlerError.encoding), "Internal Server Error")
+        } finally {
+            app.shutdown()
+            removeIfExists(trustedPath)
             try {
                 let _ = serverFuture.get(Duration.second * 1)
             } catch (_: Exception) {
@@ -687,6 +1003,40 @@ public class CompressMiddlewareTestSuite {
             @Assert(contains(resp.vary, "Accept-Encoding"), true)
             @Assert(resp.transferEncoding, "chunked")
             @Assert(resp.contentLength, "")
+            @Assert(decompressBody(resp.body, resp.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRequiresEncodingForUnknownStreamWhenIdentityRefused(): Unit {
+        let payload = "tiny-stream"
+        let app = App(config: Config())
+        app.use(compressMiddleware())
+        app.get("/identity-refused-stream", { ctx =>
+            _ = ctx.sendStream(
+                SendStreamBytesInput(toSendStreamByteArray(payload.toArray())),
+                contentType: "text/plain; charset=utf-8"
+            )
+        })
+
+        let port = choosePort(497)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let resp = sendRawBinarySnapshotWithRetry(
+                port,
+                "/identity-refused-stream",
+                "gzip;q=1, deflate;q=0, identity;q=0"
+            )
+            @Assert(resp.status, 200)
+            @Assert(resp.encoding, "gzip")
+            @Assert(resp.transferEncoding, "chunked")
             @Assert(decompressBody(resp.body, resp.encoding), payload)
         } finally {
             app.shutdown()
@@ -993,12 +1343,13 @@ public class CompressMiddlewareTestSuite {
         port: UInt16,
         target: String,
         acceptEncoding: String,
-        method!: String = "GET"
+        method!: String = "GET",
+        range!: String = ""
     ): ResponseSnapshot {
         var attempt: Int64 = 0
         while (attempt < 20) {
             try {
-                return sendRawBinarySnapshot(port, target, acceptEncoding, method: method)
+                return sendRawBinarySnapshot(port, target, acceptEncoding, method: method, range: range)
             } catch (_: Exception) {
                 if (attempt == 19) {
                     throw Exception("failed to connect raw binary test server: ${port} ${target}")
@@ -1014,7 +1365,8 @@ public class CompressMiddlewareTestSuite {
         port: UInt16,
         target: String,
         acceptEncoding: String,
-        method!: String = "GET"
+        method!: String = "GET",
+        range!: String = ""
     ): ResponseSnapshot {
         let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
         socket.connect()
@@ -1022,6 +1374,9 @@ public class CompressMiddlewareTestSuite {
             var request = "${method} ${target} HTTP/1.1\r\n"
             request += "host: 127.0.0.1:${port}\r\n"
             request += "accept-encoding: ${acceptEncoding}\r\n"
+            if (range.size > 0) {
+                request += "range: ${range}\r\n"
+            }
             request += "connection: close\r\n\r\n"
             socket.write(request.toArray())
 

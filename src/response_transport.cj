@@ -67,8 +67,18 @@ class SinkBackedResponseTransportWriter <: ResponseTransportWriter {
     }
 }
 
+class DiscardingResponseTransportWriter <: ResponseTransportWriter {
+    public override func write(data: Array<UInt8>): Unit {
+        ()
+    }
+}
+
 func openResponseTransportWriter(currentRequestCarrier: CurrentRequestCarrier): ResponseTransportWriter {
     currentRequestCarrier.openResponseTransportWriterRaw()
+}
+
+func openDiscardingResponseTransportWriter(): ResponseTransportWriter {
+    DiscardingResponseTransportWriter()
 }
 
 /// Opens a transport writer that forwards each write into an arbitrary sink.

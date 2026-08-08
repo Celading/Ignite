@@ -3472,14 +3472,17 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
     let _runtimeControl = SocketServerEngineShellRuntimeControl()
     let _selectionLabel: String
     let _tlsAcceptedSessionReadyHook: ?ServerJinguiAcceptedTransportAttachedSessionReadyHook
+    let _nativeTlsH2RuntimeHook: ?ServerNativeTlsH2RuntimeHook
 
     public init(
         selectionLabel!: String = "manual-opt-in",
         tlsAcceptedSessionReadyHook!:
-            ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None
+            ?ServerJinguiAcceptedTransportAttachedSessionReadyHook = None,
+        nativeTlsH2RuntimeHook!: ?ServerNativeTlsH2RuntimeHook = None
     ) {
         _selectionLabel = selectionLabel
         _tlsAcceptedSessionReadyHook = tlsAcceptedSessionReadyHook
+        _nativeTlsH2RuntimeHook = nativeTlsH2RuntimeHook
     }
 
     public func productionCandidateGate(
@@ -3621,7 +3624,8 @@ public class SocketServerEngineShell <: ServerEngine & ServerEngineTransportTouc
             onReady,
             _runtimeControl,
             socketServerEngineShellAcceptedConnectionLimit(_selectionLabel),
-            tlsAcceptedSessionReadyHook: _tlsAcceptedSessionReadyHook
+            tlsAcceptedSessionReadyHook: _tlsAcceptedSessionReadyHook,
+            nativeTlsH2RuntimeHook: _nativeTlsH2RuntimeHook
         )
     }
 
