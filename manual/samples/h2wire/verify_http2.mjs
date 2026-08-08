@@ -3,19 +3,38 @@ import http2 from "node:http2";
 import { performance } from "node:perf_hooks";
 
 const BASE_URL = "https://127.0.0.1:18444";
+const REQUEST_TIMEOUT_MS = Number(process.env.IGNITE_H2_PROBE_TIMEOUT_MS ?? "30000");
 
 function fetchHttp2(path) {
   return new Promise((resolve, reject) => {
     const session = http2.connect(BASE_URL, {
       rejectUnauthorized: false,
       ALPNProtocols: ["h2"],
+      servername: "localhost",
     });
 
     let resolved = false;
-    session.on("error", (error) => {
-      if (!resolved) {
-        reject(error);
+    const timer = setTimeout(() => {
+      if (resolved) {
+        return;
       }
+      resolved = true;
+      session.destroy();
+      reject(new Error(`HTTP/2 probe timed out after ${REQUEST_TIMEOUT_MS}ms for ${path}`));
+    }, REQUEST_TIMEOUT_MS);
+
+    const rejectOnce = (error) => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      clearTimeout(timer);
+      session.destroy();
+      reject(error);
+    };
+
+    session.on("error", (error) => {
+      rejectOnce(error);
     });
 
     const req = session.request({
@@ -44,9 +63,13 @@ function fetchHttp2(path) {
     });
 
     req.on("end", () => {
+      if (resolved) {
+        return;
+      }
       const body = Buffer.concat(chunks);
       const alpnProtocol = session.socket?.alpnProtocol ?? "";
       resolved = true;
+      clearTimeout(timer);
       session.close();
       resolve({
         alpnProtocol,
@@ -59,9 +82,7 @@ function fetchHttp2(path) {
     });
 
     req.on("error", (error) => {
-      if (!resolved) {
-        reject(error);
-      }
+      rejectOnce(error);
     });
 
     req.end();

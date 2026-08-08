@@ -201,6 +201,24 @@ public class SocketHttp11ResponseWriterTestSuite {
         assertSocketHttp11WriterBuildFailure(
             request,
             200,
+            socketHttp11WriterSingleHeader("x-bad\r\nname", "value"),
+            SocketHttp11ResponseBodyMode.Bodyless,
+            -1,
+            SocketHttp11WriterErrorCode.InvalidHeaderName
+        )
+
+        assertSocketHttp11WriterBuildFailure(
+            request,
+            200,
+            socketHttp11WriterSingleHeader("x-test", "safe\r\nx-injected: yes"),
+            SocketHttp11ResponseBodyMode.Bodyless,
+            -1,
+            SocketHttp11WriterErrorCode.InvalidHeaderValue
+        )
+
+        assertSocketHttp11WriterBuildFailure(
+            request,
+            200,
             socketHttp11WriterSingleHeader("content-length", "5"),
             SocketHttp11ResponseBodyMode.Bodyless,
             -1,
@@ -224,6 +242,21 @@ public class SocketHttp11ResponseWriterTestSuite {
             -1,
             SocketHttp11WriterErrorCode.BodyForbiddenByStatus
         )
+
+        try {
+            let _ = buildSocketHttp11ResponseWritePlan(
+                request,
+                200,
+                Array<SocketHttp11Header>(0, repeat: SocketHttp11Header("", "")),
+                SocketHttp11ResponseBodyMode.Bodyless,
+                option: SocketHttp11ResponseWriteOption(
+                    reasonPhrase: "OK\r\nX-Injected: yes"
+                )
+            )
+            @Fail("socket HTTP/1.1 response writer should reject an unsafe reason phrase")
+        } catch (e: SocketHttp11WriterException) {
+            @Assert(e.code, SocketHttp11WriterErrorCode.InvalidReasonPhrase)
+        }
     }
 
     @TestCase

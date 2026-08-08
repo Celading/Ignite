@@ -5,6 +5,7 @@ import seajson.JsonWriter as SeaJsonNativeWriter
 import std.collection.{ArrayList, HashMap}
 import std.net.{TcpSocket, IPSocketAddress}
 import std.sync.Mutex
+import std.time.DateTime
 
 /// Focused real-HTTP proof for the public `JsonWriterInputStream` seam.
 ///
@@ -797,7 +798,8 @@ func hexOfJsonWriterInputRune(ch: Rune): Int64 {
 }
 
 func chooseJsonWriterInputStreamTestPort(seed: Int64): UInt16 {
-    UInt16(seed)
+    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+    UInt16(44000 + ((nowMs + seed) % 16000))
 }
 
 func buildJsonSerializeStreamValues(): ArrayList<Int64> {

@@ -82,6 +82,115 @@ let client = RestClient(poolSize: 4)
 这里的 Native TLS Client 需要调用方提供 trust anchor 与 hostname。系统 CA、
 TLS1.2、session resumption、mTLS 和默认切换仍未完成。
 
+### 有界 RestClient batch multiplex
+
+受控明文 H2 服务可以在一个物理连接内显式发送一批请求：
+
+```cangjie
+let client = RestClient(
+    readTimeout: Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize: 4
+)
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+
+try {
+    let responses = client.sendNativeH2Batch([
+        NativeH2BatchRequest("GET", "http://127.0.0.1:3000/a"),
+        NativeH2BatchRequest("GET", "http://127.0.0.1:3000/b")
+    ])
+    println(responses[0].status)
+    println(responses[1].status)
+} finally {
+    client.close()
+}
+```
+
+边界如下：
+
+- 每批最多 32 个请求，并遵守服务端声明的并发 stream 上限；
+- 所有 URL 必须解析到同一个 cleartext `http://` origin；
+- handler 可以并发推进，但返回数组保持请求顺序；
+- 每个响应最多缓冲 1 MiB，整批成功后连接才归池；
+- 支持 default headers、CookieStore、response hook 和 error hook；
+- 不支持 TLS batch、streamed body、retry/redirect 重放、逐请求 cancellation；
+- request、observe、transport-touchpoint hook 会 fail closed。
+
+这是一条明确的 buffered batch API，不会把普通 `request().send()` 变成任意
+并发 streamed lease。
+
+### 独立 request/response lease multiplex session
+
+如果多个调用方需要在同一个 cleartext H2 连接上独立读取 response body，使用
+显式 session，而不是让多个线程直接争抢 socket：
+
+```cangjie
+let client = RestClient(
+    readTimeout: Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize: 4
+)
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+
+let session = client.openNativeH2Session(
+    "http://127.0.0.1:3000",
+    maxConcurrentStreams: 8
+)
+try {
+    let slow = spawn {
+        session.send(
+            NativeH2BatchRequest("POST", "/slow")
+                .header("content-type", "text/plain")
+                .bodyString("buffered payload")
+        )
+    }
+    let fast = spawn {
+        session.send(NativeH2BatchRequest("GET", "/fast"))
+    }
+    let upload = spawn {
+        session.send(
+            NativeH2BatchRequest("POST", "/upload")
+                .bodyStream(input, exactLength)
+        )
+    }
+
+    println(fast.get(Duration.second * 5).body())
+    println(slow.get(Duration.second * 5).body())
+    println(upload.get(Duration.second * 5).body())
+} finally {
+    session.close()
+    client.close()
+}
+```
+
+这条路径的边界是：
+
+- 只支持同一 cleartext `http://` origin；request body 可以是 buffered
+  bytes/string、`bodyStream(input, exactLength)` 指定的精确长度 one-pass
+  stream，或 `bodyStream(input)` 指定的 EOF 终止 unknown-length stream；精确长度
+  模式会补齐 `content-length`，unknown-length 模式不会发送该头；
+- stream producer 每次最多读取 8 KiB、每 stream 最多预取 32 KiB，读取用户
+  `InputStream` 时不持有 session-state 或 writer mutex；调用方继续持有 stream，
+  Ignite 不会关闭或为 retry/redirect 重放它；取消在一次 `read` 返回后生效，可能
+  阻塞的 source 应由调用方提供可取消或有界超时的读取实现；
+- 本地最多 32 个 active stream，并服从 peer concurrent-stream limit；
+- 一个 connection-owned reader 分发 frame，调用方不会并发读取 socket；
+- request DATA 同时服从 connection 和 stream send window；`WINDOW_UPDATE` 与
+  `SETTINGS_INITIAL_WINDOW_SIZE` 会继续推进尚未发完的 upload；
+- 每个 stream 的未读 body 上限为 65,535 字节；连接窗口独立补充，慢 stream
+  不会阻止窗口内的兄弟 response 完成；
+- 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
+  已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
+  在未知 peer 消费状态下复用；
+- 不支持 TLS session、自动 RequestBuilder H2
+  streaming、retry/redirect、逐 stream deadline、priority、
+  request/observe/transport-touchpoint hook。
+
+`RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用
+`try/finally` 明确归还资源。
+
 ## WebSocket 到底是不是 Native
 
 公开 API 不区分 `NativeWebSocket` 类型：
@@ -111,20 +220,22 @@ app.ws("/chat", { conn =>
 
 - RFC 静态表与有界动态表状态；
 - HPACK integer、literal、indexed field 与 table-size update 处理；
-- 可见 ASCII header 字符的 Huffman 解码子集；
-- 非法 padding 和不支持符号的 fail-closed 拒绝。
+- RFC 7541 Appendix B 的 257 项 code table，包括 EOS；
+- 完整 256-octet symbol 的 Huffman 编解码；公开 `String` 恢复要求合法 UTF-8；
+- 非法 code、EOS 出现在 payload 中和非法 padding 的 fail-closed 拒绝；
+- outbound 仅在 Huffman 结果更短时启用，并对敏感 Header 使用 never-index。
 
-当前没有：
+当前边界：
 
-- 完整 RFC 7541 Appendix B 的 256 符号 + EOS 解码表；
-- outbound HPACK Huffman encoder；
-- “所有合法 header octet 都已覆盖”的完整声明。
+- Jingui accepted-transport compatibility parser 仍不是同一条完整 HPACK 路径；
+- 动态表和 Header-list 大小受本地上限与 peer SETTINGS 共同约束；
+- 当前 2048-turn byte profile 只证明重复 Header 的编码形态，不外推通用吞吐排名。
 
 这里描述的是 `ignite.native_h2` 主实现。另一个 Jingui accepted-transport
 compatibility parser 当前仍会拒绝 Huffman string，不能把两条路径混成同一能力。
 
-Native H2 当前发送 literal/non-Huffman 字符串。这个实现足以覆盖现有已验收
-profile，但不等于完整 HPACK Huffman 实现。
+Native H2 主实现已经具备完整 HPACK Huffman codec，并在编码更短时选择
+Huffman；重复 ordinary Header 还可以进入 connection-owned dynamic table。
 
 注意：动态 Zstd/Brotli 文档里的 Huffman 是压缩算法能力，不是 HPACK
 Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码能力。
@@ -140,7 +251,7 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 | `ctx.writer()` / JSON stream | 真正增量 socket 写出 | App adapter 当前会先聚合完整响应 |
 | 动态压缩流 | H1 有真实 wire 回归 | 尚不能宣称 App 层真流式等价 |
 | server runtime snapshot | 有 Native H1 计数 | 当前不覆盖 H2 |
-| RestClient streamed response | H1 支持 | 支持一个公开 lease，提前关闭发送 CANCEL |
+| RestClient response | H1 支持 streamed response | 单 streamed lease；另有显式 buffered batch multiplex |
 | TLS Server | 默认 stdx；Native 候选实验 | Native H2 ServerEngine 不接受 TLS 配置 |
 | TLS Client | 显式 Native TLS1.3 | 显式 Native TLS1.3 + `h2` ALPN |
 

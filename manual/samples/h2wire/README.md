@@ -16,8 +16,7 @@ Ignite 0800 的 H2 preview / compatibility smoke，分开验证三类事实：
 ./manual/samples/h2wire/run.sh
 ```
 
-如果你本地正好就是当前 Ignite 工作区，并且 `_helper/testdata/tls/server-cert-a.pem` / `server-key-a.pem` 存在，样例会默认使用它们。
-否则请先设置：
+运行 TLS 示例前请显式提供测试证书和私钥：
 
 ```bash
 export IGNITE_SAMPLE_TLS_CERT=/path/to/server-cert.pem
@@ -48,6 +47,8 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
 ./manual/samples/h2wire/guard_matrix.sh
 ```
 
+矩阵还需要通过 `IGNITE_SAMPLE_TLS_KEY_B` 提供第二把 PKCS#8 私钥。
+
 这条脚本会自动生成传统 RSA PEM（PKCS#1）副本，并对下面 4 个 case 只跑 `legacy_key_decode` diagnostic：
 
 - `key-a:pkcs8`
@@ -66,8 +67,8 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
    - `cert decode`
    - `mainline build`
    legacy `key_decode` 仍保留，但只作为显式 diagnostic，不再是默认 staged path。
-3. 如果 guard 通过，再启动一个本地 TLS 服务，并先等待 listener-ready banner
-4. 然后再用 health probe / Node 内建 `http2` 客户端验证：
+3. 如果 guard 通过，再启动一个本地 TLS 服务；脚本先做有界的进程/启动错误门，不用空 TCP 或 curl 连接消耗 TLS accept turn
+4. 然后直接用带超时的 Node 内建 `http2` 客户端完成真实 TLS/ALPN 验证：
    - ALPN 结果确实是 `h2`
    - `/stream` 没有 `Transfer-Encoding`
    - `/stream` 是多次 data event 到达，而不是单次整包
@@ -75,8 +76,8 @@ curl -k --http2 -D - -o /tmp/ignite_h2_wire.out https://127.0.0.1:18444/file
    - `/file` 的大响应体大小与 `content-length` 一致
 
 如果默认 guard 阶段就失败，说明当前 mainline-aligned TLS load path 还没有通过。
-如果 listener-ready banner 都没出现，并且 log 里带 `LISTEN_PERMISSION_DENIED`，那更像沙箱/宿主 bind 噪声，不是 TLS handshake blocker。
-如果 listener-ready banner 已出现，但第一次 `/health` TLS 握手就把服务打崩，那么当前更深 blocker 会继续缩到 `stdx.net.tls.TlsContext.createContext()` 这条 runtime seam。
+如果服务进程退出且 log 带 `LISTEN_PERMISSION_DENIED`，那更像沙箱/宿主 bind 噪声，不是 TLS handshake blocker。
+如果 Node/OpenSSL 报 `decryption failed or bad record mac`，同时服务端记录 `TLS peer alert received`，说明 bind、证书材料准备和客户端连接已经越过启动层，失败边界位于异构 TLS 1.3 握手/受保护记录互操作，不能用 JinguiSSL 自端互通结果替代。
 legacy `key_decode` diagnostic 仍然有用，但它现在只回答“旧 decode seam 会不会因为 key 形态不同而崩”，不再代表当前 mainline listener path。
 这条 smoke 路线当前保留下来的价值，正是把“本地 H2 on-wire 没闭”从口头判断变成分阶段、可重复的失败证据。
 
@@ -115,8 +116,9 @@ IGNITE_H2SPEC_PREPARE_ONLY=1 ./manual/samples/h2wire/h2spec_smoke.sh
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `IGNITE_SAMPLE_TLS_CERT` | `_helper/testdata/tls/server-cert-a.pem` | TLS 证书路径 |
-| `IGNITE_SAMPLE_TLS_KEY` | `_helper/testdata/tls/server-key-a.pem` | TLS 私钥路径 |
+| `IGNITE_SAMPLE_TLS_CERT` | 必填 | TLS 证书路径 |
+| `IGNITE_SAMPLE_TLS_KEY` | 必填 | TLS 私钥路径；也是 guard matrix 的 key A |
+| `IGNITE_SAMPLE_TLS_KEY_B` | 无 | guard matrix 的第二把 PKCS#8 私钥 |
 | `IGNITE_H2_FIXTURE_MULTIPLIER` | `64` | 响应体大小 = 4096 × 51B × multiplier。默认约 13 MiB |
 | `IGNITE_SAMPLE_WRITE_TIMEOUT_SECS` | `30` | 服务端 writeTimeout 值（秒） |
 | `IGNITE_STDX_STATIC` | 自动探测 | 指向 `cj_stdx_*_llvm/static` |

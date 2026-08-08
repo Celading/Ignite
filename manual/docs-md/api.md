@@ -352,6 +352,25 @@ app.post("/users", { ctx =>
 - `invalid_payload`
 - `validation_failed`
 
+## 响应头覆盖与追加
+
+`Ctx.setHeader(name, value)` 会覆盖同名响应头，适合
+`Content-Type`、`Location` 这类单值元数据。`Ctx.addHeader(name, value)`
+会保留已有值，适合 `Set-Cookie`、`Warning` 等允许重复出现的响应头。
+
+```cangjie
+app.get("/headers", { ctx =>
+    _ = ctx.setHeader("x-mode", "native")
+    _ = ctx.addHeader("set-cookie", "theme=dark; Path=/")
+    _ = ctx.addHeader("set-cookie", "locale=zh-CN; Path=/")
+    _ = ctx.sendString("ok")
+})
+```
+
+`Ctx.setCookie(...)` 自身使用追加语义，因此连续调用不会再覆盖前一个
+`Set-Cookie`。Native H1/H2 会保留这些独立字段；非法 Header 名称或包含
+控制字符的值会在进入协议编码前失败关闭。
+
 ## 命名路由与 `urlFor`
 
 Ignite 允许你给路由命名，再反向生成 URL。常见写法有两种：

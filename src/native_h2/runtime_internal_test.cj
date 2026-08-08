@@ -1,8 +1,11 @@
 package ignite.native_h2
 
 import ignite.{App, Config}
+import std.collection.ArrayList
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
 import std.sync.AtomicBool
+import std.time.MonoTime
+import stdx.net.http.HttpHeaders
 
 @Test
 public class NativeH2RuntimeInternalTestSuite {
@@ -237,6 +240,39 @@ public class NativeH2RuntimeInternalTestSuite {
         }
         @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
         @Assert(trailerCount, 2)
+
+        let responseHeaders = HttpHeaders()
+        responseHeaders.add("set-cookie", "first=one; Path=/")
+        responseHeaders.add("set-cookie", "second=two; Path=/")
+        carrier.addResponseHeaders(responseHeaders)
+        let response = carrier.response()
+        var responseCookieCount: Int64 = 0
+        var responseCookieJoined = ""
+        for (header in response.headers) {
+            if (header.name == "set-cookie") {
+                responseCookieCount += 1
+                if (responseCookieJoined.size > 0) { responseCookieJoined += "," }
+                responseCookieJoined += header.value
+            }
+        }
+        @Assert(responseCookieCount, 2)
+        @Assert(
+            responseCookieJoined,
+            "first=one; Path=/,second=two; Path=/"
+        )
+        @Assert(nativeH2EncodeResponseHead(response.status, response.headers).size > 0, true)
+    }
+
+    @TestCase
+    public func testNativeH2ResponseHeaderAdmissionRejectsUnsafeMetadata(): Unit {
+        assertNativeH2ResponseHeaderFailure(
+            "x bad",
+            "value"
+        )
+        assertNativeH2ResponseHeaderFailure(
+            "x-safe",
+            "value\r\nx-injected: yes"
+        )
     }
 
     @TestCase
@@ -272,6 +308,175 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testHpackHuffmanRoundTripsUtf8OutsideVisibleAsciiSubset(): Unit {
+        let value = "caf\u{00e9}-\u{2713}"
+        let payload = nativeH2EncodeResponseHead(200, [
+            NativeH2Header("x-unicode", value)
+        ])
+
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+
+        @Assert(decoded.status, UInt16(200))
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, "x-unicode")
+        @Assert(decoded.headers[0].value, value)
+    }
+
+    @TestCase
+    public func testHpackEncoderReusesDynamicEntriesAcrossResponseHeads(): Unit {
+        let encoder = NativeH2HpackEncoderState()
+        let headers = [
+            NativeH2Header("cache-control", "public, max-age=600")
+        ]
+        let first = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        let second = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        let decoder = NativeH2HpackDecoderState()
+
+        let firstDecoded = decoder.decodeResponseHead(first)
+        let secondDecoded = decoder.decodeResponseHead(second)
+
+        @Assert(firstDecoded.headers[0].value, "public, max-age=600")
+        @Assert(secondDecoded.headers[0].value, "public, max-age=600")
+        @Assert(encoder.dynamicEntryCount(), Int64(1))
+        @Assert(second.size < first.size, true)
+    }
+
+    @TestCase
+    public func testHpackEncoderNeverIndexesSensitiveHeaders(): Unit {
+        let encoder = NativeH2HpackEncoderState()
+        let headers = [
+            NativeH2Header("authorization", "Bearer secret"),
+            NativeH2Header("proxy-authorization", "Basic secret"),
+            NativeH2Header("cookie", "session=secret"),
+            NativeH2Header("set-cookie", "session=secret; Secure")
+        ]
+        let first = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        let second = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        let decoder = NativeH2HpackDecoderState()
+
+        @Assert(decoder.decodeResponseHead(first).headers.size, Int64(4))
+        @Assert(decoder.decodeResponseHead(second).headers.size, Int64(4))
+        @Assert(encoder.dynamicEntryCount(), Int64(0))
+        @Assert(second.size, first.size)
+    }
+
+    @TestCase
+    public func testHpackEncoderAppliesPeerTableResizeBeforeNextHeaderBlock(): Unit {
+        let encoder = NativeH2HpackEncoderState()
+        let headers = [NativeH2Header("x-resize", "stable")]
+        let first = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        encoder.updatePeerMaxSize(0)
+        let second = nativeH2EncodeResponseHead(200, headers, None, encoder)
+        let decoder = NativeH2HpackDecoderState()
+
+        let _ = decoder.decodeResponseHead(first)
+        let decoded = decoder.decodeResponseHead(second)
+
+        @Assert(second[0], UInt8(0x20))
+        @Assert(decoded.headers[0].value, "stable")
+        @Assert(encoder.dynamicEntryCount(), Int64(0))
+    }
+
+    @TestCase
+    public func testHpackPlainHuffmanAndIndexedByteProfiles(): Unit {
+        let iterations: Int64 = 2048
+        let name = "x-ignite-benchmark"
+        let value = "repeated-response-metadata-for-hpack-efficiency"
+        var plainBytes: Int64 = 0
+        var huffmanBytes: Int64 = 0
+        var indexedBytes: Int64 = 0
+
+        let plainStarted = MonoTime.now()
+        var i: Int64 = 0
+        while (i < iterations) {
+            plainBytes += nativeH2TestEncodePlainLiteral(name, value).size
+            i += 1
+        }
+        let plainElapsed = MonoTime.now() - plainStarted
+
+        let huffmanEncoder = NativeH2HpackEncoderState(maxDynamicTableSize: 0)
+        let huffmanStarted = MonoTime.now()
+        i = 0
+        while (i < iterations) {
+            huffmanBytes += nativeH2EncodeResponseHead(
+                200,
+                [NativeH2Header(name, value)],
+                None,
+                huffmanEncoder
+            ).size
+            i += 1
+        }
+        let huffmanElapsed = MonoTime.now() - huffmanStarted
+
+        let indexedEncoder = NativeH2HpackEncoderState()
+        let indexedStarted = MonoTime.now()
+        i = 0
+        while (i < iterations) {
+            indexedBytes += nativeH2EncodeResponseHead(
+                200,
+                [NativeH2Header(name, value)],
+                None,
+                indexedEncoder
+            ).size
+            i += 1
+        }
+        let indexedElapsed = MonoTime.now() - indexedStarted
+
+        println(
+            "[hpack-benchmark] iterations=${iterations} " +
+            "plainBytes=${plainBytes} plainMs=${plainElapsed.toMilliseconds()} " +
+            "huffmanBytes=${huffmanBytes} huffmanMs=${huffmanElapsed.toMilliseconds()} " +
+            "indexedBytes=${indexedBytes} indexedMs=${indexedElapsed.toMilliseconds()}"
+        )
+        @Assert(huffmanBytes < plainBytes, true)
+        @Assert(indexedBytes < huffmanBytes, true)
+    }
+
+    @TestCase
+    public func testResponseHeadSupportsVariableLengthHeaderNameAndValue(): Unit {
+        let nameBytes = Array<UInt8>(140, repeat: UInt8(0x78))
+        let valueBytes = Array<UInt8>(600, repeat: UInt8(0x61))
+        let name = String.fromUtf8(nameBytes)
+        let value = String.fromUtf8(valueBytes)
+
+        let payload = nativeH2EncodeResponseHead(200, [NativeH2Header(name, value)])
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, name)
+        @Assert(decoded.headers[0].value, value)
+        @Assert(payload.size < nameBytes.size + valueBytes.size, true)
+    }
+
+    @TestCase
+    public func testHpackHeaderListLimitsFailClosedOnDecodeAndEncode(): Unit {
+        let payload = nativeH2EncodeResponseHead(200, [
+            NativeH2Header("x-limit", "abcdefghijklmnopqrstuvwxyz")
+        ])
+        var decodeRejected = false
+        try {
+            let _ = NativeH2HpackDecoderState(4096, 48).decodeResponseHead(payload)
+        } catch (e: NativeH2ProtocolException) {
+            decodeRejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
+                e.message.contains("header list exceeds")
+        }
+
+        var encodeRejected = false
+        try {
+            let _ = nativeH2EncodeResponseHead(
+                200,
+                [NativeH2Header("x-limit", "abcdefghijklmnopqrstuvwxyz")],
+                Some(Int64(48))
+            )
+        } catch (e: Exception) {
+            encodeRejected = e.message.contains("SETTINGS_MAX_HEADER_LIST_SIZE")
+        }
+
+        @Assert(decodeRejected, true)
+        @Assert(encodeRejected, true)
+    }
+
+    @TestCase
     public func testHpackDecoderRejectsUnavailableIndexLateUpdateAndTruncation(): Unit {
         assertNativeH2HpackCompressionFailure(
             [UInt8(0xbe)],
@@ -294,12 +499,11 @@ public class NativeH2RuntimeInternalTestSuite {
             NativeH2Header("x-native-h2", "accepted")
         ])
 
-        @Assert(payload[0], UInt8(0x08))
-        @Assert(payload[1], UInt8(0x03))
-        @Assert(String.fromUtf8(nativeH2Slice(payload, 2, 5)), "201")
-        @Assert(nativeH2ContainsBytes(payload, "x-native-h2".toArray()), true)
-        @Assert(nativeH2ContainsBytes(payload, "accepted".toArray()), true)
-        @Assert(nativeH2ContainsBytes(payload, "connection".toArray()), false)
+        let decoded = NativeH2HpackDecoderState().decodeResponseHead(payload)
+        @Assert(decoded.status, UInt16(201))
+        @Assert(decoded.headers.size, 1)
+        @Assert(decoded.headers[0].name, "x-native-h2")
+        @Assert(decoded.headers[0].value, "accepted")
     }
 
     @TestCase
@@ -404,8 +608,16 @@ public class NativeH2RuntimeInternalTestSuite {
             @Assert(responseHeaders.streamId, 1)
             @Assert(responseHeaders.payload.size > 1, true)
             @Assert(responseHeaders.payload[0], UInt8(0x88))
-            @Assert(nativeH2ContainsBytes(responseHeaders.payload, "content-type".toArray()), true)
-            @Assert(nativeH2ContainsBytes(responseHeaders.payload, "text/plain; charset=utf-8".toArray()), true)
+            let decodedResponseHead = NativeH2HpackDecoderState()
+                .decodeResponseHead(responseHeaders.payload)
+            @Assert(decodedResponseHead.status, UInt16(200))
+            var responseContentType = ""
+            for (header in decodedResponseHead.headers) {
+                if (header.name == "content-type") {
+                    responseContentType = header.value
+                }
+            }
+            @Assert(responseContentType, "text/plain; charset=utf-8")
             @Assert(responseDataFirst.frameType, UInt8(0x0))
             @Assert(responseDataFirst.flags, UInt8(0))
             @Assert(responseDataFirst.streamId, 1)
@@ -1757,6 +1969,15 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 }
 
+func nativeH2TestEncodePlainLiteral(name: String, value: String): Array<UInt8> {
+    let out = ArrayList<UInt8>()
+    out.add(UInt8(0x88))
+    nativeH2HpackAppendInteger(out, 0, 4, UInt8(0))
+    nativeH2HpackAppendString(out, name, false)
+    nativeH2HpackAppendString(out, value, false)
+    out.toArray()
+}
+
 func assertNativeH2HpackCompressionFailure(
     payload: Array<UInt8>,
     expectedMessage: String
@@ -1767,6 +1988,17 @@ func assertNativeH2HpackCompressionFailure(
     } catch (e: NativeH2ProtocolException) {
         rejected = e.errorCode == NATIVE_H2_ERROR_COMPRESSION &&
             e.message.contains(expectedMessage)
+    }
+    @Assert(rejected, true)
+}
+
+func assertNativeH2ResponseHeaderFailure(name: String, value: String): Unit {
+    var rejected = false
+    try {
+        let header = NativeH2Header(name, value)
+        let _ = nativeH2EncodeResponseHead(200, [header])
+    } catch (_: Exception) {
+        rejected = true
     }
     @Assert(rejected, true)
 }

@@ -1,4 +1,4 @@
-# 从 Ignite 0.7.7 升级到 0.8.2 Preview
+# 从 Ignite 0.7.7 升级到 0.8.7 Preview
 
 0800 保留 0700 的应用层使用方式。真正要留意的是四件事：明文传输换了默认引擎、请求体上限统一成 `bodyLimit`、大 JSON 建议改流式、低层协议入口是显式预览。按下面顺序走，一步一步开，不要一次打开所有 Preview 选项。
 
@@ -85,10 +85,14 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`，但它只处理明文 prior knowledge（跳过协议升级、直接按 H2 说话）、可重放的 buffered request body，以及每连接一个公开 streamed response lease。直接使用 `ignite.native_h2` 低层 API 时，调用方要准备已连接的 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和关闭——协议归 Ignite，连接归你。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API，以及支持 buffered body 与精确长度 one-pass request stream 的 multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
-let client = RestClient()
+let client = RestClient(
+    readTimeout: Duration.second * 15,
+    writeTimeout: Duration.second * 15,
+    poolSize: 4
+)
     .allowExperimentalTransport()
     .preferTransportBackend("ignite-native-h2-client")
 
@@ -98,21 +102,66 @@ client.close()
 ```
 
 完整消费 response body 后连接可归池复用；提前关闭 response 会取消 stream
-并淘汰连接——未读完的帧不能留给下一个请求。不要把当前单 lease 池化行为
-描述成公开多路并发 API；依赖 `onRequest` / `onRequestHook` 改写 stdx builder
-的调用仍应留在稳定路径。
+并淘汰连接。需要明确的同源多路批次时，使用
+`sendNativeH2Batch([NativeH2BatchRequest(...)])`：每批最多 32 个请求、每响应
+最多缓冲 1 MiB、整批完成后才归池。它不是任意异步 streamed lease，且当前
+只支持 cleartext `http://`。显式 session 还可用 `bodyStream(input)` 发送 EOF
+终止的 unknown-length request stream。依赖 `onRequest` / `onRequestHook` 改写 stdx
+builder 的调用仍应留在稳定路径。
+
+需要独立并发 response lease 时，可以显式打开：
+
+```cangjie
+let session = client.openNativeH2Session(
+    "http://127.0.0.1:8080",
+    maxConcurrentStreams: 8
+)
+try {
+    let a = spawn {
+        session.send(NativeH2BatchRequest("POST", "/a").bodyString("payload"))
+    }
+    let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
+    let streamed = spawn {
+        session.send(
+            NativeH2BatchRequest("POST", "/streamed")
+                .bodyStream(input, exactLength)
+        )
+    }
+    println(a.get(Duration.second * 5).body())
+    println(b.get(Duration.second * 5).body())
+    println(streamed.get(Duration.second * 5).body())
+} finally {
+    session.close()
+}
+```
+
+该 session 只支持同一 cleartext origin；request body 可以是 buffered bytes/string、
+`bodyStream(input, exactLength)` 指定的精确长度 one-pass stream，或
+`bodyStream(input)` 指定的 EOF 终止 unknown-length one-pass stream。精确长度模式会
+补齐 `content-length`，unknown-length 模式不会发送该头。stream producer
+每次最多读取 8 KiB、每 stream 最多预取 32 KiB，并且不会在读取用户 stream 时
+持有协议锁。Ignite 不会关闭 source；取消在一次 `read` 返回后生效，因此可能阻塞
+的 source 应由调用方提供可取消或有界超时的读取实现。DATA 会服从
+connection/stream send window，并由 `WINDOW_UPDATE`
+或 SETTINGS 初始窗口变化继续推进。每个 stream 最多保留 65,535 字节未读响应
+数据。本地 active stream 上限最多 32，并继续服从 peer SETTINGS。完整消费允许
+连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
+request body 尚未发完，连接会进入 retiring。它仍不包含 TLS multiplex、自动
+RequestBuilder H2 streaming、retry/redirect 重放、priority
+或逐 stream deadline。
 
 适合的 0800 使用方式：
 
 - 协议实验和 wire fixture。
 - 内部受控连接、代理或 transport adapter。
-- 验证多 stream、flow-control、response lease、完整消费归池和提前关闭淘汰行为。
+- 验证多 stream、双层 request send-window、response lease、完整消费归池和提前
+  关闭淘汰行为。
 
 暂不适合：
 
 - 对外宣称完整浏览器 H2 兼容。
 - 直接替换生产网关。
-- 依赖 TLS/ALPN 默认路径、公开 RestClient 多路 lease 或 H2 WebSocket。
+- 依赖 TLS/ALPN 默认路径、任意生产级 H2 调度或 H2 WebSocket。
 
 ## 7. 检查静态压缩部署
 

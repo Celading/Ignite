@@ -10,6 +10,10 @@ public class ResponseWriter {
         _writer = openResponseTransportWriter(currentRequestCarrier)
     }
 
+    init(writer: ResponseTransportWriter) {
+        _writer = writer
+    }
+
     public func write(data: Array<UInt8>): Unit {
         _writer.write(data)
     }
@@ -22,9 +26,14 @@ public class ResponseWriter {
 public class SseWriter {
     let _currentRequestCarrier: CurrentRequestCarrier
     var _writer: ?ResponseTransportWriter = None
+    let _enabled: Bool
 
-    public init(currentRequestCarrier: CurrentRequestCarrier) {
+    public init(currentRequestCarrier: CurrentRequestCarrier, enabled!: Bool = true) {
         _currentRequestCarrier = currentRequestCarrier
+        _enabled = enabled
+        if (!enabled) {
+            return
+        }
         currentRequestCarrier.setResponseStatus(200)
         currentRequestCarrier.setResponseHeader("content-type", "text/event-stream")
         currentRequestCarrier.setResponseHeader("cache-control", "no-cache")
@@ -39,6 +48,9 @@ public class SseWriter {
     }
 
     func ensureWriter(): ResponseTransportWriter {
+        if (!_enabled) {
+            return openDiscardingResponseTransportWriter()
+        }
         match (_writer) {
             case Some(w) => w
             case None =>

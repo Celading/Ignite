@@ -1,6 +1,6 @@
-# Ignite 0.8.2 Preview
+# Ignite 0.8.7 Preview
 
-`0.8.2` 是自研传输预览线的第三站。`0.8.1` 把 gzip/deflate 换成了 Ignite 自有仓颉 codec 并加入动态 Zstd/Brotli baseline；`0.8.2` 在这之上补齐五件事：Native TLS 连接池的完整生命周期、Native H1 backend 的可观测性、预期断连的安静收敛（超时/对端重置不再打满错误栈）、query 参数单次解码，以及 WebSocket production-core。
+`0.8.7` 将已接受的 `d306fad` 开发检查点提升到 0800 发布线。在 `0.8.2` 的 Native TLS 生命周期、Native H1 可观测性、断连收敛、query 单次解码和 WebSocket production-core 之上，本版补齐完整 HPACK Huffman、有界动态表、Native TLS H2 ingress、H2 response streaming/drain、有界 multiplex session，以及精确长度和未知长度 one-pass request stream；同时消费 lisi transport contract，并收紧压缩 identity refusal 与 private precompressed trust 边界。
 
 一句话概括这条线的原则：**只开放已经在真实 socket/wire 回归里跑通的能力，并且每一项都留着回滚路径。** 它不是"已经完全脱离 stdx"或"全部协议都已 LTS"的宣言。
 
@@ -111,9 +111,8 @@ let client = RestClient()
    这是刻意的——未读完的帧留在连接上，会污染下一个请求。
 2. **TLS 连接只在同源、且信任策略完全一致时才复用。**
    不同信任配置混用同一条加密连接，等于绕过你自己设的校验。
-3. **请求体目前要可重放（buffered/replayable），流式上传还没开；
-   每条连接同一时刻只有一个公开的流式响应 lease。**
-   单 lease 是当前池化模型的边界，不是永久设计。
+3. **普通池化请求体仍需可重放；显式 cleartext multiplex session 已支持精确长度或 EOF 终止的 unknown-length one-pass stream。**
+   stream 不会为 retry/redirect 重放，调用方保持所有权；普通池化请求每条连接同一时刻仍只有一个公开的流式响应 lease。
 4. **`HttpRequestBuilder` mutation hook 仍不兼容。**
    依赖 hook 改写 stdx builder 的调用请留在稳定路径。
 
@@ -132,7 +131,7 @@ Native H2 的最短可运行 ServerEngine、RestClient 与 H1/H2 差异见
 native H2 preview 已经具备：
 
 - Server/Client preface 与 SETTINGS 往返
-- 受限 HPACK 请求/响应头
+- 完整 HPACK Huffman、敏感 Header never-index 与有界动态表
 - 多 stream 交错与有界 stream 数量
 - connection/stream 双层窗口
 - DATA park/requeue 与 `WINDOW_UPDATE` 恢复
@@ -140,15 +139,16 @@ native H2 preview 已经具备：
 - 70,000-byte 双并发响应与重复连接生命周期回归
 - 显式 `RestClient` 明文 prior-knowledge backend
 - streamed response lease、完整消费归池和提前关闭取消/淘汰
+- 显式同源 cleartext multiplex session、精确长度和 unknown-length one-pass request stream
+- Native TLS H2 ingress、response streaming 与 graceful drain 切片
 - 当前仓库 h2spec profile `145 passed / 1 skipped / 0 failed`
 
 还没证明的，也直接列出来：
 
 - Chrome/Firefox/Safari 完整矩阵
 - 浏览器、反向代理和长时压力的完整互操作矩阵
-- 动态 HPACK table 与更多 SETTINGS 边角语义
 - TLS + ALPN 下 native H2 成为默认生产路径
-- 公开 RestClient 多路并发 response lease
+- TLS multiplex session、系统 CA 与最终生产级公平调度
 - H2 extended CONNECT WebSocket
 
 ## 流式 JSON
@@ -185,7 +185,7 @@ ctx.jsonSeaStream({ writer =>
 
 ## 仍需保留的 stdx 面
 
-`0.8.2` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
+`0.8.7` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
 
 ## 推荐验证顺序
 

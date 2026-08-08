@@ -1,9 +1,8 @@
 import ignite.*
+import ignite.native_h2.useExperimentalNativeTlsH2SocketServerEngine
 import std.env.getVariable
-import std.fs.{exists, File, OpenMode}
+import std.fs.{File, OpenMode}
 
-let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
-let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
 let H2_WIRE_FIXTURE = "/tmp/ignite_sample_h2_wire_fixture.txt"
 let H2_WIRE_HOST = "127.0.0.1"
 let H2_WIRE_PORT: UInt16 = 18444
@@ -14,8 +13,8 @@ let H2_FIXTURE_MULTIPLIER_ENV = "IGNITE_H2_FIXTURE_MULTIPLIER"
 let H2_WRITE_TIMEOUT_SECS_ENV = "IGNITE_SAMPLE_WRITE_TIMEOUT_SECS"
 
 main() {
-    let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT", H2_WIRE_CERT_FALLBACK)
-    let keyFile = resolveTlsPath("IGNITE_SAMPLE_TLS_KEY", H2_WIRE_KEY_FALLBACK)
+    let certFile = resolveTlsPath("IGNITE_SAMPLE_TLS_CERT")
+    let keyFile = resolveTlsPath("IGNITE_SAMPLE_TLS_KEY")
     if (certFile.size == 0 || keyFile.size == 0) {
         printTlsHint()
         return
@@ -34,6 +33,7 @@ main() {
         tlsKeyFile: keyFile,
         writeTimeout: effectiveWriteTimeout
     ))
+    useExperimentalNativeTlsH2SocketServerEngine(app)
 
     app.get("/", { ctx =>
         _ = ctx.json(#"{"ok":true,"sample":"h2wire","route":"root"}"#)
@@ -73,15 +73,12 @@ main() {
     app.listen(H2_WIRE_HOST, H2_WIRE_PORT)
 }
 
-func resolveTlsPath(envName: String, fallback: String): String {
+func resolveTlsPath(envName: String): String {
     if (let Some(path) <- getVariable(envName)) {
         let trimmed = path.trimAscii()
         if (trimmed.size > 0 && exists(trimmed)) {
             return trimmed
         }
-    }
-    if (exists(fallback)) {
-        return fallback
     }
     ""
 }
@@ -89,7 +86,6 @@ func resolveTlsPath(envName: String, fallback: String): String {
 func printTlsHint(): Unit {
     println("[sample/h2wire] missing TLS certificate or key")
     println("[sample/h2wire] set IGNITE_SAMPLE_TLS_CERT and IGNITE_SAMPLE_TLS_KEY")
-    println("[sample/h2wire] local workspace fallback is ${H2_WIRE_CERT_FALLBACK} / ${H2_WIRE_KEY_FALLBACK}")
 }
 
 func buildLargeFixture(multiplier: Int64): String {

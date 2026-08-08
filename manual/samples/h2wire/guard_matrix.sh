@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-CERT_PATH="${IGNITE_SAMPLE_TLS_CERT:-${ROOT}/../_helper/testdata/tls/server-cert-a.pem}"
-KEY_A_PKCS8="${ROOT}/../_helper/testdata/tls/server-key-a.pem"
-KEY_B_PKCS8="${ROOT}/../_helper/testdata/tls/server-key-b.pem"
+CERT_PATH="${IGNITE_SAMPLE_TLS_CERT:-}"
+KEY_A_PKCS8="${IGNITE_SAMPLE_TLS_KEY:-}"
+KEY_B_PKCS8="${IGNITE_SAMPLE_TLS_KEY_B:-}"
 KEY_A_PKCS1="/tmp/ignite_h2_key_a_pkcs1.pem"
 KEY_B_PKCS1="/tmp/ignite_h2_key_b_pkcs1.pem"
 
@@ -44,6 +44,10 @@ run_case() {
 }
 
 main() {
+  if [[ -z "${CERT_PATH}" || -z "${KEY_A_PKCS8}" || -z "${KEY_B_PKCS8}" ]]; then
+    echo "[sample/h2wire] set IGNITE_SAMPLE_TLS_CERT, IGNITE_SAMPLE_TLS_KEY, and IGNITE_SAMPLE_TLS_KEY_B." >&2
+    exit 1
+  fi
   prepare_pkcs1
 
   run_case "key-a:pkcs8" "${KEY_A_PKCS8}"

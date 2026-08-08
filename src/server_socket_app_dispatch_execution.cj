@@ -28,10 +28,8 @@ func executePreparedCurrentCarrierDispatch(app: App, ctx: Ctx): Unit {
         if (let Some(errorHandler) <- app._errorHandler) {
             errorHandler(ctx, e)
         } else {
-            let carrier = ctx.currentRequestCarrier()
-            carrier.setResponseStatus(413)
-            carrier.setResponseHeader("content-type", "text/plain; charset=utf-8")
-            carrier.setResponseString("Payload Too Large")
+            _ = ctx.setHeader("content-encoding", "")
+            _ = ctx.status(413).sendString("Payload Too Large")
         }
     } catch (e: Exception) {
         if (app.config.kmode) {
@@ -44,10 +42,8 @@ func executePreparedCurrentCarrierDispatch(app: App, ctx: Ctx): Unit {
         if (let Some(errorHandler) <- app._errorHandler) {
             errorHandler(ctx, e)
         } else {
-            let carrier = ctx.currentRequestCarrier()
-            carrier.setResponseStatus(500)
-            carrier.setResponseHeader("content-type", "text/plain; charset=utf-8")
-            carrier.setResponseString("Internal Server Error")
+            _ = ctx.setHeader("content-encoding", "")
+            _ = ctx.status(500).sendString("Internal Server Error")
         }
     }
 }
