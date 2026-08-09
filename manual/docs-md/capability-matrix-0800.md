@@ -32,7 +32,7 @@
 | 能力 | 状态 | 0800 行为 | 当前边界 |
 | --- | --- | --- | --- |
 | buffered JSON | 稳定继承 | `ctx.json(String)`、`jsonSerialize(...)` 等继续适合小对象。 | 调用方必须先构造完整字符串或完整结果。 |
-| streaming JSON | Native H1 accepted | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出。 | Native H2 App adapter 当前会先聚合完整响应，不能宣称 H2 真流式等价；依赖全量 body 的中间件也不自动兼容。 |
+| streaming JSON | Native H1 + H2 Preview | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出；H2 `jsonWrite` 复用有界 producer bridge 和 flow-controlled DATA 流，不再经 carrier 数组聚合。 | 依赖全量 body 的 ETag/cache/idempotency 中间件不自动兼容；H2 SSE 与所有 streaming surface 的跨后端 flush/close 等价仍未完成。 |
 | 请求体流 | 0800 默认 | `requestBody()` 返回受 `Config.bodyLimit` 保护的流，`saveBodyToFile()` 可直接落盘。 | 流先被消费后，不承诺还能完整回放给 buffered API。 |
 | 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam。 | 调用方负责状态、响应头和 framing；不自动设置 H1 chunked。 |
 | 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是发布阶段预压缩交付，不依赖动态 codec。 |
