@@ -122,8 +122,8 @@ try {
 
 ### 独立 request/response lease multiplex session
 
-如果多个调用方需要在同一个 cleartext H2 连接上独立读取 response body，使用
-显式 session，而不是让多个线程直接争抢 socket：
+如果多个调用方需要在同一个 H2 连接上独立读取 response body，使用显式
+session，而不是让多个线程直接争抢 socket。cleartext 入口如下：
 
 ```cangjie
 let client = RestClient(
@@ -168,8 +168,9 @@ try {
 这条路径的边界是：
 
 - 只支持同一 cleartext `http://` origin；request body 可以是 buffered
-  bytes/string，或 `bodyStream(input, exactLength)` 指定的精确长度 one-pass
-  stream；缺少 `content-length` 时由 session 自动补齐；
+  bytes/string、`bodyStream(input, exactLength)` 指定的精确长度 one-pass stream，
+  或 `bodyStream(input)` 指定的未知长度 source；精确长度缺少 `content-length` 时
+  由 session 自动补齐，未知长度则不发送该 header；
 - stream producer 每次最多读取 8 KiB、每 stream 最多预取 32 KiB，读取用户
   `InputStream` 时不持有 session-state 或 writer mutex；调用方继续持有 stream，
   Ignite 不会关闭或为 retry/redirect 重放它；取消在一次 `read` 返回后生效，可能
@@ -183,12 +184,43 @@ try {
 - 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
   已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
   在未知 peer 消费状态下复用；
-- 不支持 TLS session、未知长度 request stream、自动 RequestBuilder H2
-  streaming、retry/redirect、逐 stream deadline、priority、
+- 支持精确长度和未知长度 one-pass request stream；不支持自动 RequestBuilder
+  H2 streaming、retry/redirect、逐 stream deadline、priority、
   request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用
 `try/finally` 明确归还资源。
+
+需要 TLS1.3 + `h2` ALPN 时，配置 Native TLS 后打开对应 session：
+
+```cangjie
+let client = RestClient(poolSize: 4)
+    .allowExperimentalTransport()
+    .preferTransportBackend("ignite-native-h2-client")
+    .useNativeTls(NativeTls13ClientConfig(
+        trustAnchorsPemBundle,
+        "api.example.com",
+        alpnProtocols: ["h2"]
+    ))
+
+let session = client.openNativeTlsH2Session(
+    "https://api.example.com",
+    maxConcurrentStreams: 8
+)
+try {
+    let a = spawn { session.send(NativeH2BatchRequest("GET", "/a")) }
+    let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
+    println(a.get(Duration.second * 5).body())
+    println(b.get(Duration.second * 5).body())
+} finally {
+    session.close()
+    client.close()
+}
+```
+
+该 TLS session 使用同一 multiplex runtime，支持乱序响应归属和一次性 request
+stream；完整 settle 才归池，带活跃 lease 关闭会淘汰物理连接。它仍要求调用方
+提供 trust anchor/hostname，不代表系统 CA、自动重放或生产默认切换完成。
 
 ## WebSocket 到底是不是 Native
 

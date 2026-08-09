@@ -38,6 +38,9 @@ public class RestClient {
     let _nativeH2SessionMutex = Mutex()
     var _nativeH2Sessions = HashMap<Int64, NativeH2Session>()
     var _nativeH2NextSessionId: Int64 = 1
+    let _nativeTlsH2SessionMutex = Mutex()
+    var _nativeTlsH2Sessions = HashMap<Int64, NativeTlsH2Session>()
+    var _nativeTlsH2NextSessionId: Int64 = 1
 
     public init() {
         _client = ClientBuilder().build()
@@ -547,6 +550,117 @@ public class RestClient {
         }
     }
 
+    /// Opens one explicit Native TLS H2 connection for independent stream leases.
+    ///
+    /// This Preview API consumes caller-owned request streams once. Automatic
+    /// replay, redirects, per-stream deadlines and priority scheduling are not
+    /// part of this session contract.
+    public func openNativeTlsH2Session(
+        originUrl: String,
+        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
+    ): NativeTlsH2Session {
+        try {
+            if (!_allowExperimentalTransport) {
+                throw Exception(
+                    "native TLS H2 session requires allowExperimentalTransport()"
+                )
+            }
+            if (_preferredTransportBackendHint.trimAscii() != NATIVE_H2_CLIENT_BACKEND) {
+                throw Exception(
+                    "native TLS H2 session requires preferTransportBackend(\"${NATIVE_H2_CLIENT_BACKEND}\")"
+                )
+            }
+            if (_requestHooks.size > 0 || _observeHooks.size > 0 ||
+                _transportTouchpointHooks.size > 0) {
+                throw Exception(
+                    "native TLS H2 session does not yet support request, observe, or transport touchpoint hooks"
+                )
+            }
+            if (maxConcurrentStreams <= 0 ||
+                maxConcurrentStreams > NATIVE_H2_REST_BATCH_LIMIT) {
+                throw Exception(
+                    "native TLS H2 session maxConcurrentStreams must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
+                )
+            }
+            let config = match (_nativeTlsConfig) {
+                case Some(value) => value
+                case None => throw Exception(
+                    "native TLS H2 session requires useNativeTls(...)"
+                )
+            }
+            let resolvedOrigin = resolveUrl(originUrl)
+            let target = parseNativeH1Target(resolvedOrigin)
+            if (target.scheme != "https") {
+                throw Exception("native TLS H2 session requires https://")
+            }
+            if (config.requireTargetHostnameMatch &&
+                target.host.toAsciiLower() != config.hostname.trimAscii().toAsciiLower()) {
+                throw Exception("native TLS config hostname must match request host")
+            }
+            let origin = nativeH1PoolOrigin(target)
+            let sessionOriginUrl = target.scheme + "://" + target.hostHeader
+            let connection = match (_nativeTlsH2Pool.acquire(origin, config)) {
+                case Some(existing) => existing
+                case None =>
+                    let opened = openNativeTlsH2Connection(
+                        target, _readTimeout, _writeTimeout, config
+                    )
+                    _nativeTlsH2Pool.recordOpened()
+                    opened
+            }
+
+            var transferred = false
+            try {
+                let protocol = connection.protocol.openMultiplexSession(
+                    maxConcurrentStreams: maxConcurrentStreams
+                )
+                let defaults = cloneNativeH1Headers(_defaultHeaders)
+                let responseHooks = ArrayList<ClientResponseHook>()
+                for (hook in _responseHooks) {
+                    responseHooks.add(hook)
+                }
+                let errorHooks = ArrayList<ClientErrorHook>()
+                for (hook in _errorHooks) {
+                    errorHooks.add(hook)
+                }
+                var sessionId: Int64 = 0
+                synchronized(_nativeTlsH2SessionMutex) {
+                    sessionId = _nativeTlsH2NextSessionId
+                    _nativeTlsH2NextSessionId += 1
+                }
+                let capturedSessionId = sessionId
+                let session = NativeTlsH2Session(
+                    origin,
+                    { value =>
+                        resolveNativeTlsH2SessionUrl(sessionOriginUrl, resolveUrl(value))
+                    },
+                    defaults,
+                    _cookieStore,
+                    protocol,
+                    connection,
+                    _nativeTlsH2Pool,
+                    responseHooks,
+                    errorHooks,
+                    { => removeNativeTlsH2Session(capturedSessionId) }
+                )
+                synchronized(_nativeTlsH2SessionMutex) {
+                    _nativeTlsH2Sessions.add(sessionId, session)
+                }
+                transferred = true
+                session
+            } finally {
+                if (!transferred) {
+                    _nativeTlsH2Pool.retire(connection)
+                }
+            }
+        } catch (e: Exception) {
+            for (hook in _errorHooks) {
+                hook(e)
+            }
+            throw e
+        }
+    }
+
     public func request(): RequestBuilder {
         let builder = RequestBuilder(
             _client,
@@ -590,6 +704,16 @@ public class RestClient {
         for (session in sessions) {
             session.close()
         }
+        let tlsSessions = ArrayList<NativeTlsH2Session>()
+        synchronized(_nativeTlsH2SessionMutex) {
+            for ((_sessionId, session) in _nativeTlsH2Sessions) {
+                tlsSessions.add(session)
+            }
+            _nativeTlsH2Sessions = HashMap<Int64, NativeTlsH2Session>()
+        }
+        for (session in tlsSessions) {
+            session.close()
+        }
         _nativeH1Pool.close()
         _nativeH2Pool.close()
         _nativeTlsH1Pool.close()
@@ -600,6 +724,12 @@ public class RestClient {
     func removeNativeH2Session(sessionId: Int64): Unit {
         synchronized(_nativeH2SessionMutex) {
             let _ = _nativeH2Sessions.remove(sessionId)
+        }
+    }
+
+    func removeNativeTlsH2Session(sessionId: Int64): Unit {
+        synchronized(_nativeTlsH2SessionMutex) {
+            let _ = _nativeTlsH2Sessions.remove(sessionId)
         }
     }
 

@@ -294,10 +294,30 @@ response.discard()
 ```
 
 这条路径不另造一套 H2 parser：TLS record 解密后的字节直接进入现有 Native
-H2 Client 主电路。完整消费 streamed response lease 后，同源且信任策略完全
-一致的 TLS H2 连接可顺序归池；提前关闭会发送 CANCEL 并淘汰连接。当前仍只
-支持 buffered/replayable request body 和每连接一个公开 streamed response
-lease，不开放公开并发多路 lease API。
+H2 Client 主电路。普通 `request().send()` 完整消费 streamed response lease 后，
+同源且信任策略完全一致的 TLS H2 连接可顺序归池；提前关闭会发送 CANCEL 并
+淘汰连接。普通入口仍是每连接一个公开 streamed response lease。
+
+需要显式并发多路 lease 时，可以打开 Preview session：
+
+```cangjie
+let session = client.openNativeTlsH2Session(
+    "https://api.example.com",
+    maxConcurrentStreams: 8
+)
+try {
+    let a = spawn { session.send(NativeH2BatchRequest("GET", "/a")) }
+    let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
+    println(a.get(Duration.second * 5).body())
+    println(b.get(Duration.second * 5).body())
+} finally {
+    session.close()
+}
+```
+
+该 session 支持 buffered、精确长度和未知长度 one-pass request stream。所有
+stream 完整 settle 后连接才可归池；带活跃 lease 关闭会淘汰连接。自动 replay、
+redirect retry、逐 stream deadline/priority 与系统 CA 仍未提供。
 
 ## 响应读取与大包读取
 
