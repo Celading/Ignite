@@ -137,10 +137,16 @@ while IFS= read -r path; do
   IGNITE_ARCHIVES+=("${path}")
 done < <(collect_package_archives "${ROOT}/target/release/ignite")
 
-declare -a JINGUISSL_CONTRACT_ARCHIVES=()
-while IFS= read -r path; do
-  JINGUISSL_CONTRACT_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
+declare -a JINGUISSL_ARCHIVES=()
+if [[ -d "${ROOT}/target/release/jinguissl" ]]; then
+  while IFS= read -r path; do
+    JINGUISSL_ARCHIVES+=("${path}")
+  done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
+else
+  while IFS= read -r path; do
+    JINGUISSL_ARCHIVES+=("${path}")
+  done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
+fi
 
 declare -a JINGUISSL_ARCHIVES=()
 while IFS= read -r path; do

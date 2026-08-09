@@ -48,6 +48,14 @@
 ## Ignite `0700`
 > 资产压缩、协同治理、H1/H2 truth 收口
 
+### v0.7.8 `Ignite Now`
+> JinguiSSL hosted 依赖投影修复版
+
+- `=修复` hosted GitCode 依赖键从旧 `JinguiSSL` 收口到当前 provider 包名 `jinguissl`，避免云端消费者按远程依赖构建时解析失败。
+- `=修复` release-facing import 统一到 `jinguissl.contract.*` / `jinguissl.live.*`，并改为通过 contract facade 消费 `ContractTlsSessionCache`，不再由 Ignite 直接 import `jinguissl_core` 内部命名空间。
+- `=修复` manual sample 运行脚本优先查找新版 `target/release/jinguissl` 产物，同时保留旧 `jinguissl_contract` runtime fallback。
+- `=杂项` 包版本、框架版本常量与 README banner 展示同步到 `0.7.8`。
+
 ### v0.7.2 `Ignite Now`
 > client full consumer surface 官包版
 
