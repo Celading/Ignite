@@ -328,6 +328,187 @@ public class NativeTlsH2WireInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testNativeTlsH2SessionMultiplexesOutOfOrderResponses(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 multiplex test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2MultiplexFixture(accepted)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = nativeTlsH2SessionTestClient()
+        var session: ?NativeTlsH2Session = None
+        try {
+            let opened = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 2
+            )
+            session = Some(opened)
+            let firstFuture = spawn {
+                opened.send(NativeH2BatchRequest("GET", "/first"))
+            }
+            waitForNativeTlsH2Streams(opened, 1)
+            let secondFuture = spawn {
+                opened.send(NativeH2BatchRequest("GET", "/second"))
+            }
+            waitForNativeTlsH2Streams(opened, 2)
+
+            let second = secondFuture.get(Duration.second * 3)
+            @Assert(second.body(), "tls-stream-3")
+            let first = firstFuture.get(Duration.second * 3)
+            @Assert(first.body(), "tls-stream-1")
+            @Assert(opened.activeStreams(), Int64(0))
+            opened.close()
+            session = None
+
+            let reused = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 1
+            )
+            let reusedResponse = reused.send(NativeH2BatchRequest("GET", "/reused"))
+            @Assert(reusedResponse.body(), "tls-stream-5")
+            reused.close()
+
+            let snapshot = client.nativeTlsRuntimeSnapshot().h2
+            @Assert(snapshot.openedConnections, Int64(1))
+            @Assert(snapshot.reusedConnections, Int64(1))
+            @Assert(snapshot.returnedConnections, Int64(2))
+            @Assert(snapshot.retiredConnections, Int64(0))
+            @Assert(snapshot.idleConnections, Int64(1))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            match (session) {
+                case Some(value) => value.close()
+                case None => ()
+            }
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeTlsH2SessionWithActiveLeaseRetiresConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 active lease test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2SingleTurnFixture(accepted, 1)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = nativeTlsH2SessionTestClient()
+        try {
+            let session = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 2
+            )
+            let response = session.send(NativeH2BatchRequest("GET", "/active"))
+            @Assert(session.activeStreams(), Int64(1))
+            session.close()
+            response.close()
+            let snapshot = client.nativeTlsRuntimeSnapshot().h2
+            @Assert(snapshot.openedConnections, Int64(1))
+            @Assert(snapshot.returnedConnections, Int64(0))
+            @Assert(snapshot.retiredConnections, Int64(1))
+            @Assert(snapshot.idleConnections, Int64(0))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeTlsH2SessionAdmissionFailsBeforeNetworkUse(): Unit {
+        let disabled = RestClient(poolSize: 1)
+            .preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+            .useNativeTls(nativeTlsH2SessionTestConfig())
+        let missingTls = RestClient(poolSize: 1)
+            .allowExperimentalTransport()
+            .preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+        try {
+            assertNativeTlsH2SessionRejected(
+                disabled,
+                "https://127.0.0.1:1/",
+                "allowExperimentalTransport"
+            )
+            assertNativeTlsH2SessionRejected(
+                missingTls,
+                "https://127.0.0.1:1/",
+                "requires useNativeTls"
+            )
+            assertNativeTlsH2SessionRejected(
+                nativeTlsH2SessionTestClient(),
+                "http://127.0.0.1:1/",
+                "requires https://"
+            )
+        } finally {
+            disabled.close()
+            missingTls.close()
+        }
+    }
+}
+
+func nativeTlsH2SessionTestConfig(): NativeTls13ClientConfig {
+    NativeTls13ClientConfig(
+        nativeTlsTestText("policy_root.pem"),
+        NATIVE_TLS_H2_TEST_HOST,
+        intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+        alpnProtocols: ["h2"],
+        requireTargetHostnameMatch: false
+    )
+}
+
+func nativeTlsH2SessionTestClient(): RestClient {
+    RestClient(
+        readTimeout: Duration.second * 3,
+        writeTimeout: Duration.second * 3,
+        poolSize: 1
+    )
+        .allowExperimentalTransport()
+        .preferTransportBackend(NATIVE_H2_CLIENT_BACKEND)
+        .useNativeTls(nativeTlsH2SessionTestConfig())
+}
+
+func assertNativeTlsH2SessionRejected(
+    client: RestClient,
+    origin: String,
+    expected: String
+): Unit {
+    var message = ""
+    try {
+        let session = client.openNativeTlsH2Session(origin)
+        session.close()
+    } catch (e: Exception) {
+        message = e.message
+    } finally {
+        client.close()
+    }
+    @Assert(message.contains(expected), true)
+}
+
+func waitForNativeTlsH2Streams(session: NativeTlsH2Session, expected: Int64): Unit {
+    for (_ in 0..200) {
+        if (session.activeStreams() >= expected) {
+            return
+        }
+        sleep(Duration.millisecond * 5)
+    }
+    throw Exception("native TLS H2 session did not reach ${expected} active streams")
 }
 
 func reserveNativeTlsH2ServerMainLoopbackPort(): UInt16 {
@@ -371,6 +552,22 @@ func serveNativeTlsH2SingleTurnFixture(socket: TcpSocket, turn: Int64): Unit {
         throw Exception("native TLS H2 retirement fixture expected stream 1")
     }
     nativeTlsH2WriteResponse(tls, 1, "retire-h2-${turn}")
+}
+
+func serveNativeTlsH2MultiplexFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let first = nativeTlsH2ReadRequestHead(tls)
+    let second = nativeTlsH2ReadRequestHead(tls)
+    if (first.streamId != 1 || second.streamId != 3) {
+        throw Exception("native TLS H2 multiplex fixture expected streams 1 and 3")
+    }
+    nativeTlsH2WriteResponse(tls, 3, "tls-stream-3")
+    nativeTlsH2WriteResponse(tls, 1, "tls-stream-1")
+    let reused = nativeTlsH2ReadRequestHead(tls)
+    if (reused.streamId != 5) {
+        throw Exception("native TLS H2 multiplex fixture expected reused stream 5")
+    }
+    nativeTlsH2WriteResponse(tls, 5, "tls-stream-5")
 }
 
 func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTransport {

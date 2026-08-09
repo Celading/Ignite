@@ -85,7 +85,7 @@ let config = Config(
 
 ## 6. H2 只作为显式 Preview 接入
 
-不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API，以及支持 buffered body 与精确长度 one-pass request stream 的 multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
+不要把 native H2 Preview 理解成公开 HTTPS listener 或默认 Client。0800 已允许 `RestClient` 显式选择 `ignite-native-h2-client`；普通 `request().send()` 处理明文 prior knowledge、buffered/replayable request body 和每连接一个公开 streamed response lease，另有显式 bounded buffered batch API，以及支持 buffered body、精确或未知长度 one-pass request stream 的 cleartext/TLS multiplex session。直接使用 `ignite.native_h2` 低层 API 时，调用方仍要准备 `TcpSocket`，并自行负责 TLS/ALPN、timeout 和 close。
 
 ```cangjie
 let client = RestClient(
@@ -146,9 +146,11 @@ connection/stream send window，并由 `WINDOW_UPDATE`
 或 SETTINGS 初始窗口变化继续推进。每个 stream 最多保留 65,535 字节未读响应
 数据。本地 active stream 上限最多 32，并继续服从 peer SETTINGS。完整消费允许
 连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
-request body 尚未发完，连接会进入 retiring。它仍不包含 TLS multiplex、自动
-RequestBuilder H2 streaming、retry/redirect 重放、priority
-或逐 stream deadline。
+request body 尚未发完，连接会进入 retiring。TLS1.3 场景可在同一 client 配置上
+改用 `openNativeTlsH2Session("https://...")`，保留相同的流控、响应归属和
+one-pass stream 语义。两种 session 都不包含自动 RequestBuilder H2 streaming、
+retry/redirect 重放、priority 或逐 stream deadline；TLS session 也不会自动读取
+系统 CA。
 
 适合的 0800 使用方式：
 
