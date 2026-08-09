@@ -53,7 +53,7 @@ We believe a good framework should be as light as a leaf and yet strike like fli
 
 - Cleartext HTTP/1.1 now defaults to Ignite native H1, with an explicit `stdx-default` rollback.
 - Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions; ordinary `app.ws(...)` uses the Ignite-owned WebSocket when Native H1 is selected.
-- Native H2 server/client include bounded multiplexing, complete HPACK Huffman, a bounded dynamic table, flow-control recovery, and buffered/exact-length/unknown-length request streams. The server still requires an explicit cleartext prior-knowledge engine and does not provide H2 WebSocket.
+- Native H2 server/client include bounded multiplexing, complete HPACK Huffman, a bounded dynamic table, flow-control recovery, cleartext/TLS concurrent stream leases, and buffered/exact-length/unknown-length request streams. The server still requires an explicit cleartext prior-knowledge engine and does not provide H2 WebSocket.
 - HTTPS keeps the stable stdx TLS path by default; JinguiSSL native TLS/ALPN remains experimental opt-in.
 - Native TLS client pools now expose bounded idle lifecycle snapshots, while native H1 exposes backend selection, fallback reasons, connection/request counters, and expected timeout/reset containment.
 - SeaJson exposes a `JsonWriterEncodable -> OutputStream` path; classic `ctx.json(String)` still sends a complete string.

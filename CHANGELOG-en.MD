@@ -7,10 +7,11 @@
 
 - `+Feature` Native H2 completes RFC 7541 HPACK Huffman 256-octet decoding, encode-when-smaller output, EOS/padding validation, sensitive-header never-index policy, and a bounded dynamic table
 - `+Feature` Native TLS H2 ingress is wired into the existing runtime, with H2 response streaming, graceful drain, and bounded multiplex sessions
-- `+Feature` Explicit cleartext H2 sessions accept buffered, exact-length, and EOF-terminated unknown-length one-pass request streams while retaining bounded prefetch, cancellation, and connection-retirement semantics
+- `+Feature` Explicit cleartext/TLS H2 sessions provide independent concurrent stream leases plus buffered, exact-length, and EOF-terminated unknown-length one-pass request streams
+- `+Feature` H2 `ctx.jsonWrite(...)` reuses a bounded producer and flow-controlled DATA path instead of aggregating a complete JSON carrier before the handler returns
 - `+Feature` Consume the lisi transport contract across stream/lifecycle/backpressure adapter boundaries, and harden compression identity refusal plus private precompressed-representation trust
-- `+Validation` This release promotes accepted development checkpoint `d306fad`; clean update, build, full serial tests, and public-leak audit are rerun before the review branch is published
-- `=Boundary` TLS multiplex sessions, system CA, H2 WebSocket, complete Brotli/Zstd entropy coding, final scheduling/default flip, tag, Release, main merge, and LTS remain unclaimed
+- `+Validation` This release promotes accepted development checkpoint `036383d`; clean update, build, full serial tests, and public-leak audit are rerun before the review branch is published
+- `=Boundary` System CA, automatic replay, per-stream deadline/priority, H2 WebSocket, complete Brotli/Zstd entropy coding, final scheduling/default flip, tag, Release, main merge, and LTS remain unclaimed
 - `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, 0800 Manual, and bilingual changelog are aligned to `0.8.7`
 
 ### v0.8.2 `Ignite Preview`

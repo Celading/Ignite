@@ -1,6 +1,6 @@
 # Ignite 0.8.7 Preview
 
-`0.8.7` 将已接受的 `d306fad` 开发检查点提升到 0800 发布线。在 `0.8.2` 的 Native TLS 生命周期、Native H1 可观测性、断连收敛、query 单次解码和 WebSocket production-core 之上，本版补齐完整 HPACK Huffman、有界动态表、Native TLS H2 ingress、H2 response streaming/drain、有界 multiplex session，以及精确长度和未知长度 one-pass request stream；同时消费 lisi transport contract，并收紧压缩 identity refusal 与 private precompressed trust 边界。
+`0.8.7` 将已接受的 `036383d` 开发检查点提升到 0800 发布线。在 `0.8.2` 的 Native TLS 生命周期、Native H1 可观测性、断连收敛、query 单次解码和 WebSocket production-core 之上，本版补齐完整 HPACK Huffman、有界动态表、Native TLS H2 ingress、H2 response streaming/drain、cleartext/TLS multiplex session、精确长度与未知长度 one-pass request stream，以及 H2 `jsonWrite` 有界流式写出；同时消费 lisi transport contract，并收紧压缩 identity refusal 与 private precompressed trust 边界。
 
 一句话概括这条线的原则：**只开放已经在真实 socket/wire 回归里跑通的能力，并且每一项都留着回滚路径。** 它不是"已经完全脱离 stdx"或"全部协议都已 LTS"的宣言。
 
@@ -148,7 +148,7 @@ native H2 preview 已经具备：
 - Chrome/Firefox/Safari 完整矩阵
 - 浏览器、反向代理和长时压力的完整互操作矩阵
 - TLS + ALPN 下 native H2 成为默认生产路径
-- TLS multiplex session、系统 CA 与最终生产级公平调度
+- 系统 CA、自动重放、逐 stream deadline/priority 与最终生产级公平调度
 - H2 extended CONNECT WebSocket
 
 ## 流式 JSON

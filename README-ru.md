@@ -53,7 +53,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 - HTTP/1.1 без TLS по умолчанию использует native H1 Ignite; доступен явный откат через `stdx-default`.
 - Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами; обычный `app.ws(...)` использует реализацию Ignite при выбранном Native H1.
-- Native H2 server/client поддерживают ограниченное мультиплексирование, полный HPACK Huffman, ограниченную динамическую таблицу, восстановление flow control и buffered/exact-length/unknown-length request stream; server по-прежнему требует явного cleartext prior-knowledge engine и не предоставляет H2 WebSocket.
+- Native H2 server/client поддерживают ограниченное мультиплексирование, полный HPACK Huffman, ограниченную динамическую таблицу, восстановление flow control, параллельные cleartext/TLS stream lease и buffered/exact-length/unknown-length request stream; server по-прежнему требует явного cleartext prior-knowledge engine и не предоставляет H2 WebSocket.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - Native TLS client pool предоставляет ограниченный idle lifecycle и H1/H2 snapshot; native H1 показывает выбранный backend, причины fallback и счётчики соединений/запросов, а также подавляет ожидаемый шум timeout/reset.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.

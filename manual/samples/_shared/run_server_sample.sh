@@ -148,11 +148,6 @@ else
   done < <(collect_package_archives "${ROOT}/target/release/jinguissl_contract")
 fi
 
-declare -a JINGUISSL_ARCHIVES=()
-while IFS= read -r path; do
-  JINGUISSL_ARCHIVES+=("${path}")
-done < <(collect_package_archives "${ROOT}/target/release/jinguissl")
-
 declare -a JINGUISSL_CORE_ARCHIVES=()
 while IFS= read -r path; do
   JINGUISSL_CORE_ARCHIVES+=("${path}")
@@ -175,9 +170,6 @@ if [[ "${#IGNITE_ARCHIVES[@]}" -gt 0 ]]; then
 fi
 if [[ "${#JINGUISSL_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${JINGUISSL_ARCHIVES[@]}")
-fi
-if [[ "${#JINGUISSL_CONTRACT_ARCHIVES[@]}" -gt 0 ]]; then
-  COMMON_LINKS+=("${JINGUISSL_CONTRACT_ARCHIVES[@]}")
 fi
 if [[ "${#JINGUISSL_CORE_ARCHIVES[@]}" -gt 0 ]]; then
   COMMON_LINKS+=("${JINGUISSL_CORE_ARCHIVES[@]}")

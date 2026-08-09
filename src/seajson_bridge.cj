@@ -29,15 +29,9 @@ func writeJsonWriterEncodableThroughSeaJsonBridge(
     out: OutputStream,
     obj: JsonWriterEncodable
 ): Unit {
-    // Keep the hosted Gitcode SeaJson baseline consumable even before its
-    // public writer surface lands the OutputStream-backed constructor.
-    // This preserves the Ignite-side contract while honestly buffering inside
-    // the bridge until the sibling hosted truth catches up.
-    let writer = SeaJsonNativeWriter()
+    let writer = SeaJsonNativeWriter(out: out)
     obj.writeJson(writer)
-    let json = writer.close()
-    out.write(json.toArray())
-    out.flush()
+    writer.finish()
 }
 
 func writeSeaJsonCallbackThroughSeaJsonBridge(

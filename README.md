@@ -43,10 +43,10 @@
 
 - 明文 HTTP/1.1 默认进入 Ignite native H1，保留 `stdx-default` 显式回滚入口。
 - 原生 H1 Client、WebSocket、SSE、流式响应与请求体上限已经进入真实 socket 回归面；普通 `app.ws(...)` 在 Native H1 backend 下就是 Ignite 自研 WebSocket，不需要第二个开关。
-- 原生 H2 Server/Client 已具备受限多路复用、完整 HPACK Huffman、有界动态表、流控恢复与 buffered/精确长度/未知长度 request stream；Server 仍需显式安装 cleartext prior-knowledge engine，不是浏览器 HTTPS 默认路径，也不包含 H2 WebSocket。
+- 原生 H2 Server/Client 已具备受限多路复用、完整 HPACK Huffman、有界动态表、流控恢复、cleartext/TLS 并发 stream lease 与 buffered/精确长度/未知长度 request stream；Server 仍需显式安装 cleartext prior-knowledge engine，不是浏览器 HTTPS 默认路径，也不包含 H2 WebSocket。
 - HTTPS 默认继续使用稳定的 stdx TLS 路径；JinguiSSL native TLS/ALPN 仍需显式实验开关。
 - Native TLS client pool 提供有界 idle 生命周期与 H1/H2 快照；native H1 提供 backend 选择、连接/请求计数和降级原因，并收敛预期 timeout/reset 噪声。
-- SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径；传统 `ctx.json(String)` 仍是完整字符串响应。
+- SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径，Native H2 `jsonWrite` 也进入有界 DATA 流；传统 `ctx.json(String)` 仍是完整字符串响应。
 - 动态 gzip/deflate 已切换为 Ignite 自有安全仓颉 codec；Zstd 与 Brotli 提供默认关闭的 RAW/RLE Preview，静态 `.zst/.br` 副本继续保留。
 
 完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。Native H2 的可运行 Server/Client 入口与 H1/H2 差异见 [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md)。

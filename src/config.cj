@@ -58,6 +58,7 @@ public enum BannerColorMode <: Equatable<BannerColorMode> & ToString {
         }
     }
 }
+
 public struct Config {
     public var appName: String = "Ignite"
     /// 应用版本，用于启动 Banner 标题；空则显示框架版本。Banner 始终输出，不可关闭。
