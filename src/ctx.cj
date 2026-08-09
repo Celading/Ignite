@@ -474,15 +474,16 @@ public class Ctx {
     /// Stream a JSON payload through a `JsonWriter` callback.
     ///
     /// The callback receives a `JsonWriter` backed by Ignite's current
-    /// response transport writer seam. On HTTP/1.x this path is chunked by default; on
-    /// HTTP/2 each write becomes a corresponding data segment.
+    /// response transport writer seam. On HTTP/1.x this path is chunked by default;
+    /// on HTTP/2 it uses the bounded `JsonWriterInputStream` response path and emits
+    /// flow-controlled DATA segments.
     ///
     /// **Known middleware limitation**: Unlike `ctx.json(...)`, this method
     /// does **not** set `ctx.responseBody`. Middleware that depends on a
     /// fully-buffered response body (`etag`, `cache`, `idempotency`) remains
     /// unpromised for this streaming path. When a stream compression plan is
-    /// currently applicable, `jsonWrite(...)` delegates to `jsonStream(...)`
-    /// so the accepted streamed-compress subset can be reused.
+    /// currently applicable, or when the request is HTTP/2, `jsonWrite(...)`
+    /// delegates to `jsonStream(...)` so the bounded response-stream seam is reused.
     ///
     /// For `HEAD` requests the callback is not invoked and no body is sent.
     public func jsonWrite(writerFn: (JsonWriter) -> Unit): Ctx {
@@ -494,14 +495,13 @@ public class Ctx {
                 return this
             }
         }
-        // When a stream compression plan is registered (e.g. by compressMiddleware),
-        // delegate to jsonStream(...) so the existing sendStream-compress seam applies.
-        // Without a plan the existing direct-writer path is unchanged.
-        if (let Some(_) <- currentStreamCompressionPlan(this, None)) {
+        let http2Request = isHttp2Protocol(protocol)
+        // H2 response writers are finalized after the handler returns. Reuse the
+        // bounded InputStream path instead of accumulating direct writer calls.
+        if (http2Request || currentStreamCompressionPlan(this, None).isSome()) {
             return jsonStream(writerFn)
         }
         let headRequest = isHeadRequest(method)
-        let http2Request = isHttp2Protocol(protocol)
         if (!headRequest && !http2Request) {
             setResponseHeaderTracked("transfer-encoding", "chunked")
         }
