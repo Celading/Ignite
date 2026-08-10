@@ -34,7 +34,8 @@
 </p>
 
 <p align="center">
-  <a href="https://atomgit.com/Cinexus/ignite-cangjie">Repository</a> ·
+  <a href="https://gitcode.com/cinyu/ignite-cangjie">GitCode</a> ·
+  <a href="https://github.com/Celading/Ignite">GitHub mirror</a> ·
   <a href="https://pkg.cangjie-lang.cn/package/ignite">Package registry</a>
 </p>
 
@@ -90,16 +91,32 @@ See [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md) for t
 
 ### Adding dependencies
 
-#### Add dependency in `cangjie.toml`
+#### Choose one source in `cjpm.toml`
+
+Stable package-center release:
 
 ```toml
-[package]
-..... # In the dependency group under [package], add:
 [dependencies]
-    Ignite = { git = "https://gitcode.com/Cinyu/Ignite-cangjie" }
+ignite = "0.7.7"
 ```
 
-#### Using the package registry
+Ignite 0800 Preview from GitCode:
+
+```toml
+[dependencies]
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
+```
+
+Ignite 0800 Preview from GitHub:
+
+```toml
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+The package key is lowercase `ignite`. Choose exactly one source. Normal applications should declare only Ignite; `jinguissl`, `seajson`, and `lisi` are transitive dependencies and should only be declared directly by provider maintainers or consumers that intentionally lock provider source revisions.
+
+#### Package registry configuration
 
 Refer to `cangjie-repo.toml.example` to create and configure `cangjie-repo.toml` locally.
 
@@ -910,6 +927,17 @@ Still evaluating Ignite? The fastest path is to try the samples in this order: `
 ## Maintainer note
 
 - **Version**: The single source of truth is `[package].version` in `cjpm.toml` (banner version is read from package metadata at compile time).
+
+## Use HapCLI for stdx environment management
+
+Ignite 0800 still has explicit stdx runtime and platform-link requirements. When HapCLI is installed, let it diagnose the SDK/stdx layout and build with the same target instead of manually assembling static-library paths:
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+Use `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-w64-mingw32`, or `aarch64-linux-ohos` for the corresponding platforms. HapCLI is currently a Preview tool; see [cli.hap.pub](https://cli.hap.pub). It manages environment diagnosis and build orchestration, but does not imply that Ignite no longer depends on stdx.
 
 ## License
 

@@ -50,16 +50,47 @@ Ignite 的价值不在于否定底层，而在于帮你把这些“每个服务�
 
 ## 依赖接入
 
-### Git 依赖
+### 稳定版：中心仓
 
-如果你想先跟随主仓节奏接入，在业务仓的 `cjpm.toml` 中加入：
+当前中心仓可直接消费的稳定版是 `0.7.7`：
 
 ```toml
 [dependencies]
-Ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie" }
+ignite = "0.7.7"
 ```
 
-### 中心仓
+`0.8.7 Preview` 尚未进入中心仓，不要把 `ignite = "0.8.7"` 写成可用示例。
+
+### 0800 Preview：GitCode
+
+```toml
+[dependencies]
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
+```
+
+### 0800 Preview：GitHub
+
+```toml
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+三个片段只能选择一个。包键是 `cjpm.toml` 中真实的小写包名 `ignite`；省略 `branch = "ig0800"` 会跟随远端 `main`，目前不能代表 0800 Preview。
+
+普通业务项目只需要声明 `ignite`。JinguiSSL、SeaJson 与 lisi 是 Ignite 的传递依赖；只有 provider 维护、源码锁定或依赖排障场景才需要直接声明它们。
+
+### Provider 源矩阵
+
+| 包键 | GitCode | GitHub | 当前消费说明 |
+| --- | --- | --- | --- |
+| `ignite` | `https://gitcode.com/cinyu/ignite-cangjie.git` | `https://github.com/Celading/Ignite.git` | 0800 Preview 使用 `branch = "ig0800"`。 |
+| `jinguissl` | `https://gitcode.com/cinyu/jinguiSSL.git` | `https://github.com/Celading/JinguiSSL.git` | 两端当前指向同一 provider 主线。 |
+| `seajson` | `https://gitcode.com/CjKu/SeaJson.git` | `https://github.com/Celading/SeaJson.git` | 两端当前指向同一 provider 主线。 |
+| `lisi` | `https://gitcode.com/cinyu/lisi.git` | `https://github.com/Celading/lisi.git` | GitHub 仓已存在但目前没有可消费 HEAD；0800 发布线固定使用 GitCode 的 `lio-j002-provider-contract-v1`。 |
+
+不要因为 provider 有双托管仓，就在同一业务 `cjpm.toml` 中同时声明两份同名包；CJPM 的一个包键只能选择一个来源。
+
+### 中心仓配置
 
 如果你走中心仓，请参考仓内的 [`../../cangjie-repo.toml.example`](../../cangjie-repo.toml.example) 配置本地 `cangjie-repo.toml`。
 
@@ -131,3 +162,14 @@ cjpm test
 - 想先看治理与安全：继续看 [`middleware.md`](middleware.md)
 - 想做内置客户端联调：继续看 [`client.md`](client.md)
 - 想看 WebSocket、SSE、Swagger、TLS 与静态托管：继续看 [`advanced.md`](advanced.md)
+
+## 最后一步：交给 HapCLI 管理 stdx 环境
+
+Ignite 0800 仍需要正确的 Cangjie SDK、stdx 与目标平台链接布局。安装 HapCLI 后，推荐把环境探测和构建交给同一工具：
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+常用 target 包括 `x86_64-unknown-linux-gnu`、`aarch64-unknown-linux-gnu`、`x86_64-w64-mingw32` 与 `aarch64-linux-ohos`。HapCLI 当前仍是 Preview，入口见 [cli.hap.pub](https://cli.hap.pub)；推荐它是为了统一 stdx 环境诊断和构建编排，不是宣称 Ignite 已完成去 stdx。

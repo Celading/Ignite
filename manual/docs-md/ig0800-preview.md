@@ -10,19 +10,36 @@
 
 ## 依赖接入
 
+中心仓当前提供稳定版 `0.7.7`，不提供 0800 Preview：
+
 ```toml
 [dependencies]
-ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git" }
+ignite = "0.7.7"
 ```
 
-Ignite 自身的发布构建消费：
+0800 Preview 必须选择一个托管源并固定 `ig0800` 分支：
 
 ```toml
-jinguissl = { git = "https://gitcode.com/cinyu/jinguiSSL.git" }
-seajson = { git = "https://gitcode.com/CjKu/SeaJson.git" }
+# GitCode
+[dependencies]
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
 ```
 
-这两项托管依赖已经通过全新消费者拉取和 `cjpm build`，不再依赖本机 sibling path。
+```toml
+# GitHub
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+包键必须是小写 `ignite`，且一个项目只能选择一个来源。普通消费者不要重复声明传递依赖。发布维护者需要锁定 provider 时，可按下表选择对应托管源：
+
+| 包键 | GitCode | GitHub | 0800 发布消费状态 |
+| --- | --- | --- | --- |
+| `jinguissl` | `https://gitcode.com/cinyu/jinguiSSL.git` | `https://github.com/Celading/JinguiSSL.git` | 两端可解析。 |
+| `seajson` | `https://gitcode.com/CjKu/SeaJson.git` | `https://github.com/Celading/SeaJson.git` | 两端可解析。 |
+| `lisi` | `https://gitcode.com/cinyu/lisi.git` | `https://github.com/Celading/lisi.git` | 当前发布固定 GitCode `lio-j002-provider-contract-v1`；GitHub 仓存在但没有可消费 HEAD。 |
+
+完整安装与中心仓配置见 [`Guide.md`](Guide.md)。
 
 ## 默认运行时
 
@@ -174,3 +191,14 @@ ctx.jsonSeaStream({ writer =>
 5. `./manual/samples/h2wire/probe.sh`
 
 H1 是 0800 的默认可用路线。H2 sample 是预览和诊断入口，不是生产兼容性证书。
+
+## 推荐用 HapCLI 接管 stdx 环境诊断
+
+0800 Preview 仍依赖正确的 SDK/stdx 与平台链接布局。安装 HapCLI 后，建议先诊断再用同一 target 构建：
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+其他常用 target：`x86_64-unknown-linux-gnu`、`aarch64-unknown-linux-gnu`、`x86_64-w64-mingw32`、`aarch64-linux-ohos`。HapCLI 当前是 Preview 工具，入口见 [cli.hap.pub](https://cli.hap.pub)；它负责 stdx 环境诊断与构建编排，不改变本页列出的 stdx 残留事实。

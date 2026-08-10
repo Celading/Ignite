@@ -34,7 +34,8 @@
 </p>
 
 <p align="center">
-  <a href="https://atomgit.com/Cinexus/ignite-cangjie">Репозиторий</a> ·
+  <a href="https://gitcode.com/cinyu/ignite-cangjie">GitCode</a> ·
+  <a href="https://github.com/Celading/Ignite">Зеркало GitHub</a> ·
   <a href="https://pkg.cangjie-lang.cn/package/ignite">Реестр пакетов</a>
 </p>
 
@@ -90,16 +91,32 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 ### Подключение зависимостей
 
-#### Добавление зависимости в `cangjie.toml`
+#### Выберите один источник в `cjpm.toml`
+
+Стабильный выпуск из центра пакетов:
 
 ```toml
-[package]
-..... # В группе зависимостей в [package] добавьте:
 [dependencies]
-    Ignite = { git = "https://gitcode.com/Cinyu/Ignite-cangjie" }
+ignite = "0.7.7"
 ```
 
-#### Использование реестра пакетов
+Ignite 0800 Preview из GitCode:
+
+```toml
+[dependencies]
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
+```
+
+Ignite 0800 Preview из GitHub:
+
+```toml
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+Ключ пакета всегда пишется строчными буквами: `ignite`. Выберите только один источник. Обычному приложению достаточно объявить Ignite; `jinguissl`, `seajson` и `lisi` приходят как транзитивные зависимости. Объявляйте их напрямую только при сопровождении provider или осознанной фиксации исходной ревизии.
+
+#### Настройка реестра пакетов
 
 Создайте и настройте локально `cangjie-repo.toml` по образцу `cangjie-repo.toml.example`.
 
@@ -803,6 +820,17 @@ ignite/
 ## Заметка для сопровождающих
 
 - **Версия:** Единственный источник истины — `[package].version` в `cjpm.toml` (версия в баннере читается из метаданных пакета на этапе компиляции).
+
+## Управление окружением stdx через HapCLI
+
+Ignite 0800 всё ещё имеет явные требования к runtime stdx и платформенной линковке. Если HapCLI установлен, сначала проверьте расположение SDK/stdx, затем собирайте проект с тем же target, не формируя пути к статическим библиотекам вручную:
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+Для других платформ используйте `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-w64-mingw32` или `aarch64-linux-ohos`. HapCLI пока является Preview-инструментом; входная точка: [cli.hap.pub](https://cli.hap.pub). Он отвечает за диагностику окружения и запуск сборки, но не означает, что Ignite уже не зависит от stdx.
 
 ## Лицензия
 

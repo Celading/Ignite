@@ -4,10 +4,21 @@
 
 ## 1. 更新依赖并先构建
 
+中心仓 `ignite = "0.7.7"` 仍是稳定 0700；升级到 0800 Preview 时，请在 GitCode 与 GitHub 中选择一个来源，并固定 `ig0800` 分支：
+
 ```toml
+# GitCode
 [dependencies]
-ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git" }
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
 ```
+
+```toml
+# GitHub
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+包键必须写成小写 `ignite`，两个来源不要同时声明。普通业务项目无需直接添加 `jinguissl`、`seajson` 或 `lisi`，它们由 Ignite 传递解析。
 
 先执行：
 
@@ -185,3 +196,14 @@ codec。动态 Zstd baseline 需要显式设置 `zstdEnabled: true`，当前只�
 - 如果消费 native H2：SETTINGS、多流、WINDOW_UPDATE、RST、GOAWAY、timeout、完整消费归池、提前关闭淘汰和物理 close。
 
 能力全表见 [`capability-matrix-0800.md`](capability-matrix-0800.md)，新增签名见 [`api-0800.md`](api-0800.md)。
+
+## 9. 用 HapCLI 统一 stdx 环境
+
+迁移完成后，推荐用 HapCLI 对目标平台做一次 stdx 诊断并通过同一 target 构建：
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+Linux、Windows、OpenHarmony 可改用 `x86_64-unknown-linux-gnu`、`aarch64-unknown-linux-gnu`、`x86_64-w64-mingw32` 或 `aarch64-linux-ohos`。HapCLI 当前仍是 Preview，入口见 [cli.hap.pub](https://cli.hap.pub)；它帮助接管 stdx 环境诊断与构建编排，但不代表 0800 已经完全去除 stdx。
