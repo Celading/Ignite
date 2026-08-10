@@ -54,4 +54,3 @@ public class RequestSchedulerProofReceiptTestSuite {
         @Assert(receipt.nonClaims[4], "NO_RUNTIME_NATIVE_CLAIM")
     }
 }
-

@@ -47,4 +47,3 @@ public class RuntimeConcurrencyDesignGateTestSuite {
         @Assert(gate.nonClaims[3], "NO_PERFORMANCE_CLAIM_WITHOUT_BENCHMARK")
     }
 }
-
