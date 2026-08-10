@@ -2,8 +2,8 @@ package ignite.tests
 
 import ignite.*
 
-let DUAL_TLS_CERT_A = "_helper/testdata/tls/server-cert-a.pem"
-let DUAL_TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
+let DUAL_TLS_CERT_A = "testdata/tls/server-cert-a.pem"
+let DUAL_TLS_KEY_A = "testdata/tls/server-key-a.pem"
 
 @Test
 public class DeploymentDualListenerPatternTestSuite {

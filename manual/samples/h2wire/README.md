@@ -16,7 +16,7 @@ Ignite 0800 的 H2 preview / compatibility smoke，分开验证三类事实：
 ./manual/samples/h2wire/run.sh
 ```
 
-如果你本地正好就是当前 Ignite 工作区，并且 `_helper/testdata/tls/server-cert-a.pem` / `server-key-a.pem` 存在，样例会默认使用它们。
+仓库自带仅用于测试的 `testdata/tls/server-cert-a.pem` / `server-key-a.pem`，样例会默认使用它们。
 否则请先设置：
 
 ```bash
@@ -115,8 +115,8 @@ IGNITE_H2SPEC_PREPARE_ONLY=1 ./manual/samples/h2wire/h2spec_smoke.sh
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `IGNITE_SAMPLE_TLS_CERT` | `_helper/testdata/tls/server-cert-a.pem` | TLS 证书路径 |
-| `IGNITE_SAMPLE_TLS_KEY` | `_helper/testdata/tls/server-key-a.pem` | TLS 私钥路径 |
+| `IGNITE_SAMPLE_TLS_CERT` | `testdata/tls/server-cert-a.pem` | TLS 证书路径 |
+| `IGNITE_SAMPLE_TLS_KEY` | `testdata/tls/server-key-a.pem` | TLS 私钥路径 |
 | `IGNITE_H2_FIXTURE_MULTIPLIER` | `64` | 响应体大小 = 4096 × 51B × multiplier。默认约 13 MiB |
 | `IGNITE_SAMPLE_WRITE_TIMEOUT_SECS` | `30` | 服务端 writeTimeout 值（秒） |
 | `IGNITE_STDX_STATIC` | 自动探测 | 指向 `cj_stdx_*_llvm/static` |

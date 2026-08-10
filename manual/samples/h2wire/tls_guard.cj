@@ -5,8 +5,8 @@ import std.collection.ArrayList
 import stdx.crypto.x509.X509Certificate
 import stdx.crypto.keys.GeneralPrivateKey
 
-let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
-let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
+let H2_WIRE_CERT_FALLBACK = "testdata/tls/server-cert-a.pem"
+let H2_WIRE_KEY_FALLBACK = "testdata/tls/server-key-a.pem"
 let H2_GUARD_DEFAULT_STAGE = "full"
 let H2_GUARD_STAGE_MAINLINE_BUILD = "mainline_build"
 let H2_GUARD_STAGE_LEGACY_KEY_DECODE = "legacy_key_decode"

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-CERT_PATH="${IGNITE_SAMPLE_TLS_CERT:-${ROOT}/../_helper/testdata/tls/server-cert-a.pem}"
-KEY_A_PKCS8="${ROOT}/../_helper/testdata/tls/server-key-a.pem"
-KEY_B_PKCS8="${ROOT}/../_helper/testdata/tls/server-key-b.pem"
+CERT_PATH="${IGNITE_SAMPLE_TLS_CERT:-${ROOT}/testdata/tls/server-cert-a.pem}"
+KEY_A_PKCS8="${ROOT}/testdata/tls/server-key-a.pem"
+KEY_B_PKCS8="${ROOT}/testdata/tls/server-key-b.pem"
 KEY_A_PKCS1="/tmp/ignite_h2_key_a_pkcs1.pem"
 KEY_B_PKCS1="/tmp/ignite_h2_key_b_pkcs1.pem"
 

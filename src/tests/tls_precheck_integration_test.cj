@@ -4,9 +4,9 @@ import ignite.api2
 import std.collection.ArrayList
 import std.fs.{exists, File, OpenMode}
 
-let TLS_CERT_A = "_helper/testdata/tls/server-cert-a.pem"
-let TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
-let TLS_KEY_B = "_helper/testdata/tls/server-key-b.pem"
+let TLS_CERT_A = "testdata/tls/server-cert-a.pem"
+let TLS_KEY_A = "testdata/tls/server-key-a.pem"
+let TLS_KEY_B = "testdata/tls/server-key-b.pem"
 
 @Test
 public class TlsPrecheckIntegrationTestSuite {

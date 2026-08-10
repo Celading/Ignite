@@ -112,11 +112,11 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" && -f "${ROOT}/../_helper/testdata/tls/server-cert-a.pem" ]]; then
-  export IGNITE_SAMPLE_TLS_CERT="${ROOT}/../_helper/testdata/tls/server-cert-a.pem"
+if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" && -f "${ROOT}/testdata/tls/server-cert-a.pem" ]]; then
+  export IGNITE_SAMPLE_TLS_CERT="${ROOT}/testdata/tls/server-cert-a.pem"
 fi
-if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/../_helper/testdata/tls/server-key-a.pem" ]]; then
-  export IGNITE_SAMPLE_TLS_KEY="${ROOT}/../_helper/testdata/tls/server-key-a.pem"
+if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/testdata/tls/server-key-a.pem" ]]; then
+  export IGNITE_SAMPLE_TLS_KEY="${ROOT}/testdata/tls/server-key-a.pem"
 fi
 
 ensure_cangjie_env

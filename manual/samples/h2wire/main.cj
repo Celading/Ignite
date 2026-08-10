@@ -3,8 +3,8 @@ import ignite.native_h2.useExperimentalNativeTlsH2SocketServerEngine
 import std.env.getVariable
 import std.fs.{exists, File, OpenMode}
 
-let H2_WIRE_CERT_FALLBACK = "../_helper/testdata/tls/server-cert-a.pem"
-let H2_WIRE_KEY_FALLBACK = "../_helper/testdata/tls/server-key-a.pem"
+let H2_WIRE_CERT_FALLBACK = "testdata/tls/server-cert-a.pem"
+let H2_WIRE_KEY_FALLBACK = "testdata/tls/server-key-a.pem"
 let H2_WIRE_FIXTURE = "/tmp/ignite_sample_h2_wire_fixture.txt"
 let H2_WIRE_HOST = "127.0.0.1"
 let H2_WIRE_PORT: UInt16 = 18444
