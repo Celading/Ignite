@@ -18,8 +18,8 @@ import jinguissl.live.{
     contractTls13BuildHttpClientHelloX25519
 }
 
-let ENGINE_TLS_CERT_A = "_helper/testdata/tls/server-cert-a.pem"
-let ENGINE_TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
+let ENGINE_TLS_CERT_A = "testdata/tls/server-cert-a.pem"
+let ENGINE_TLS_KEY_A = "testdata/tls/server-key-a.pem"
 
 @Test
 public class ServerEngineAbstractionTestSuite {

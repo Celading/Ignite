@@ -7,8 +7,8 @@ import jinguissl.live.{
     contractTls13BuildHttpClientHelloX25519
 }
 
-let HQ0436_ENGINE_TLS_CERT_A = "_helper/testdata/tls/server-cert-a.pem"
-let HQ0436_ENGINE_TLS_KEY_A = "_helper/testdata/tls/server-key-a.pem"
+let HQ0436_ENGINE_TLS_CERT_A = "testdata/tls/server-cert-a.pem"
+let HQ0436_ENGINE_TLS_KEY_A = "testdata/tls/server-key-a.pem"
 
 @Test
 public class ServerJinguiAcceptedTransportReadinessReprobeTestSuite {

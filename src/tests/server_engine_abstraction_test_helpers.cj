@@ -9164,7 +9164,7 @@ func completeAcceptedTransportTls13ClientHandshake(
         clientHello,
         ContractHttpClientTlsTrustRequest(
             String.fromUtf8(File.readFrom(resolveEngineFixturePath(
-                "_helper/testdata/tls/server-cert-a.pem"
+                "testdata/tls/server-cert-a.pem"
             ))),
             hostname: "localhost",
             policy: ContractTlsHttpNegotiationPolicy(
