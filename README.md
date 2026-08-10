@@ -109,12 +109,30 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
-- 依赖接入：在业务仓的 `cjpm.toml` 中增加 Git 依赖；中心仓接入与认证仓配置，继续看 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
+- 依赖接入：稳定版可走中心仓，0800 Preview 必须选择 GitCode 或 GitHub 的 `ig0800` 分支；完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
+
+稳定版中心仓：
 
 ```toml
 [dependencies]
-Ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie" }
+ignite = "0.7.7"
 ```
+
+0800 Preview 请选择一个托管源，不要同时声明多个来源：
+
+```toml
+# GitCode
+[dependencies]
+ignite = { git = "https://gitcode.com/cinyu/ignite-cangjie.git", branch = "ig0800" }
+```
+
+```toml
+# GitHub
+[dependencies]
+ignite = { git = "https://github.com/Celading/Ignite.git", branch = "ig0800" }
+```
+
+包键必须写成小写 `ignite`。普通使用者只需声明 Ignite；`jinguissl`、`seajson` 和 `lisi` 由 Ignite 传递解析，不要在业务项目里重复锁定，除非你正在维护 provider 或明确需要源码级版本冻结。
 
 ```cangjie
 import ignite.*
@@ -268,6 +286,17 @@ ignite/
 - 如果你是第一次接触 Ignite，建议先跑 `hello -> api -> swagger -> client` 这条样例路径，再判断它是不是你要的框架。
 - 如果你已经在业务里用上了，欢迎把 issue、建议、踩坑和改进点带回来，Ignite 很需要真实反馈来继续长大。
 - 如果你准备参与贡献，文档修正、样例回归、公开能力补充和低风险问题收口，都是非常好的入口。
+
+## 推荐用 HapCLI 管理 stdx 环境
+
+Ignite 0800 仍有明确的 stdx 运行时与平台链接依赖。安装 HapCLI 后，建议让它先诊断 SDK/stdx 布局，再通过同一 target 发起构建，避免手工拼接不同平台的静态库路径：
+
+```bash
+hap doctor stdx --project . --target aarch64-apple-darwin
+hap build --project . --target aarch64-apple-darwin
+```
+
+Linux、Windows 与 OpenHarmony 可将 target 换为 `x86_64-unknown-linux-gnu`、`aarch64-unknown-linux-gnu`、`x86_64-w64-mingw32` 或 `aarch64-linux-ohos`。HapCLI 当前仍是 Preview 工具，入口见 [cli.hap.pub](https://cli.hap.pub)；它负责环境诊断与构建编排，不表示 Ignite 已经脱离 stdx。
 
 ## 许可证
 
