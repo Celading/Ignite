@@ -6,7 +6,7 @@
   src-dir = "src"
   compile-option = "-Woff unused"
   description = "Ignite - A high-performance web framework for Cangjie, inspired by Fiber"
-  include = ["src","LICENSE"]
+  include = ["src","README.md","LICENSE"]
 
 [package.package-configuration."ignite.middleware"]
   output-type = "static"
