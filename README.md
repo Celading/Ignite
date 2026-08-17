@@ -109,14 +109,16 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
-- 依赖接入：稳定版可走中心仓，0800 Preview 必须选择 GitCode 或 GitHub 的 `ig0800` 分支；完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
+- 依赖接入：`0.7.7` 稳定版与 `0.8.7` Preview 均可走中心仓；托管源码验证仍应选择 GitCode 或 GitHub 的 `ig0800` 分支。完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
 
-稳定版中心仓：
+0800 Preview 中心仓：
 
 ```toml
 [dependencies]
-ignite = "0.7.7"
+ignite = "0.8.7"
 ```
+
+如需 0700 稳定兼容线，请固定 `ignite = "0.7.7"`。
 
 0800 Preview 请选择一个托管源，不要同时声明多个来源：
 
