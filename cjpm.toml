@@ -7,6 +7,32 @@
   compile-option = "-Woff unused"
   description = "Ignite - A high-performance web framework for Cangjie, inspired by Fiber"
   include = ["src","README.md","LICENSE"]
+  exclude = [
+    "manual",
+    "testdata",
+    "src/tests",
+    "src/banner_render_test.cj",
+    "src/inproc_test_port_internal_test.cj",
+    "src/io_driver_http_probe_catalog_internal_test.cj",
+    "src/server_socket_app_dispatch_plan_internal_test.cj",
+    "src/server_socket_engine_shell_internal_test.cj",
+    "src/server_socket_http1_dispatch_seed_internal_test.cj",
+    "src/stream_protocol_internal_test.cj",
+    "src/client/native_h1_client_internal_test.cj",
+    "src/client/native_tls_h1_wire_internal_test.cj",
+    "src/client/native_tls_h2_wire_internal_test.cj",
+    "src/client/native_tls_pool_pressure_internal_test.cj",
+    "src/client/transport_error_internal_test.cj",
+    "src/native_h2/client_multiplex_internal_test.cj",
+    "src/native_h2/client_runtime_internal_test.cj",
+    "src/native_h2/request_semantics_internal_test.cj",
+    "src/native_h2/runtime_internal_test.cj",
+    "src/native_h2/server_drain_internal_test.cj",
+    "src/native_h2/server_streaming_internal_test.cj",
+    "src/native_h2/settings_internal_test.cj",
+    "src/native_tls/client_transport_internal_test.cj",
+    "src/native_tls/protocol_selection_internal_test.cj"
+  ]
 
 [package.package-configuration."ignite.middleware"]
   output-type = "static"
