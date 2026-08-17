@@ -49,7 +49,7 @@
 - SeaJson 已提供 `JsonWriterEncodable -> OutputStream` 流式写出路径，Native H2 `jsonWrite` 也进入有界 DATA 流；传统 `ctx.json(String)` 仍是完整字符串响应。
 - 动态 gzip/deflate 已切换为 Ignite 自有安全仓颉 codec；Zstd 与 Brotli 提供默认关闭的 RAW/RLE Preview，静态 `.zst/.br` 副本继续保留。
 
-完整的 0800 能力边界、回滚方式与未完成项见 [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md)。Native H2 的可运行 Server/Client 入口与 H1/H2 差异见 [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md)。
+完整的 0800 能力边界、回滚方式与未完成项见 [`ig0800-preview.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/ig0800-preview.md)。Native H2 的可运行 Server/Client 入口与 H1/H2 差异见 [`h2-quickstart-0800.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/h2-quickstart-0800.md)。
 
 ```
     ┌─────────────────────────────────────────┐
@@ -109,7 +109,7 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
-- 依赖接入：`0.7.7` 稳定版与 `0.8.7` Preview 均可走中心仓；托管源码验证仍应选择 GitCode 或 GitHub 的 `ig0800` 分支。完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
+- 依赖接入：`0.7.7` 稳定版与 `0.8.7` Preview 均可走中心仓；托管源码验证仍应选择 GitCode 或 GitHub 的 `ig0800` 分支。完整说明见 [`Guide.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/Guide.md)。
 
 0800 Preview 中心仓：
 
@@ -151,7 +151,7 @@ main() {
 ```
 
 如果你要继续往下走，推荐顺序是 `hello -> api -> swagger -> client`。  
-更完整的首跑顺序、样例选择、中心仓配置和常见失败修复，请看 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md) 与 [`manual/samples/README.md`](manual/samples/README.md)。
+更完整的首跑顺序、样例选择、中心仓配置和常见失败修复，请看 [`Guide.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/Guide.md) 与 [`samples/README.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/samples/README.md)。
 
 ### Native H2 Preview 快速启动
 
@@ -172,7 +172,7 @@ main() {
 
 验证：`curl --http2-prior-knowledge http://127.0.0.1:3000/`。该入口不接受
 TLS 配置，也不提供 H2 WebSocket；完整说明见
-[`h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md)。
+[`h2-quickstart-0800.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/h2-quickstart-0800.md)。
 
 ## 特性亮点
 
@@ -199,11 +199,11 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 - `RestClient`：负责让调用端别再另造一套陌生心智，联调时直接沿用 Ignite 的语义。
 - `handleForTest`：负责在不手动 `listen` 的情况下，把请求直接打进 `App` 做回归断言。
 
-具体方法级说明见 [`manual/docs-md/api.md`](manual/docs-md/api.md)。
+具体方法级说明见 [`api.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/api.md)。
 
 ## 中间件
 ### 集成提供大量中间件
-具体方法级说明见 [`manual/docs-md/middleware.md`](manual/docs-md/middleware.md)。
+具体方法级说明见 [`middleware.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/middleware.md)。
 
 ### 自定义中间件
 
@@ -276,12 +276,12 @@ ignite/
 
 ## 文档与入口
 
-- [`manual/docs-md/README.md`](manual/docs-md/README.md)：中文正文主入口，适合从首页继续往深处看。
-- [`manual/benchmark/README.md`](manual/benchmark/README.md)：0800 仓内可执行 Benchmark 基线；当前用于重复测量，不代表公开竞品排名。
-- [`manual/samples/README.md`](manual/samples/README.md)：最快把 Ignite 跑起来的样例矩阵和顺序。
+- [`manual/docs-md/README.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/README.md)：中文正文主入口，适合从首页继续往深处看。
+- [`manual/benchmark/README.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/benchmark/README.md)：0800 仓内可执行 Benchmark 基线；当前用于重复测量，不代表公开竞品排名。
+- [`manual/samples/README.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/samples/README.md)：最快把 Ignite 跑起来的样例矩阵和顺序。
 - [`CHANGELOG.MD`](CHANGELOG.MD)：中文版本时间线与阶段收口记录。
 - [`CHANGELOG-en.MD`](CHANGELOG-en.MD)：英文版本时间线。
-- [`manual/docs-web/README.md`](manual/docs-web/README.md)：后续网站文档的入口预留位。
+- [`manual/docs-web/README.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-web/README.md)：后续网站文档的入口预留位。
 
 ## 参与后续演进
 
