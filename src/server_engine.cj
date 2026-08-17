@@ -4094,7 +4094,7 @@ public func buildAppTlsLiveIngressConsumptionGate(
         if (accepted) {
             "open one explicit App TLS default-selection mutation packet; do not mutate TLS default in this consumption gate"
         } else {
-            "complete apply gate, HQ-0576 live-ingress first-cut receipt, accepted-transport H2 HEADERS+DATA proof, stale blocker rebaseline, rollback, and regression proofs first"
+            "complete live-ingress receipt, accepted-transport H2 HEADERS+DATA proof, stale blocker rebaseline, rollback, and regression proofs first"
         },
         "QUIC can reuse this consumption gate to keep first-cut live ingress separate from default-path mutation"
     )
@@ -4135,7 +4135,7 @@ public func buildAppTlsDefaultSelectionMutationGate(
         if (accepted) {
             "open H1 full default replacement close gate or H2 runtime packet; do not release or remove stdx in this mutation packet"
         } else {
-            "complete HQ-0577 consumption, TLS native selection, explicit stdx rollback, startup observation, focused regression, and public-baseline non-mutation proofs first"
+            "complete ingress consumption, TLS native selection, explicit stdx rollback, startup observation, focused regression, and public-baseline non-mutation proofs first"
         },
         "QUIC can reuse this mutation gate to split default selection from source-zero, release, and browser-grade protocol closure"
     )

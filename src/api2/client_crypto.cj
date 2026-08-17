@@ -248,7 +248,7 @@ class jinguiSSLClientCryptoProvider <: ClientCryptoProvider {
     }
 }
 
-/// Retained only for explicit reads of pre-HQ-0848 insecure envelopes.
+/// Retained only for explicit reads of deprecated insecure envelopes.
 class StdxFallbackClientCryptoProvider <: ClientCryptoProvider {
     public override func randomBytes(size: Int64): Array<UInt8> {
         let _ = size

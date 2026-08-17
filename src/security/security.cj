@@ -411,7 +411,7 @@ public func deriveKey32FromString(raw: String): Array<UInt8> {
     }
 }
 
-/// Reconstructs only the pre-HQ-0848 repeating-string key for explicit reads.
+/// Reconstructs only the deprecated repeating-string key for explicit legacy reads.
 public func deriveLegacyInsecureKey32FromString(raw: String): Array<UInt8> {
     let bytes = raw.toArray()
     if (bytes.size == 0) {
