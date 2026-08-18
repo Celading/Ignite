@@ -92,6 +92,7 @@ class H2MuxOutboundBody {
     let source: ?InputStream
     let contentLength: Int64
     let knownLength: Bool
+    let priorityHint: Int64
     let chunks = ArrayList<Array<UInt8>>()
     var chunkOffset: Int64 = 0
     var producedBytes: Int64 = 0
@@ -102,12 +103,18 @@ class H2MuxOutboundBody {
     var cancelled = false
     var endStreamSent = false
 
-    init(streamId: Int64, body: Array<UInt8>, sendWindow: Int64) {
+    init(
+        streamId: Int64,
+        body: Array<UInt8>,
+        sendWindow: Int64,
+        priorityHint: Int64
+    ) {
         this.streamId = streamId
         bufferedBody = body
         source = None
         contentLength = body.size
         knownLength = true
+        this.priorityHint = priorityHint
         producedBytes = body.size
         sourceDone = true
         this.sendWindow = sendWindow
@@ -117,22 +124,30 @@ class H2MuxOutboundBody {
         streamId: Int64,
         source: InputStream,
         contentLength: Int64,
-        sendWindow: Int64
+        sendWindow: Int64,
+        priorityHint: Int64
     ) {
         this.streamId = streamId
         bufferedBody = Array<UInt8>()
         this.source = Some(source)
         this.contentLength = contentLength
         knownLength = true
+        this.priorityHint = priorityHint
         this.sendWindow = sendWindow
     }
 
-    init(streamId: Int64, source: InputStream, sendWindow: Int64) {
+    init(
+        streamId: Int64,
+        source: InputStream,
+        sendWindow: Int64,
+        priorityHint: Int64
+    ) {
         this.streamId = streamId
         bufferedBody = Array<UInt8>()
         this.source = Some(source)
         contentLength = 0
         knownLength = false
+        this.priorityHint = priorityHint
         this.sendWindow = sendWindow
     }
 
@@ -303,7 +318,8 @@ public class NativeH2MultiplexSession {
             None,
             request.body.size,
             false,
-            deadlineMs
+            deadlineMs,
+            request.priorityHint
         )
         awaitResponse(state)
     }
@@ -329,7 +345,8 @@ public class NativeH2MultiplexSession {
             Some(bodyStream),
             contentLength,
             false,
-            deadlineMs
+            deadlineMs,
+            request.priorityHint
         )
         awaitResponse(state)
     }
@@ -360,7 +377,8 @@ public class NativeH2MultiplexSession {
             Some(bodyStream),
             0,
             true,
-            deadlineMs
+            deadlineMs,
+            request.priorityHint
         )
         awaitResponse(state)
     }
@@ -573,7 +591,8 @@ public class NativeH2MultiplexSession {
         bodyStream: ?InputStream,
         bodyLength: Int64,
         unknownLength: Bool,
-        deadlineMs: Int64
+        deadlineMs: Int64,
+        priorityHint: Int64
     ): H2MuxStreamState {
         var reserved: ?H2MuxStreamState = None
         var streamedOutbound: ?H2MuxOutboundBody = None
@@ -599,20 +618,23 @@ public class NativeH2MultiplexSession {
                         H2MuxOutboundBody(
                             state.streamId,
                             source,
-                            connection.peerSettings.initialStreamWindow
+                            connection.peerSettings.initialStreamWindow,
+                            priorityHint
                         )
                     } else {
                         H2MuxOutboundBody(
                             state.streamId,
                             source,
                             bodyLength,
-                            connection.peerSettings.initialStreamWindow
+                            connection.peerSettings.initialStreamWindow,
+                            priorityHint
                         )
                     }
                     case None => H2MuxOutboundBody(
                         state.streamId,
                         body,
-                        connection.peerSettings.initialStreamWindow
+                        connection.peerSettings.initialStreamWindow,
+                        priorityHint
                     )
                 }
                 outbound.add(state.streamId, outboundBody)
@@ -689,8 +711,25 @@ public class NativeH2MultiplexSession {
         while (progressed && outbound.size > 0) {
             progressed = false
             let completed = ArrayList<Int64>()
+            var bestPriority: Int64 = -1
             for (streamId in streamIds) {
                 if (let Some(stream) <- outbound.get(streamId)) {
+                    let writable = stream.needsEmptyEnd() ||
+                        (stream.sendWindow > 0 && connectionWindow > 0 &&
+                            stream.available() > 0)
+                    if (writable && stream.priorityHint > bestPriority) {
+                        bestPriority = stream.priorityHint
+                    }
+                }
+            }
+            if (bestPriority < 0) {
+                break
+            }
+            for (streamId in streamIds) {
+                if (let Some(stream) <- outbound.get(streamId)) {
+                    if (stream.priorityHint != bestPriority) {
+                        continue
+                    }
                     let available = stream.available()
                     if (stream.needsEmptyEnd()) {
                         nativeH2ClientWriteFrame(

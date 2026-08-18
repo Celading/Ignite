@@ -8,7 +8,9 @@ import ignite.native_h2.{
     NativeH2MultiplexResponse,
     NativeH2MultiplexSession,
     NativeH2ClientStreamedResponse,
-    NativeH2Header
+    NativeH2Header,
+    NATIVE_H2_DEFAULT_PRIORITY_HINT,
+    NATIVE_H2_MAX_PRIORITY_HINT
 }
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
@@ -30,6 +32,7 @@ public class NativeH2BatchRequest {
     var requestBodyStreamLength: Int64 = 0
     var requestBodyStreamHasKnownLength = false
     var responseDeadlineMs: Int64 = 0
+    var requestPriorityHint: Int64 = NATIVE_H2_DEFAULT_PRIORITY_HINT
 
     public init(method: String, url: String) {
         this.method = method
@@ -94,6 +97,20 @@ public class NativeH2BatchRequest {
         this
     }
 
+    /// Sets a bounded local outbound scheduling hint for multiplexed H2 DATA.
+    /// Higher values are preferred; equal values remain fair. This is not
+    /// RFC 7540 dependency-tree or browser priority interoperability.
+    public func priority(value: Int64): NativeH2BatchRequest {
+        if (value < NATIVE_H2_DEFAULT_PRIORITY_HINT ||
+            value > NATIVE_H2_MAX_PRIORITY_HINT) {
+            throw IllegalArgumentException(
+                "native H2 priority hint must be between 0 and ${NATIVE_H2_MAX_PRIORITY_HINT}"
+            )
+        }
+        requestPriorityHint = value
+        this
+    }
+
     func headersSnapshot(): HashMap<String, String> {
         cloneNativeH1Headers(requestHeaders)
     }
@@ -116,6 +133,10 @@ public class NativeH2BatchRequest {
 
     func deadlineMsSnapshot(): Int64 {
         responseDeadlineMs
+    }
+
+    func priorityHintSnapshot(): Int64 {
+        requestPriorityHint
     }
 }
 
@@ -216,7 +237,8 @@ public class NativeH2Session {
                     target.hostHeader,
                     target.requestTarget,
                     body: body,
-                    headers: nativeH2RequestHeaders(headers)
+                    headers: nativeH2RequestHeaders(headers),
+                    priorityHint: request.priorityHintSnapshot()
                 )
                 match (bodyStream) {
                     case Some(stream) => if (bodyStreamHasKnownLength) {
@@ -443,7 +465,8 @@ func executeNativeH2Batch(
                 target.hostHeader,
                 target.requestTarget,
                 body: body,
-                headers: nativeH2RequestHeaders(headers)
+                headers: nativeH2RequestHeaders(headers),
+                priorityHint: request.priorityHintSnapshot()
             )
         )
     }

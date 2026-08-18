@@ -395,6 +395,70 @@ public class NativeTlsH2WireInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeTlsH2BatchPrioritizesDataAndFairlyRotatesEqualHints(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 priority test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2PriorityFixture(accepted)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.connect(timeout: Some(Duration.second * 3))
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        let handshake = openNativeTls13ClientTransport(
+            TcpSocketByteTransport(socket),
+            NativeTls13ClientConfig(
+                nativeTlsTestText("policy_root.pem"),
+                NATIVE_TLS_H2_TEST_HOST,
+                intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+                alpnProtocols: ["h2"],
+                requireTargetHostnameMatch: false
+            )
+        )
+        try {
+            @Assert(handshake.negotiatedAlpn, "h2")
+            let connection = NativeH2ClientConnection(handshake.transport)
+            let bodySize: Int64 = 20000
+            let responses = connection.sendBatch([
+                NativeH2ClientRequest(
+                    "POST", "https", NATIVE_TLS_H2_TEST_HOST, "/low-1",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x61)),
+                    priorityHint: 10
+                ),
+                NativeH2ClientRequest(
+                    "POST", "https", NATIVE_TLS_H2_TEST_HOST, "/high",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x68)),
+                    priorityHint: 200
+                ),
+                NativeH2ClientRequest(
+                    "POST", "https", NATIVE_TLS_H2_TEST_HOST, "/low-2",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x62)),
+                    priorityHint: 10
+                )
+            ])
+            @Assert(responses.size, 3)
+            @Assert(responses[0].status, UInt16(200))
+            @Assert(responses[1].status, UInt16(200))
+            @Assert(responses[2].status, UInt16(200))
+            connection.finish()
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            try { handshake.transport.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeTlsH2SessionDeadlinePreservesSiblingAndReuse(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -636,6 +700,56 @@ func serveNativeTlsH2MultiplexFixture(socket: TcpSocket): Unit {
     nativeTlsH2WriteResponse(tls, 5, "tls-stream-5")
 }
 
+func serveNativeTlsH2PriorityFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket, initialStreamWindow: 16384)
+    let first = nativeTlsH2ReadRequestHead(tls)
+    let second = nativeTlsH2ReadRequestHead(tls)
+    let third = nativeTlsH2ReadRequestHead(tls)
+    if (first.streamId != 1 || second.streamId != 3 || third.streamId != 5) {
+        throw Exception("native TLS H2 priority fixture expected streams 1, 3 and 5")
+    }
+
+    let firstData = nativeTlsH2ReadFrame(tls)
+    let secondData = nativeTlsH2ReadFrame(tls)
+    let thirdData = nativeTlsH2ReadFrame(tls)
+    if (firstData.frameType != UInt8(0x0) || secondData.frameType != UInt8(0x0) ||
+        thirdData.frameType != UInt8(0x0) || firstData.streamId != 3 ||
+        secondData.streamId != 1 || thirdData.streamId != 5 ||
+        firstData.payload.size != 16384 || secondData.payload.size != 16384 ||
+        thirdData.payload.size != 16384) {
+        throw Exception("native TLS H2 priority fixture observed wrong first DATA order")
+    }
+
+    nativeTlsH2WriteFrame(tls, nativeTlsH2WindowUpdateFrame(3, 20000))
+    nativeTlsH2WriteFrame(tls, nativeTlsH2WindowUpdateFrame(1, 20000))
+    nativeTlsH2WriteFrame(tls, nativeTlsH2WindowUpdateFrame(5, 20000))
+    nativeTlsH2WriteFrame(tls, nativeTlsH2WindowUpdateFrame(0, 60000))
+
+    let remainingOne = nativeTlsH2ReadFrame(tls)
+    let remainingTwo = nativeTlsH2ReadFrame(tls)
+    let remainingThree = nativeTlsH2ReadFrame(tls)
+    if (remainingOne.frameType != UInt8(0x0) || remainingTwo.frameType != UInt8(0x0) ||
+        remainingThree.frameType != UInt8(0x0) || remainingOne.streamId != 3 ||
+        remainingTwo.streamId != 1 || remainingThree.streamId != 5 ||
+        remainingOne.payload.size != 3616 || remainingTwo.payload.size != 3616 ||
+        remainingThree.payload.size != 3616 ||
+        (remainingOne.flags & UInt8(0x1)) == UInt8(0) ||
+        (remainingTwo.flags & UInt8(0x1)) == UInt8(0) ||
+        (remainingThree.flags & UInt8(0x1)) == UInt8(0)) {
+        throw Exception("native TLS H2 priority fixture observed wrong resumed DATA order")
+    }
+
+    for (streamId in [Int64(1), Int64(3), Int64(5)]) {
+        nativeTlsH2WriteFrame(
+            tls,
+            NativeTlsH2TestFrame(
+                UInt8(0x1), UInt8(0x5), streamId,
+                nativeTlsH2ResponseHeadBlock()
+            )
+        )
+    }
+}
+
 func serveNativeTlsH2DeadlineFixture(socket: TcpSocket): Unit {
     let tls = openNativeTlsH2FixtureSession(socket)
     let first = nativeTlsH2ReadRequestHead(tls)
@@ -658,7 +772,10 @@ func serveNativeTlsH2DeadlineFixture(socket: TcpSocket): Unit {
     nativeTlsH2WriteResponse(tls, 5, "tls-deadline-reused")
 }
 
-func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTransport {
+func openNativeTlsH2FixtureSession(
+    socket: TcpSocket,
+    initialStreamWindow!: Int64 = 65535
+): NativeTls13ClientTransport {
     let raw = TcpSocketByteTransport(socket)
     let clientHelloRecord = nativeTlsH1ReadRecord(raw)
     let certChain = nativeTlsTestText("policy_leaf.pem") + "\n" +
@@ -717,7 +834,10 @@ func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTranspor
     }
     nativeTlsH2WriteFrame(
         tls,
-        NativeTlsH2TestFrame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+        NativeTlsH2TestFrame(
+            UInt8(0x4), UInt8(0), 0,
+            nativeTlsH2SettingsPayload(initialStreamWindow)
+        )
     )
     nativeTlsH2WriteFrame(
         tls,
@@ -725,6 +845,34 @@ func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTranspor
     )
 
     tls
+}
+
+func nativeTlsH2SettingsPayload(initialStreamWindow: Int64): Array<UInt8> {
+    if (initialStreamWindow == 65535) {
+        return Array<UInt8>()
+    }
+    [
+        UInt8(0), UInt8(4),
+        UInt8((initialStreamWindow >> 24) & 0xff),
+        UInt8((initialStreamWindow >> 16) & 0xff),
+        UInt8((initialStreamWindow >> 8) & 0xff),
+        UInt8(initialStreamWindow & 0xff)
+    ]
+}
+
+func nativeTlsH2WindowUpdateFrame(
+    streamId: Int64,
+    increment: Int64
+): NativeTlsH2TestFrame {
+    NativeTlsH2TestFrame(
+        UInt8(0x8), UInt8(0), streamId,
+        [
+            UInt8((increment >> 24) & 0x7f),
+            UInt8((increment >> 16) & 0xff),
+            UInt8((increment >> 8) & 0xff),
+            UInt8(increment & 0xff)
+        ]
+    )
 }
 
 func nativeTlsH2ReadRequestHead(tls: NativeByteTransport): NativeTlsH2TestFrame {

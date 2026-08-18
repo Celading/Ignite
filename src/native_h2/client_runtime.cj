@@ -7,6 +7,8 @@ import ignite.transport.{NativeByteTransport, TcpSocketByteTransport}
 
 let NATIVE_H2_CLIENT_CONNECTION_REFILL_THRESHOLD: Int64 = 32767
 let NATIVE_H2_CLIENT_STREAM_REFILL_THRESHOLD: Int64 = 65535
+public let NATIVE_H2_DEFAULT_PRIORITY_HINT: Int64 = 0
+public let NATIVE_H2_MAX_PRIORITY_HINT: Int64 = 255
 
 public class NativeH2ClientException <: Exception {
     public let failureKind: String
@@ -28,6 +30,8 @@ public class NativeH2ClientRequest {
     public let path: String
     public let body: Array<UInt8>
     public let headers: Array<NativeH2Header>
+    /// Local outbound scheduling hint, not RFC 7540 dependency-tree state.
+    public let priorityHint: Int64
 
     public init(
         method: String,
@@ -35,14 +39,22 @@ public class NativeH2ClientRequest {
         authority: String,
         path: String,
         body!: Array<UInt8> = Array<UInt8>(),
-        headers!: Array<NativeH2Header> = Array<NativeH2Header>()
+        headers!: Array<NativeH2Header> = Array<NativeH2Header>(),
+        priorityHint!: Int64 = NATIVE_H2_DEFAULT_PRIORITY_HINT
     ) {
+        if (priorityHint < NATIVE_H2_DEFAULT_PRIORITY_HINT ||
+            priorityHint > NATIVE_H2_MAX_PRIORITY_HINT) {
+            throw IllegalArgumentException(
+                "native H2 priority hint must be between 0 and ${NATIVE_H2_MAX_PRIORITY_HINT}"
+            )
+        }
         this.method = method.trimAscii().toAsciiUpper()
         this.scheme = scheme.trimAscii().toAsciiLower()
         this.authority = authority
         this.path = path
         this.body = nativeH2Clone(body)
         this.headers = nativeH2CloneHeaders(headers)
+        this.priorityHint = priorityHint
     }
 }
 
@@ -187,12 +199,19 @@ class NativeH2ClientConnectionState {
 class NativeH2ClientOutboundStream {
     let streamId: Int64
     let body: Array<UInt8>
+    let priorityHint: Int64
     var offset: Int64 = 0
     var sendWindow: Int64
 
-    init(streamId: Int64, body: Array<UInt8>, sendWindow: Int64) {
+    init(
+        streamId: Int64,
+        body: Array<UInt8>,
+        sendWindow: Int64,
+        priorityHint: Int64
+    ) {
         this.streamId = streamId
         this.body = body
+        this.priorityHint = priorityHint
         this.sendWindow = sendWindow
     }
 
@@ -358,7 +377,8 @@ func nativeH2ClientSendBatch(
                 NativeH2ClientOutboundStream(
                     stream.streamId,
                     request.body,
-                    peerSettings.initialStreamWindow
+                    peerSettings.initialStreamWindow,
+                    request.priorityHint
                 )
             )
         }
@@ -580,9 +600,22 @@ func nativeH2ClientFlushRequestBodies(
     while (progressed && connectionWindow > 0 && outbound.size > 0) {
         progressed = false
         let completed = ArrayList<Int64>()
+        var bestPriority: Int64 = -1
         for (streamId in orderedStreamIds) {
             if (let Some(stream) <- outbound.get(streamId)) {
-                if (stream.sendWindow <= 0 || stream.remaining() <= 0) {
+                if (stream.sendWindow > 0 && stream.remaining() > 0 &&
+                    stream.priorityHint > bestPriority) {
+                    bestPriority = stream.priorityHint
+                }
+            }
+        }
+        if (bestPriority < 0) {
+            break
+        }
+        for (streamId in orderedStreamIds) {
+            if (let Some(stream) <- outbound.get(streamId)) {
+                if (stream.priorityHint != bestPriority ||
+                    stream.sendWindow <= 0 || stream.remaining() <= 0) {
                     continue
                 }
                 let count = min(

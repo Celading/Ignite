@@ -20,7 +20,9 @@ import jinguissl.live.{
 }
 
 let NATIVE_TLS13_MAX_RECORD_PAYLOAD: Int64 = 18432
-let NATIVE_TLS13_APPLICATION_FRAGMENT: Int64 = 16384
+// JinguiSSL's TLS 1.3 record layer counts the inner content-type octet in its
+// 16 KiB plaintext bound, leaving 16383 bytes for application data.
+let NATIVE_TLS13_APPLICATION_FRAGMENT: Int64 = 16383
 
 public class NativeTls13ClientConfig {
     public let trustAnchorsPemBundle: String
@@ -141,13 +143,30 @@ public class NativeTls13ClientTransport <: NativeByteTransport & NativeReadTimeo
         if (data.size == 0) {
             return
         }
-        let records = channel.sealFragments(
-            ContractTlsRecordContentType.ApplicationData,
-            data,
-            maxFragmentLen: NATIVE_TLS13_APPLICATION_FRAGMENT
-        )
-        for (record in records) {
-            raw.write(record)
+        // A caller may pass one H2 frame whose 9-byte header makes the wire
+        // buffer larger than one TLS application fragment. Split plaintext
+        // here so the provider never receives an oversized seal request.
+        var offset: Int64 = 0
+        while (offset < data.size) {
+            let count = min(
+                NATIVE_TLS13_APPLICATION_FRAGMENT,
+                data.size - offset
+            )
+            let fragment = Array<Byte>(count, repeat: 0)
+            var i: Int64 = 0
+            while (i < count) {
+                fragment[i] = data[offset + i]
+                i += 1
+            }
+            let records = channel.sealFragments(
+                ContractTlsRecordContentType.ApplicationData,
+                fragment,
+                maxFragmentLen: NATIVE_TLS13_APPLICATION_FRAGMENT
+            )
+            for (record in records) {
+                raw.write(record)
+            }
+            offset += count
         }
     }
 

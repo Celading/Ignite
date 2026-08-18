@@ -71,6 +71,28 @@ class NativeH2RestOwnedRequestStream <: InputStream & Resource {
 @Test
 public class NativeH2RestClientTestSuite {
     @TestCase
+    public func testNativeH2BatchPriorityHintIsBoundedAndChainable(): Unit {
+        let request = NativeH2BatchRequest("GET", "/priority").priority(200)
+        let _ = request
+
+        var lowFailure = false
+        try {
+            let _ = NativeH2BatchRequest("GET", "/priority").priority(-1)
+        } catch (_: Exception) {
+            lowFailure = true
+        }
+        @Assert(lowFailure, true)
+
+        var highFailure = false
+        try {
+            let _ = NativeH2BatchRequest("GET", "/priority").priority(256)
+        } catch (_: Exception) {
+            highFailure = true
+        }
+        @Assert(highFailure, true)
+    }
+
+    @TestCase
     public func testExplicitBackendCarriesRequestAndObserveSemantics(): Unit {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let ready = AtomicBool(false)

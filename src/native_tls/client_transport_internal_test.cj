@@ -2,6 +2,12 @@ package ignite.native_tls
 
 import std.collection.ArrayList
 import ignite.transport.{NativeByteTransport, NativeReadTimeoutControl}
+import jinguissl.live.{
+    ContractTls13ApplicationKeyMaterial,
+    ContractTlsRecordContentType,
+    contractTls13CreateClientRecordChannel,
+    contractTls13CreateServerRecordChannel
+}
 
 class NativeTlsTestByteTransport <: NativeByteTransport & NativeReadTimeoutControl {
     let incoming: Array<Byte>
@@ -93,5 +99,35 @@ public class NativeTls13ClientTransportInternalTestSuite {
             rejected = e.message == "native TLS record payload exceeds bounded limit"
         }
         @Assert(rejected, true)
+    }
+
+    @TestCase
+    public func testWritesH2MaximumFrameAcrossBoundedTlsRecords(): Unit {
+        let keyMaterial = ContractTls13ApplicationKeyMaterial(
+            Array<Byte>(32, repeat: UInt8(0x11)),
+            Array<Byte>(12, repeat: UInt8(0x22)),
+            Array<Byte>(32, repeat: UInt8(0x33)),
+            Array<Byte>(12, repeat: UInt8(0x44))
+        )
+        let clientChannel = contractTls13CreateClientRecordChannel(keyMaterial)
+        let serverChannel = contractTls13CreateServerRecordChannel(keyMaterial)
+        let raw = NativeTlsTestByteTransport([])
+        let transport = NativeTls13ClientTransport(raw, clientChannel)
+        let payload = Array<Byte>(16393, repeat: UInt8(0x5a))
+
+        transport.write(payload)
+
+        let wire = NativeTlsTestByteTransport(raw.written.toArray(), maxChunk: 257)
+        let first = serverChannel.open(nativeTls13ReadRecord(wire))
+        let second = serverChannel.open(nativeTls13ReadRecord(wire))
+        @Assert(first.contentType, ContractTlsRecordContentType.ApplicationData)
+        @Assert(second.contentType, ContractTlsRecordContentType.ApplicationData)
+        @Assert(first.fragment.size, Int64(16383))
+        @Assert(second.fragment.size, Int64(10))
+        @Assert(wire.offset, raw.written.size)
+        @Assert(first.fragment[0], UInt8(0x5a))
+        @Assert(first.fragment[16382], UInt8(0x5a))
+        @Assert(second.fragment[0], UInt8(0x5a))
+        @Assert(second.fragment[9], UInt8(0x5a))
     }
 }

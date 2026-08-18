@@ -102,7 +102,8 @@ public class NativeTlsH2Session {
                     target.hostHeader,
                     target.requestTarget,
                     body: body,
-                    headers: nativeH2RequestHeaders(headers)
+                    headers: nativeH2RequestHeaders(headers),
+                    priorityHint: request.priorityHintSnapshot()
                 )
                 match (bodyStream) {
                     case Some(stream) => if (bodyStreamHasKnownLength) {
