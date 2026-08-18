@@ -306,7 +306,9 @@ let session = client.openNativeTlsH2Session(
     maxConcurrentStreams: 8
 )
 try {
-    let a = spawn { session.send(NativeH2BatchRequest("GET", "/a")) }
+    let a = spawn {
+        session.send(NativeH2BatchRequest("GET", "/a").deadline(Duration.second))
+    }
     let b = spawn { session.send(NativeH2BatchRequest("GET", "/b")) }
     println(a.get(Duration.second * 5).body())
     println(b.get(Duration.second * 5).body())
@@ -315,9 +317,11 @@ try {
 }
 ```
 
-该 session 支持 buffered、精确长度和未知长度 one-pass request stream。所有
+该 session 支持 buffered、精确长度和未知长度 one-pass request stream，以及显式
+`NativeH2BatchRequest.deadline(Duration)` 的逐 stream deadline。deadline 到期只发送
+该 stream 的 `RST_STREAM(CANCEL)`，兄弟 stream 和物理连接可继续复用。所有
 stream 完整 settle 后连接才可归池；带活跃 lease 关闭会淘汰连接。自动 replay、
-redirect retry、逐 stream deadline/priority 与系统 CA 仍未提供。
+redirect retry、priority 与系统 CA 仍未提供。
 
 ## 响应读取与大包读取
 

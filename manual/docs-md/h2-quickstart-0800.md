@@ -144,6 +144,7 @@ try {
             NativeH2BatchRequest("POST", "/slow")
                 .header("content-type", "text/plain")
                 .bodyString("buffered payload")
+                .deadline(Duration.second)
         )
     }
     let fast = spawn {
@@ -184,8 +185,9 @@ try {
 - 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
   已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
   在未知 peer 消费状态下复用；
-- 支持精确长度和未知长度 one-pass request stream；不支持自动 RequestBuilder
-  H2 streaming、retry/redirect、逐 stream deadline、priority、
+- 支持精确长度和未知长度 one-pass request stream；可通过
+  `NativeH2BatchRequest.deadline(Duration)` 取消单个超时 stream 而保留兄弟 stream；
+  不支持自动 RequestBuilder H2 streaming、retry/redirect、priority、
   request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用

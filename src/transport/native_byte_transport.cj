@@ -13,7 +13,13 @@ public interface NativeByteTransport {
     func isClosed(): Bool
 }
 
-public class TcpSocketByteTransport <: NativeByteTransport {
+/// Optional timeout control used by multiplex protocols with stream deadlines.
+public interface NativeReadTimeoutControl {
+    func currentReadTimeout(): ?Duration
+    func updateReadTimeout(value: ?Duration): Unit
+}
+
+public class TcpSocketByteTransport <: NativeByteTransport & NativeReadTimeoutControl {
     public let socket: TcpSocket
 
     public init(socket: TcpSocket) {
@@ -34,5 +40,13 @@ public class TcpSocketByteTransport <: NativeByteTransport {
 
     public override func isClosed(): Bool {
         socket.isClosed()
+    }
+
+    public override func currentReadTimeout(): ?Duration {
+        socket.readTimeout
+    }
+
+    public override func updateReadTimeout(value: ?Duration): Unit {
+        socket.readTimeout = value
     }
 }

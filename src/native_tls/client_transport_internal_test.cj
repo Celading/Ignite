@@ -1,14 +1,15 @@
 package ignite.native_tls
 
 import std.collection.ArrayList
-import ignite.transport.NativeByteTransport
+import ignite.transport.{NativeByteTransport, NativeReadTimeoutControl}
 
-class NativeTlsTestByteTransport <: NativeByteTransport {
+class NativeTlsTestByteTransport <: NativeByteTransport & NativeReadTimeoutControl {
     let incoming: Array<Byte>
     let maxChunk: Int64
     let written = ArrayList<Byte>()
     var offset: Int64 = 0
     var closed: Bool = false
+    var readTimeout: ?Duration = None
 
     init(incoming: Array<Byte>, maxChunk!: Int64 = 2) {
         this.incoming = incoming
@@ -45,6 +46,14 @@ class NativeTlsTestByteTransport <: NativeByteTransport {
 
     public override func isClosed(): Bool {
         closed
+    }
+
+    public override func currentReadTimeout(): ?Duration {
+        readTimeout
+    }
+
+    public override func updateReadTimeout(value: ?Duration): Unit {
+        readTimeout = value
     }
 }
 

@@ -29,6 +29,7 @@ public class NativeH2BatchRequest {
     var requestBodyStream: ?InputStream = None
     var requestBodyStreamLength: Int64 = 0
     var requestBodyStreamHasKnownLength = false
+    var responseDeadlineMs: Int64 = 0
 
     public init(method: String, url: String) {
         this.method = method
@@ -83,6 +84,16 @@ public class NativeH2BatchRequest {
         this
     }
 
+    /// Bounds this request stream without changing the shared H2 connection timeout.
+    public func deadline(timeout: Duration): NativeH2BatchRequest {
+        let milliseconds = timeout.toMilliseconds()
+        if (milliseconds <= 0) {
+            throw IllegalArgumentException("native H2 request deadline must be positive")
+        }
+        responseDeadlineMs = milliseconds
+        this
+    }
+
     func headersSnapshot(): HashMap<String, String> {
         cloneNativeH1Headers(requestHeaders)
     }
@@ -101,6 +112,10 @@ public class NativeH2BatchRequest {
 
     func bodyStreamHasKnownLengthSnapshot(): Bool {
         requestBodyStreamHasKnownLength
+    }
+
+    func deadlineMsSnapshot(): Int64 {
+        responseDeadlineMs
     }
 }
 
@@ -205,11 +220,23 @@ public class NativeH2Session {
                 )
                 match (bodyStream) {
                     case Some(stream) => if (bodyStreamHasKnownLength) {
-                        protocol.sendStream(nativeRequest, stream, bodyLength)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            bodyLength,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     } else {
-                        protocol.sendStream(nativeRequest, stream)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     }
-                    case None => protocol.send(nativeRequest)
+                    case None => protocol.send(
+                        nativeRequest,
+                        deadlineMs: request.deadlineMsSnapshot()
+                    )
                 }
             } catch (e: NativeH2ClientException) {
                 throw nativeH2ProtocolTransportException(e)

@@ -157,8 +157,9 @@ connection/stream send window，并由 `WINDOW_UPDATE`
 连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
 request body 尚未发完，连接会进入 retiring。TLS1.3 场景可在同一 client 配置上
 改用 `openNativeTlsH2Session("https://...")`，保留相同的流控、响应归属和
-one-pass stream 语义。两种 session 都不包含自动 RequestBuilder H2 streaming、
-retry/redirect 重放、priority 或逐 stream deadline；TLS session 也不会自动读取
+one-pass stream 语义。两种 session 都支持通过
+`NativeH2BatchRequest.deadline(Duration)` 做逐 stream CANCEL，但不包含自动
+RequestBuilder H2 streaming、retry/redirect 重放或 priority；TLS session 也不会自动读取
 系统 CA。
 
 适合的 0800 使用方式：

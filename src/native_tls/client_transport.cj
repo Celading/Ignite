@@ -1,7 +1,7 @@
 package ignite.native_tls
 
 import std.collection.ArrayList
-import ignite.transport.NativeByteTransport
+import ignite.transport.{NativeByteTransport, NativeReadTimeoutControl}
 import jinguissl.live.{
     ContractHttpClientTlsTrustRequest,
     ContractTlsHttpNegotiationPolicy,
@@ -78,7 +78,7 @@ public class NativeTls13ClientHandshake {
     }
 }
 
-public class NativeTls13ClientTransport <: NativeByteTransport {
+public class NativeTls13ClientTransport <: NativeByteTransport & NativeReadTimeoutControl {
     let raw: NativeByteTransport
     let channel: ContractTlsRecordChannel
     var pendingPlaintext: Array<Byte> = []
@@ -162,6 +162,20 @@ public class NativeTls13ClientTransport <: NativeByteTransport {
 
     public override func isClosed(): Bool {
         closed || raw.isClosed()
+    }
+
+    public override func currentReadTimeout(): ?Duration {
+        match (raw) {
+            case control: NativeReadTimeoutControl => control.currentReadTimeout()
+            case _ => None
+        }
+    }
+
+    public override func updateReadTimeout(value: ?Duration): Unit {
+        match (raw) {
+            case control: NativeReadTimeoutControl => control.updateReadTimeout(value)
+            case _ => ()
+        }
     }
 
     func settlePeerCloseNotify(): Unit {

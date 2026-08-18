@@ -949,6 +949,102 @@ public class NativeH2MultiplexInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testPerStreamDeadlineCancelsOnlyStalledStreamAndKeepsSessionReusable(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 deadline test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                nativeH2MultiplexTestHandshake(accepted)
+                var firstSeen = false
+                var siblingSeen = false
+                while (!firstSeen || !siblingSeen) {
+                    let frame = nativeH2ReadFrame(accepted)
+                    if (frame.frameType == UInt8(0x1) && frame.streamId == 1) {
+                        firstSeen = true
+                    } else if (frame.frameType == UInt8(0x1) && frame.streamId == 3) {
+                        siblingSeen = true
+                    }
+                }
+                nativeH2MultiplexWriteResponse(accepted, 3, "sibling")
+
+                let reset = nativeH2ReadFrame(accepted)
+                @Assert(reset.frameType, UInt8(0x3))
+                @Assert(reset.streamId, Int64(1))
+                @Assert(
+                    nativeH2ClientDecode32Bit(reset.payload, 0),
+                    NATIVE_H2_ERROR_CANCEL
+                )
+
+                let reused = nativeH2ReadFrame(accepted)
+                @Assert(reused.frameType, UInt8(0x1))
+                @Assert(reused.streamId, Int64(5))
+                nativeH2MultiplexWriteResponse(accepted, 5, "reused")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 3)
+        socket.writeTimeout = Some(Duration.second * 3)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(maxConcurrentStreams: 4)
+        try {
+            let stalledFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/stalled"
+                    ),
+                    deadlineMs: 80
+                )
+            }
+            nativeH2WaitForMultiplexStreams(session, 1)
+            let siblingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest(
+                        "GET", "http", "127.0.0.1:${port}", "/sibling"
+                    )
+                )
+            }
+
+            let sibling = siblingFuture.get(Duration.second * 3)
+            @Assert(sibling.header("x-multiplex-result") ?? "", "sibling")
+            sibling.close()
+
+            var deadlineFailure = ""
+            try {
+                let _ = stalledFuture.get(Duration.second * 3)
+            } catch (e: Exception) {
+                deadlineFailure = e.message
+            }
+            @Assert(deadlineFailure.contains("stream deadline exceeded"), true)
+            @Assert(connection.retiring, false)
+
+            let reused = session.send(
+                NativeH2ClientRequest(
+                    "GET", "http", "127.0.0.1:${port}", "/reused"
+                )
+            )
+            @Assert(reused.header("x-multiplex-result") ?? "", "reused")
+            reused.close()
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(connection.retiring, false)
+            @Assert(session.close(), true)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
 }
 
 func nativeH2MultiplexTestHandshake(socket: TcpSocket): Unit {

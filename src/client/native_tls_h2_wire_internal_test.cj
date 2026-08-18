@@ -395,6 +395,72 @@ public class NativeTlsH2WireInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeTlsH2SessionDeadlinePreservesSiblingAndReuse(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 deadline test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2DeadlineFixture(accepted)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = nativeTlsH2SessionTestClient()
+        var session: ?NativeTlsH2Session = None
+        try {
+            let opened = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 2
+            )
+            session = Some(opened)
+            let stalledFuture = spawn {
+                opened.send(
+                    NativeH2BatchRequest("GET", "/stalled")
+                        .deadline(Duration.millisecond * 80)
+                )
+            }
+            waitForNativeTlsH2Streams(opened, 1)
+            let siblingFuture = spawn {
+                opened.send(NativeH2BatchRequest("GET", "/sibling"))
+            }
+
+            let sibling = siblingFuture.get(Duration.second * 3)
+            @Assert(sibling.body(), "tls-deadline-sibling")
+            var deadlineFailure = ""
+            try {
+                let _ = stalledFuture.get(Duration.second * 3)
+            } catch (e: Exception) {
+                deadlineFailure = e.message
+            }
+            @Assert(deadlineFailure.contains("stream deadline exceeded"), true)
+
+            let reused = opened.send(NativeH2BatchRequest("GET", "/reused"))
+            @Assert(reused.body(), "tls-deadline-reused")
+            @Assert(opened.activeStreams(), Int64(0))
+            opened.close()
+            session = None
+
+            let snapshot = client.nativeTlsRuntimeSnapshot().h2
+            @Assert(snapshot.openedConnections, Int64(1))
+            @Assert(snapshot.returnedConnections, Int64(1))
+            @Assert(snapshot.retiredConnections, Int64(0))
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            match (session) {
+                case Some(value) => value.close()
+                case None => ()
+            }
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeTlsH2SessionWithActiveLeaseRetiresConnection(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -568,6 +634,28 @@ func serveNativeTlsH2MultiplexFixture(socket: TcpSocket): Unit {
         throw Exception("native TLS H2 multiplex fixture expected reused stream 5")
     }
     nativeTlsH2WriteResponse(tls, 5, "tls-stream-5")
+}
+
+func serveNativeTlsH2DeadlineFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let first = nativeTlsH2ReadRequestHead(tls)
+    let second = nativeTlsH2ReadRequestHead(tls)
+    if (first.streamId != 1 || second.streamId != 3) {
+        throw Exception("native TLS H2 deadline fixture expected streams 1 and 3")
+    }
+    nativeTlsH2WriteResponse(tls, 3, "tls-deadline-sibling")
+
+    let reset = nativeTlsH2ReadFrame(tls)
+    if (reset.frameType != UInt8(0x3) || reset.streamId != 1 ||
+        reset.payload.size != 4 || reset.payload[3] != UInt8(0x8)) {
+        throw Exception("native TLS H2 deadline fixture expected stream 1 CANCEL")
+    }
+
+    let reused = nativeTlsH2ReadRequestHead(tls)
+    if (reused.streamId != 5) {
+        throw Exception("native TLS H2 deadline fixture expected reused stream 5")
+    }
+    nativeTlsH2WriteResponse(tls, 5, "tls-deadline-reused")
 }
 
 func openNativeTlsH2FixtureSession(socket: TcpSocket): NativeTls13ClientTransport {

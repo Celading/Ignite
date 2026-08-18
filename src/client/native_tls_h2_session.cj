@@ -106,11 +106,23 @@ public class NativeTlsH2Session {
                 )
                 match (bodyStream) {
                     case Some(stream) => if (bodyStreamHasKnownLength) {
-                        protocol.sendStream(nativeRequest, stream, bodyLength)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            bodyLength,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     } else {
-                        protocol.sendStream(nativeRequest, stream)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     }
-                    case None => protocol.send(nativeRequest)
+                    case None => protocol.send(
+                        nativeRequest,
+                        deadlineMs: request.deadlineMsSnapshot()
+                    )
                 }
             } catch (e: NativeH2ClientException) {
                 throw nativeH2ProtocolTransportException(e)

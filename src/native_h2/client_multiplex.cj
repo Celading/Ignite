@@ -3,6 +3,8 @@ package ignite.native_h2
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.sync.Mutex
+import std.time.MonoTime
+import ignite.transport.NativeReadTimeoutControl
 
 let NATIVE_H2_MULTIPLEX_STREAM_LIMIT: Int64 = 32
 let NATIVE_H2_MULTIPLEX_BUFFER_LIMIT: Int64 = 65535
@@ -52,6 +54,8 @@ public class NativeH2MultiplexResponse {
 
 class H2MuxStreamState {
     let streamId: Int64
+    let openedAt: MonoTime = MonoTime.now()
+    let deadlineMs: Int64
     var head: ?NativeH2ClientResponseHead = None
     let informational = ArrayList<NativeH2ClientResponseHead>()
     var trailers = Array<NativeH2Header>()
@@ -62,14 +66,23 @@ class H2MuxStreamState {
     var remoteEnded = false
     var released = false
     var cancelled = false
+    var deadlineExpired = false
     var failureMessage = ""
 
-    init(streamId: Int64) {
+    init(streamId: Int64, deadlineMs: Int64) {
         this.streamId = streamId
+        this.deadlineMs = deadlineMs
     }
 
     func failed(): Bool {
         failureMessage.size > 0
+    }
+
+    func deadlineRemainingMs(now: MonoTime): Int64 {
+        if (deadlineMs <= 0) {
+            return 0
+        }
+        deadlineMs - (now - openedAt).toMilliseconds()
     }
 }
 
@@ -279,14 +292,18 @@ public class NativeH2MultiplexSession {
         connection.activeMultiplexSession = true
     }
 
-    public func send(request: NativeH2ClientRequest): NativeH2MultiplexResponse {
+    public func send(
+        request: NativeH2ClientRequest,
+        deadlineMs!: Int64 = 0
+    ): NativeH2MultiplexResponse {
         let requestHead = nativeH2EncodeClientRequestHead(request)
         let state = reserveAndWriteRequest(
             requestHead,
             request.body,
             None,
             request.body.size,
-            false
+            false,
+            deadlineMs
         )
         awaitResponse(state)
     }
@@ -294,7 +311,8 @@ public class NativeH2MultiplexSession {
     public func sendStream(
         request: NativeH2ClientRequest,
         bodyStream: InputStream,
-        contentLength: Int64
+        contentLength: Int64,
+        deadlineMs!: Int64 = 0
     ): NativeH2MultiplexResponse {
         if (contentLength < 0) {
             throw IllegalArgumentException("contentLength must be >= 0")
@@ -310,7 +328,8 @@ public class NativeH2MultiplexSession {
             Array<UInt8>(),
             Some(bodyStream),
             contentLength,
-            false
+            false,
+            deadlineMs
         )
         awaitResponse(state)
     }
@@ -319,7 +338,8 @@ public class NativeH2MultiplexSession {
     /// emitting a Content-Length header.
     public func sendStream(
         request: NativeH2ClientRequest,
-        bodyStream: InputStream
+        bodyStream: InputStream,
+        deadlineMs!: Int64 = 0
     ): NativeH2MultiplexResponse {
         if (request.body.size > 0) {
             throw IllegalArgumentException(
@@ -339,7 +359,8 @@ public class NativeH2MultiplexSession {
             Array<UInt8>(),
             Some(bodyStream),
             0,
-            true
+            true,
+            deadlineMs
         )
         awaitResponse(state)
     }
@@ -379,7 +400,7 @@ public class NativeH2MultiplexSession {
                 return reusable && !connection.finished && !connection.retiring
             }
             closed = true
-            if (streams.size > 0 || cancelledStreams.size > 0 || outbound.size > 0) {
+            if (streams.size > 0 || outbound.size > 0) {
                 reusable = false
                 connection.retiring = true
             }
@@ -415,13 +436,17 @@ public class NativeH2MultiplexSession {
 
     func readStream(state: H2MuxStreamState, outBuf: Array<Byte>): Int64 {
         while (true) {
+            let _ = expireDueDeadlines()
             var count: Int64 = 0
             var refill: Int64 = 0
             var ended = false
             var cancelPendingUpload = false
             var failure = ""
             synchronized(stateMutex) {
-                if (state.chunks.size > 0) {
+                if (state.deadlineExpired) {
+                    failure = state.failureMessage
+                    releaseState(state)
+                } else if (state.chunks.size > 0) {
                     let chunk = state.chunks[0]
                     let available = chunk.size - state.chunkOffset
                     count = min(outBuf.size, available)
@@ -478,6 +503,14 @@ public class NativeH2MultiplexSession {
                 return count
             }
             if (failure.size > 0) {
+                if (state.deadlineExpired) {
+                    throw NativeH2ClientException(
+                        "deadline",
+                        state.streamId,
+                        NATIVE_H2_ERROR_CANCEL,
+                        failure
+                    )
+                }
                 throw Exception(failure)
             }
             if (ended) {
@@ -539,7 +572,8 @@ public class NativeH2MultiplexSession {
         body: Array<UInt8>,
         bodyStream: ?InputStream,
         bodyLength: Int64,
-        unknownLength: Bool
+        unknownLength: Bool,
+        deadlineMs: Int64
     ): H2MuxStreamState {
         var reserved: ?H2MuxStreamState = None
         var streamedOutbound: ?H2MuxOutboundBody = None
@@ -553,7 +587,10 @@ public class NativeH2MultiplexSession {
                     "native H2 multiplex session active stream limit ${limit} reached"
                 )
             }
-            let state = H2MuxStreamState(connection.nextStreamId)
+            if (deadlineMs < 0) {
+                throw IllegalArgumentException("native H2 request deadline cannot be negative")
+            }
+            let state = H2MuxStreamState(connection.nextStreamId, deadlineMs)
             connection.nextStreamId += 2
             streams.add(state.streamId, state)
             if (bodyLength > 0 || unknownLength) {
@@ -847,20 +884,30 @@ public class NativeH2MultiplexSession {
 
     func awaitHead(state: H2MuxStreamState): NativeH2ClientResponseHead {
         while (true) {
+            let _ = expireDueDeadlines()
             var head: ?NativeH2ClientResponseHead = None
             var failure = ""
             synchronized(stateMutex) {
-                head = state.head
                 if (state.failed()) {
                     failure = state.failureMessage
                 } else if (state.remoteEnded && state.head.isNone()) {
                     failure = "native H2 multiplex response ended before final headers"
+                } else {
+                    head = state.head
                 }
             }
             if (let Some(value) <- head) {
                 return value
             }
             if (failure.size > 0) {
+                if (state.deadlineExpired) {
+                    throw NativeH2ClientException(
+                        "deadline",
+                        state.streamId,
+                        NATIVE_H2_ERROR_CANCEL,
+                        failure
+                    )
+                }
                 throw Exception(failure)
             }
             pump(state, true)
@@ -875,6 +922,7 @@ public class NativeH2MultiplexSession {
     }
 
     func pump(state: H2MuxStreamState, waitingForHead: Bool): Unit {
+        let _ = expireDueDeadlines()
         var shouldRead = false
         var ready = false
         var failure = ""
@@ -902,17 +950,108 @@ public class NativeH2MultiplexSession {
             sleep(Duration.millisecond)
             return
         }
+        var timeoutControl: ?NativeReadTimeoutControl = None
+        match (connection.transport) {
+            case control: NativeReadTimeoutControl => timeoutControl = Some(control)
+            case _ => ()
+        }
+        var previousTimeout: ?Duration = None
+        let deadlineTimeout = nearestDeadlineReadTimeout()
+        var timeoutChanged = false
+        match (timeoutControl) {
+            case Some(control) =>
+                previousTimeout = control.currentReadTimeout()
+                match (deadlineTimeout) {
+                    case Some(value) =>
+                        let shouldUpdate = match (previousTimeout) {
+                            case Some(current) => current.toMilliseconds() > value.toMilliseconds()
+                            case None => true
+                        }
+                        if (shouldUpdate) {
+                            control.updateReadTimeout(Some(value))
+                            timeoutChanged = true
+                        }
+                    case None => ()
+                }
+            case None => ()
+        }
         try {
             let frame = nativeH2ClientReadFrame(connection.transport)
             applyFrame(frame)
+        } catch (e: NativeH2ClientException) {
+            if (e.failureKind == "timeout" && expireDueDeadlines()) {
+                return
+            }
+            failSession("native H2 multiplex read failed: " + e.message)
+            throw e
         } catch (e: Exception) {
             failSession("native H2 multiplex read failed: " + e.message)
             throw e
         } finally {
+            if (timeoutChanged) {
+                match (timeoutControl) {
+                    case Some(control) => control.updateReadTimeout(previousTimeout)
+                    case None => ()
+                }
+            }
             synchronized(stateMutex) {
                 readerActive = false
             }
         }
+    }
+
+    func nearestDeadlineReadTimeout(): ?Duration {
+        var nearestMs: Int64 = 0
+        synchronized(stateMutex) {
+            let now = MonoTime.now()
+            for ((_streamId, stream) in streams) {
+                if (stream.deadlineMs > 0 && !stream.deadlineExpired &&
+                    !stream.remoteEnded) {
+                    let remaining = stream.deadlineRemainingMs(now)
+                    let bounded = if (remaining > 0) { remaining } else { 1 }
+                    if (nearestMs == 0 || bounded < nearestMs) {
+                        nearestMs = bounded
+                    }
+                }
+            }
+        }
+        if (nearestMs > 0) {
+            Some(Duration.millisecond * nearestMs)
+        } else {
+            None
+        }
+    }
+
+    func expireDueDeadlines(): Bool {
+        let expired = ArrayList<H2MuxStreamState>()
+        synchronized(stateMutex) {
+            let now = MonoTime.now()
+            for ((_streamId, stream) in streams) {
+                if (stream.deadlineMs > 0 && !stream.deadlineExpired &&
+                    !stream.remoteEnded &&
+                    stream.deadlineRemainingMs(now) <= 0) {
+                    expired.add(stream)
+                }
+            }
+            for (stream in expired) {
+                let _ = streams.remove(stream.streamId)
+                dropOutboundLocked(stream.streamId)
+                stream.cancelled = true
+                stream.deadlineExpired = true
+                stream.released = true
+                stream.failureMessage = "native H2 stream deadline exceeded"
+                cancelledStreams.add(stream.streamId, stream)
+            }
+        }
+        for (stream in expired) {
+            try {
+                writeReset(stream.streamId)
+            } catch (e: Exception) {
+                failSession("native H2 deadline cancellation failed: " + e.message)
+                throw e
+            }
+        }
+        expired.size > 0
     }
 
     func applyFrame(frame: NativeH2Frame): Unit {
