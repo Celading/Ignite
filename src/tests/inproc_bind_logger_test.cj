@@ -3,7 +3,6 @@ package ignite.tests
 import ignite.*
 import ignite.middleware.*
 import std.collection.ArrayList
-import stdx.encoding.json.{JsonValue, JsonObject}
 
 @Test
 public class InprocBindLoggerTestSuite {
@@ -179,22 +178,21 @@ public class InprocBindLoggerTestSuite {
     }
 
     func decodeCreateUserReq(jsonValue: JsonValue): CreateUserReq {
-        let obj = jsonValue.asObject()
-        let name = requireStringField(obj, "name")
-        let age = requireIntField(obj, "age")
+        let name = requireStringField(jsonValue, "name")
+        let age = requireIntField(jsonValue, "age")
         CreateUserReq(name, age)
     }
 
-    func requireStringField(obj: JsonObject, key: String): String {
-        if (let Some(v) <- obj.get(key)) {
-            return v.asString().getValue()
+    func requireStringField(value: JsonValue, key: String): String {
+        if (let Some(v) <- jsonStringField(value, key)) {
+            return v
         }
         throw Exception("missing field: ${key}")
     }
 
-    func requireIntField(obj: JsonObject, key: String): Int64 {
-        if (let Some(v) <- obj.get(key)) {
-            return v.asInt().getValue()
+    func requireIntField(value: JsonValue, key: String): Int64 {
+        if (let Some(v) <- jsonIntField(value, key)) {
+            return v
         }
         throw Exception("missing field: ${key}")
     }

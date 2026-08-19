@@ -7,7 +7,6 @@ import std.unicode.*
 import ignite.api2
 import ignite.security
 import stdx.net.http.{HttpContext, HttpHeaders}
-import stdx.encoding.json.JsonValue
 import stdx.encoding.json.stream.{
     JsonWriter as StdxJsonWriter,
     JsonReader as StdxJsonReader
@@ -1272,7 +1271,7 @@ public class Ctx {
     func parseJsonBody(): ?JsonValue {
         let raw = bodyString()
         try {
-            Some(JsonValue.fromStr(raw))
+            Some(parseJsonValue(raw))
         } catch (_: Exception) {
             jsonBadRequest("invalid_json", "request body is not valid json")
             None
