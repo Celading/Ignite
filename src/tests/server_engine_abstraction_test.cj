@@ -1609,7 +1609,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.failureWriterOpenCalls, 1)
         @Assert(engine.failureHandoffAcquisitionCount, 1)
-        @Assert(engine.failureSocketWriteCount, 1)
+        @Assert(engine.failureSocketWriteCount, 0)
         @Assert(engine.failureSinkAttempts, 1)
         @Assert(engine.failureAttemptedEncodedBytes > 0, true)
         @Assert(engine.failureLifecycleClosed, false)

@@ -2128,8 +2128,8 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(propagated, true)
         @Assert(carrier.openCalls, 1)
         @Assert(handoff.acquisitionCount(), 1)
-        @Assert(lifecycle.socketWriteCount, 1)
-        @Assert(lifecycle.totalEncodedSocketBytes, 13)
+        @Assert(lifecycle.socketWriteCount, 0)
+        @Assert(lifecycle.totalEncodedSocketBytes, 0)
         @Assert(failingSink.writeCalls, 1)
     }
 }

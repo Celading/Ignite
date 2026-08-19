@@ -781,9 +781,9 @@ public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
                 "accepted transport socket response writer lifecycle is closed: ${closeReason}"
             )
         }
+        _sink(bytes)
         socketWriteCount += 1
         totalEncodedSocketBytes += bytes.size
-        _sink(bytes)
     }
 
     public func openResponseTransportWriter(): ResponseTransportWriter {
@@ -798,7 +798,7 @@ public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
     }
 }
 
-class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrier {
+class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrier & ResponseCommitStateCarrier {
     let logicalRequest: ServerJinguiAcceptedTransportLogicalRequest
     let socket: TcpSocket
     let requestBodyStreamValue: InputStream
@@ -838,6 +838,10 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         responseWriterLifecycle.openResponseTransportWriter()
+    }
+
+    public override func responseCommitted(): Bool {
+        responseWriterLifecycle.socketWriteCount > 0
     }
 
     public override func requestMethod(): String {
