@@ -1,6 +1,6 @@
 package ignite.native_h2
 
-import ignite.{App, Config}
+import ignite.{App, Config, closeResponseTransportWriter, flushResponseTransportWriter}
 import std.collection.ArrayList
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
 import std.sync.AtomicBool
@@ -9,6 +9,38 @@ import stdx.net.http.HttpHeaders
 
 @Test
 public class NativeH2RuntimeInternalTestSuite {
+    @TestCase
+    public func testNativeH2AppResponseWriterLifecycleRejectsWritesAfterClose(): Unit {
+        let request = NativeH2SingleStreamRequest(
+            1,
+            "GET",
+            "http",
+            "localhost:18880",
+            "/writer-lifecycle",
+            Array<UInt8>(),
+            headers: [],
+            trailers: []
+        )
+        let carrier = NativeH2AppCurrentRequestCarrier(request, "127.0.0.1")
+        let writer = carrier.openResponseTransportWriterRaw()
+
+        writer.write("first".toArray())
+        flushResponseTransportWriter(writer)
+        closeResponseTransportWriter(writer)
+        closeResponseTransportWriter(writer)
+
+        var rejected = false
+        try {
+            writer.write("late".toArray())
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        let response = carrier.response()
+        @Assert(rejected, true)
+        @Assert(String.fromUtf8(response.body), "first")
+    }
+
     @TestCase
     public func testResetIdleStreamClassifierPreservesImplicitlyClosedStreams(): Unit {
         @Assert(nativeH2ResetReferencesIdleStream(5, 3), true)

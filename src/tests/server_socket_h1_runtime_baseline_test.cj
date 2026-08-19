@@ -82,6 +82,42 @@ class SocketH1RuntimeBaselineDelayedStream <: InputStream & Resource {
 @Test
 public class ServerSocketH1RuntimeBaselineTestSuite {
     @TestCase
+    public func testNativeH1ResponseWriterLifecycleRejectsWritesAfterClose(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/writer-lifecycle", { ctx =>
+            let writer = ctx.transportWriter()
+            writer.write("first".toArray())
+            flushResponseTransportWriter(writer)
+            closeResponseTransportWriter(writer)
+            closeResponseTransportWriter(writer)
+            try {
+                writer.write("late".toArray())
+            } catch (_: Exception) {
+                let _ = ctx.setHeader("x-write-after-close", "rejected")
+            }
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let response = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /writer-lifecycle HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            @Assert(socketH1RuntimeBaselineContains(response, "HTTP/1.1 200 OK"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "x-write-after-close: rejected"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "\r\n\r\nfirst"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "late"), false)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testDefaultNativeH1AllowsFastConnectionWhileSlowConnectionIsRunning(): Unit {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let gate = SocketH1RuntimeBaselineGate()

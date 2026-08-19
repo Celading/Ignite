@@ -2,6 +2,7 @@ package ignite
 
 public class ResponseWriter {
     let _writer: ResponseTransportWriter
+    var _closed: Bool = false
 
     public init(currentRequestCarrier: CurrentRequestCarrier) {
         if (shouldEmitChunkedTransferHeader(currentRequestCarrier.requestVersionString())) {
@@ -15,11 +16,26 @@ public class ResponseWriter {
     }
 
     public func write(data: Array<UInt8>): Unit {
+        ensureResponseTransportWriterOpen(_closed)
         _writer.write(data)
     }
 
     public func writeString(data: String): Unit {
+        ensureResponseTransportWriterOpen(_closed)
         _writer.write(data.toArray())
+    }
+
+    public func flush(): Unit {
+        ensureResponseTransportWriterOpen(_closed)
+        flushResponseTransportWriter(_writer)
+    }
+
+    public func close(): Unit {
+        if (_closed) {
+            return
+        }
+        _closed = true
+        finalizeResponseTransportWriter(_writer)
     }
 }
 
@@ -27,6 +43,7 @@ public class SseWriter {
     let _currentRequestCarrier: CurrentRequestCarrier
     var _writer: ?ResponseTransportWriter = None
     let _enabled: Bool
+    var _closed: Bool = false
 
     public init(currentRequestCarrier: CurrentRequestCarrier, enabled!: Bool = true) {
         _currentRequestCarrier = currentRequestCarrier
@@ -48,6 +65,7 @@ public class SseWriter {
     }
 
     func ensureWriter(): ResponseTransportWriter {
+        ensureResponseTransportWriterOpen(_closed)
         if (!_enabled) {
             return openDiscardingResponseTransportWriter()
         }
@@ -91,6 +109,23 @@ public class SseWriter {
     /// Public close/flush controls are still limited by the current stdx-backed transport surface.
     public func sendHeartbeat(comment!: String = "ping"): Unit {
         sendComment(comment)
+    }
+
+    public func flush(): Unit {
+        ensureResponseTransportWriterOpen(_closed)
+        if (let Some(writer) <- _writer) {
+            flushResponseTransportWriter(writer)
+        }
+    }
+
+    public func close(): Unit {
+        if (_closed) {
+            return
+        }
+        _closed = true
+        if (let Some(writer) <- _writer) {
+            finalizeResponseTransportWriter(writer)
+        }
     }
 }
 

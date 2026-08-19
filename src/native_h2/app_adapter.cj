@@ -1,6 +1,6 @@
 package ignite.native_h2
 
-import ignite.{App, CurrentRequestCarrier, ResponseTransportWriter}
+import ignite.{App, CurrentRequestCarrier, ResponseTransportLifecycle, ResponseTransportWriter}
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
@@ -88,15 +88,31 @@ class NativeH2AppBytesInputStream <: InputStream {
     }
 }
 
-class NativeH2AppResponseTransportWriter <: ResponseTransportWriter {
+class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
     let carrier: NativeH2AppCurrentRequestCarrier
+    var closed: Bool = false
 
     init(carrier: NativeH2AppCurrentRequestCarrier) {
         this.carrier = carrier
     }
 
     public override func write(data: Array<UInt8>): Unit {
+        if (closed) {
+            throw Exception("response transport writer is closed")
+        }
         carrier.appendResponseBytes(data)
+    }
+
+    public override func flush(): Unit {
+        if (closed) {
+            throw Exception("response transport writer is closed")
+        }
+        // Native H2 application responses enter the bounded protocol stream
+        // after the handler returns; flush preserves the carrier boundary.
+    }
+
+    public override func close(): Unit {
+        closed = true
     }
 }
 

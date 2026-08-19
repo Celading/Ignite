@@ -1682,15 +1682,27 @@ class SocketServerEngineShellBytesInputStream <: InputStream {
     }
 }
 
-class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter {
+class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
     let carrier: SocketServerEngineShellCurrentRequestCarrier
+    var closed: Bool = false
 
     init(carrier: SocketServerEngineShellCurrentRequestCarrier) {
         this.carrier = carrier
     }
 
     public override func write(data: Array<UInt8>): Unit {
+        ensureResponseTransportWriterOpen(closed)
         carrier.appendResponseBodyBytes(data)
+    }
+
+    public override func flush(): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        // The native H1 carrier owns a complete response body until the
+        // request handler returns; there is no earlier socket flush here.
+    }
+
+    public override func close(): Unit {
+        closed = true
     }
 }
 

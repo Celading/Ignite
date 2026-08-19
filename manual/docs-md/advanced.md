@@ -84,10 +84,14 @@ app.get("/events", { ctx =>
 })
 ```
 
-当前这条公开面要诚实说明两点：
+当前这条公开面要诚实说明三点：
 
 - Ignite 现在会给 SSE 路径补 `X-Accel-Buffering: no`，并提供最小 heartbeat comment helper，避免常见代理缓冲误导。
-- 但 `close()` / `flush()` 这类更强的生命周期控制，目前还受 `stdx.net.http.HttpResponseWriter` 已公开 surface 限制，不能在 `0600` 里假装已经补齐。
+- 0800 的 `SseWriter`、`ResponseWriter` 和 `ResponseTransportOutputStream`
+  已提供显式 flush 与幂等 response-close；close 后继续写入会失败，但 close
+  不会接管或关闭物理连接。
+- flush 会转发到后端 lifecycle；stdx 与 Native H1/H2 carrier 仍受各自响应
+  提交边界约束，因此不能把 API 调用等同于“所有后端已即时 drain 到 wire”。
 
 ## 流式响应
 

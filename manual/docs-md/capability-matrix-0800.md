@@ -25,16 +25,16 @@
 | H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 与 SETTINGS 初始窗口恢复、并发 buffered upload、精确或未知长度的 32 KiB 有界 streamed-upload producer、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭、精确长度 source 早 EOF 或未完成 upload 会发送 CANCEL 并让连接进入 retiring。当前不是零拷贝 request streaming 或最终生产级公平调度。 |
 | HPACK / Huffman | Preview | Native H2 主实现包含 RFC 7541 Appendix B 的 257 项 code table、EOS/padding 校验、完整 256-octet symbol 覆盖、可变长字符串和有界动态表；outbound 仅在 Huffman 更短时启用，并对敏感 Header 使用 never-index。 | 解码后的公开 `String` 仍要求合法 UTF-8；Jingui accepted-transport compatibility parser 不是同一条完整 HPACK 路径，现有 byte profile 也不代表所有负载的吞吐收益。 |
 | Native H1 WebSocket | 0800 默认 | 普通 `app.ws(...)` 在 Native H1 backend 下进入 Ignite 自研 RFC 6455 路径，支持文本、二进制、Ping/Pong、Close、分片、子协议、消息上限和并发 writer 串行化。 | 同一 API 在 `stdx-default` 下使用 compatibility backend；H2 extended CONNECT、Native WSS、permessage-deflate 和客户端 Dialer 未完成。 |
-| SSE | Native H1 accepted | `ctx.sse()` 已进入 native H1 长响应主路径。 | Native H2 App adapter 尚未形成等价流式验收；显式 flush/close 的跨后端契约仍需收紧。 |
+| SSE | Native H1 accepted | `ctx.sse()` 已进入 native H1 长响应主路径，并提供显式 `flush()` / 幂等 `close()` 响应生命周期。 | Native H2 App adapter 尚未形成等价 SSE 流式验收；flush 会进入后端 lifecycle，但不承诺所有 carrier 在 handler 返回前强制 wire drain。 |
 
 ## 请求、响应与数据
 
 | 能力 | 状态 | 0800 行为 | 当前边界 |
 | --- | --- | --- | --- |
 | buffered JSON | 稳定继承 | `ctx.json(String)`、`jsonSerialize(...)` 等继续适合小对象。 | 调用方必须先构造完整字符串或完整结果。 |
-| streaming JSON | Native H1 + H2 Preview | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出；H2 `jsonWrite` 复用有界 producer bridge 和 flow-controlled DATA 流，不再经 carrier 数组聚合。 | 依赖全量 body 的 ETag/cache/idempotency 中间件不自动兼容；H2 SSE 与所有 streaming surface 的跨后端 flush/close 等价仍未完成。 |
+| streaming JSON | Native H1 + H2 Preview | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出；H2 `jsonWrite` 复用有界 producer bridge 和 flow-controlled DATA 流，不再经 carrier 数组聚合。 | 依赖全量 body 的 ETag/cache/idempotency 中间件不自动兼容；H2 SSE 与直接 writer 的 handler-time wire flush 仍未完成。 |
 | 请求体流 | 0800 默认 | `requestBody()` 返回受 `Config.bodyLimit` 保护的流，`saveBodyToFile()` 可直接落盘。 | 流先被消费后，不承诺还能完整回放给 buffered API。 |
-| 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam。 | 调用方负责状态、响应头和 framing；不自动设置 H1 chunked。 |
+| 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam；Ignite 自有 stdx、sink、transform、discard、Native H1/H2 writer 统一支持 flush 与幂等 response-close，并拒绝 close 后写入。 | close 不关闭物理连接；调用方仍负责状态、响应头和 framing，也不应把 flush 理解为所有后端的即时 wire drain。 |
 | 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是发布阶段预压缩交付，不依赖动态 codec。 |
 | 动态 gzip/deflate | Preview | 压缩中间件通过 Ignite 自有安全仓颉 codec 支持缓冲与增量流式响应。 | 当前优先协议正确性；高级字典、SIMD 与极致压缩比未承诺。 |
 | 动态 Zstd baseline | Preview / opt-in | `CompressConfig(zstdEnabled: true)` 可协商缓冲与增量流式 `zstd` 响应；frame、128 KiB window/block、content-size 与 checksum 由安全仓颉实现。 | 当前仅生成 RAW/RLE block；可压缩同值 run，但通用 sequence/FSE/Huffman、字典、level 调优和默认选择仍未完成。 |
