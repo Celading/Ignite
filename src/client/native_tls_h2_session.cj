@@ -151,6 +151,35 @@ public class NativeTlsH2Session {
         }
     }
 
+    /// Replays an idempotent buffered request after configured response statuses.
+    /// One-pass streams and broken sessions are intentionally not replayed.
+    /// Response hooks observe every completed attempt, including drained retries.
+    public func sendWithRetry(
+        request: NativeH2BatchRequest,
+        config!: ClientRetryConfig = ClientRetryConfig()
+    ): ClientResponse {
+        let retryConfig = config.copy()
+        let hasBodyStream = request.bodyStreamSnapshot().isSome()
+        if (retryConfig.enabled && retryConfig.maxAttempts > 1 && hasBodyStream) {
+            throw Exception("native TLS H2 session cannot replay a one-pass request stream")
+        }
+        if (retryConfig.enabled && retryConfig.maxAttempts > 1 &&
+            !nativeH2SessionRetryEligible(request.method, hasBodyStream, retryConfig)) {
+            throw Exception("native TLS H2 session retry requires an idempotent request method")
+        }
+        var attempt: Int64 = 1
+        while (true) {
+            let response = send(request)
+            if (!nativeH2SessionRetryStatus(response.status, retryConfig, attempt)) {
+                return response
+            }
+            response.discard()
+            nativeH2SessionRetryBackoff(retryConfig, attempt)
+            attempt += 1
+        }
+        throw Exception("native TLS H2 session retry loop ended unexpectedly")
+    }
+
     public func activeStreams(): Int64 {
         protocol.activeStreams()
     }

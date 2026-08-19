@@ -395,6 +395,57 @@ public class NativeTlsH2WireInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeTlsH2SessionReplaysBufferedIdempotentStatusOnNextStream(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 retry test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2RetryFixture(accepted)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeTlsH2SessionTestClient()
+        let retryStatusCodes = ArrayList<Int64>()
+        retryStatusCodes.add(503)
+        let retryConfig = ClientRetryConfig(
+            enabled: true,
+            maxAttempts: 2,
+            baseDelayMs: 0,
+            maxDelayMs: 0,
+            jitterMs: 0,
+            retryStatusCodes: retryStatusCodes
+        )
+        var session: ?NativeTlsH2Session = None
+        try {
+            let opened = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 2
+            )
+            session = Some(opened)
+            let response = opened.sendWithRetry(
+                NativeH2BatchRequest("GET", "/tls-retry"),
+                config: retryConfig
+            )
+            @Assert(response.body(), "tls-session-recovered")
+            opened.close()
+            session = None
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            match (session) {
+                case Some(value) => value.close()
+                case None => ()
+            }
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeTlsH2BatchPrioritizesDataAndFairlyRotatesEqualHints(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -700,6 +751,20 @@ func serveNativeTlsH2MultiplexFixture(socket: TcpSocket): Unit {
     nativeTlsH2WriteResponse(tls, 5, "tls-stream-5")
 }
 
+func serveNativeTlsH2RetryFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let first = nativeTlsH2ReadRequestHead(tls)
+    if (first.streamId != 1) {
+        throw Exception("native TLS H2 retry fixture expected stream 1")
+    }
+    nativeTlsH2WriteResponse(tls, 1, "retry", status: 503)
+    let second = nativeTlsH2ReadRequestHead(tls)
+    if (second.streamId != 3) {
+        throw Exception("native TLS H2 retry fixture expected stream 3")
+    }
+    nativeTlsH2WriteResponse(tls, 3, "tls-session-recovered")
+}
+
 func serveNativeTlsH2PriorityFixture(socket: TcpSocket): Unit {
     let tls = openNativeTlsH2FixtureSession(socket, initialStreamWindow: 16384)
     let first = nativeTlsH2ReadRequestHead(tls)
@@ -886,12 +951,17 @@ func nativeTlsH2ReadRequestHead(tls: NativeByteTransport): NativeTlsH2TestFrame 
     requestHead ?? throw Exception("native TLS H2 fixture request head is missing")
 }
 
-func nativeTlsH2WriteResponse(tls: NativeByteTransport, streamId: Int64, body: String): Unit {
+func nativeTlsH2WriteResponse(
+    tls: NativeByteTransport,
+    streamId: Int64,
+    body: String,
+    status!: UInt16 = 200
+): Unit {
     nativeTlsH2WriteFrame(
         tls,
         NativeTlsH2TestFrame(
             UInt8(0x1), UInt8(0x4), streamId,
-            nativeTlsH2ResponseHeadBlock()
+            nativeTlsH2ResponseHeadBlock(status: status)
         )
     )
     nativeTlsH2WriteFrame(
@@ -903,9 +973,22 @@ func nativeTlsH2WriteResponse(tls: NativeByteTransport, streamId: Int64, body: S
     )
 }
 
-func nativeTlsH2ResponseHeadBlock(): Array<UInt8> {
+func nativeTlsH2ResponseHeadBlock(status!: UInt16 = 200): Array<UInt8> {
     let out = ArrayList<UInt8>()
-    out.add(UInt8(0x88))
+    match (status) {
+        case 200 => out.add(UInt8(0x88))
+        case 204 => out.add(UInt8(0x89))
+        case 206 => out.add(UInt8(0x8a))
+        case 304 => out.add(UInt8(0x8b))
+        case 400 => out.add(UInt8(0x8c))
+        case 404 => out.add(UInt8(0x8d))
+        case 500 => out.add(UInt8(0x8e))
+        case _ =>
+            out.add(UInt8(0x08))
+            let statusText = status.toString().toArray()
+            out.add(UInt8(statusText.size))
+            for (value in statusText) { out.add(value) }
+    }
     out.add(UInt8(0x00))
     let name = "x-ignite-native-tls".toArray()
     out.add(UInt8(name.size))
