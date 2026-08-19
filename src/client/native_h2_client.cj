@@ -87,7 +87,8 @@ public class NativeH2BatchRequest {
         this
     }
 
-    /// Bounds this request stream without changing the shared H2 connection timeout.
+    /// Bounds stream admission and response lifetime without changing the shared
+    /// H2 connection timeout.
     public func deadline(timeout: Duration): NativeH2BatchRequest {
         let milliseconds = timeout.toMilliseconds()
         if (milliseconds <= 0) {
@@ -288,6 +289,10 @@ public class NativeH2Session {
 
     public func activeStreams(): Int64 {
         protocol.activeStreams()
+    }
+
+    public func pendingRequests(): Int64 {
+        protocol.pendingAdmissions()
     }
 
     public func maxConcurrentStreams(): Int64 {

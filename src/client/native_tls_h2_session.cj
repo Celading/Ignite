@@ -155,6 +155,10 @@ public class NativeTlsH2Session {
         protocol.activeStreams()
     }
 
+    public func pendingRequests(): Int64 {
+        protocol.pendingAdmissions()
+    }
+
     public func maxConcurrentStreams(): Int64 {
         protocol.maxConcurrentStreams()
     }

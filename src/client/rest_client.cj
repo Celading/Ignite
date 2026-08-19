@@ -459,7 +459,8 @@ public class RestClient {
     /// request/observe/touchpoint hooks remain outside this session contract.
     public func openNativeH2Session(
         originUrl: String,
-        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
+        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT,
+        maxPendingRequests!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
     ): NativeH2Session {
         try {
             if (!_allowExperimentalTransport) {
@@ -484,6 +485,12 @@ public class RestClient {
                     "native H2 session maxConcurrentStreams must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
                 )
             }
+            if (maxPendingRequests <= 0 ||
+                maxPendingRequests > NATIVE_H2_REST_BATCH_LIMIT) {
+                throw Exception(
+                    "native H2 session maxPendingRequests must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
+                )
+            }
 
             let resolvedOrigin = resolveUrl(originUrl)
             let target = parseNativeH1Target(resolvedOrigin)
@@ -503,7 +510,8 @@ public class RestClient {
             var transferred = false
             try {
                 let protocol = connection.protocol.openMultiplexSession(
-                    maxConcurrentStreams: maxConcurrentStreams
+                    maxConcurrentStreams: maxConcurrentStreams,
+                    maxPendingRequests: maxPendingRequests
                 )
                 let defaults = cloneNativeH1Headers(_defaultHeaders)
                 let responseHooks = ArrayList<ClientResponseHook>()
@@ -557,7 +565,8 @@ public class RestClient {
     /// part of this session contract.
     public func openNativeTlsH2Session(
         originUrl: String,
-        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
+        maxConcurrentStreams!: Int64 = NATIVE_H2_REST_BATCH_LIMIT,
+        maxPendingRequests!: Int64 = NATIVE_H2_REST_BATCH_LIMIT
     ): NativeTlsH2Session {
         try {
             if (!_allowExperimentalTransport) {
@@ -580,6 +589,12 @@ public class RestClient {
                 maxConcurrentStreams > NATIVE_H2_REST_BATCH_LIMIT) {
                 throw Exception(
                     "native TLS H2 session maxConcurrentStreams must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
+                )
+            }
+            if (maxPendingRequests <= 0 ||
+                maxPendingRequests > NATIVE_H2_REST_BATCH_LIMIT) {
+                throw Exception(
+                    "native TLS H2 session maxPendingRequests must be within 1..${NATIVE_H2_REST_BATCH_LIMIT}"
                 )
             }
             let config = match (_nativeTlsConfig) {
@@ -612,7 +627,8 @@ public class RestClient {
             var transferred = false
             try {
                 let protocol = connection.protocol.openMultiplexSession(
-                    maxConcurrentStreams: maxConcurrentStreams
+                    maxConcurrentStreams: maxConcurrentStreams,
+                    maxPendingRequests: maxPendingRequests
                 )
                 let defaults = cloneNativeH1Headers(_defaultHeaders)
                 let responseHooks = ArrayList<ClientResponseHook>()

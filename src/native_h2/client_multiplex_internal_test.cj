@@ -85,7 +85,7 @@ class NativeH2MultiplexBlockedEofInput <: InputStream {
 @Test
 public class NativeH2MultiplexInternalTestSuite {
     @TestCase
-    public func testPeerConcurrentLimitRejectsBeforeSecondStreamReservation(): Unit {
+    public func testPeerConcurrentLimitQueuesRequestsInFifoOrder(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
         let port = (listener.localAddress as IPSocketAddress)?.port ??
@@ -115,19 +115,111 @@ public class NativeH2MultiplexInternalTestSuite {
                 @Assert(clientAck.frameType, UInt8(0x4))
                 @Assert(clientAck.flags & UInt8(0x1), UInt8(0x1))
 
-                let request = nativeH2ReadFrame(transport)
-                @Assert(request.frameType, UInt8(0x1))
-                @Assert(request.streamId, Int64(1))
+                let first = nativeH2ReadFrame(transport)
+                @Assert(first.frameType, UInt8(0x1))
+                @Assert(first.streamId, Int64(1))
+                nativeH2MultiplexWriteResponse(accepted, 1, "first")
+
+                let second = nativeH2ReadFrame(transport)
+                @Assert(second.frameType, UInt8(0x1))
+                @Assert(second.streamId, Int64(3))
+                nativeH2MultiplexWriteResponse(accepted, 3, "second")
+
+                let third = nativeH2ReadFrame(transport)
+                @Assert(third.frameType, UInt8(0x1))
+                @Assert(third.streamId, Int64(5))
+                nativeH2MultiplexWriteResponse(accepted, 5, "third")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 2)
+        socket.writeTimeout = Some(Duration.second * 2)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(
+            maxConcurrentStreams: 4,
+            maxPendingRequests: 2
+        )
+        try {
+            let first = session.send(
+                NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/one")
+            )
+            @Assert(first.header("x-multiplex-result") ?? "", "first")
+            @Assert(session.maxConcurrentStreams(), Int64(1))
+            let secondFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/two")
+                )
+            }
+            nativeH2WaitForPendingAdmissions(session, 1)
+            let thirdFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/three")
+                )
+            }
+            nativeH2WaitForPendingAdmissions(session, 2)
+            @Assert(connection.nextStreamId, Int64(3))
+            first.close()
+
+            let second = secondFuture.get(Duration.second * 5)
+            @Assert(second.header("x-multiplex-result") ?? "", "second")
+            @Assert(connection.nextStreamId, Int64(5))
+            second.close()
+
+            let third = thirdFuture.get(Duration.second * 5)
+            @Assert(third.header("x-multiplex-result") ?? "", "third")
+            third.close()
+            @Assert(connection.nextStreamId, Int64(7))
+            @Assert(session.pendingAdmissions(), Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            @Assert(session.close(), true)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testAdmissionDeadlineExpiresWithoutAllocatingStreamId(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 admission deadline test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let preface = nativeH2ReadExactly(
+                    NativeH2TcpTransport(accepted), NATIVE_H2_PREFACE.size
+                )
+                @Assert(nativeH2BytesEqual(preface, NATIVE_H2_PREFACE), true)
+                let transport = NativeH2TcpTransport(accepted)
+                let clientSettings = nativeH2ReadFrame(transport)
+                @Assert(clientSettings.frameType, UInt8(0x4))
                 nativeH2WriteFrame(
                     transport,
                     NativeH2Frame(
-                        UInt8(0x1), UInt8(0x4), 1,
-                        nativeH2EncodeResponseHead(200, Array<NativeH2Header>())
+                        UInt8(0x4), UInt8(0), 0,
+                        [UInt8(0), UInt8(3), UInt8(0), UInt8(0), UInt8(0), UInt8(1)]
                     )
                 )
-                let reset = nativeH2ReadFrame(transport)
-                @Assert(reset.frameType, UInt8(0x3))
-                @Assert(reset.streamId, Int64(1))
+                nativeH2WriteFrame(
+                    transport,
+                    NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+                )
+                let clientAck = nativeH2ReadFrame(transport)
+                @Assert(clientAck.frameType, UInt8(0x4))
+
+                let first = nativeH2ReadFrame(transport)
+                @Assert(first.streamId, Int64(1))
+                nativeH2MultiplexWriteResponse(accepted, 1, "first")
+                let reused = nativeH2ReadFrame(transport)
+                @Assert(reused.streamId, Int64(3))
+                nativeH2MultiplexWriteResponse(accepted, 3, "reused")
             } finally {
                 try { accepted.close() } catch (_: Exception) {}
             }
@@ -143,19 +235,113 @@ public class NativeH2MultiplexInternalTestSuite {
             let first = session.send(
                 NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/one")
             )
-            @Assert(session.maxConcurrentStreams(), Int64(1))
-            var message = ""
+            var failure = ""
             try {
                 let _ = session.send(
-                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/two")
+                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/timeout"),
+                    deadlineMs: 60
                 )
             } catch (e: Exception) {
-                message = e.message
+                failure = e.message
             }
-            @Assert(message.contains("active stream limit 1 reached"), true)
+            @Assert(failure.contains("stream admission timeout"), true)
             @Assert(connection.nextStreamId, Int64(3))
+            @Assert(session.pendingAdmissions(), Int64(0))
+
             first.close()
+            let reused = session.send(
+                NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/reused")
+            )
+            @Assert(reused.header("x-multiplex-result") ?? "", "reused")
+            reused.close()
+            @Assert(session.close(), true)
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            let _ = session.close()
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testPendingLimitAndSessionCloseReleaseWaitingCaller(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 admission close test could not reserve a port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let preface = nativeH2ReadExactly(
+                    NativeH2TcpTransport(accepted), NATIVE_H2_PREFACE.size
+                )
+                @Assert(nativeH2BytesEqual(preface, NATIVE_H2_PREFACE), true)
+                let transport = NativeH2TcpTransport(accepted)
+                let clientSettings = nativeH2ReadFrame(transport)
+                @Assert(clientSettings.frameType, UInt8(0x4))
+                nativeH2WriteFrame(
+                    transport,
+                    NativeH2Frame(
+                        UInt8(0x4), UInt8(0), 0,
+                        [UInt8(0), UInt8(3), UInt8(0), UInt8(0), UInt8(0), UInt8(1)]
+                    )
+                )
+                nativeH2WriteFrame(
+                    transport,
+                    NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+                )
+                let clientAck = nativeH2ReadFrame(transport)
+                @Assert(clientAck.frameType, UInt8(0x4))
+                let first = nativeH2ReadFrame(transport)
+                @Assert(first.streamId, Int64(1))
+                nativeH2MultiplexWriteResponse(accepted, 1, "first")
+                sleep(Duration.millisecond * 200)
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        socket.readTimeout = Some(Duration.second * 2)
+        socket.writeTimeout = Some(Duration.second * 2)
+        socket.connect(timeout: Some(Duration.second * 2))
+        let connection = NativeH2ClientConnection(socket)
+        let session = connection.openMultiplexSession(
+            maxConcurrentStreams: 4,
+            maxPendingRequests: 1
+        )
+        try {
+            let first = session.send(
+                NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/one")
+            )
+            let waitingFuture = spawn {
+                session.send(
+                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/waiting")
+                )
+            }
+            nativeH2WaitForPendingAdmissions(session, 1)
+            var boundedFailure = ""
+            try {
+                let _ = session.send(
+                    NativeH2ClientRequest("GET", "http", "127.0.0.1:${port}", "/overflow")
+                )
+            } catch (e: Exception) {
+                boundedFailure = e.message
+            }
+            @Assert(boundedFailure.contains("pending admission limit 1 reached"), true)
+            @Assert(connection.nextStreamId, Int64(3))
+
             @Assert(session.close(), false)
+            var closeFailure = ""
+            try {
+                let _ = waitingFuture.get(Duration.second * 3)
+            } catch (e: Exception) {
+                closeFailure = e.message
+            }
+            @Assert(closeFailure.contains("closed while awaiting stream admission"), true)
+            @Assert(session.pendingAdmissions(), Int64(0))
+            @Assert(session.activeStreams(), Int64(0))
+            first.close()
             let _ = serverFuture.get(Duration.second * 5)
         } finally {
             let _ = session.close()
@@ -1091,5 +1277,19 @@ func nativeH2WaitForMultiplexStreams(
     }
     if (session.activeStreams() < expected) {
         throw Exception("Native H2 multiplex test did not reserve the expected streams")
+    }
+}
+
+func nativeH2WaitForPendingAdmissions(
+    session: NativeH2MultiplexSession,
+    expected: Int64
+): Unit {
+    var attempts: Int64 = 0
+    while (session.pendingAdmissions() < expected && attempts < 400) {
+        sleep(Duration.millisecond * 5)
+        attempts += 1
+    }
+    if (session.pendingAdmissions() < expected) {
+        throw Exception("Native H2 multiplex test did not queue the expected admissions")
     }
 }

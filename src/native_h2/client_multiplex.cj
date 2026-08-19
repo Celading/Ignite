@@ -7,6 +7,8 @@ import std.time.MonoTime
 import ignite.transport.NativeReadTimeoutControl
 
 let NATIVE_H2_MULTIPLEX_STREAM_LIMIT: Int64 = 32
+let NATIVE_H2_MULTIPLEX_PENDING_LIMIT: Int64 = 64
+let NATIVE_H2_MULTIPLEX_DEFAULT_ADMISSION_WAIT_MS: Int64 = 30000
 let NATIVE_H2_MULTIPLEX_BUFFER_LIMIT: Int64 = 65535
 let NATIVE_H2_MULTIPLEX_UPLOAD_BUFFER_LIMIT: Int64 = 32768
 let NATIVE_H2_MULTIPLEX_UPLOAD_READ_CHUNK: Int64 = 8192
@@ -270,7 +272,10 @@ public class NativeH2MultiplexSession {
     let cancelledStreams = HashMap<Int64, H2MuxStreamState>()
     let outbound = HashMap<Int64, H2MuxOutboundBody>()
     let outboundOrder = ArrayList<Int64>()
+    let admissionQueue = ArrayList<Int64>()
     let localLimit: Int64
+    let pendingLimit: Int64
+    var nextAdmissionTicket: Int64 = 1
     var pendingResponseHead: ?NativeH2PendingResponseHead = None
     var connectionCredit: Int64 = 0
     var outboundCursor: Int64 = 0
@@ -278,11 +283,20 @@ public class NativeH2MultiplexSession {
     var closed = false
     var reusable = true
 
-    init(connection: NativeH2ClientConnection, maxConcurrentStreams: Int64) {
+    init(
+        connection: NativeH2ClientConnection,
+        maxConcurrentStreams: Int64,
+        maxPendingRequests: Int64
+    ) {
         if (maxConcurrentStreams <= 0 ||
             maxConcurrentStreams > NATIVE_H2_MULTIPLEX_STREAM_LIMIT) {
             throw Exception(
                 "native H2 multiplex session maxConcurrentStreams must be within 1..${NATIVE_H2_MULTIPLEX_STREAM_LIMIT}"
+            )
+        }
+        if (maxPendingRequests <= 0 || maxPendingRequests > NATIVE_H2_MULTIPLEX_PENDING_LIMIT) {
+            throw Exception(
+                "native H2 multiplex session maxPendingRequests must be within 1..${NATIVE_H2_MULTIPLEX_PENDING_LIMIT}"
             )
         }
         if (connection.finished || connection.retiring) {
@@ -293,6 +307,7 @@ public class NativeH2MultiplexSession {
         }
         this.connection = connection
         localLimit = maxConcurrentStreams
+        pendingLimit = maxPendingRequests
         if (!connection.initialized) {
             connection.transport.write(NATIVE_H2_PREFACE)
             nativeH2ClientWriteFrame(
@@ -409,6 +424,12 @@ public class NativeH2MultiplexSession {
         }
     }
 
+    public func pendingAdmissions(): Int64 {
+        synchronized(stateMutex) {
+            admissionQueue.size
+        }
+    }
+
     /// Stops new submissions and returns whether the physical connection is reusable.
     public func close(): Bool {
         let toCancel = ArrayList<Int64>()
@@ -433,6 +454,7 @@ public class NativeH2MultiplexSession {
             cancelledStreams.clear()
             outbound.clear()
             outboundOrder.clear()
+            admissionQueue.clear()
             outboundCursor = 0
             flushCredit = connectionCredit
             connectionCredit = 0
@@ -596,74 +618,126 @@ public class NativeH2MultiplexSession {
     ): H2MuxStreamState {
         var reserved: ?H2MuxStreamState = None
         var streamedOutbound: ?H2MuxOutboundBody = None
+        if (deadlineMs < 0) {
+            throw IllegalArgumentException("native H2 request deadline cannot be negative")
+        }
+        let admissionStarted = MonoTime.now()
+        let admissionBudgetMs = if (deadlineMs > 0) {
+            min(deadlineMs, NATIVE_H2_MULTIPLEX_DEFAULT_ADMISSION_WAIT_MS)
+        } else {
+            NATIVE_H2_MULTIPLEX_DEFAULT_ADMISSION_WAIT_MS
+        }
+        var admissionTicket: Int64 = 0
         synchronized(stateMutex) {
             if (closed || connection.finished || connection.retiring) {
                 throw Exception("native H2 multiplex session is closed or retiring")
             }
-            let limit = admissionLimit()
-            if (limit <= 0 || streams.size >= limit) {
+            if (admissionQueue.size >= pendingLimit) {
                 throw Exception(
-                    "native H2 multiplex session active stream limit ${limit} reached"
+                    "native H2 multiplex session pending admission limit ${pendingLimit} reached"
                 )
             }
-            if (deadlineMs < 0) {
-                throw IllegalArgumentException("native H2 request deadline cannot be negative")
-            }
-            let state = H2MuxStreamState(connection.nextStreamId, deadlineMs)
-            connection.nextStreamId += 2
-            streams.add(state.streamId, state)
-            if (bodyLength > 0 || unknownLength) {
-                let outboundBody = match (bodyStream) {
-                    case Some(source) => if (unknownLength) {
-                        H2MuxOutboundBody(
-                            state.streamId,
-                            source,
-                            connection.peerSettings.initialStreamWindow,
-                            priorityHint
-                        )
+            admissionTicket = nextAdmissionTicket
+            nextAdmissionTicket += 1
+            admissionQueue.add(admissionTicket)
+        }
+        try {
+            while (reserved.isNone()) {
+                var failure = ""
+                synchronized(stateMutex) {
+                    if (closed || connection.finished || connection.retiring) {
+                        failure = "native H2 multiplex session closed while awaiting stream admission"
                     } else {
-                        H2MuxOutboundBody(
-                            state.streamId,
-                            source,
-                            bodyLength,
-                            connection.peerSettings.initialStreamWindow,
-                            priorityHint
-                        )
+                        let elapsedMs = (MonoTime.now() - admissionStarted).toMilliseconds()
+                        if (elapsedMs >= admissionBudgetMs) {
+                            failure = "native H2 multiplex stream admission timeout"
+                        } else if (admissionQueue.size > 0 &&
+                            admissionQueue[0] == admissionTicket &&
+                            streams.size < admissionLimit()) {
+                            let _ = admissionQueue.remove(at: 0)
+                            let remainingDeadlineMs = if (deadlineMs > 0) {
+                                max(Int64(1), deadlineMs - elapsedMs)
+                            } else {
+                                0
+                            }
+                            let state = H2MuxStreamState(
+                                connection.nextStreamId,
+                                remainingDeadlineMs
+                            )
+                            connection.nextStreamId += 2
+                            streams.add(state.streamId, state)
+                            if (bodyLength > 0 || unknownLength) {
+                                let outboundBody = match (bodyStream) {
+                                    case Some(source) => if (unknownLength) {
+                                        H2MuxOutboundBody(
+                                            state.streamId,
+                                            source,
+                                            connection.peerSettings.initialStreamWindow,
+                                            priorityHint
+                                        )
+                                    } else {
+                                        H2MuxOutboundBody(
+                                            state.streamId,
+                                            source,
+                                            bodyLength,
+                                            connection.peerSettings.initialStreamWindow,
+                                            priorityHint
+                                        )
+                                    }
+                                    case None => H2MuxOutboundBody(
+                                        state.streamId,
+                                        body,
+                                        connection.peerSettings.initialStreamWindow,
+                                        priorityHint
+                                    )
+                                }
+                                outbound.add(state.streamId, outboundBody)
+                                outboundOrder.add(state.streamId)
+                                if (outboundBody.streamed()) {
+                                    streamedOutbound = Some(outboundBody)
+                                }
+                            }
+                            try {
+                                synchronized(writeMutex) {
+                                    let flags = if (bodyLength == 0 && !unknownLength) {
+                                        UInt8(0x5)
+                                    } else {
+                                        UInt8(0x4)
+                                    }
+                                    nativeH2ClientWriteFrame(
+                                        connection.transport,
+                                        NativeH2Frame(
+                                            UInt8(0x1), flags, state.streamId, requestHead
+                                        )
+                                    )
+                                    flushOutboundWithWriterLocked()
+                                }
+                            } catch (e: Exception) {
+                                failSessionLocked(
+                                    "native H2 multiplex request write failed: " + e.message
+                                )
+                                try { connection.transport.close() } catch (_: Exception) {}
+                                throw e
+                            }
+                            reserved = Some(state)
+                        }
                     }
-                    case None => H2MuxOutboundBody(
-                        state.streamId,
-                        body,
-                        connection.peerSettings.initialStreamWindow,
-                        priorityHint
-                    )
                 }
-                outbound.add(state.streamId, outboundBody)
-                outboundOrder.add(state.streamId)
-                if (outboundBody.streamed()) {
-                    streamedOutbound = Some(outboundBody)
+                if (failure.size > 0) {
+                    synchronized(stateMutex) {
+                        removeAdmissionTicketLocked(admissionTicket)
+                    }
+                    throw Exception(failure)
+                }
+                if (reserved.isNone()) {
+                    sleep(Duration.millisecond)
                 }
             }
-            try {
-                synchronized(writeMutex) {
-                    let flags = if (bodyLength == 0 && !unknownLength) {
-                        UInt8(0x5)
-                    } else {
-                        UInt8(0x4)
-                    }
-                    nativeH2ClientWriteFrame(
-                        connection.transport,
-                        NativeH2Frame(UInt8(0x1), flags, state.streamId, requestHead)
-                    )
-                    flushOutboundWithWriterLocked()
-                }
-            } catch (e: Exception) {
-                failSessionLocked(
-                    "native H2 multiplex request write failed: " + e.message
-                )
-                try { connection.transport.close() } catch (_: Exception) {}
-                throw e
+        } catch (e: Exception) {
+            synchronized(stateMutex) {
+                removeAdmissionTicketLocked(admissionTicket)
             }
-            reserved = Some(state)
+            throw e
         }
         if (let Some(stream) <- streamedOutbound) {
             startStreamProducer(stream)
@@ -676,6 +750,17 @@ public class NativeH2MultiplexSession {
             return min(localLimit, peerLimit)
         }
         localLimit
+    }
+
+    func removeAdmissionTicketLocked(ticket: Int64): Unit {
+        var index: Int64 = 0
+        while (index < admissionQueue.size) {
+            if (admissionQueue[index] == ticket) {
+                let _ = admissionQueue.remove(at: index)
+                return
+            }
+            index += 1
+        }
     }
 
     func writeFrame(frame: NativeH2Frame): Unit {
@@ -1408,6 +1493,7 @@ public class NativeH2MultiplexSession {
         connection.activeMultiplexSession = false
         outbound.clear()
         outboundOrder.clear()
+        admissionQueue.clear()
         outboundCursor = 0
         cancelledStreams.clear()
         for ((_streamId, state) in streams) {

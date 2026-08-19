@@ -283,9 +283,10 @@ public class NativeH2ClientConnection {
 
     /// Opens one explicit multi-stream response session on this connection.
     public func openMultiplexSession(
-        maxConcurrentStreams!: Int64 = NATIVE_H2_MULTIPLEX_STREAM_LIMIT
+        maxConcurrentStreams!: Int64 = NATIVE_H2_MULTIPLEX_STREAM_LIMIT,
+        maxPendingRequests!: Int64 = NATIVE_H2_MULTIPLEX_STREAM_LIMIT
     ): NativeH2MultiplexSession {
-        NativeH2MultiplexSession(this, maxConcurrentStreams)
+        NativeH2MultiplexSession(this, maxConcurrentStreams, maxPendingRequests)
     }
 
     /// Emits NO_ERROR GOAWAY but leaves physical transport close to the caller.
