@@ -10,6 +10,7 @@ import std.time.MonoTime
 class SocketH1RuntimeBaselineGate {
     let mtx = Mutex()
     var entered: Bool = false
+    var released: Bool = false
 
     public func markEntered(): Unit {
         synchronized(mtx) {
@@ -20,6 +21,18 @@ class SocketH1RuntimeBaselineGate {
     public func isEntered(): Bool {
         synchronized(mtx) {
             entered
+        }
+    }
+
+    public func release(): Unit {
+        synchronized(mtx) {
+            released = true
+        }
+    }
+
+    public func isReleased(): Bool {
+        synchronized(mtx) {
+            released
         }
     }
 }
@@ -86,15 +99,18 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let app = App(config: Config(enableNetworkChangeNotice: false))
         app.get("/writer-lifecycle", { ctx =>
+            let _ = ctx.setHeader("x-writer-path", "live")
+            let _ = ctx.setHeader("content-length", "5")
             let writer = ctx.transportWriter()
             writer.write("first".toArray())
+            let _ = ctx.setHeader("x-after-commit", "hidden")
             flushResponseTransportWriter(writer)
             closeResponseTransportWriter(writer)
             closeResponseTransportWriter(writer)
             try {
                 writer.write("late".toArray())
             } catch (_: Exception) {
-                let _ = ctx.setHeader("x-write-after-close", "rejected")
+                ()
             }
         })
 
@@ -109,9 +125,137 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
                 "GET /writer-lifecycle HTTP/1.1\r\nHost: example.com\r\n\r\n"
             )
             @Assert(socketH1RuntimeBaselineContains(response, "HTTP/1.1 200 OK"), true)
-            @Assert(socketH1RuntimeBaselineContains(response, "x-write-after-close: rejected"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "x-writer-path: live"), true)
+            @Assert(socketH1RuntimeBaselineContains(response, "x-after-commit"), false)
             @Assert(socketH1RuntimeBaselineContains(response, "\r\n\r\nfirst"), true)
             @Assert(socketH1RuntimeBaselineContains(response, "late"), false)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1TransportWriterCommitsBeforeHandlerCompletesAndKeepsAlive(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let gate = SocketH1RuntimeBaselineGate()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/live-writer", { ctx =>
+            gate.markEntered()
+            let _ = ctx.setHeader("content-type", "text/plain; charset=utf-8")
+            let writer = ctx.transportWriter()
+            writer.write("first-".toArray())
+            flushResponseTransportWriter(writer)
+            while (!gate.isReleased()) {
+                sleep(Duration.millisecond * 5)
+            }
+            writer.write("second".toArray())
+            closeResponseTransportWriter(writer)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            socket.connect()
+            try {
+                socket.readTimeout = Some(Duration.second)
+                socket.write(
+                    "GET /live-writer HTTP/1.1\r\nHost: example.com\r\n\r\n".toArray()
+                )
+                let firstWire = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "first-",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "HTTP/1.1 200 OK"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "transfer-encoding: chunked"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "first-"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstWire, "second"), false)
+                @Assert(gate.isEntered(), true)
+
+                gate.release()
+                let completedWire = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "second\r\n0\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(completedWire, "second"), true)
+
+                socket.write(
+                    "GET /live-writer HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".toArray()
+                )
+                let secondResponse = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "second\r\n0\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "HTTP/1.1 200 OK"), true)
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "second"), true)
+            } finally {
+                gate.release()
+                if (!socket.isClosed()) {
+                    socket.close()
+                }
+            }
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1TransportWriterFlushCommitsHeadAndHandlerReturnFinishesBody(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let gate = SocketH1RuntimeBaselineGate()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/flush-first", { ctx =>
+            gate.markEntered()
+            let _ = ctx.setHeader("content-type", "text/plain; charset=utf-8")
+            let writer = ctx.transportWriter()
+            flushResponseTransportWriter(writer)
+            while (!gate.isReleased()) {
+                sleep(Duration.millisecond * 5)
+            }
+            writer.write("after-flush".toArray())
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            socket.connect()
+            try {
+                socket.readTimeout = Some(Duration.second)
+                socket.write(
+                    "GET /flush-first HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".toArray()
+                )
+                let headWire = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(headWire, "HTTP/1.1 200 OK"), true)
+                @Assert(socketH1RuntimeBaselineContains(headWire, "transfer-encoding: chunked"), true)
+                @Assert(socketH1RuntimeBaselineContains(headWire, "after-flush"), false)
+                @Assert(gate.isEntered(), true)
+
+                gate.release()
+                let bodyWire = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "after-flush\r\n0\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(bodyWire, "after-flush"), true)
+                @Assert(socketH1RuntimeBaselineContains(bodyWire, "0\r\n\r\n"), true)
+            } finally {
+                gate.release()
+                if (!socket.isClosed()) {
+                    socket.close()
+                }
+            }
         } finally {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }

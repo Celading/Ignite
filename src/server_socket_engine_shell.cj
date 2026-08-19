@@ -810,7 +810,9 @@ func serveSocketServerEngineShellSocketTurns(
                 seed,
                 socket.remoteAddress.toString(),
                 requestBodyBytes,
-                nativeWebSocketSocket: Some(socket)
+                nativeWebSocketSocket: Some(socket),
+                liveResponseSocket: Some(socket),
+                liveResponseCloseAfterWrite: !keepAliveAfterWrite
             )
             app.handleRequest(carrier)
             if (carrier.nativeWebSocketUpgraded()) {
@@ -819,13 +821,17 @@ func serveSocketServerEngineShellSocketTurns(
                 moreTurns = false
                 continue
             }
-            let closeAfterWrite = !keepAliveAfterWrite
-            writeSocketServerEngineShellResponse(
-                socket,
-                request,
-                carrier,
-                closeAfterWrite
-            )
+            if (carrier.hasLiveResponseWriter()) {
+                carrier.finishLiveResponseWriter()
+            } else {
+                let closeAfterWrite = !keepAliveAfterWrite
+                writeSocketServerEngineShellResponse(
+                    socket,
+                    request,
+                    carrier,
+                    closeAfterWrite
+                )
+            }
             control.requestCompleted()
             requestStarted = false
             if (keepAliveAfterWrite) {
@@ -1706,6 +1712,93 @@ class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter 
     }
 }
 
+class SocketServerEngineShellLiveResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
+    let carrier: SocketServerEngineShellCurrentRequestCarrier
+    let socket: TcpSocket
+    let request: SocketHttp11SessionRequest
+    let closeAfterWrite: Bool
+    var lifecycle: ?SocketHttp11ResponseWriterLifecycle = None
+    var closed: Bool = false
+
+    init(
+        carrier: SocketServerEngineShellCurrentRequestCarrier,
+        socket: TcpSocket,
+        request: SocketHttp11SessionRequest,
+        closeAfterWrite: Bool
+    ) {
+        this.carrier = carrier
+        this.socket = socket
+        this.request = request
+        this.closeAfterWrite = closeAfterWrite
+    }
+
+    public override func write(data: Array<UInt8>): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        let writer = ensureLifecycle()
+        let wire = writer.writeBodyChunkBorrowedForSocket(data)
+        if (wire.size > 0) {
+            socket.write(wire)
+        }
+    }
+
+    public override func flush(): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        let _ = ensureLifecycle()
+    }
+
+    public override func close(): Unit {
+        if (closed) {
+            return
+        }
+        closed = true
+        let writer = ensureLifecycle()
+        let tail = writer.finish()
+        if (tail.size > 0) {
+            socket.write(tail)
+        }
+    }
+
+    func ensureLifecycle(): SocketHttp11ResponseWriterLifecycle {
+        match (lifecycle) {
+            case Some(writer) => writer
+            case None =>
+                let responseHeaders = carrier.responseHeadersForSocket()
+                let responseHasChunkedTransfer = carrier.responseHeader("transfer-encoding") ?? ""
+                let responseContentLength = carrier.responseHeader("content-length") ?? ""
+                let statusCode = Int64(carrier.responseStatusCode())
+                let bodyMode = if (isSocketHttp11ResponseBodyForbiddenStatus(statusCode)) {
+                    SocketHttp11ResponseBodyMode.Bodyless
+                } else if (responseHasChunkedTransfer.toAsciiLower() == "chunked") {
+                    SocketHttp11ResponseBodyMode.UnknownLength
+                } else if (responseContentLength.trimAscii().size == 0) {
+                    SocketHttp11ResponseBodyMode.UnknownLength
+                } else {
+                    SocketHttp11ResponseBodyMode.KnownLength
+                }
+                let declaredBodyBytes = if (bodyMode == SocketHttp11ResponseBodyMode.KnownLength) {
+                    socketServerEngineShellDeclaredStreamLength(responseContentLength)
+                } else {
+                    0
+                }
+                let plan = buildSocketHttp11ResponseWritePlan(
+                    request,
+                    statusCode,
+                    responseHeaders,
+                    bodyMode,
+                    declaredBodyBytes: declaredBodyBytes,
+                    option: SocketHttp11ResponseWriteOption(closeAfterWrite: closeAfterWrite)
+                )
+                let writer = SocketHttp11ResponseWriterLifecycle(plan)
+                let head = writer.takeHeadBytes()
+                if (head.size > 0) {
+                    socket.write(head)
+                }
+                lifecycle = Some(writer)
+                writer
+        }
+    }
+}
+
 class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
@@ -1714,6 +1807,9 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     let requestBodyBytesValue: Array<UInt8>
     let responseHeadersValue: HashMap<String, ArrayList<String>>
     let nativeWebSocketSocket: ?TcpSocket
+    let liveResponseSocket: ?TcpSocket
+    let liveResponseCloseAfterWrite: Bool
+    var liveResponseWriterValue: ?ResponseTransportWriter = None
     var responseBodyBytesValue: Array<UInt8> = Array<UInt8>(0, repeat: 0)
     var responseBodyAppendBufferValue: ?ArrayList<UInt8> = None
     var responseBodyStreamValue: ?InputStream = None
@@ -1725,7 +1821,9 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         seed: SocketHttp11DispatchSeed,
         remoteAddress: String,
         requestBodyBytes: Array<UInt8>,
-        nativeWebSocketSocket!: ?TcpSocket = None
+        nativeWebSocketSocket!: ?TcpSocket = None,
+        liveResponseSocket!: ?TcpSocket = None,
+        liveResponseCloseAfterWrite!: Bool = false
     ) {
         this.request = request
         this.seed = seed
@@ -1734,6 +1832,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
         this.responseHeadersValue = HashMap<String, ArrayList<String>>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
+        this.liveResponseSocket = liveResponseSocket
+        this.liveResponseCloseAfterWrite = liveResponseCloseAfterWrite
         this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
         this.responseBodyAppendBufferValue = None
     }
@@ -1778,7 +1878,32 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
-        SocketServerEngineShellResponseTransportWriter(this)
+        match (liveResponseWriterValue) {
+            case Some(writer) => writer
+            case None =>
+                let writer: ResponseTransportWriter = match (liveResponseSocket) {
+                    case Some(socket) =>
+                        SocketServerEngineShellLiveResponseTransportWriter(
+                            this,
+                            socket,
+                            request,
+                            liveResponseCloseAfterWrite
+                        )
+                    case None => SocketServerEngineShellResponseTransportWriter(this)
+                }
+                liveResponseWriterValue = Some(writer)
+                writer
+        }
+    }
+
+    public func hasLiveResponseWriter(): Bool {
+        liveResponseSocket.isSome() && liveResponseWriterValue.isSome()
+    }
+
+    public func finishLiveResponseWriter(): Unit {
+        if (let Some(writer) <- liveResponseWriterValue) {
+            closeResponseTransportWriter(writer)
+        }
     }
 
     public override func requestMethod(): String {
