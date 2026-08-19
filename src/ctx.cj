@@ -1105,6 +1105,14 @@ public class Ctx {
         get() { _responseBody }
     }
 
+    /// Whether the active transport has already committed response bytes.
+    ///
+    /// Post-handler middleware must not rewrite headers or persist a buffered
+    /// shadow body after this becomes true.
+    public prop responseCommitted: Bool {
+        get() { currentRequestCarrierResponseCommitted(_currentRequestCarrier) }
+    }
+
     public prop responseStatus: UInt16 {
         get() { _statusCode }
     }

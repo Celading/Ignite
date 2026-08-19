@@ -94,6 +94,11 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
 
         ctx.next()
 
+        if (ctx.responseCommitted) {
+            ctx.setLocal("__ignite_compress_skip_reason", "response-committed")
+            return
+        }
+
         if (ctx.method == "HEAD") { return }
         if (shouldSkipStatus(ctx.responseStatus)) { return }
         if ((ctx.header("range") ?? "").size > 0) { return }

@@ -1792,6 +1792,7 @@ class SocketServerEngineShellLiveResponseTransportWriter <: ResponseTransportWri
                 let head = writer.takeHeadBytes()
                 if (head.size > 0) {
                     socket.write(head)
+                    carrier.markResponseCommitted()
                 }
                 lifecycle = Some(writer)
                 writer
@@ -1799,7 +1800,7 @@ class SocketServerEngineShellLiveResponseTransportWriter <: ResponseTransportWri
     }
 }
 
-class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
+class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
     let remoteAddress: String
@@ -1815,6 +1816,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     var responseBodyStreamValue: ?InputStream = None
     var responseStatusCodeValue: UInt16 = 200
     var nativeWebSocketUpgradedValue: Bool = false
+    var responseCommittedValue: Bool = false
 
     init(
         request: SocketHttp11SessionRequest,
@@ -1898,6 +1900,14 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
 
     public func hasLiveResponseWriter(): Bool {
         liveResponseSocket.isSome() && liveResponseWriterValue.isSome()
+    }
+
+    public override func responseCommitted(): Bool {
+        responseCommittedValue
+    }
+
+    func markResponseCommitted(): Unit {
+        responseCommittedValue = true
     }
 
     public func finishLiveResponseWriter(): Unit {

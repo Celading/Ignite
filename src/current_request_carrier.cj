@@ -32,6 +32,19 @@ public interface CurrentRequestCarrier {
     func attachResponseBodyStream(stream: InputStream): Unit
 }
 
+/// Optional carrier capability for transports that can commit a response
+/// before the handler and post-handler middleware finish.
+public interface ResponseCommitStateCarrier {
+    func responseCommitted(): Bool
+}
+
+func currentRequestCarrierResponseCommitted(carrier: CurrentRequestCarrier): Bool {
+    if (let Some(commitState) <- (carrier as ResponseCommitStateCarrier)) {
+        return commitState.responseCommitted()
+    }
+    false
+}
+
 // Raw socket carriers do not pass through stdx URL parsing, so they must
 // provide the same decoded query-value contract as `queryForm`.
 func readDecodedUrlQueryValue(queryString: String, key: String): ?String {
@@ -199,7 +212,7 @@ type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
 
 let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
 
-class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let _downstream: CurrentRequestCarrier
     let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
     var _responseWriter: ?ResponseTransportWriter = None
@@ -232,6 +245,10 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         ensureResponseWriter()
+    }
+
+    public override func responseCommitted(): Bool {
+        currentRequestCarrierResponseCommitted(_downstream)
     }
 
     public override func requestMethod(): String {

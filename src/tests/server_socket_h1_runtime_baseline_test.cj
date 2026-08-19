@@ -1,6 +1,7 @@
 package ignite.tests
 
 import ignite.*
+import ignite.middleware.*
 import std.collection.ArrayList
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpSocket}
@@ -89,6 +90,113 @@ class SocketH1RuntimeBaselineDelayedStream <: InputStream & Resource {
             i += 1
         }
         bytes.size
+    }
+}
+
+class SocketH1RuntimeBaselineResponseCacheStore <: ResponseCacheStore {
+    let mtx = Mutex()
+    var putCallCount: Int64 = 0
+
+    public override func getFresh(
+        key: String,
+        now: MonoTime,
+        expiration: Duration
+    ): ?ResponseCacheValue {
+        None
+    }
+
+    public override func put(
+        key: String,
+        body: String,
+        contentType: String,
+        now: MonoTime
+    ): Unit {
+        synchronized(mtx) {
+            putCallCount += 1
+        }
+    }
+
+    public override func cleanupExpired(now: MonoTime, expiration: Duration): Unit {}
+
+    public func putCalls(): Int64 {
+        synchronized(mtx) {
+            putCallCount
+        }
+    }
+}
+
+class SocketH1RuntimeBaselineIdempotencyStore <: IdempotencyStore {
+    let mtx = Mutex()
+    var putCallCount: Int64 = 0
+
+    public override func getFresh(
+        key: String,
+        now: MonoTime,
+        lifetime: Duration
+    ): ?IdempotencyValue {
+        None
+    }
+
+    public override func put(key: String, body: String, now: MonoTime): Unit {
+        synchronized(mtx) {
+            putCallCount += 1
+        }
+    }
+
+    public override func cleanupExpired(now: MonoTime, lifetime: Duration): Unit {}
+
+    public func putCalls(): Int64 {
+        synchronized(mtx) {
+            putCallCount
+        }
+    }
+}
+
+class SocketH1RuntimeBaselineMiddlewareObservation {
+    let mtx = Mutex()
+    var handlerRunCount: Int64 = 0
+    var observationCount: Int64 = 0
+    var compressSkipReason: String = ""
+    var etagSkipReason: String = ""
+    var cacheSkipReason: String = ""
+    var idempotencySkipReason: String = ""
+
+    public func nextLiveBody(): String {
+        synchronized(mtx) {
+            handlerRunCount += 1
+            "live-body-${handlerRunCount}"
+        }
+    }
+
+    public func record(ctx: Ctx): Unit {
+        synchronized(mtx) {
+            observationCount += 1
+            compressSkipReason = ctx.getLocal("__ignite_compress_skip_reason") ?? ""
+            etagSkipReason = ctx.getLocal("__ignite_etag_skip_reason") ?? ""
+            cacheSkipReason = ctx.getLocal("__ignite_cache_skip_reason") ?? ""
+            idempotencySkipReason = ctx.getLocal("__ignite_idempotency_skip_reason") ?? ""
+        }
+    }
+
+    public func handlerRuns(): Int64 {
+        synchronized(mtx) {
+            handlerRunCount
+        }
+    }
+
+    public func observations(): Int64 {
+        synchronized(mtx) {
+            observationCount
+        }
+    }
+
+    public func allSkippedAfterCommit(): Bool {
+        synchronized(mtx) {
+            compressSkipReason == "response-committed" &&
+                etagSkipReason == "response-committed" &&
+                cacheSkipReason == "response-committed" &&
+                idempotencySkipReason == "response-committed"
+        }
     }
 }
 
@@ -256,6 +364,82 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
                     socket.close()
                 }
             }
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testNativeH1CommittedWriterBypassesBufferedResponseMiddleware(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let cacheStore = SocketH1RuntimeBaselineResponseCacheStore()
+        let idempotencyStore = SocketH1RuntimeBaselineIdempotencyStore()
+        let observation = SocketH1RuntimeBaselineMiddlewareObservation()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use({ ctx =>
+            ctx.next()
+            observation.record(ctx)
+        })
+        app.use(compressMiddleware(config: CompressConfig(minBytes: 0, skipIfNoGain: false)))
+        app.use(cacheMiddleware(
+            config: CacheConfig(methods: ["POST"]),
+            store: Some(cacheStore)
+        ))
+        app.use(etagMiddleware())
+        app.use(idempotencyMiddleware(store: Some(idempotencyStore)))
+        app.post("/committed-middleware", { ctx =>
+            let body = observation.nextLiveBody()
+            let _ = ctx.sendString("buffered-shadow")
+            let writer = ctx.transportWriter()
+            writer.write(body.toArray())
+            closeResponseTransportWriter(writer)
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let socket = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            socket.connect()
+            try {
+                socket.readTimeout = Some(Duration.second)
+                socket.write(
+                    "POST /committed-middleware HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: gzip\r\nX-Idempotency-Key: committed-1\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n".toArray()
+                )
+                let firstResponse = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "live-body-1\r\n0\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(firstResponse, "live-body-1"), true)
+                @Assert(socketH1RuntimeBaselineContains(firstResponse, "buffered-shadow"), false)
+                @Assert(socketH1RuntimeBaselineContains(firstResponse, "content-encoding:"), false)
+                @Assert(socketH1RuntimeBaselineContains(firstResponse, "etag:"), false)
+
+                socket.write(
+                    "POST /committed-middleware HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: gzip\r\nX-Idempotency-Key: committed-1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toArray()
+                )
+                let secondResponse = readSocketH1RuntimeBaselineUntil(
+                    socket,
+                    "live-body-2\r\n0\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "live-body-2"), true)
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "buffered-shadow"), false)
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "content-encoding:"), false)
+                @Assert(socketH1RuntimeBaselineContains(secondResponse, "etag:"), false)
+            } finally {
+                if (!socket.isClosed()) {
+                    socket.close()
+                }
+            }
+
+            @Assert(cacheStore.putCalls(), 0)
+            @Assert(idempotencyStore.putCalls(), 0)
+            @Assert(observation.handlerRuns(), 2)
+            @Assert(observation.observations(), 2)
+            @Assert(observation.allSkippedAfterCommit(), true)
         } finally {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
