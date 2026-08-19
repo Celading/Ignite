@@ -471,9 +471,9 @@ public class Ctx {
         this
     }
 
-    /// Stream a JSON payload through a `JsonWriter` callback.
+    /// Stream a JSON payload through an Ignite-owned SeaJson-backed writer.
     ///
-    /// The callback receives a `JsonWriter` backed by Ignite's current
+    /// The callback receives an `IgniteJsonWriter` backed by SeaJson and Ignite's
     /// response transport writer seam. On HTTP/1.x this path is chunked by default;
     /// on HTTP/2 it uses the bounded `JsonWriterInputStream` response path and emits
     /// flow-controlled DATA segments.
@@ -486,7 +486,7 @@ public class Ctx {
     /// delegates to `jsonStream(...)` so the bounded response-stream seam is reused.
     ///
     /// For `HEAD` requests the callback is not invoked and no body is sent.
-    public func jsonWrite(writerFn: (JsonWriter) -> Unit): Ctx {
+    public func jsonWrite(writerFn: (IgniteJsonWriter) -> Unit): Ctx {
         setResponseHeaderTracked("content-type", "application/json; charset=utf-8")
         if (let Some(plan) <- currentMandatoryStreamCompressionPlan(this)) {
             let declaredEncoding = (responseHeader("content-encoding") ?? "").trimAscii().toAsciiLower()
@@ -535,7 +535,7 @@ public class Ctx {
     /// If a caller needs a custom bridge buffer limit, instantiate
     /// `JsonWriterInputStream` directly and call `sendStream(...)`.
     public func jsonStream(
-        writerFn: (JsonWriter) -> Unit,
+        writerFn: (IgniteJsonWriter) -> Unit,
         contentLength!: ?Int64 = None
     ): Ctx {
         setLocal("__ignite_response_kind", "json-stream")
@@ -547,19 +547,29 @@ public class Ctx {
         )
     }
 
-    /// Stream a `JsonSerializable` payload through the accepted `jsonStream(...)` seam.
+    /// Stream a legacy `JsonSerializable` payload through the bounded response seam.
     ///
     /// Unlike `jsonSerialize(...)`, this method does not full-buffer through
     /// `serializeJson(...) -> String`. It keeps typed callers on the accepted
     /// stream bridge path and therefore inherits the same current middleware and
-    /// H2/TLS non-promises as `jsonStream(...)`.
+    /// H2/TLS non-promises as `jsonStream(...)`. The serializer itself remains an
+    /// explicit stdx compatibility path; new code should prefer
+    /// `JsonWriterEncodable` or `IgniteJsonWriter`.
     public func jsonSerializeStream<T>(
         obj: T,
         contentLength!: ?Int64 = None
     ): Ctx where T <: JsonSerializable {
-        jsonStream({ jw =>
-            writeJsonSerializableThroughSeaJsonBridge(jw, obj)
-        }, contentLength: contentLength)
+        setLocal("__ignite_response_kind", "json-stream")
+        let stream = JsonWriterInputStream(outputProducer: { out =>
+            let writer = StdxJsonWriter(out)
+            writeJsonSerializableThroughSeaJsonBridge(writer, obj)
+            writer.flush()
+        })
+        sendStream(
+            stream,
+            contentType: "application/json; charset=utf-8",
+            contentLength: contentLength
+        )
     }
 
     /// Stream a `JsonWriterEncodable` payload through the accepted `sendStream(...)` seam.
@@ -586,12 +596,12 @@ public class Ctx {
         )
     }
 
-    /// Stream JSON through SeaJson's native writer without exposing stdx JSON types.
+    /// Stream JSON through SeaJson's native writer directly.
     ///
     /// The producer runs behind a bounded bridge and is consumed through
     /// `sendStream(...)`, so a slow socket applies backpressure instead of forcing
-    /// the complete JSON value into memory. `jsonStream(...)` remains available as
-    /// the stdx-compatible callback surface.
+    /// the complete JSON value into memory. `jsonStream(...)` provides Ignite's
+    /// compatibility-named fluent adapter over the same SeaJson backend.
     public func jsonSeaStream(
         writerFn: (SeaJsonWriter) -> Unit,
         contentLength!: ?Int64 = None,

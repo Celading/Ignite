@@ -5,6 +5,7 @@ import seajson.JsonWriter as SeaJsonNativeWriter
 import std.collection.{ArrayList, HashMap}
 import std.net.{TcpSocket, IPSocketAddress}
 import std.sync.Mutex
+import std.time.DateTime
 
 /// Focused real-HTTP proof for the public `JsonWriterInputStream` seam.
 ///
@@ -512,7 +513,7 @@ public class JsonSeaStreamCtxSugarTestSuite {
     }
 }
 
-/// Focused proof for the current stdx-backed `SeaJson-Bridge` first cut.
+/// Focused proof for the remaining typed-serialization compatibility bridge.
 ///
 /// This suite keeps two truths honest:
 /// 1. old full-buffer `serializeJson(...)` still returns the same string
@@ -797,7 +798,9 @@ func hexOfJsonWriterInputRune(ch: Rune): Int64 {
 }
 
 func chooseJsonWriterInputStreamTestPort(seed: Int64): UInt16 {
-    UInt16(seed)
+    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+    let raw = 47000 + ((nowMs + seed) % 8000)
+    UInt16(raw)
 }
 
 func buildJsonSerializeStreamValues(): ArrayList<Int64> {
