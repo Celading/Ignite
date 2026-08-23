@@ -178,6 +178,13 @@ App 路由前关闭当前连接；普通字段值两侧的水平制表空白仍�
 当前没有为这类解析拒绝承诺固定的 `400` 响应体，也不把同栈回归表述为独立
 代理链合规认证。
 
+request-target 也按方法收敛：`CONNECT` 必须使用 authority-form，authority-form
+只供 `CONNECT` 使用，asterisk-form 只供 `OPTIONS` 使用。合法的
+`CONNECT example.com:443`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通
+origin/absolute-form 路由不受影响；非法组合会在 App dispatch 前关闭当前连接，
+后续连接仍可继续由监听器处理。这里不包含 CONNECT 隧道、代理转发、Host
+重写/一致性策略或固定的 `400` 响应契约。
+
 ## 流式 JSON
 
 传统接口仍然适合小对象：

@@ -35,6 +35,7 @@ enum SocketHttp11RequestTargetForm <: Equatable<SocketHttp11RequestTargetForm> &
 
 enum SocketHttp11DispatchSeedErrorCode <: Equatable<SocketHttp11DispatchSeedErrorCode> & ToString {
     | InvalidTarget
+    | InvalidMethodTargetForm
     | FragmentNotAllowed
     | UnsupportedAbsoluteScheme
     | MissingAbsoluteAuthority
@@ -50,15 +51,17 @@ enum SocketHttp11DispatchSeedErrorCode <: Equatable<SocketHttp11DispatchSeedErro
     public func ordinalValue(): Int64 {
         match (this) {
             case InvalidTarget => 0
-            case FragmentNotAllowed => 1
-            case UnsupportedAbsoluteScheme => 2
-            case MissingAbsoluteAuthority => 3
+            case InvalidMethodTargetForm => 1
+            case FragmentNotAllowed => 2
+            case UnsupportedAbsoluteScheme => 3
+            case MissingAbsoluteAuthority => 4
         }
     }
 
     public func toString(): String {
         match (this) {
             case InvalidTarget => "INVALID_TARGET"
+            case InvalidMethodTargetForm => "INVALID_METHOD_TARGET_FORM"
             case FragmentNotAllowed => "FRAGMENT_NOT_ALLOWED"
             case UnsupportedAbsoluteScheme => "UNSUPPORTED_ABSOLUTE_SCHEME"
             case MissingAbsoluteAuthority => "MISSING_ABSOLUTE_AUTHORITY"
@@ -136,6 +139,30 @@ class SocketHttp11PlannedDispatch {
     }
 }
 
+func validateSocketHttp11MethodTargetForm(
+    method: String,
+    targetForm: SocketHttp11RequestTargetForm
+): Unit {
+    if (method == "CONNECT" && targetForm != SocketHttp11RequestTargetForm.AuthorityForm) {
+        throw SocketHttp11DispatchSeedException(
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm,
+            "HTTP/1.1 CONNECT requests require an authority-form request target"
+        )
+    }
+    if (targetForm == SocketHttp11RequestTargetForm.AuthorityForm && method != "CONNECT") {
+        throw SocketHttp11DispatchSeedException(
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm,
+            "HTTP/1.1 authority-form request targets are reserved for CONNECT"
+        )
+    }
+    if (targetForm == SocketHttp11RequestTargetForm.AsteriskForm && method != "OPTIONS") {
+        throw SocketHttp11DispatchSeedException(
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm,
+            "HTTP/1.1 asterisk-form request targets are reserved for OPTIONS"
+        )
+    }
+}
+
 func buildSocketHttp11DispatchSeed(request: SocketHttp11SessionRequest): SocketHttp11DispatchSeed {
     let rawTarget = request.head.target.trimAscii()
     if (rawTarget.size == 0) {
@@ -151,6 +178,10 @@ func buildSocketHttp11DispatchSeed(request: SocketHttp11SessionRequest): SocketH
         )
     }
     if (rawTarget == "*") {
+        validateSocketHttp11MethodTargetForm(
+            request.head.method,
+            SocketHttp11RequestTargetForm.AsteriskForm
+        )
         return SocketHttp11DispatchSeed(
             request.head.method,
             rawTarget,
@@ -159,17 +190,33 @@ func buildSocketHttp11DispatchSeed(request: SocketHttp11SessionRequest): SocketH
         )
     }
     if (rawTarget.startsWith("/")) {
+        validateSocketHttp11MethodTargetForm(
+            request.head.method,
+            SocketHttp11RequestTargetForm.OriginForm
+        )
         return buildSocketHttp11OriginDispatchSeed(request, rawTarget)
     }
 
     let lower = rawTarget.toAsciiLower()
     if (lower.startsWith("http://")) {
+        validateSocketHttp11MethodTargetForm(
+            request.head.method,
+            SocketHttp11RequestTargetForm.AbsoluteForm
+        )
         return buildSocketHttp11AbsoluteDispatchSeed(request, rawTarget, "http", 7)
     }
     if (lower.startsWith("https://")) {
+        validateSocketHttp11MethodTargetForm(
+            request.head.method,
+            SocketHttp11RequestTargetForm.AbsoluteForm
+        )
         return buildSocketHttp11AbsoluteDispatchSeed(request, rawTarget, "https", 8)
     }
     if (socketHttp11DispatchSeedContainsChar(rawTarget, r':')) {
+        validateSocketHttp11MethodTargetForm(
+            request.head.method,
+            SocketHttp11RequestTargetForm.AuthorityForm
+        )
         return SocketHttp11DispatchSeed(
             request.head.method,
             rawTarget,

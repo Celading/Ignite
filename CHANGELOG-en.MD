@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` Default Native H1 now rejects `CONNECT` without authority-form, authority-form on non-`CONNECT` methods, and asterisk-form on non-`OPTIONS` methods before App dispatch
+- `=Boundary` Valid `CONNECT authority`, `OPTIONS *`, resource-specific `OPTIONS /path`, and ordinary origin/absolute-form routing remain compatible; this does not implement CONNECT tunneling, proxy forwarding, or a fixed 400-response contract
 - `+Performance` Optional buffered compression now requires at least `64` bytes of net savings by default; marginal gains fall back to identity, material gains stay encoded, and `minSavingsBytes` is configurable
 - `=Boundary` Mandatory coding still wins when identity is refused; this policy does not enable dynamic Brotli/Zstd by default or claim general entropy coding
 - `+Security` The explicit Native H1 client now accepts only valid HTTP status codes in `100..599`; an ordinary REST path fails before body exposure and retires the connection when it receives `101 Switching Protocols`

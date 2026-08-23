@@ -92,6 +92,47 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
             case Some(_) => @Fail("asterisk-form target should stay non-dispatchable")
             case None => ()
         }
+
+        let resourceOptions = openSocketHttp11DispatchSeedTestRequest(
+            "OPTIONS /resource HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+        )
+        let resourceOptionsSeed = buildSocketHttp11DispatchSeed(resourceOptions)
+        @Assert(resourceOptionsSeed.targetFormName(), "origin-form")
+        @Assert(resourceOptionsSeed.canResolveDispatchPlan(), true)
+    }
+
+    @TestCase
+    public func testDispatchSeedRejectsInvalidMethodTargetFormCombinations(): Unit {
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT /route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT http://api.example.com/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT * HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET api.example.com:443 HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET * HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
     }
 
     @TestCase

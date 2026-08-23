@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在会在 App dispatch 前拒绝不使用 authority-form 的 `CONNECT`、非 `CONNECT` 的 authority-form，以及非 `OPTIONS` 的 asterisk-form 请求目标
+- `=边界` 合法 `CONNECT authority`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通 origin/absolute-form 路由保持兼容；本次不实现 CONNECT 隧道、代理转发或固定 400 响应契约
 - `+性能` 可选 buffered 压缩现在默认要求至少 `64` bytes 的净节省；微小收益回退 identity，显著收益仍编码，`minSavingsBytes` 可显式调整
 - `=边界` identity 被拒绝时仍优先满足协议要求；该策略不翻转动态 Brotli/Zstd 默认，也不宣称通用熵编码完成
 - `+安全` 显式 Native H1 Client 现在只接受 `100..599` 的有效 HTTP 状态码；普通 REST 路径收到 `101 Switching Protocols` 时会在响应体暴露前失败并淘汰该连接

@@ -6,6 +6,7 @@ import std.env.{removeVariable, setVariable}
 import std.fs.exists
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
+import std.sync.AtomicInt64
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
@@ -11823,6 +11824,69 @@ public class ServerEngineAbstractionTestSuite {
             @Assert(contains(validResponseText, "content-length: 14"), true)
             @Assert(contains(validResponseText, "connection: close"), true)
             @Assert(contains(validResponseText, "containment-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
+    public func testSocketServerEngineShellContainsInvalidMethodTargetFormsBeforeAppDispatch(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "3")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.all("/shell-target-form-containment", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx
+                    .setHeader("x-shell-target-form-containment", "1")
+                    .sendString("target-form-containment-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38186))
+            }
+            waitForShellReady(app, UInt16(38186))
+
+            let invalidConnectSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38186"))
+            invalidConnectSocket.connect()
+            try {
+                invalidConnectSocket.write(
+                    (
+                        "CONNECT /shell-target-form-containment HTTP/1.1\r\n" +
+                        "Host: example.com\r\n\r\n"
+                    ).toArray()
+                )
+            } finally {
+                if (!invalidConnectSocket.isClosed()) {
+                    invalidConnectSocket.close()
+                }
+            }
+
+            let invalidAuthoritySocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38186"))
+            invalidAuthoritySocket.connect()
+            try {
+                invalidAuthoritySocket.write(
+                    "GET example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n".toArray()
+                )
+            } finally {
+                if (!invalidAuthoritySocket.isClosed()) {
+                    invalidAuthoritySocket.close()
+                }
+            }
+
+            let validResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                "GET /shell-target-form-containment HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(handlerRuns.load(), Int64(1))
+            @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(validResponseText, "x-shell-target-form-containment: 1"), true)
+            @Assert(contains(validResponseText, "target-form-containment-ok"), true)
         } finally {
             removeVariable(acceptLimitEnv)
         }
