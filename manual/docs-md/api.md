@@ -204,6 +204,8 @@ app.post("/upload-large", { ctx =>
 - `ctx.jsonEncodeStream(...)` 是 `JsonEncodable` family 的显式流式 twin：`ctx.jsonEncode(...)` 继续保持 full-buffer，并继续只在这条 full-buffer 路上使用 `Config.jsonEncoder`
 - `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下依赖 DATA frame 与流控，而不是 H1 的 chunked 头部语义
 - `ctx.transportWriterWithTransform(...)` 可把有状态 `ResponseTransportTransform` 的 write、flush 与 close-tail 输出接入 live writer；调用方仍负责状态、响应头与 framing
+- `responseTransportTransformMiddleware({=> ...})` 可在洋葱中间件里注册 fresh transform factory，handler 继续使用普通 `ctx.transportWriter()`；最后注册的内层 transform 先处理字节，再向外层展开。首个 transport writer 打开后注册即冻结，迟到注册会被拒绝
+- 这条自动组合 seam 当前只覆盖 `transportWriter()` / `transportOutputStream()`，不会自动改写 `writer()`、SSE、`sendStream(...)` 或 pull-stream JSON，也不代表现有压缩策略中间件已经接入
 - Native H2 App writer 的多次 write 已有 handler-time wire 回归；自定义 carrier 仍需自己的 wire 证明
 - 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
 

@@ -132,6 +132,9 @@ public class Ctx {
     var _responseBody: ?String = None
     var _pathOverride: ?String = None
     var _trustedPrecompressedEncoding: ?String = None
+    let _responseTransportTransformFactories: ArrayList<ResponseTransportTransformFactory> =
+        ArrayList<ResponseTransportTransformFactory>()
+    var _responseTransportTransformsFrozen: Bool = false
 
     public init(currentRequestCarrier: CurrentRequestCarrier, app: App) {
         this._currentRequestCarrier = currentRequestCarrier
@@ -902,19 +905,41 @@ public class Ctx {
 
     // ── Streaming ──
 
+    /// Register a fresh stateful transform factory for transport writers.
+    ///
+    /// Registration must finish before the first transport writer is opened.
+    /// Later registrations are rejected so every writer in this response sees
+    /// one stable middleware composition.
+    public func registerResponseTransportTransform(
+        factory: ResponseTransportTransformFactory
+    ): Ctx {
+        if (_responseTransportTransformsFrozen) {
+            throw Exception("response transport transform registration is frozen")
+        }
+        _responseTransportTransformFactories.add(factory)
+        this
+    }
+
     /// Open the low-level response transport writer without mutating framing headers.
     ///
     /// Callers own status, content headers, and framing decisions when using this
     /// seam directly. Unlike `writer()` and `jsonWrite(...)`, this method does not
     /// auto-enable HTTP/1.1 chunked transfer encoding.
     public func transportWriter(): ResponseTransportWriter {
+        _responseTransportTransformsFrozen = true
         _responded = true
         setLocal("__ignite_response_kind", "transport-stream")
+        var writer: ResponseTransportWriter
         if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
             rejectMandatoryStreamCompressionFallback(406)
-            return openDiscardingResponseTransportWriter()
+            writer = openDiscardingResponseTransportWriter()
+        } else {
+            writer = openResponseTransportWriter(_currentRequestCarrier)
         }
-        openResponseTransportWriter(_currentRequestCarrier)
+        openComposedResponseTransportWriter(
+            writer,
+            _responseTransportTransformFactories
+        )
     }
 
     /// Open the low-level response writer through one stateful transformation.

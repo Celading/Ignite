@@ -92,6 +92,49 @@ public class ResponseTransportLifecycleInternalTestSuite {
     }
 
     @TestCase
+    public func testTransformFactoriesComposeInOnionOrderAndStayFresh(): Unit {
+        let factoryEvents = ArrayList<String>()
+        let factories = ArrayList<ResponseTransportTransformFactory>()
+        factories.add({=>
+            factoryEvents.add("outer")
+            LabelResponseTransportTransform("outer")
+        })
+        factories.add({=>
+            factoryEvents.add("inner")
+            LabelResponseTransportTransform("inner")
+        })
+
+        for (_ in 0..2) {
+            let events = ArrayList<String>()
+            let downstream = openLifecycleSinkBackedResponseTransportWriter(
+                {bytes => events.add("write:${String.fromUtf8(bytes)}")},
+                {=> events.add("flush")},
+                {=> events.add("close")}
+            )
+            let writer = openComposedResponseTransportWriter(downstream, factories)
+
+            writer.write("body".toArray())
+            flushResponseTransportWriter(writer)
+            closeResponseTransportWriter(writer)
+
+            @Assert(events.size, Int64(7))
+            @Assert(events[0], "write:outer[inner[body]]")
+            @Assert(events[1], "write:outer[inner-flush]")
+            @Assert(events[2], "write:outer-flush")
+            @Assert(events[3], "flush")
+            @Assert(events[4], "write:outer[inner-close]")
+            @Assert(events[5], "write:outer-close")
+            @Assert(events[6], "close")
+        }
+
+        @Assert(factoryEvents.size, Int64(4))
+        @Assert(factoryEvents[0], "outer")
+        @Assert(factoryEvents[1], "inner")
+        @Assert(factoryEvents[2], "outer")
+        @Assert(factoryEvents[3], "inner")
+    }
+
+    @TestCase
     public func testTransformCloseStillClosesDownstreamWhenFinalOutputFails(): Unit {
         let events = ArrayList<String>()
         let downstream = openLifecycleSinkBackedResponseTransportWriter(
@@ -238,6 +281,26 @@ class CloseOnlyResponseTransportTransform <: ResponseTransportTransform {
 
     public override func transformClose(): Array<Array<UInt8>> {
         ["tail".toArray()]
+    }
+}
+
+class LabelResponseTransportTransform <: ResponseTransportTransform {
+    let label: String
+
+    init(label: String) {
+        this.label = label
+    }
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        [("${label}[" + String.fromUtf8(data) + "]").toArray()]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        [("${label}-flush").toArray()]
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        [("${label}-close").toArray()]
     }
 }
 

@@ -5,7 +5,8 @@ import ignite.{
     Config,
     ResponseTransportTransform,
     closeResponseTransportWriter,
-    flushResponseTransportWriter
+    flushResponseTransportWriter,
+    responseTransportTransformMiddleware
 }
 import std.collection.ArrayList
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
@@ -166,6 +167,155 @@ public class NativeH2RuntimeInternalTestSuite {
                 NativeH2Frame(
                     UInt8(0x1), UInt8(0x5), 3,
                     nativeH2TestRequestHeadersForMethod("/after-transform", "GET")
+                )
+            )
+            let reusedHeaders = nativeH2ReadFrame(client)
+            let reusedData = nativeH2ReadFrame(client)
+            @Assert(reusedHeaders.frameType, UInt8(0x1))
+            @Assert(reusedHeaders.streamId, 3)
+            @Assert(responseDecoder.decodeResponseHead(reusedHeaders.payload).status, UInt16(200))
+            @Assert(reusedData.frameType, UInt8(0x0))
+            @Assert(reusedData.flags, UInt8(0x1))
+            @Assert(reusedData.streamId, 3)
+            @Assert(String.fromUtf8(reusedData.payload), "still-open")
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
+    public func testPublicTransformMiddlewareComposesOnPlainWriterBeforeHandlerReturns(): Unit {
+        let closeReturned = AtomicBool(false)
+        let lateRegistrationRejected = AtomicBool(false)
+        let postCloseRejected = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use(responseTransportTransformMiddleware({=>
+            NativeH2LabelResponseTransportTransform("outer")
+        }))
+        app.use(responseTransportTransformMiddleware({=>
+            NativeH2LabelResponseTransportTransform("inner")
+        }))
+        app.get("/transform-middleware", { ctx =>
+            let _ = ctx.status(200).setHeader("content-type", "application/octet-stream")
+            let writer = ctx.transportWriter()
+            try {
+                let _ = ctx.registerResponseTransportTransform({=>
+                    NativeH2LabelResponseTransportTransform("late")
+                })
+            } catch (_: Exception) {
+                lateRegistrationRejected.store(true)
+            }
+            writer.write("one".toArray())
+            flushResponseTransportWriter(writer)
+            writer.write("two".toArray())
+            closeResponseTransportWriter(writer)
+            closeReturned.store(true)
+            try {
+                writer.write("late".toArray())
+            } catch (_: Exception) {
+                postCloseRejected.store(true)
+            }
+            sleep(Duration.millisecond * 120)
+            handlerReturned.store(true)
+        })
+        app.get("/after-transform-middleware", { ctx =>
+            let _ = ctx.sendString("still-open")
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 transform middleware test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2AppConnection(
+                    accepted,
+                    app,
+                    remoteAddress: "127.0.0.1",
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeadersForMethod("/transform-middleware", "GET")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+
+            let responseDecoder = NativeH2HpackDecoderState()
+            @Assert(
+                responseDecoder.decodeResponseHead(responseHeaders.payload).status,
+                UInt16(200)
+            )
+            let expectedData = [
+                "outer[inner[one]]",
+                "outer[inner-flush]",
+                "outer-flush",
+                "outer[inner[two]]",
+                "outer[inner-close]",
+                "outer-close"
+            ]
+            for (expected in expectedData) {
+                let data = nativeH2ReadFrame(client)
+                @Assert(data.frameType, UInt8(0x0))
+                @Assert(data.flags, UInt8(0))
+                @Assert(data.streamId, 1)
+                @Assert(String.fromUtf8(data.payload), expected)
+            }
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+
+            for (_ in 0..100) {
+                if (closeReturned.load() && lateRegistrationRejected.load() &&
+                    postCloseRejected.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(closeReturned.load(), true)
+            @Assert(lateRegistrationRejected.load(), true)
+            @Assert(postCloseRejected.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 3,
+                    nativeH2TestRequestHeadersForMethod("/after-transform-middleware", "GET")
                 )
             )
             let reusedHeaders = nativeH2ReadFrame(client)
@@ -2755,6 +2905,26 @@ class NativeH2CountingResponseTransportTransform <: ResponseTransportTransform {
 
     public override func transformClose(): Array<Array<UInt8>> {
         [("c${writes}").toArray()]
+    }
+}
+
+class NativeH2LabelResponseTransportTransform <: ResponseTransportTransform {
+    let label: String
+
+    init(label: String) {
+        this.label = label
+    }
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        [("${label}[" + String.fromUtf8(data) + "]").toArray()]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        [("${label}-flush").toArray()]
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        [("${label}-close").toArray()]
     }
 }
 

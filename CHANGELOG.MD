@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+特性` 新增 `ResponseTransportTransformFactory`、`Ctx.registerResponseTransportTransform(...)` 与 `responseTransportTransformMiddleware(...)`，普通 `transportWriter()` 可按中间件响应洋葱顺序自动组合 fresh 状态变换
+- `=边界` transform 注册在首个 transport writer 打开后冻结；当前不会自动包裹 `writer()`、SSE、sendStream/pull JSON，也不代表现有压缩策略中间件已接入
 - `+特性` 动态 gzip/deflate 的缓冲与流式响应改用 Ignite 自有安全仓颉 DEFLATE/GZIP codec，不再在产品路径构造 `stdx.compress.zlib`
 - `+特性` 缓冲响应使用固定 Huffman 与有界 LZ77；流式响应使用增量 stored blocks，避免完整响应捕获
 - `+特性` Brotli/Zstd 继续通过 `.br` / `.zst` 预压缩静态副本交付，保持 Range、HEAD、Vary 与 MIME 语义

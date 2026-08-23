@@ -118,8 +118,12 @@ app.get("/stream", { ctx =>
 - Ignite Native H2 App adapter 的直接 writer 已有 handler-time HEADERS、双窗口
   DATA 与显式 END_STREAM 的真实 wire 回归；
   `transportWriterWithTransform(...)` 的 write/flush/close-tail 也有同一路径
-  的线级证明。这不等于 stdx、自定义 carrier 或 TLS server 路径自动获得
-  相同证明。
+  的线级证明。
+- `responseTransportTransformMiddleware(...)` 可让外层、内层中间件注册
+  fresh transform factory，而 handler 使用普通 `transportWriter()`；响应按
+  `inner -> outer -> transport` 展开，注册在首个 writer 打开后冻结。
+- 这不等于现有压缩中间件、`writer()`、SSE、sendStream/JSON pull stream，
+  或 stdx、自定义 carrier、TLS server 路径自动获得同样接入与证明。
 
 ## 静态文件
 

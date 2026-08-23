@@ -1,5 +1,6 @@
 package ignite
 
+import std.collection.ArrayList
 import std.io.OutputStream
 import stdx.net.http.{HttpContext, HttpResponseWriter}
 
@@ -39,6 +40,25 @@ public interface ResponseTransportTransform {
     func transformWrite(data: Array<UInt8>): Array<Array<UInt8>>
     func transformFlush(): Array<Array<UInt8>>
     func transformClose(): Array<Array<UInt8>>
+}
+
+/// Creates one fresh response transform for each transport-writer acquisition.
+///
+/// Stateful transform instances must not be shared across response writers.
+public type ResponseTransportTransformFactory = () -> ResponseTransportTransform
+
+/// Registers one response transform through Ignite's middleware chain.
+///
+/// Registration follows request middleware order. When the handler opens a
+/// transport writer, the innermost (last registered) transform sees bytes
+/// first and output then unwinds through the outer transforms.
+public func responseTransportTransformMiddleware(
+    factory: ResponseTransportTransformFactory
+): Handler {
+    { ctx =>
+        let _ = ctx.registerResponseTransportTransform(factory)
+        ctx.next()
+    }
 }
 
 class WriteOnlyResponseTransportTransform <: ResponseTransportTransform {
@@ -275,6 +295,17 @@ public func openTransformingResponseTransportWriter(
     transform: ResponseTransportTransform
 ): ResponseTransportWriter {
     TransformingResponseTransportWriter(writer, transform)
+}
+
+func openComposedResponseTransportWriter(
+    writer: ResponseTransportWriter,
+    factories: ArrayList<ResponseTransportTransformFactory>
+): ResponseTransportWriter {
+    var current = writer
+    for (factory in factories) {
+        current = openTransformingResponseTransportWriter(current, factory())
+    }
+    current
 }
 
 /// Presents a response transport writer as an `std.io.OutputStream`.
