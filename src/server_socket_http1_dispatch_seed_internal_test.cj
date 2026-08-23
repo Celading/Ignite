@@ -68,6 +68,37 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
     }
 
     @TestCase
+    public func testAbsoluteFormCarrierProjectsRequestTargetAuthorityAsEffectiveHost(): Unit {
+        let absoluteRequest = openSocketHttp11DispatchSeedTestRequest(
+            "GET http://target.example:9443/health HTTP/1.1\r\nHost: attacker.example\r\n\r\n"
+        )
+        let absoluteSeed = buildSocketHttp11DispatchSeed(absoluteRequest)
+        let absoluteCarrier = SocketServerEngineShellCurrentRequestCarrier(
+            absoluteRequest,
+            absoluteSeed,
+            "127.0.0.1",
+            Array<UInt8>(0, repeat: 0)
+        )
+
+        @Assert(absoluteCarrier.requestHeaderValue("host") ?? "", "target.example:9443")
+        @Assert(absoluteCarrier.requestHeaders().getFirst("host") ?? "", "target.example:9443")
+
+        let originRequest = openSocketHttp11DispatchSeedTestRequest(
+            "GET /health HTTP/1.1\r\nHost: origin.example\r\n\r\n"
+        )
+        let originSeed = buildSocketHttp11DispatchSeed(originRequest)
+        let originCarrier = SocketServerEngineShellCurrentRequestCarrier(
+            originRequest,
+            originSeed,
+            "127.0.0.1",
+            Array<UInt8>(0, repeat: 0)
+        )
+
+        @Assert(originCarrier.requestHeaderValue("host") ?? "", "origin.example")
+        @Assert(originCarrier.requestHeaders().getFirst("host") ?? "", "origin.example")
+    }
+
+    @TestCase
     public func testAuthorityAndAsteriskTargetsStayNonDispatchable(): Unit {
         let connectRequest = openSocketHttp11DispatchSeedTestRequest(
             "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"

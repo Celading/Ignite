@@ -182,8 +182,10 @@ request-target 也按方法收敛：`CONNECT` 必须使用 authority-form，auth
 只供 `CONNECT` 使用，asterisk-form 只供 `OPTIONS` 使用。合法的
 `CONNECT example.com:443`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通
 origin/absolute-form 路由不受影响；非法组合会在 App dispatch 前关闭当前连接，
-后续连接仍可继续由监听器处理。这里不包含 CONNECT 隧道、代理转发、Host
-重写/一致性策略或固定的 `400` 响应契约。
+后续连接仍可继续由监听器处理。absolute-form 请求进入 App 与请求头中间件时，
+有效 `Host` 来自 request-target authority，冲突的接收 Host 值会被忽略；
+origin-form 仍使用唯一有效的接收 Host。这里不包含 CONNECT 隧道、代理转发、
+新增 authority 语法、Host 不一致拒绝策略或固定的 `400` 响应契约。
 
 ## 流式 JSON
 

@@ -11893,6 +11893,60 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellProjectsAbsoluteFormAuthorityBeforeAppDispatch(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "2")
+        try {
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.get("/shell-absolute-authority", { ctx =>
+                let host = ctx.header("host") ?? ""
+                let _ = ctx.sendString("${host}|${ctx.path}|${ctx.originalUrl}")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38187))
+            }
+            waitForShellReady(app, UInt16(38187))
+
+            let absoluteResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38187),
+                (
+                    "GET http://target.example:9443/shell-absolute-authority?probe=1 HTTP/1.1\r\n" +
+                    "Host: attacker.example\r\n\r\n"
+                )
+            )
+            let originResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38187),
+                "GET /shell-absolute-authority HTTP/1.1\r\nHost: origin.example\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(contains(absoluteResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(
+                contains(
+                    absoluteResponseText,
+                    "target.example:9443|/shell-absolute-authority|/shell-absolute-authority?probe=1"
+                ),
+                true
+            )
+            @Assert(contains(absoluteResponseText, "attacker.example"), false)
+            @Assert(contains(originResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(
+                contains(
+                    originResponseText,
+                    "origin.example|/shell-absolute-authority|/shell-absolute-authority"
+                ),
+                true
+            )
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
     public func testSocketServerEngineShellContainsUnsupportedVersionRequestHead(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
         setVariable(acceptLimitEnv, "2")

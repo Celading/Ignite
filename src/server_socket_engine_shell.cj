@@ -1830,7 +1830,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.request = request
         this.seed = seed
         this.remoteAddress = remoteAddress
-        this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request)
+        this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request, seed)
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
         this.responseHeadersValue = HashMap<String, ArrayList<String>>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
@@ -1949,6 +1949,12 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func requestHeaderValue(key: String): ?String {
+        if (
+            seed.targetForm == SocketHttp11RequestTargetForm.AbsoluteForm &&
+            key.trimAscii().toAsciiLower() == "host"
+        ) {
+            return Some(seed.authority)
+        }
         request.head.header(key)
     }
 
@@ -2120,10 +2126,20 @@ func ensureSocketServerEngineShellFinalStatusSupported(code: UInt16): Unit {
     }
 }
 
-func buildSocketServerEngineShellRequestHeaders(request: SocketHttp11SessionRequest): HttpHeaders {
+func buildSocketServerEngineShellRequestHeaders(
+    request: SocketHttp11SessionRequest,
+    seed: SocketHttp11DispatchSeed
+): HttpHeaders {
     let headers = HttpHeaders()
     for (header in request.head.headers) {
-        headers.add(header.name, header.value)
+        if (
+            seed.targetForm == SocketHttp11RequestTargetForm.AbsoluteForm &&
+            header.name.trimAscii().toAsciiLower() == "host"
+        ) {
+            headers.add(header.name, seed.authority)
+        } else {
+            headers.add(header.name, header.value)
+        }
     }
     headers
 }
