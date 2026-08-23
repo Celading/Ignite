@@ -98,6 +98,11 @@ RFC token 标点与水平制表空白仍保持兼容；解析失败的连接不�
 需要新建连接。该行为已有 cleartext 恶意 wire / 新连接恢复与 Native TLS H1
 回归，但不代表完整 HTTP 或代理互操作认证。
 
+chunked 响应的 trailer 也会在 body drain 完成、连接可归池之前复用同一字段
+语法校验，并受 65536-byte 累计预算约束。缺少冒号、非法字段名、禁用控制字节
+或超预算都会淘汰当前 cleartext / Native TLS H1 连接；当前只做校验与连接收敛，
+不新增公开 trailer 访问 API，也不宣称完整代理矩阵或 HTTP 合规认证。
+
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
 

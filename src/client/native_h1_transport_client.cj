@@ -202,7 +202,14 @@ class NativeH1TransportResponseInputStream <: InputStream & Resource {
     }
 
     func consumeTrailers(): Unit {
-        while (reader.readLine().size > 0) {}
+        var consumedBytes: Int64 = 0
+        while (true) {
+            let line = reader.readLine()
+            consumedBytes = validateNativeH1ResponseTrailerLine(line, consumedBytes)
+            if (line.size == 0) {
+                return
+            }
+        }
     }
 }
 

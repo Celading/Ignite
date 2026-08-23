@@ -542,6 +542,63 @@ public class NativeH1ClientTestSuite {
     }
 
     @TestCase
+    public func testExplicitNativeH1ClientRejectsMalformedTrailerAndUsesFreshConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H1 response trailer test could not reserve loopback port")
+        let serverFuture = spawn {
+            let malformed = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let _ = malformed.read(request)
+                malformed.write(
+                    ("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+                    "Connection: keep-alive\r\n\r\n5\r\nwrong\r\n0\r\n" +
+                    "Malformed-Trailer\r\n\r\n").toArray()
+                )
+            } finally {
+                try { malformed.close() } catch (_: Exception) {}
+            }
+
+            let valid = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let _ = valid.read(request)
+                valid.write(
+                    ("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+                    "Connection: close\r\n\r\n5\r\nclean\r\n0\r\n" +
+                    "X-Valid-Trailer: yes\r\n\r\n").toArray()
+                )
+            } finally {
+                try { valid.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeH1TestClient()
+        try {
+            var rejected = false
+            try {
+                let response = client.get("http://127.0.0.1:${port}/malformed-trailer")
+                let _ = response.body()
+            } catch (e: Exception) {
+                rejected = nativeH1TestContains(
+                    e.message,
+                    "response trailer line is malformed"
+                )
+            }
+            @Assert(rejected, true)
+
+            let recovered = client.get("http://127.0.0.1:${port}/valid-after-trailer")
+            @Assert(recovered.status, 200)
+            @Assert(recovered.body(), "clean")
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 2)
+        }
+    }
+
+    @TestCase
     public func testExplicitNativeH1ClientUsesBracketedIpv6AuthorityOnWire(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("[::1]:0"))
         listener.bind()

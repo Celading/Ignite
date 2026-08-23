@@ -298,6 +298,57 @@ public class NativeTlsH1WireInternalTestSuite {
             try { listener.close() } catch (_: Exception) {}
         }
     }
+
+    @TestCase
+    public func testRestClientRetiresNativeTlsH1SessionAfterMalformedTrailer(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H1 trailer test could not reserve loopback port")
+        let serverFuture = spawn {
+            for (turn in 1..3) {
+                let accepted = listener.accept()
+                accepted.readTimeout = Some(Duration.second * 3)
+                accepted.writeTimeout = Some(Duration.second * 3)
+                try {
+                    serveNativeTlsH1TrailerFixture(accepted, turn)
+                } finally {
+                    try { accepted.close() } catch (_: Exception) {}
+                }
+            }
+        }
+
+        let client = RestClient(
+            readTimeout: Duration.second * 3,
+            writeTimeout: Duration.second * 3,
+            poolSize: 1
+        ).useNativeTls(NativeTls13ClientConfig(
+            nativeTlsTestText("policy_root.pem"),
+            NATIVE_TLS_H1_TEST_HOST,
+            intermediatesPemBundle: nativeTlsTestText("policy_intermediate.pem"),
+            alpnProtocols: ["http/1.1"],
+            requireTargetHostnameMatch: false
+        ))
+        try {
+            var rejected = false
+            try {
+                let response = client.get("https://127.0.0.1:${port}/bad-trailer")
+                let _ = response.body()
+            } catch (e: Exception) {
+                rejected = e.message.contains("response trailer line is malformed")
+            }
+            @Assert(rejected, true)
+            @Assert(client.nativeTlsRuntimeSnapshot().h1.retiredConnections, Int64(1))
+
+            let recovered = client.get("https://127.0.0.1:${port}/valid-after-trailer")
+            @Assert(recovered.body(), "clean")
+            @Assert(client.nativeTlsRuntimeSnapshot().h1.openedConnections, Int64(2))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
 }
 
 func serveNativeTlsH1Fixture(socket: TcpSocket): Unit {
@@ -343,6 +394,29 @@ func serveNativeTlsH1SingleTurnFixture(socket: TcpSocket, turn: Int64): Unit {
     tls.write(
         "HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: keep-alive\r\n\r\nretire-h1-${turn}".toArray()
     )
+}
+
+func serveNativeTlsH1TrailerFixture(socket: TcpSocket, turn: Int64): Unit {
+    let tls = openNativeTlsH1FixtureSession(socket)
+    let requestHead = nativeTlsH1ReadUntil(tls, "\r\n\r\n".toArray(), 65536)
+    let expectedPath = if (turn == 1) { "/bad-trailer" } else { "/valid-after-trailer" }
+    let expected = "GET ${expectedPath} HTTP/1.1".toArray()
+    if (nativeH1IndexOfBytes(requestHead, expected, 0) < 0) {
+        throw Exception("native TLS H1 trailer fixture received unexpected request")
+    }
+    if (turn == 1) {
+        tls.write(
+            ("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+            "Connection: keep-alive\r\n\r\n5\r\nwrong\r\n0\r\n" +
+            "Malformed-Trailer\r\n\r\n").toArray()
+        )
+    } else {
+        tls.write(
+            ("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+            "Connection: close\r\n\r\n5\r\nclean\r\n0\r\n" +
+            "X-Valid-Trailer: yes\r\n\r\n").toArray()
+        )
+    }
 }
 
 func openNativeTlsH1FixtureSession(socket: TcpSocket): NativeTls13ClientTransport {

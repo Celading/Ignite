@@ -7,6 +7,7 @@ import std.sync.Mutex
 import stdx.net.http.HttpHeaders
 
 let NATIVE_H1_CLIENT_BACKEND = "ignite-native-h1-client"
+let NATIVE_H1_RESPONSE_TRAILER_LIMIT: Int64 = 65536
 
 class NativeH1ClientTarget {
     let scheme: String
@@ -351,8 +352,11 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
     }
 
     func consumeTrailers(): Unit {
+        var consumedBytes: Int64 = 0
         while (true) {
-            if (reader.readLine().size == 0) {
+            let line = reader.readLine()
+            consumedBytes = validateNativeH1ResponseTrailerLine(line, consumedBytes)
+            if (line.size == 0) {
                 return
             }
         }
@@ -609,22 +613,41 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
     let headers = HttpHeaders()
     var lineIndex: Int64 = 1
     while (lineIndex < lines.size) {
-        let line = lines[lineIndex]
-        let colon = nativeH1IndexOf(line, ":")
-        if (colon <= 0) {
-            throw Exception("native H1 response header line is malformed")
-        }
-        let runes = line.toRuneArray()
-        let name = nativeH1RuneSlice(runes, 0, colon)
-        if (!isNativeH1ResponseHeaderName(name)) {
-            throw Exception("native H1 response header name is invalid")
-        }
-        let rawValue = nativeH1RuneSlice(runes, colon + 1, runes.size)
-        validateNativeH1ResponseHeaderValue(rawValue)
-        headers.add(name, rawValue.trimAscii())
+        addNativeH1ResponseFieldLine(headers, lines[lineIndex])
         lineIndex += 1
     }
     NativeH1ClientParsedResponseHead(statusParts[0], statusValue, headers)
+}
+
+func addNativeH1ResponseFieldLine(
+    headers: HttpHeaders,
+    line: String,
+    section!: String = "header"
+): Unit {
+    let colon = nativeH1IndexOf(line, ":")
+    if (colon <= 0) {
+        throw Exception("native H1 response ${section} line is malformed")
+    }
+    let runes = line.toRuneArray()
+    let name = nativeH1RuneSlice(runes, 0, colon)
+    if (!isNativeH1ResponseHeaderName(name)) {
+        throw Exception("native H1 response ${section} name is invalid")
+    }
+    let rawValue = nativeH1RuneSlice(runes, colon + 1, runes.size)
+    validateNativeH1ResponseHeaderValue(rawValue, section: section)
+    headers.add(name, rawValue.trimAscii())
+}
+
+func validateNativeH1ResponseTrailerLine(line: String, consumedBytes: Int64): Int64 {
+    let nextBytes = consumedBytes + line.toArray().size + 2
+    if (nextBytes > NATIVE_H1_RESPONSE_TRAILER_LIMIT) {
+        throw Exception("native H1 response trailers exceed 65536 bytes")
+    }
+    if (line.size > 0) {
+        let ignored = HttpHeaders()
+        addNativeH1ResponseFieldLine(ignored, line, section: "trailer")
+    }
+    nextBytes
 }
 
 func isNativeH1ResponseHeaderName(input: String): Bool {
@@ -656,10 +679,13 @@ func nativeH1ResponseTokenByteAllowed(code: UInt8): Bool {
     code == UInt8(126)
 }
 
-func validateNativeH1ResponseHeaderValue(value: String): Unit {
+func validateNativeH1ResponseHeaderValue(
+    value: String,
+    section!: String = "header"
+): Unit {
     for (byte in value.toArray()) {
         if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
-            throw Exception("native H1 response header value contains a forbidden control byte")
+            throw Exception("native H1 response ${section} value contains a forbidden control byte")
         }
     }
 }
