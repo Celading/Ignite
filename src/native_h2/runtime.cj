@@ -691,6 +691,7 @@ func nativeH2ServeTransportConnection(
                 connectionSendWindow,
                 peerSettings.maxFramePayload
             )
+            nativeH2HarvestCommittedResponseEnds(socket, handlers)
             nativeH2HarvestCompletedHandlers(
                 socket,
                 handlers,
@@ -1418,6 +1419,38 @@ func nativeH2HarvestCommittedResponseData(
     connectionWindow
 }
 
+func nativeH2HarvestCommittedResponseEnds(
+    socket: NativeH2DuplexTransport,
+    handlers: HashMap<Int64, NativeH2PendingHandler>
+): Unit {
+    for ((streamId, pending) in handlers) {
+        let headWritten = if (let Some(commit) <- pending.responseHeadCommit) {
+            commit.written()
+        } else {
+            false
+        }
+        if (!headWritten) {
+            continue
+        }
+        if (let Some(commit) <- pending.responseDataCommit) {
+            if (commit.pendingEnd()) {
+                try {
+                    nativeH2WriteFrame(
+                        socket,
+                        NativeH2Frame(
+                            UInt8(0x0), UInt8(0x1), streamId, Array<UInt8>()
+                        )
+                    )
+                    commit.markEndWritten()
+                } catch (e: Exception) {
+                    commit.markFailed(e.message)
+                    throw e
+                }
+            }
+        }
+    }
+}
+
 func nativeH2HarvestCompletedHandlers(
     socket: NativeH2DuplexTransport,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
@@ -1428,6 +1461,13 @@ func nativeH2HarvestCompletedHandlers(
     let completed = ArrayList<Int64>()
     for ((streamId, pending) in handlers) {
         if (let Some(response) <- pending.future.tryGet()) {
+            let responseEndedAlready = if (let Some(commit) <-
+                pending.responseDataCommit) { commit.endWritten() } else { false }
+            if (responseEndedAlready) {
+                nativeH2CloseResponseStream(response.bodyStream)
+                completed.add(streamId)
+                continue
+            }
             let bodyForbidden = nativeH2ResponseBodyForbidden(
                 pending.requestMethod,
                 response.status

@@ -90,8 +90,12 @@ app.get("/events", { ctx =>
 - 0800 的 `SseWriter`、`ResponseWriter` 和 `ResponseTransportOutputStream`
   已提供显式 flush 与幂等 response-close；close 后继续写入会失败，但 close
   不会接管或关闭物理连接。
-- flush 会转发到后端 lifecycle；stdx 与 Native H1/H2 carrier 仍受各自响应
-  提交边界约束，因此不能把 API 调用等同于“所有后端已即时 drain 到 wire”。
+- 在显式 Native H2 ServerEngine 下，公开 SSE 的每次 retry、comment/heartbeat
+  与 event 写入都会经 connection/stream 双窗口送到 wire 后才返回；显式
+  `close()` 会在 handler 返回前发送该响应的 END_STREAM，但不会关闭物理连接。
+  自动 heartbeat 调度、断线重连与 Last-Event-ID 状态仍由应用负责。
+- stdx compatibility backend 仍没有更强的公开 flush 原语；不要把上述 Native
+  H2 wire 保证外推成所有后端的统一 drain 保证。
 
 ## 流式响应
 
@@ -111,8 +115,9 @@ app.get("/stream", { ctx =>
 - `ctx.writer()` 表示“增量写响应体”，不是“强行给所有协议都套上 chunked”。
 - HTTP/1.1 下，这条路径可以继续表现为 chunked 语义。
 - HTTP/2 下，不能再发 `Transfer-Encoding`；Ignite 现在只在非 H2 路径补这个头。
-- 当前底层 `stdx.net.http.HttpResponseWriter` 的本地 contract 写明：HTTP/2 下每次 `write(...)` 会把数据封装并发出。但这仍应和真实 H2 on-wire 验证分开表述，不要把“协议上成立”直接写成“本仓所有集成路径都已完全验透”。
-- 当前工作区已经把旧的 `GeneralPrivateKey.decodeFromPem(...)` key-load crash seam 从 `api2/tls.cj` 主路径上移开，但本地 H2 on-wire closeout 仍未在这张包里重证；`manual/samples/h2wire/` 的价值仍然是把后续 proof holder 收成可复验样例，而不是提前宣称 H2 已 fully closed。
+- Ignite Native H2 App adapter 的直接 writer 已有 handler-time HEADERS、双窗口
+  DATA 与显式 END_STREAM 的真实 wire 回归；这不等于 stdx、自定义 carrier、
+  streaming transform 或 TLS server 路径自动获得相同证明。
 
 ## 静态文件
 

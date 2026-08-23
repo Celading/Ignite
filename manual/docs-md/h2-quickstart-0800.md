@@ -280,8 +280,8 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 | 普通 `App.listen` 默认选择 | 是 | 否，需安装实验 ServerEngine |
 | 路由与基础 buffered 响应 | 是 | 是，通过 App adapter |
 | `app.ws(...)` | Native RFC 6455 | 否，缺 extended CONNECT |
-| SSE 已验收主路径 | 是 | 尚未形成等价验收 |
-| `ctx.writer()` / JSON stream | 真正增量 socket 写出 | App adapter 当前会先聚合完整响应 |
+| SSE 已验收主路径 | 是 | Preview：公开 retry/heartbeat/event handler-time DATA 与显式 close END_STREAM 已有 wire 验收 |
+| `ctx.writer()` / JSON stream | 真正增量 socket 写出 | 直接 writer 已有 handler-time DATA；JSON stream 走独立有界 producer |
 | 动态压缩流 | H1 有真实 wire 回归 | 尚不能宣称 App 层真流式等价 |
 | server runtime snapshot | 有 Native H1 计数 | 当前不覆盖 H2 |
 | RestClient response | H1 支持 streamed response | 单 streamed lease；另有显式 buffered batch multiplex |
@@ -294,5 +294,6 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 - 受控服务间明文 H2：显式安装 Native H2 ServerEngine，并使用 prior-knowledge
   client。
 - 受控 Native TLS H2 Client：显式提供 trust policy 和 `h2` ALPN。
-- WebSocket、SSE、流式 JSON/压缩要求成熟时：0800 当前优先使用 Native H1；
-  不要假设切换 H2 后自动获得同等能力。
+- WebSocket 或动态压缩 transform 要求成熟时：0800 当前优先使用 Native H1。
+  Native H2 SSE 已可受控评估，但自动 heartbeat/reconnect/Last-Event-ID 与
+  streaming transform 仍需应用或后续能力补齐。

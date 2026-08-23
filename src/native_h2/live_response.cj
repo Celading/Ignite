@@ -160,6 +160,8 @@ class NativeH2PendingResponseData {
 class NativeH2ResponseDataCommit {
     let mtx = Mutex()
     let failedValue = AtomicBool(false)
+    let endRequestedValue = AtomicBool(false)
+    let endWrittenValue = AtomicBool(false)
     var pendingValue: ?NativeH2PendingResponseData = None
     var failureMessageValue: String = "native H2 response DATA channel failed"
 
@@ -171,6 +173,9 @@ class NativeH2ResponseDataCommit {
         synchronized(mtx) {
             if (failedValue.load()) {
                 throw Exception(failureMessageValue)
+            }
+            if (endRequestedValue.load()) {
+                throw Exception("native H2 response stream is closed")
             }
             if (let Some(current) <- pendingValue) {
                 if (!current.written() && !current.failed()) {
@@ -192,6 +197,49 @@ class NativeH2ResponseDataCommit {
             }
         }
         result
+    }
+
+    func requestEnd(): Unit {
+        synchronized(mtx) {
+            if (failedValue.load()) {
+                throw Exception(failureMessageValue)
+            }
+            endRequestedValue.store(true)
+        }
+        let startedAt = MonoTime.now()
+        while (!endWrittenValue.load()) {
+            if (failedValue.load()) {
+                var message = "native H2 response END_STREAM write failed"
+                synchronized(mtx) { message = failureMessageValue }
+                throw Exception(message)
+            }
+            if (MonoTime.now() - startedAt >= NATIVE_H2_RESPONSE_COMMIT_TIMEOUT) {
+                let message = "native H2 response END_STREAM write timed out"
+                markFailed(message)
+                throw Exception(message)
+            }
+            sleep(Duration.millisecond)
+        }
+    }
+
+    func pendingEnd(): Bool {
+        if (!endRequestedValue.load() || endWrittenValue.load() || failedValue.load()) {
+            return false
+        }
+        synchronized(mtx) {
+            match (pendingValue) {
+                case Some(current) => current.written() || current.failed()
+                case None => true
+            }
+        }
+    }
+
+    func markEndWritten(): Unit {
+        endWrittenValue.store(true)
+    }
+
+    func endWritten(): Bool {
+        endWrittenValue.load()
     }
 
     func markFailed(message: String): Unit {

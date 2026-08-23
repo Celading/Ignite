@@ -106,7 +106,7 @@ public class SseWriter {
     }
 
     /// Minimal heartbeat helper for SSE keepalive comments.
-    /// Public close/flush controls are still limited by the current stdx-backed transport surface.
+    /// Delivery and flush strength follow the selected response transport.
     public func sendHeartbeat(comment!: String = "ping"): Unit {
         sendComment(comment)
     }

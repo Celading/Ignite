@@ -136,7 +136,12 @@ class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTr
     }
 
     public override func close(): Unit {
+        if (closed) {
+            return
+        }
         closed = true
+        carrier.commitResponseHead()
+        carrier.commitResponseEnd()
     }
 }
 
@@ -310,6 +315,15 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
             commit.submit(data)
         } else {
             appendResponseBytes(data)
+        }
+    }
+
+    func commitResponseEnd(): Unit {
+        if (nativeH2ResponseBodyForbidden(request.method, responseStatusValue)) {
+            return
+        }
+        if (let Some(commit) <- responseDataCommit) {
+            commit.requestEnd()
         }
     }
 
