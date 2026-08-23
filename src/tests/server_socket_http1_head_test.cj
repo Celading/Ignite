@@ -85,6 +85,43 @@ public class SocketHttp11HeadParseTestSuite {
     }
 
     @TestCase
+    public func testParserValidatesHostAuthorityStructure(): Unit {
+        match (tryParseSocketHttp11RequestHead(
+            "GET /encoded HTTP/1.1\r\nHost: api%2Dedge.example:8080\r\n\r\n".toArray()
+        )) {
+            case Some(parsed) => @Assert(parsed.header("host") ?? "", "api%2Dedge.example:8080")
+            case None => @Fail("valid percent-encoded reg-name authority should parse")
+        }
+        match (tryParseSocketHttp11RequestHead(
+            "GET /literal HTTP/1.1\r\nHost: [2001:db8::1]:8443\r\n\r\n".toArray()
+        )) {
+            case Some(parsed) => @Assert(parsed.header("host") ?? "", "[2001:db8::1]:8443")
+            case None => @Fail("valid bracketed literal authority should parse")
+        }
+
+        assertSocketHttp11HeadFailure(
+            "GET /userinfo HTTP/1.1\r\nHost: user@example.com\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.MalformedHeader
+        )
+        assertSocketHttp11HeadFailure(
+            "GET /port HTTP/1.1\r\nHost: example.com:not-port\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.MalformedHeader
+        )
+        assertSocketHttp11HeadFailure(
+            "GET /bracket HTTP/1.1\r\nHost: [2001:db8::1\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.MalformedHeader
+        )
+        assertSocketHttp11HeadFailure(
+            "GET /unbracketed HTTP/1.1\r\nHost: 2001:db8::1\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.MalformedHeader
+        )
+        assertSocketHttp11HeadFailure(
+            "GET /percent HTTP/1.1\r\nHost: bad%2.example\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.MalformedHeader
+        )
+    }
+
+    @TestCase
     public func testParserRejectsForbiddenHeaderValueControlsButKeepsHorizontalTabWhitespace(): Unit {
         let prefix = "GET /control HTTP/1.1\r\nHost: example.com\r\nX-Test: safe".toArray()
         let suffix = "unsafe\r\n\r\n".toArray()

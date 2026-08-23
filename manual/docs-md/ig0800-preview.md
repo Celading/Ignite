@@ -178,6 +178,11 @@ App 路由前关闭当前连接；普通字段值两侧的水平制表空白仍�
 当前没有为这类解析拒绝承诺固定的 `400` 响应体，也不把同栈回归表述为独立
 代理链合规认证。
 
+Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
+门：userinfo、坏百分号编码、坏括号、多冒号歧义和非十进制端口会被拒绝；
+CONNECT 端口必须非空且位于 `1..65535`。合法 reg-name、括号化 IP-literal 与
+十进制端口继续兼容；这里不宣称完整 DNS/IPv6 语义验证。
+
 request-target 也按方法收敛：`CONNECT` 必须使用 authority-form，authority-form
 只供 `CONNECT` 使用，asterisk-form 只供 `OPTIONS` 使用。合法的
 `CONNECT example.com:443`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通
@@ -185,7 +190,7 @@ origin/absolute-form 路由不受影响；非法组合会在 App dispatch 前关
 后续连接仍可继续由监听器处理。absolute-form 请求进入 App 与请求头中间件时，
 有效 `Host` 来自 request-target authority，冲突的接收 Host 值会被忽略；
 origin-form 仍使用唯一有效的接收 Host。这里不包含 CONNECT 隧道、代理转发、
-新增 authority 语法、Host 不一致拒绝策略或固定的 `400` 响应契约。
+Host 不一致拒绝策略或固定的 `400` 响应契约。
 
 ## 流式 JSON
 

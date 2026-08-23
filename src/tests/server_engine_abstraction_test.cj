@@ -11947,6 +11947,72 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellContainsInvalidRequestAuthorityStructure(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "3")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.get("/shell-authority-structure", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx
+                    .setHeader("x-shell-authority-structure", "1")
+                    .sendString("authority-structure-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38188))
+            }
+            waitForShellReady(app, UInt16(38188))
+
+            let userinfoSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38188"))
+            userinfoSocket.connect()
+            try {
+                userinfoSocket.write(
+                    (
+                        "GET http://user@target.example/shell-authority-structure HTTP/1.1\r\n" +
+                        "Host: target.example\r\n\r\n"
+                    ).toArray()
+                )
+            } finally {
+                if (!userinfoSocket.isClosed()) {
+                    userinfoSocket.close()
+                }
+            }
+
+            let invalidPortSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38188"))
+            invalidPortSocket.connect()
+            try {
+                invalidPortSocket.write(
+                    (
+                        "GET http://target.example:not-port/shell-authority-structure HTTP/1.1\r\n" +
+                        "Host: target.example\r\n\r\n"
+                    ).toArray()
+                )
+            } finally {
+                if (!invalidPortSocket.isClosed()) {
+                    invalidPortSocket.close()
+                }
+            }
+
+            let validResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38188),
+                "GET /shell-authority-structure HTTP/1.1\r\nHost: [2001:db8::1]:8080\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(handlerRuns.load(), Int64(1))
+            @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(validResponseText, "x-shell-authority-structure: 1"), true)
+            @Assert(contains(validResponseText, "authority-structure-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
     public func testSocketServerEngineShellContainsUnsupportedVersionRequestHead(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
         setVariable(acceptLimitEnv, "2")

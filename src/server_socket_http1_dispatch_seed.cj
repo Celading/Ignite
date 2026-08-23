@@ -39,6 +39,7 @@ enum SocketHttp11DispatchSeedErrorCode <: Equatable<SocketHttp11DispatchSeedErro
     | FragmentNotAllowed
     | UnsupportedAbsoluteScheme
     | MissingAbsoluteAuthority
+    | InvalidAuthority
 
     public operator func ==(right: SocketHttp11DispatchSeedErrorCode): Bool {
         ordinalValue() == right.ordinalValue()
@@ -55,6 +56,7 @@ enum SocketHttp11DispatchSeedErrorCode <: Equatable<SocketHttp11DispatchSeedErro
             case FragmentNotAllowed => 2
             case UnsupportedAbsoluteScheme => 3
             case MissingAbsoluteAuthority => 4
+            case InvalidAuthority => 5
         }
     }
 
@@ -65,6 +67,7 @@ enum SocketHttp11DispatchSeedErrorCode <: Equatable<SocketHttp11DispatchSeedErro
             case FragmentNotAllowed => "FRAGMENT_NOT_ALLOWED"
             case UnsupportedAbsoluteScheme => "UNSUPPORTED_ABSOLUTE_SCHEME"
             case MissingAbsoluteAuthority => "MISSING_ABSOLUTE_AUTHORITY"
+            case InvalidAuthority => "INVALID_AUTHORITY"
         }
     }
 }
@@ -217,6 +220,12 @@ func buildSocketHttp11DispatchSeed(request: SocketHttp11SessionRequest): SocketH
             request.head.method,
             SocketHttp11RequestTargetForm.AuthorityForm
         )
+        if (!isSocketHttp11RequestAuthorityValid(rawTarget, requireUsablePort: true)) {
+            throw SocketHttp11DispatchSeedException(
+                SocketHttp11DispatchSeedErrorCode.InvalidAuthority,
+                "HTTP/1.1 CONNECT authority-form requires a valid uri-host and usable decimal port"
+            )
+        }
         return SocketHttp11DispatchSeed(
             request.head.method,
             rawTarget,
@@ -287,6 +296,12 @@ func buildSocketHttp11AbsoluteDispatchSeed(
         throw SocketHttp11DispatchSeedException(
             SocketHttp11DispatchSeedErrorCode.MissingAbsoluteAuthority,
             "HTTP/1.1 absolute-form target must include an authority"
+        )
+    }
+    if (!isSocketHttp11RequestAuthorityValid(authority)) {
+        throw SocketHttp11DispatchSeedException(
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority,
+            "HTTP/1.1 absolute-form target contains an invalid authority"
         )
     }
 

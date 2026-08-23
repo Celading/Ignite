@@ -5,8 +5,10 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在对 Host、absolute-form authority 与 CONNECT authority-form 复用同一结构门，拒绝 userinfo、坏百分号编码、坏括号、多冒号歧义与非十进制端口
+- `=边界` 合法 reg-name、括号化 IP-literal 与十进制端口保持兼容；CONNECT 还要求 `1..65535` 的非空端口，本次不宣称完整 DNS/IPv6 语义验证、代理转发或 CONNECT 隧道
 - `+安全` 默认 Native H1 接收 absolute-form request-target 时，会在 App 与请求头中间件入口把 request-target authority 作为有效 Host，忽略冲突的接收 Host 值
-- `=边界` origin-form 继续使用唯一有效的接收 Host；本次不新增 authority 语法、Host 不一致拒绝、CONNECT 隧道或代理转发
+- `=边界` origin-form 继续使用唯一有效的接收 Host；当前不新增 Host 不一致拒绝、CONNECT 隧道或代理转发
 - `+安全` 默认 Native H1 现在会在 App dispatch 前拒绝不使用 authority-form 的 `CONNECT`、非 `CONNECT` 的 authority-form，以及非 `OPTIONS` 的 asterisk-form 请求目标
 - `=边界` 合法 `CONNECT authority`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通 origin/absolute-form 路由保持兼容；本次不实现 CONNECT 隧道、代理转发或固定 400 响应契约
 - `+性能` 可选 buffered 压缩现在默认要求至少 `64` bytes 的净节省；微小收益回退 identity，显著收益仍编码，`minSavingsBytes` 可显式调整

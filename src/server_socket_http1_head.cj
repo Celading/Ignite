@@ -271,25 +271,186 @@ func validateSocketHttp11RequestHost(headers: Array<SocketHttp11Header>): Unit {
             "HTTP/1.1 requests reject multiple Host headers"
         )
     }
-    if (!isSocketHttp11HostValueValid(hostValue)) {
+    if (!isSocketHttp11RequestAuthorityValid(hostValue)) {
         throw SocketHttp11HeadException(
             SocketHttp11HeadErrorCode.MalformedHeader,
-            "HTTP/1.1 Host must be one non-empty authority without whitespace or comma joining"
+            "HTTP/1.1 Host must contain one valid uri-host and optional decimal port"
         )
     }
 }
 
-func isSocketHttp11HostValueValid(value: String): Bool {
+func isSocketHttp11RequestAuthorityValid(
+    value: String,
+    requireUsablePort!: Bool = false
+): Bool {
     let raw = value.trimAscii()
     if (raw.size == 0) {
         return false
     }
-    for (byte in raw.toArray()) {
-        if (byte <= UInt8(32) || byte == UInt8(44) || byte == UInt8(127)) {
+    let bytes = raw.toArray()
+    if (bytes[0] == UInt8(91)) {
+        return isSocketHttp11BracketedAuthorityValid(bytes, requireUsablePort)
+    }
+
+    var colonIndex: Int64 = -1
+    for (i in 0..bytes.size) {
+        if (bytes[i] == UInt8(58)) {
+            if (colonIndex >= 0) {
+                return false
+            }
+            colonIndex = i
+        }
+    }
+    let hostEnd = if (colonIndex >= 0) { colonIndex } else { bytes.size }
+    if (!isSocketHttp11RegNameValid(bytes, 0, hostEnd)) {
+        return false
+    }
+    if (colonIndex < 0) {
+        return !requireUsablePort
+    }
+    isSocketHttp11AuthorityPortValid(bytes, colonIndex + 1, requireUsablePort)
+}
+
+func isSocketHttp11BracketedAuthorityValid(
+    bytes: Array<UInt8>,
+    requireUsablePort: Bool
+): Bool {
+    var closingIndex: Int64 = -1
+    var i: Int64 = 1
+    while (i < bytes.size) {
+        if (bytes[i] == UInt8(93)) {
+            closingIndex = i
+            break
+        }
+        i += 1
+    }
+    if (closingIndex <= 1 || !isSocketHttp11IpLiteralShapeValid(bytes, 1, closingIndex)) {
+        return false
+    }
+    if (closingIndex + 1 == bytes.size) {
+        return !requireUsablePort
+    }
+    if (bytes[closingIndex + 1] != UInt8(58)) {
+        return false
+    }
+    isSocketHttp11AuthorityPortValid(bytes, closingIndex + 2, requireUsablePort)
+}
+
+func isSocketHttp11RegNameValid(bytes: Array<UInt8>, start: Int64, end: Int64): Bool {
+    if (start >= end) {
+        return false
+    }
+    var i = start
+    while (i < end) {
+        let byte = bytes[i]
+        if (byte == UInt8(37)) {
+            if (
+                i + 2 >= end ||
+                !isSocketHttp11HexDigit(bytes[i + 1]) ||
+                !isSocketHttp11HexDigit(bytes[i + 2])
+            ) {
+                return false
+            }
+            i += 3
+            continue
+        }
+        if (!isSocketHttp11RegNameByte(byte)) {
+            return false
+        }
+        i += 1
+    }
+    true
+}
+
+func isSocketHttp11IpLiteralShapeValid(
+    bytes: Array<UInt8>,
+    start: Int64,
+    end: Int64
+): Bool {
+    if (bytes[start] == UInt8(118) || bytes[start] == UInt8(86)) {
+        var i = start + 1
+        let versionStart = i
+        while (i < end && isSocketHttp11HexDigit(bytes[i])) {
+            i += 1
+        }
+        if (i == versionStart || i >= end || bytes[i] != UInt8(46)) {
+            return false
+        }
+        i += 1
+        if (i >= end) {
+            return false
+        }
+        while (i < end) {
+            if (
+                !isSocketHttp11UnreservedByte(bytes[i]) &&
+                !isSocketHttp11SubDelimiterByte(bytes[i]) &&
+                bytes[i] != UInt8(58)
+            ) {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    var hasColon = false
+    for (i in start..end) {
+        let byte = bytes[i]
+        if (byte == UInt8(58)) {
+            hasColon = true
+        } else if (!isSocketHttp11HexDigit(byte) && byte != UInt8(46)) {
             return false
         }
     }
-    true
+    hasColon
+}
+
+func isSocketHttp11AuthorityPortValid(
+    bytes: Array<UInt8>,
+    start: Int64,
+    requireUsablePort: Bool
+): Bool {
+    if (start >= bytes.size) {
+        return !requireUsablePort
+    }
+    var value: Int64 = 0
+    for (i in start..bytes.size) {
+        let byte = bytes[i]
+        if (byte < UInt8(48) || byte > UInt8(57)) {
+            return false
+        }
+        if (requireUsablePort) {
+            value = value * 10 + Int64(byte) - Int64(UInt8(48))
+            if (value > 65535) {
+                return false
+            }
+        }
+    }
+    !requireUsablePort || value > 0
+}
+
+func isSocketHttp11RegNameByte(byte: UInt8): Bool {
+    isSocketHttp11UnreservedByte(byte) || isSocketHttp11SubDelimiterByte(byte)
+}
+
+func isSocketHttp11UnreservedByte(byte: UInt8): Bool {
+    (byte >= UInt8(65) && byte <= UInt8(90)) ||
+    (byte >= UInt8(97) && byte <= UInt8(122)) ||
+    (byte >= UInt8(48) && byte <= UInt8(57)) ||
+    byte == UInt8(45) || byte == UInt8(46) || byte == UInt8(95) || byte == UInt8(126)
+}
+
+func isSocketHttp11SubDelimiterByte(byte: UInt8): Bool {
+    byte == UInt8(33) || byte == UInt8(36) || byte == UInt8(38) ||
+    byte == UInt8(39) || byte == UInt8(40) || byte == UInt8(41) ||
+    byte == UInt8(42) || byte == UInt8(43) || byte == UInt8(59) ||
+    byte == UInt8(61)
+}
+
+func isSocketHttp11HexDigit(byte: UInt8): Bool {
+    (byte >= UInt8(48) && byte <= UInt8(57)) ||
+    (byte >= UInt8(65) && byte <= UInt8(70)) ||
+    (byte >= UInt8(97) && byte <= UInt8(102))
 }
 
 func cloneSocketHttp11Headers(headers: Array<SocketHttp11Header>): Array<SocketHttp11Header> {
