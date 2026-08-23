@@ -294,6 +294,7 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 - 受控服务间明文 H2：显式安装 Native H2 ServerEngine，并使用 prior-knowledge
   client。
 - 受控 Native TLS H2 Client：显式提供 trust policy 和 `h2` ALPN。
-- WebSocket 或动态压缩 transform 要求成熟时：0800 当前优先使用 Native H1。
-  Native H2 SSE 已可受控评估，但自动 heartbeat/reconnect/Last-Event-ID 与
-  streaming transform 仍需应用或后续能力补齐。
+- WebSocket 或自动动态压缩中间件要求成熟时：0800 当前优先使用 Native H1。
+  Native H2 SSE 与显式 `transportWriterWithTransform(...)` 已可受控评估，
+  但自动 heartbeat/reconnect/Last-Event-ID、压缩中间件注册和 H2 WebSocket
+  仍需应用或后续能力补齐。

@@ -203,7 +203,8 @@ app.post("/upload-large", { ctx =>
 - `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
 - `ctx.jsonEncodeStream(...)` 是 `JsonEncodable` family 的显式流式 twin：`ctx.jsonEncode(...)` 继续保持 full-buffer，并继续只在这条 full-buffer 路上使用 `Config.jsonEncoder`
 - `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下依赖 DATA frame 与流控，而不是 H1 的 chunked 头部语义
-- Native H2 App writer 的多次 write 已有 handler-time wire 回归；自定义 carrier 与 streaming transform 仍需各自证明
+- `ctx.transportWriterWithTransform(...)` 可把有状态 `ResponseTransportTransform` 的 write、flush 与 close-tail 输出接入 live writer；调用方仍负责状态、响应头与 framing
+- Native H2 App writer 的多次 write 已有 handler-time wire 回归；自定义 carrier 仍需自己的 wire 证明
 - 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
 
 如果你在 Client 侧用了 `RestClient`，响应拿回来后还可以继续读结构化 transport 留痕：

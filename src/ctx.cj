@@ -917,6 +917,17 @@ public class Ctx {
         openResponseTransportWriter(_currentRequestCarrier)
     }
 
+    /// Open the low-level response writer through one stateful transformation.
+    ///
+    /// Transform write/flush/close output is delivered synchronously through
+    /// the current backend. This method keeps the same status, header and
+    /// framing responsibilities as `transportWriter()`.
+    public func transportWriterWithTransform(
+        transform: ResponseTransportTransform
+    ): ResponseTransportWriter {
+        openTransformingResponseTransportWriter(transportWriter(), transform)
+    }
+
     public func transportOutputStream(): ResponseTransportOutputStream {
         ResponseTransportOutputStream(transportWriter())
     }

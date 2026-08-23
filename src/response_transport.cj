@@ -29,6 +29,38 @@ public type ResponseTransportCloseSink = () -> Unit
 
 type ResponseTransportWriteTransform = (Array<UInt8>) -> Array<Array<UInt8>>
 
+/// Stateful transformation contract for live response writers.
+///
+/// Each lifecycle phase may emit zero or more chunks. `transformFlush()` output
+/// is written before the downstream flush, while `transformClose()` output is
+/// written before the downstream response surface is closed. Closing the
+/// response surface never transfers ownership of the physical connection.
+public interface ResponseTransportTransform {
+    func transformWrite(data: Array<UInt8>): Array<Array<UInt8>>
+    func transformFlush(): Array<Array<UInt8>>
+    func transformClose(): Array<Array<UInt8>>
+}
+
+class WriteOnlyResponseTransportTransform <: ResponseTransportTransform {
+    let _transform: ResponseTransportWriteTransform
+
+    init(transform: ResponseTransportWriteTransform) {
+        _transform = transform
+    }
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        _transform(data)
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        Array<Array<UInt8>>()
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        Array<Array<UInt8>>()
+    }
+}
+
 class StdxResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
     let _writer: HttpResponseWriter
     var _closed: Bool = false
@@ -55,12 +87,12 @@ class StdxResponseTransportWriter <: ResponseTransportWriter & ResponseTransport
 
 class TransformingResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
     let _downstream: ResponseTransportWriter
-    let _transform: ResponseTransportWriteTransform
+    let _transform: ResponseTransportTransform
     var _closed: Bool = false
 
     init(
         downstream: ResponseTransportWriter,
-        transform: ResponseTransportWriteTransform
+        transform: ResponseTransportTransform
     ) {
         _downstream = downstream
         _transform = transform
@@ -71,16 +103,12 @@ class TransformingResponseTransportWriter <: ResponseTransportWriter & ResponseT
         if (data.size == 0) {
             return
         }
-        let transformed = _transform(cloneResponseTransportBytes(data))
-        for (chunk in transformed) {
-            if (chunk.size > 0) {
-                _downstream.write(chunk)
-            }
-        }
+        emit(_transform.transformWrite(cloneResponseTransportBytes(data)))
     }
 
     public override func flush(): Unit {
         ensureResponseTransportWriterOpen(_closed)
+        emit(_transform.transformFlush())
         flushResponseTransportWriter(_downstream)
     }
 
@@ -89,7 +117,19 @@ class TransformingResponseTransportWriter <: ResponseTransportWriter & ResponseT
             return
         }
         _closed = true
-        closeResponseTransportWriter(_downstream)
+        try {
+            emit(_transform.transformClose())
+        } finally {
+            closeResponseTransportWriter(_downstream)
+        }
+    }
+
+    func emit(chunks: Array<Array<UInt8>>): Unit {
+        for (chunk in chunks) {
+            if (chunk.size > 0) {
+                _downstream.write(cloneResponseTransportBytes(chunk))
+            }
+        }
     }
 }
 
@@ -218,6 +258,21 @@ func finalizeResponseTransportWriter(writer: ResponseTransportWriter): Unit {
 func wrapResponseTransportWriter(
     writer: ResponseTransportWriter,
     transform: ResponseTransportWriteTransform
+): ResponseTransportWriter {
+    TransformingResponseTransportWriter(
+        writer,
+        WriteOnlyResponseTransportTransform(transform)
+    )
+}
+
+/// Opens a lifecycle-aware transforming response writer.
+///
+/// The returned writer seals itself before transform finalization begins,
+/// forwards transform output synchronously, and closes only the downstream
+/// response-writing surface. Callers still own status, headers and framing.
+public func openTransformingResponseTransportWriter(
+    writer: ResponseTransportWriter,
+    transform: ResponseTransportTransform
 ): ResponseTransportWriter {
     TransformingResponseTransportWriter(writer, transform)
 }

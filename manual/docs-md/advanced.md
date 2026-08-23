@@ -116,8 +116,10 @@ app.get("/stream", { ctx =>
 - HTTP/1.1 下，这条路径可以继续表现为 chunked 语义。
 - HTTP/2 下，不能再发 `Transfer-Encoding`；Ignite 现在只在非 H2 路径补这个头。
 - Ignite Native H2 App adapter 的直接 writer 已有 handler-time HEADERS、双窗口
-  DATA 与显式 END_STREAM 的真实 wire 回归；这不等于 stdx、自定义 carrier、
-  streaming transform 或 TLS server 路径自动获得相同证明。
+  DATA 与显式 END_STREAM 的真实 wire 回归；
+  `transportWriterWithTransform(...)` 的 write/flush/close-tail 也有同一路径
+  的线级证明。这不等于 stdx、自定义 carrier 或 TLS server 路径自动获得
+  相同证明。
 
 ## 静态文件
 

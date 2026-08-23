@@ -56,6 +56,71 @@ public class ResponseTransportLifecycleInternalTestSuite {
     }
 
     @TestCase
+    public func testStatefulTransformEmitsFlushAndCloseOutputInOrder(): Unit {
+        let events = ArrayList<String>()
+        let downstream = openLifecycleSinkBackedResponseTransportWriter(
+            {bytes => events.add("write:${String.fromUtf8(bytes)}")},
+            {=> events.add("flush")},
+            {=> events.add("close")}
+        )
+        let transformed = openTransformingResponseTransportWriter(
+            downstream,
+            CountingResponseTransportTransform()
+        )
+
+        transformed.write("one".toArray())
+        flushResponseTransportWriter(transformed)
+        transformed.write("two".toArray())
+        closeResponseTransportWriter(transformed)
+        closeResponseTransportWriter(transformed)
+
+        var rejected = false
+        try {
+            transformed.write("late".toArray())
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(events.size, Int64(6))
+        @Assert(events[0], "write:w1:one")
+        @Assert(events[1], "write:f1")
+        @Assert(events[2], "flush")
+        @Assert(events[3], "write:w2:two")
+        @Assert(events[4], "write:c2")
+        @Assert(events[5], "close")
+        @Assert(rejected, true)
+    }
+
+    @TestCase
+    public func testTransformCloseStillClosesDownstreamWhenFinalOutputFails(): Unit {
+        let events = ArrayList<String>()
+        let downstream = openLifecycleSinkBackedResponseTransportWriter(
+            {bytes =>
+                events.add("write:${String.fromUtf8(bytes)}")
+                throw Exception("tail write failed")
+            },
+            {=> events.add("flush")},
+            {=> events.add("close")}
+        )
+        let transformed = openTransformingResponseTransportWriter(
+            downstream,
+            CloseOnlyResponseTransportTransform()
+        )
+
+        var rejected = false
+        try {
+            closeResponseTransportWriter(transformed)
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        @Assert(rejected, true)
+        @Assert(events.size, Int64(2))
+        @Assert(events[0], "write:tail")
+        @Assert(events[1], "close")
+    }
+
+    @TestCase
     public func testOutputStreamCloseFlushesOnceAndReportsClosed(): Unit {
         let events = ArrayList<String>()
         let writer = openLifecycleSinkBackedResponseTransportWriter(
@@ -142,6 +207,37 @@ public class ResponseTransportLifecycleInternalTestSuite {
         @Assert(events[1], "flush")
         @Assert(events[2], "close")
         @Assert(rejected, true)
+    }
+}
+
+class CountingResponseTransportTransform <: ResponseTransportTransform {
+    var writes: Int64 = 0
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        writes += 1
+        [("w${writes}:" + String.fromUtf8(data)).toArray()]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        [("f${writes}").toArray()]
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        [("c${writes}").toArray()]
+    }
+}
+
+class CloseOnlyResponseTransportTransform <: ResponseTransportTransform {
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        [data]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        Array<Array<UInt8>>()
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        ["tail".toArray()]
     }
 }
 
