@@ -174,8 +174,13 @@ native H2 preview 已经具备：
 
 默认 Native H1 只接受带有一个非空 `Host` 的 HTTP/1.1 请求。缺失、重复、
 逗号合并的 Host，以及字段值中的 NUL、DEL 和其他禁用控制字节，都会在进入
-App 路由前关闭当前连接；普通字段值两侧的水平制表空白仍按既有规则收敛。
-当前没有为这类解析拒绝承诺固定的 `400` 响应体，也不把同栈回归表述为独立
+App 路由前收到固定无正文 `400 Bad Request`，随后关闭当前连接；普通字段值两侧
+的水平制表空白仍按既有规则收敛。相同响应边界也覆盖已完整接收、被 session
+分帧或 request-target dispatch seed 明确拒绝的坏请求。
+
+该固定响应不覆盖未完整 EOF、header timeout、peer abort 或 handler 异常；
+`LimitExceeded` 与不支持版本也保留在后续 `414` / `431` / `505` 状态分类边界，
+而不是被偷懒归并为 400。当前没有自定义错误页 API，也不把同栈回归表述为独立
 代理链合规认证。
 
 Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
@@ -190,7 +195,7 @@ origin/absolute-form 路由不受影响；非法组合会在 App dispatch 前关
 后续连接仍可继续由监听器处理。absolute-form 请求进入 App 与请求头中间件时，
 有效 `Host` 来自 request-target authority，冲突的接收 Host 值会被忽略；
 origin-form 仍使用唯一有效的接收 Host。这里不包含 CONNECT 隧道、代理转发、
-Host 不一致拒绝策略或固定的 `400` 响应契约。
+Host 不一致拒绝策略或自定义错误响应体。
 
 ## 流式 JSON
 

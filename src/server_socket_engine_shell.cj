@@ -33,6 +33,12 @@ let SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT: Int64 = 100
 
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
 
+class SocketServerEngineShellBadRequestException <: Exception {
+    init(message: String) {
+        super(message)
+    }
+}
+
 public class SocketServerEngineShellRuntimeControl {
     let _mtx = Mutex()
     let _runtimeCounters = SocketServerRuntimeCounters()
@@ -786,7 +792,11 @@ func serveSocketServerEngineShellSocketTurns(
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
-            let seed = buildSocketHttp11DispatchSeed(request)
+            let seed = try {
+                buildSocketHttp11DispatchSeed(request)
+            } catch (e: SocketHttp11DispatchSeedException) {
+                throw SocketServerEngineShellBadRequestException(e.message)
+            }
             let requestBodyBytes = try {
                 readSocketServerEngineShellRequestBodyBytes(
                     socket,
@@ -839,6 +849,20 @@ func serveSocketServerEngineShellSocketTurns(
             } else {
                 moreTurns = false
             }
+        } catch (_: SocketServerEngineShellBadRequestException) {
+            settleSocketServerEngineShellFailedTurn(
+                control,
+                keepAliveWaitActive,
+                requestStarted
+            )
+            keepAliveWaitActive = false
+            requestStarted = false
+            try {
+                writeSocketServerEngineShellBadRequestResponse(socket)
+            } catch (e: Exception) {
+                containSocketServerEngineShellExpectedConnectionEnd(e)
+            }
+            moreTurns = false
         } catch (_: SocketServerEngineShellException) {
             settleSocketServerEngineShellFailedTurn(
                 control,
@@ -896,6 +920,16 @@ func containSocketServerEngineShellExpectedConnectionEnd(error: Exception): Unit
     if (!socketServerEngineShellIsExpectedConnectionEnd(error)) {
         throw error
     }
+}
+
+func writeSocketServerEngineShellBadRequestResponse(socket: TcpSocket): Unit {
+    socket.write(
+        (
+            "HTTP/1.1 400 Bad Request\r\n" +
+            "Content-Length: 0\r\n" +
+            "Connection: close\r\n\r\n"
+        ).toArray()
+    )
 }
 
 func socketServerEngineShellShouldKeepAliveAfterWrite(
@@ -957,10 +991,16 @@ func readSocketServerEngineShellRequest(
                 return request
             }
         } catch (e: SocketHttp11HeadException) {
+            if (socketServerEngineShellHeadFailureIsBadRequest(e)) {
+                throw SocketServerEngineShellBadRequestException(e.message)
+            }
             throw SocketServerEngineShellException(
                 "socket server engine shell request-head parse failed: ${e.message}"
             )
         } catch (e: SocketHttp11SessionException) {
+            if (socketServerEngineShellSessionFailureIsBadRequest(e)) {
+                throw SocketServerEngineShellBadRequestException(e.message)
+            }
             throw SocketServerEngineShellException(
                 "socket server engine shell request session failed: ${e.message}"
             )
@@ -969,6 +1009,20 @@ func readSocketServerEngineShellRequest(
     throw SocketServerEngineShellException(
         "socket server engine shell requires one complete HTTP/1.1 request head before it can dispatch"
     )
+}
+
+func socketServerEngineShellHeadFailureIsBadRequest(
+    error: SocketHttp11HeadException
+): Bool {
+    error.code == SocketHttp11HeadErrorCode.MalformedRequestLine ||
+        error.code == SocketHttp11HeadErrorCode.MalformedHeader ||
+        error.code == SocketHttp11HeadErrorCode.InvalidHeaderName
+}
+
+func socketServerEngineShellSessionFailureIsBadRequest(
+    error: SocketHttp11SessionException
+): Bool {
+    error.code != SocketHttp11SessionErrorCode.InvalidState
 }
 
 func readSocketServerEngineShellRequestBodyBytes(

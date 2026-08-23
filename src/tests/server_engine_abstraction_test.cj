@@ -11849,32 +11849,20 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(app, UInt16(38186))
 
-            let invalidConnectSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38186"))
-            invalidConnectSocket.connect()
-            try {
-                invalidConnectSocket.write(
-                    (
-                        "CONNECT /shell-target-form-containment HTTP/1.1\r\n" +
-                        "Host: example.com\r\n\r\n"
-                    ).toArray()
+            let invalidConnectResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                (
+                    "CONNECT /shell-target-form-containment HTTP/1.1\r\n" +
+                    "Host: example.com\r\n\r\n"
                 )
-            } finally {
-                if (!invalidConnectSocket.isClosed()) {
-                    invalidConnectSocket.close()
-                }
-            }
+            )
 
-            let invalidAuthoritySocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38186"))
-            invalidAuthoritySocket.connect()
-            try {
-                invalidAuthoritySocket.write(
-                    "GET example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n".toArray()
-                )
-            } finally {
-                if (!invalidAuthoritySocket.isClosed()) {
-                    invalidAuthoritySocket.close()
-                }
-            }
+            let invalidAuthorityResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                "GET example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
 
             let validResponseText = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -11884,6 +11872,14 @@ public class ServerEngineAbstractionTestSuite {
             let _ = serverFuture.get(Duration.second * 5)
 
             @Assert(handlerRuns.load(), Int64(1))
+            @Assert(
+                invalidConnectResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                invalidAuthorityResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
             @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
             @Assert(contains(validResponseText, "x-shell-target-form-containment: 1"), true)
             @Assert(contains(validResponseText, "target-form-containment-ok"), true)
@@ -12075,22 +12071,16 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(app, UInt16(38148))
 
-            let badSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38148"))
-            badSocket.connect()
-            try {
-                badSocket.write(
-                    (
-                        "POST /bad-body-plan HTTP/1.1\r\n" +
-                        "Host: example.com\r\n" +
-                        "Content-Length: 3\r\n" +
-                        "Transfer-Encoding: chunked\r\n\r\n"
-                    ).toArray()
+            let badResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38148),
+                (
+                    "POST /bad-body-plan HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 3\r\n" +
+                    "Transfer-Encoding: chunked\r\n\r\n"
                 )
-            } finally {
-                if (!badSocket.isClosed()) {
-                    badSocket.close()
-                }
-            }
+            )
 
             let validResponseText = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -12099,6 +12089,10 @@ public class ServerEngineAbstractionTestSuite {
             )
             let _ = serverFuture.get(Duration.second * 5)
 
+            @Assert(
+                badResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
             @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
             @Assert(contains(validResponseText, "x-shell-body-plan-rejection-containment: 1"), true)
             @Assert(contains(validResponseText, "content-length: 22"), true)

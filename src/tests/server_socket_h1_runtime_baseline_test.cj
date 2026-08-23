@@ -791,8 +791,14 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
                 port,
                 "GET /authority-safe HTTP/1.1\r\nHost: first.example\r\nHost: second.example\r\nConnection: close\r\n\r\n"
             )
-            @Assert(missingHostResponse, "")
-            @Assert(duplicateHostResponse, "")
+            @Assert(
+                missingHostResponse,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                duplicateHostResponse,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
             @Assert(observation.handlerRuns(), 0)
 
             let validResponse = runSocketServerEngineShellClient(

@@ -5,12 +5,14 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在会对已完整接收、被请求头/session 或 request-target dispatch seed 明确拒绝的坏请求返回固定无正文 `400 Bad Request`，随后关闭该连接
+- `=边界` 固定 400 不覆盖未完整 EOF、header timeout、peer abort、handler 异常，也不代替后续 `414` / `431` / `505` 状态分类或自定义错误页
 - `+安全` 默认 Native H1 现在对 Host、absolute-form authority 与 CONNECT authority-form 复用同一结构门，拒绝 userinfo、坏百分号编码、坏括号、多冒号歧义与非十进制端口
 - `=边界` 合法 reg-name、括号化 IP-literal 与十进制端口保持兼容；CONNECT 还要求 `1..65535` 的非空端口，本次不宣称完整 DNS/IPv6 语义验证、代理转发或 CONNECT 隧道
 - `+安全` 默认 Native H1 接收 absolute-form request-target 时，会在 App 与请求头中间件入口把 request-target authority 作为有效 Host，忽略冲突的接收 Host 值
 - `=边界` origin-form 继续使用唯一有效的接收 Host；当前不新增 Host 不一致拒绝、CONNECT 隧道或代理转发
 - `+安全` 默认 Native H1 现在会在 App dispatch 前拒绝不使用 authority-form 的 `CONNECT`、非 `CONNECT` 的 authority-form，以及非 `OPTIONS` 的 asterisk-form 请求目标
-- `=边界` 合法 `CONNECT authority`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通 origin/absolute-form 路由保持兼容；本次不实现 CONNECT 隧道、代理转发或固定 400 响应契约
+- `=边界` 合法 `CONNECT authority`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通 origin/absolute-form 路由保持兼容；本次不实现 CONNECT 隧道或代理转发
 - `+性能` 可选 buffered 压缩现在默认要求至少 `64` bytes 的净节省；微小收益回退 identity，显著收益仍编码，`minSavingsBytes` 可显式调整
 - `=边界` identity 被拒绝时仍优先满足协议要求；该策略不翻转动态 Brotli/Zstd 默认，也不宣称通用熵编码完成
 - `+安全` 显式 Native H1 Client 现在只接受 `100..599` 的有效 HTTP 状态码；普通 REST 路径收到 `101 Switching Protocols` 时会在响应体暴露前失败并淘汰该连接
@@ -22,7 +24,7 @@
 - `+安全` 显式 Native H1 Client 现在会在暴露响应体前拒绝 `Transfer-Encoding + Content-Length`、冲突的重复 `Content-Length` 与不支持的 transfer coding；cleartext 与 Native TLS H1 共用同一判定
 - `=边界` 合法的等值重复 `Content-Length` 仍可接受；畸形响应连接会被淘汰且不归池，本次不宣称完整 HTTP 互操作认证
 - `+安全` 默认 Native H1 现在要求每个 HTTP/1.1 请求携带且只携带一个非空 Host，并拒绝逗号合并 authority 与请求字段值中的禁用控制字节
-- `=边界` 畸形请求会在 App dispatch 前关闭当前连接；本次不新增 400 响应契约，也不宣称独立代理链合规认证
+- `=边界` 畸形请求会在 App dispatch 前返回固定无正文 400 并关闭当前连接；这不等同于独立代理链合规认证
 - `+特性` 显式 cleartext/Native TLS H2 session 的 `sendWithRetry(...)` 可通过 `reconnectOnConnectionFailure: true` 对幂等 buffered 请求执行有界的响应头前断传输重连回放，并继续复用 replacement session
 - `=边界` 重连要求 idle session，默认关闭；不迁移 active lease，不重放 one-pass/非幂等请求，也不恢复响应头后的 body 读取失败
 - `+特性` 新增 `ResponseTransportTransformFactory`、`Ctx.registerResponseTransportTransform(...)` 与 `responseTransportTransformMiddleware(...)`，普通 `transportWriter()` 可按中间件响应洋葱顺序自动组合 fresh 状态变换

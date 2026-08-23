@@ -225,6 +225,55 @@ public class SocketServerEngineShellInternalTestSuite {
     }
 
     @TestCase
+    public func testBadRequestClassifierKeepsStatusTaxonomyAndInternalStateOut(): Unit {
+        @Assert(
+            socketServerEngineShellHeadFailureIsBadRequest(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.MalformedHeader,
+                    "malformed header"
+                )
+            ),
+            true
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureIsBadRequest(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.UnsupportedVersion,
+                    "unsupported version"
+                )
+            ),
+            false
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureIsBadRequest(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.LimitExceeded,
+                    "request limit"
+                )
+            ),
+            false
+        )
+        @Assert(
+            socketServerEngineShellSessionFailureIsBadRequest(
+                SocketHttp11SessionException(
+                    SocketHttp11SessionErrorCode.InvalidContentLength,
+                    "invalid content length"
+                )
+            ),
+            true
+        )
+        @Assert(
+            socketServerEngineShellSessionFailureIsBadRequest(
+                SocketHttp11SessionException(
+                    SocketHttp11SessionErrorCode.InvalidState,
+                    "invalid internal state"
+                )
+            ),
+            false
+        )
+    }
+
+    @TestCase
     public func testFailedTurnSettlementDistinguishesKeepAliveWaitAndStartedRequest(): Unit {
         let keepAliveControl = SocketServerEngineShellRuntimeControl()
         keepAliveControl.connectionAccepted()

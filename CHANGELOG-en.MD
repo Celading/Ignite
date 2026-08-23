@@ -5,8 +5,10 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` Default Native H1 now returns a fixed bodyless `400 Bad Request` for complete requests explicitly rejected by head/session parsing or request-target dispatch validation, then closes that connection
+- `=Boundary` The fixed 400 path excludes incomplete EOF, header timeout, peer abort, and handler failure; it does not replace later `414` / `431` / `505` taxonomy or a custom error-page API
 - `+Security` Default Native H1 now rejects `CONNECT` without authority-form, authority-form on non-`CONNECT` methods, and asterisk-form on non-`OPTIONS` methods before App dispatch
-- `=Boundary` Valid `CONNECT authority`, `OPTIONS *`, resource-specific `OPTIONS /path`, and ordinary origin/absolute-form routing remain compatible; this does not implement CONNECT tunneling, proxy forwarding, or a fixed 400-response contract
+- `=Boundary` Valid `CONNECT authority`, `OPTIONS *`, resource-specific `OPTIONS /path`, and ordinary origin/absolute-form routing remain compatible; this does not implement CONNECT tunneling or proxy forwarding
 - `+Performance` Optional buffered compression now requires at least `64` bytes of net savings by default; marginal gains fall back to identity, material gains stay encoded, and `minSavingsBytes` is configurable
 - `=Boundary` Mandatory coding still wins when identity is refused; this policy does not enable dynamic Brotli/Zstd by default or claim general entropy coding
 - `+Security` The explicit Native H1 client now accepts only valid HTTP status codes in `100..599`; an ordinary REST path fails before body exposure and retires the connection when it receives `101 Switching Protocols`
@@ -18,7 +20,7 @@
 - `+Security` The explicit Native H1 client now rejects `Transfer-Encoding + Content-Length`, conflicting duplicate `Content-Length`, and unsupported transfer coding before exposing a response body; cleartext and Native TLS H1 share the same decision
 - `=Boundary` Equal duplicate `Content-Length` values remain accepted; malformed-response connections are retired instead of pooled, without claiming complete HTTP interoperability certification
 - `+Security` The default Native H1 path now requires exactly one non-empty Host per HTTP/1.1 request and rejects comma-joined authority plus forbidden control bytes in request field values
-- `=Boundary` Malformed requests close their current connection before App dispatch; this does not add a synthetic 400-response contract or claim independent proxy-chain certification
+- `=Boundary` Malformed requests receive a fixed bodyless 400 and close their current connection before App dispatch; this does not claim independent proxy-chain certification
 - `+Feature` Explicit cleartext and Native TLS H2 sessions can opt into bounded pre-response broken-transport replay for idempotent buffered requests through `sendWithRetry(..., reconnectOnConnectionFailure: true)`, then continue using the replacement session
 - `=Boundary` Reconnect requires an idle session and remains off by default; active leases, one-pass/non-idempotent requests, and response-body failures after a head are never migrated or replayed
 - `+Feature` Add `ResponseTransportTransformFactory`, `Ctx.registerResponseTransportTransform(...)`, and `responseTransportTransformMiddleware(...)` so plain `transportWriter()` calls can compose fresh stateful transforms in response-onion order
