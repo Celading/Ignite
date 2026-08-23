@@ -18,9 +18,12 @@ public func serveNativeH2SingleStreamApp(
     app: App,
     remoteAddress!: String = ""
 ): Unit {
-    serveNativeH2LiveSingleStreamTransport(NativeH2TcpTransport(socket), { request, headCommit =>
+    serveNativeH2LiveSingleStreamTransport(
+        NativeH2TcpTransport(socket), { request, headCommit, dataCommit =>
         let carrier = NativeH2AppCurrentRequestCarrier(
-            request, remoteAddress, responseHeadCommit: Some(headCommit)
+            request, remoteAddress,
+            responseHeadCommit: Some(headCommit),
+            responseDataCommit: Some(dataCommit)
         )
         app.handleRequest(carrier)
         carrier.response()
@@ -51,9 +54,11 @@ public func serveNativeH2AppTransportConnection(
     maxCompletedStreams!: Int64 = 0,
     control!: ?NativeH2ConnectionControl = None
 ): Unit {
-    serveNativeH2LiveTransportConnection(transport, { request, headCommit =>
+    serveNativeH2LiveTransportConnection(transport, { request, headCommit, dataCommit =>
         let carrier = NativeH2AppCurrentRequestCarrier(
-            request, remoteAddress, responseHeadCommit: Some(headCommit)
+            request, remoteAddress,
+            responseHeadCommit: Some(headCommit),
+            responseDataCommit: Some(dataCommit)
         )
         app.handleRequest(carrier)
         carrier.response()
@@ -72,9 +77,11 @@ func serveTrackedNativeH2AppConnection(
         app.handleRequest(carrier)
         carrier.response()
     }, control: Some(control), maxRequestBodySize: app.config.bodyLimit,
-        liveHandler: Some({ request, headCommit =>
+        liveHandler: Some({ request, headCommit, dataCommit =>
             let carrier = NativeH2AppCurrentRequestCarrier(
-                request, remoteAddress, responseHeadCommit: Some(headCommit)
+                request, remoteAddress,
+                responseHeadCommit: Some(headCommit),
+                responseDataCommit: Some(dataCommit)
             )
             app.handleRequest(carrier)
             carrier.response()
@@ -118,7 +125,7 @@ class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTr
             throw Exception("response transport writer is closed")
         }
         carrier.commitResponseHead()
-        carrier.appendResponseBytes(data)
+        carrier.commitResponseData(data)
     }
 
     public override func flush(): Unit {
@@ -145,11 +152,13 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
     var responseBodyValue = ArrayList<UInt8>()
     var responseBodyStreamValue: ?InputStream = None
     let responseHeadCommit: ?NativeH2ResponseHeadCommit
+    let responseDataCommit: ?NativeH2ResponseDataCommit
 
     init(
         request: NativeH2SingleStreamRequest,
         remoteAddress: String,
-        responseHeadCommit!: ?NativeH2ResponseHeadCommit = None
+        responseHeadCommit!: ?NativeH2ResponseHeadCommit = None,
+        responseDataCommit!: ?NativeH2ResponseDataCommit = None
     ) {
         this.request = request
         this.remoteAddress = remoteAddress
@@ -172,6 +181,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         }
         this.requestTrailersValue = trailers
         this.responseHeadCommit = responseHeadCommit
+        this.responseDataCommit = responseDataCommit
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -289,6 +299,17 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         if (let Some(commit) <- responseHeadCommit) {
             commit.request(responseStatusValue, responseHeaders())
             commit.awaitWritten()
+        }
+    }
+
+    func commitResponseData(data: Array<UInt8>): Unit {
+        if (nativeH2ResponseBodyForbidden(request.method, responseStatusValue)) {
+            throw Exception("native H2 response body is forbidden for this response")
+        }
+        if (let Some(commit) <- responseDataCommit) {
+            commit.submit(data)
+        } else {
+            appendResponseBytes(data)
         }
     }
 
