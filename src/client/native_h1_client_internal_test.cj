@@ -79,6 +79,47 @@ public class NativeH1ClientInternalTestSuite {
             headers.add("content-length", "5,")
         })
     }
+
+    @TestCase
+    public func testAcceptsOnlyValidNativeH1ResponseHeadMetadata(): Unit {
+        let valid = parseNativeH1ResponseHead(
+            "HTTP/1.1 200 OK\r\nX!#$%&'*+-.^_`|~Token:\t value \t".toArray()
+        )
+        @Assert(valid.version, "HTTP/1.1")
+        @Assert(valid.status, Int64(200))
+        let validValues = collectNativeH1ResponseHeaderValues(
+            valid.headers,
+            "x!#$%&'*+-.^_`|~token"
+        )
+        @Assert(validValues.size, Int64(1))
+        @Assert(validValues[0], "value")
+
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.0 200 OK\r\nContent-Length: 0".toArray(),
+            "native H1 response version must be HTTP/1.1"
+        )
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 200 OK\r\nMalformed-Field".toArray(),
+            "native H1 response header line is malformed"
+        )
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 200 OK\r\nBad Header: value".toArray(),
+            "native H1 response header name is invalid"
+        )
+
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(0)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(31)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(127)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+    }
 }
 
 func assertNativeH1ResponseFramingRejected(fill: (HttpHeaders) -> Unit): Unit {
@@ -91,4 +132,32 @@ func assertNativeH1ResponseFramingRejected(fill: (HttpHeaders) -> Unit): Unit {
         rejected = true
     }
     @Assert(rejected, true)
+}
+
+func assertNativeH1ResponseHeadRejected(head: Array<UInt8>, message: String): Unit {
+    var rejected = false
+    try {
+        let _ = parseNativeH1ResponseHead(head)
+    } catch (e: Exception) {
+        rejected = e.message == message
+    }
+    @Assert(rejected, true)
+}
+
+func nativeH1ResponseHeadWithControl(control: UInt8): Array<UInt8> {
+    let prefix = "HTTP/1.1 200 OK\r\nX-Control: safe".toArray()
+    let suffix = "unsafe".toArray()
+    let out = Array<UInt8>(prefix.size + 1 + suffix.size, repeat: 0)
+    var cursor: Int64 = 0
+    for (byte in prefix) {
+        out[cursor] = byte
+        cursor += 1
+    }
+    out[cursor] = control
+    cursor += 1
+    for (byte in suffix) {
+        out[cursor] = byte
+        cursor += 1
+    }
+    out
 }

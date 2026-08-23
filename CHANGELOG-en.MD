@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` The explicit Native H1 client now requires an `HTTP/1.1` response version and rejects colonless field lines, invalid field names, plus NUL, DEL, and other forbidden field-value controls before exposing a response body
+- `=Boundary` Cleartext and Native TLS H1 share this response-head parser; valid RFC token punctuation and horizontal-tab whitespace remain accepted, while malformed connections are retired without claiming complete HTTP or proxy interoperability certification
 - `+Security` The explicit Native H1 client now rejects `Transfer-Encoding + Content-Length`, conflicting duplicate `Content-Length`, and unsupported transfer coding before exposing a response body; cleartext and Native TLS H1 share the same decision
 - `=Boundary` Equal duplicate `Content-Length` values remain accepted; malformed-response connections are retired instead of pooled, without claiming complete HTTP interoperability certification
 - `+Security` The default Native H1 path now requires exactly one non-empty Host per HTTP/1.1 request and rejects comma-joined authority plus forbidden control bytes in request field values

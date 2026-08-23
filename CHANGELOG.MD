@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 显式 Native H1 Client 现在只接受 `HTTP/1.1` 响应版本，并在暴露响应体前拒绝缺少冒号的字段行、非法字段名以及字段值中的 NUL、DEL 和其他禁用控制字节
+- `=边界` cleartext 与 Native TLS H1 共用该响应头解析器；合法 RFC token 标点和水平制表空白仍可接受，畸形连接会被淘汰，但本次不宣称完整 HTTP 或代理互操作认证
 - `+安全` 显式 Native H1 Client 现在会在暴露响应体前拒绝 `Transfer-Encoding + Content-Length`、冲突的重复 `Content-Length` 与不支持的 transfer coding；cleartext 与 Native TLS H1 共用同一判定
 - `=边界` 合法的等值重复 `Content-Length` 仍可接受；畸形响应连接会被淘汰且不归池，本次不宣称完整 HTTP 互操作认证
 - `+安全` 默认 Native H1 现在要求每个 HTTP/1.1 请求携带且只携带一个非空 Host，并拒绝逗号合并 authority 与请求字段值中的禁用控制字节

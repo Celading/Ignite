@@ -599,6 +599,9 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
     if (statusParts.size < 2) {
         throw Exception("native H1 response status line is invalid")
     }
+    if (statusParts[0] != "HTTP/1.1") {
+        throw Exception("native H1 response version must be HTTP/1.1")
+    }
     let statusValue = parseNativeH1Decimal(statusParts[1])
     if (statusValue < 100 || statusValue > 999) {
         throw Exception("native H1 response status is invalid")
@@ -608,15 +611,57 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
     while (lineIndex < lines.size) {
         let line = lines[lineIndex]
         let colon = nativeH1IndexOf(line, ":")
-        if (colon > 0) {
-            let runes = line.toRuneArray()
-            let name = nativeH1RuneSlice(runes, 0, colon).trimAscii()
-            let value = nativeH1RuneSlice(runes, colon + 1, runes.size).trimAscii()
-            headers.add(name, value)
+        if (colon <= 0) {
+            throw Exception("native H1 response header line is malformed")
         }
+        let runes = line.toRuneArray()
+        let name = nativeH1RuneSlice(runes, 0, colon)
+        if (!isNativeH1ResponseHeaderName(name)) {
+            throw Exception("native H1 response header name is invalid")
+        }
+        let rawValue = nativeH1RuneSlice(runes, colon + 1, runes.size)
+        validateNativeH1ResponseHeaderValue(rawValue)
+        headers.add(name, rawValue.trimAscii())
         lineIndex += 1
     }
-    NativeH1ClientParsedResponseHead(statusParts[0].trimAscii().toAsciiUpper(), statusValue, headers)
+    NativeH1ClientParsedResponseHead(statusParts[0], statusValue, headers)
+}
+
+func isNativeH1ResponseHeaderName(input: String): Bool {
+    if (input.size == 0) {
+        return false
+    }
+    for (byte in input.toArray()) {
+        if (!nativeH1ResponseTokenByteAllowed(byte)) {
+            return false
+        }
+    }
+    true
+}
+
+func nativeH1ResponseTokenByteAllowed(code: UInt8): Bool {
+    (code >= UInt8(48) && code <= UInt8(57)) ||
+    (code >= UInt8(65) && code <= UInt8(90)) ||
+    (code >= UInt8(97) && code <= UInt8(122)) ||
+    code == UInt8(33) ||
+    (code >= UInt8(35) && code <= UInt8(39)) ||
+    code == UInt8(42) ||
+    code == UInt8(43) ||
+    code == UInt8(45) ||
+    code == UInt8(46) ||
+    code == UInt8(94) ||
+    code == UInt8(95) ||
+    code == UInt8(96) ||
+    code == UInt8(124) ||
+    code == UInt8(126)
+}
+
+func validateNativeH1ResponseHeaderValue(value: String): Unit {
+    for (byte in value.toArray()) {
+        if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
+            throw Exception("native H1 response header value contains a forbidden control byte")
+        }
+    }
 }
 
 func readNativeH1Response(

@@ -92,6 +92,12 @@ cleartext 与 Native TLS H1 Client 共用同一响应分帧判定：同时出现
 等值重复长度仍可接受。该保护有恶意 loopback wire 与连接恢复回归，但不等同于
 完整代理矩阵或独立 HTTP 合规认证。
 
+同一个共享解析器只接受 `HTTP/1.1` 响应版本，并拒绝缺少冒号的字段行、包含
+非法 token 字符的字段名，以及字段值中的 NUL、DEL 和其他禁用控制字节。合法
+RFC token 标点与水平制表空白仍保持兼容；解析失败的连接不会归池，后续同源请求
+需要新建连接。该行为已有 cleartext 恶意 wire / 新连接恢复与 Native TLS H1
+回归，但不代表完整 HTTP 或代理互操作认证。
+
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
 
