@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 显式 Native H1 Client 现在会在暴露响应体前拒绝 `Transfer-Encoding + Content-Length`、冲突的重复 `Content-Length` 与不支持的 transfer coding；cleartext 与 Native TLS H1 共用同一判定
+- `=边界` 合法的等值重复 `Content-Length` 仍可接受；畸形响应连接会被淘汰且不归池，本次不宣称完整 HTTP 互操作认证
 - `+安全` 默认 Native H1 现在要求每个 HTTP/1.1 请求携带且只携带一个非空 Host，并拒绝逗号合并 authority 与请求字段值中的禁用控制字节
 - `=边界` 畸形请求会在 App dispatch 前关闭当前连接；本次不新增 400 响应契约，也不宣称独立代理链合规认证
 - `+特性` 显式 cleartext/Native TLS H2 session 的 `sendWithRetry(...)` 可通过 `reconnectOnConnectionFailure: true` 对幂等 buffered 请求执行有界的响应头前断传输重连回放，并继续复用 replacement session

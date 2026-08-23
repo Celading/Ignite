@@ -138,6 +138,16 @@ class NativeH1ClientParsedResponseHead {
     }
 }
 
+class NativeH1ResponseFraming {
+    let mode: String
+    let contentLength: Int64
+
+    init(mode: String, contentLength: Int64) {
+        this.mode = mode
+        this.contentLength = contentLength
+    }
+}
+
 class NativeH1ClientSocketReader {
     let socket: TcpSocket
     let prefetched: Array<UInt8>
@@ -629,6 +639,7 @@ func readNativeH1Response(
     }
     let statusValue = parsedHead.status
     let headers = parsedHead.headers
+    let framing = resolveNativeH1ResponseFraming(headers)
     let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" && statusValue != 101 &&
         !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
@@ -636,7 +647,7 @@ func readNativeH1Response(
         settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
         return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
     }
-    if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
+    if (framing.mode == "chunked") {
         let stream = NativeH1ClientResponseInputStream(
             socket, readResult.prefetchedBody, "chunked", -1, pool, origin, responseReusable
         )
@@ -647,11 +658,8 @@ func readNativeH1Response(
             closeHook: { => stream.close() }
         )
     }
-    if (let Some(lengthText) <- headers.getFirst("content-length")) {
-        let length = parseNativeH1Decimal(lengthText)
-        if (length < 0) {
-            throw Exception("native H1 response Content-Length is invalid")
-        }
+    if (framing.mode == "length") {
+        let length = framing.contentLength
         if (length == 0) {
             settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
             return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
@@ -675,6 +683,62 @@ func readNativeH1Response(
         stream,
         closeHook: { => stream.close() }
     )
+}
+
+func resolveNativeH1ResponseFraming(headers: HttpHeaders): NativeH1ResponseFraming {
+    let transferEncodingValues = collectNativeH1ResponseHeaderValues(headers, "transfer-encoding")
+    let contentLengthValues = collectNativeH1ResponseHeaderValues(headers, "content-length")
+    if (transferEncodingValues.size > 0 && contentLengthValues.size > 0) {
+        throw Exception("native H1 response mixes Transfer-Encoding and Content-Length")
+    }
+    if (transferEncodingValues.size > 0) {
+        let tokens = parseNativeH1ResponseCommaTokens(transferEncodingValues, "Transfer-Encoding")
+        if (tokens.size != 1 || tokens[0] != "chunked") {
+            throw Exception("native H1 response Transfer-Encoding is unsupported")
+        }
+        return NativeH1ResponseFraming("chunked", -1)
+    }
+    if (contentLengthValues.size > 0) {
+        let values = parseNativeH1ResponseCommaTokens(contentLengthValues, "Content-Length")
+        var selected: ?Int64 = None
+        for (value in values) {
+            let parsed = parseNativeH1Decimal(value)
+            if (parsed < 0) {
+                throw Exception("native H1 response Content-Length is invalid")
+            }
+            match (selected) {
+                case Some(existing) =>
+                    if (existing != parsed) {
+                        throw Exception("native H1 response Content-Length values conflict")
+                    }
+                case None => selected = Some(parsed)
+            }
+        }
+        return NativeH1ResponseFraming("length", selected ?? 0)
+    }
+    NativeH1ResponseFraming("close", -1)
+}
+
+func collectNativeH1ResponseHeaderValues(headers: HttpHeaders, name: String): Array<String> {
+    let out = ArrayList<String>()
+    for (value in headers.get(name)) {
+        out.add(value)
+    }
+    out.toArray()
+}
+
+func parseNativeH1ResponseCommaTokens(values: Array<String>, name: String): Array<String> {
+    let out = ArrayList<String>()
+    for (value in values) {
+        for (part in value.split(",")) {
+            let token = part.trimAscii().toAsciiLower()
+            if (token.size == 0) {
+                throw Exception("native H1 response ${name} is invalid")
+            }
+            out.add(token)
+        }
+    }
+    out.toArray()
 }
 
 func settleNativeH1BodylessSocket(

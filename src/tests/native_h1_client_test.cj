@@ -433,6 +433,61 @@ public class NativeH1ClientTestSuite {
     }
 
     @TestCase
+    public func testExplicitNativeH1ClientRejectsAmbiguousResponseAndUsesFreshConnection(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H1 response framing test could not reserve loopback port")
+        let serverFuture = spawn {
+            let ambiguous = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let _ = ambiguous.read(request)
+                ambiguous.write(
+                    ("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+                    "Content-Length: 5\r\nConnection: keep-alive\r\n\r\n" +
+                    "5\r\nwrong\r\n0\r\n\r\n").toArray()
+                )
+            } finally {
+                try { ambiguous.close() } catch (_: Exception) {}
+            }
+
+            let valid = listener.accept()
+            try {
+                let request = Array<UInt8>(4096, repeat: 0)
+                let _ = valid.read(request)
+                valid.write(
+                    ("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n" +
+                    "Connection: close\r\n\r\nclean").toArray()
+                )
+            } finally {
+                try { valid.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeH1TestClient()
+        try {
+            var rejected = false
+            try {
+                let _ = client.get("http://127.0.0.1:${port}/ambiguous")
+            } catch (e: Exception) {
+                rejected = nativeH1TestContains(
+                    e.message,
+                    "mixes Transfer-Encoding and Content-Length"
+                )
+            }
+            @Assert(rejected, true)
+
+            let recovered = client.get("http://127.0.0.1:${port}/valid")
+            @Assert(recovered.status, 200)
+            @Assert(recovered.body(), "clean")
+        } finally {
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 2)
+        }
+    }
+
+    @TestCase
     public func testExplicitNativeH1ClientUsesBracketedIpv6AuthorityOnWire(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("[::1]:0"))
         listener.bind()

@@ -86,6 +86,12 @@ let client = RestClient()
 不配置 `useNativeTls(...)` 时，HTTPS 仍走默认 stdx Client。Native H1 backend
 如果协商到 `h2`，会显式失败而不是静默降级。
 
+cleartext 与 Native TLS H1 Client 共用同一响应分帧判定：同时出现
+`Transfer-Encoding` 与 `Content-Length`、冲突的重复 `Content-Length`，或当前
+无法正确解码的 transfer coding 会在响应体暴露前失败，并淘汰当前连接。合法的
+等值重复长度仍可接受。该保护有恶意 loopback wire 与连接恢复回归，但不等同于
+完整代理矩阵或独立 HTTP 合规认证。
+
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
 

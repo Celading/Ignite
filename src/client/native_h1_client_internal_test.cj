@@ -1,5 +1,7 @@
 package ignite.client
 
+import stdx.net.http.HttpHeaders
+
 @Test
 public class NativeH1ClientInternalTestSuite {
     @TestCase
@@ -45,4 +47,48 @@ public class NativeH1ClientInternalTestSuite {
         }
         @Assert(rejected, true)
     }
+
+    @TestCase
+    public func testAcceptsOnlyUnambiguousNativeH1ResponseFraming(): Unit {
+        let equalLengths = HttpHeaders()
+        equalLengths.add("content-length", "5")
+        equalLengths.add("content-length", "5, 5")
+        let lengthFraming = resolveNativeH1ResponseFraming(equalLengths)
+        @Assert(lengthFraming.mode, "length")
+        @Assert(lengthFraming.contentLength, Int64(5))
+
+        let chunked = HttpHeaders()
+        chunked.add("transfer-encoding", "chunked")
+        @Assert(resolveNativeH1ResponseFraming(chunked).mode, "chunked")
+
+        assertNativeH1ResponseFramingRejected({ headers =>
+            headers.add("transfer-encoding", "chunked")
+            headers.add("content-length", "5")
+        })
+        assertNativeH1ResponseFramingRejected({ headers =>
+            headers.add("content-length", "5")
+            headers.add("content-length", "6")
+        })
+        assertNativeH1ResponseFramingRejected({ headers =>
+            headers.add("transfer-encoding", "gzip, chunked")
+        })
+        assertNativeH1ResponseFramingRejected({ headers =>
+            headers.add("transfer-encoding", "chunked, chunked")
+        })
+        assertNativeH1ResponseFramingRejected({ headers =>
+            headers.add("content-length", "5,")
+        })
+    }
+}
+
+func assertNativeH1ResponseFramingRejected(fill: (HttpHeaders) -> Unit): Unit {
+    let headers = HttpHeaders()
+    fill(headers)
+    var rejected = false
+    try {
+        let _ = resolveNativeH1ResponseFraming(headers)
+    } catch (_: Exception) {
+        rejected = true
+    }
+    @Assert(rejected, true)
 }

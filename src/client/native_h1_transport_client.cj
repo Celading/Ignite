@@ -318,6 +318,7 @@ func readNativeH1TransportResponse(
     }
     let statusValue = parsedHead.status
     let headers: HttpHeaders = parsedHead.headers
+    let framing = resolveNativeH1ResponseFraming(headers)
     var responseReusable = reusable && statusValue != 101 &&
         !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" || statusValue == 204 || statusValue == 304) {
@@ -329,7 +330,7 @@ func readNativeH1TransportResponse(
         }
         return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream([]))
     }
-    let stream = if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
+    let stream = if (framing.mode == "chunked") {
         NativeH1TransportResponseInputStream(
             transport,
             readResult.prefetchedBody,
@@ -338,16 +339,12 @@ func readNativeH1TransportResponse(
             reusable: responseReusable,
             settleHook: settleHook
         )
-    } else if (let Some(lengthText) <- headers.getFirst("content-length")) {
-        let length = parseNativeH1Decimal(lengthText)
-        if (length < 0) {
-            throw Exception("native H1 response Content-Length is invalid")
-        }
+    } else if (framing.mode == "length") {
         NativeH1TransportResponseInputStream(
             transport,
             readResult.prefetchedBody,
             "length",
-            length,
+            framing.contentLength,
             reusable: responseReusable,
             settleHook: settleHook
         )
