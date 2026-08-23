@@ -320,8 +320,12 @@ try {
 该 session 支持 buffered、精确长度和未知长度 one-pass request stream，以及显式
 `NativeH2BatchRequest.deadline(Duration)` 的逐 stream deadline。deadline 到期只发送
 该 stream 的 `RST_STREAM(CANCEL)`，兄弟 stream 和物理连接可继续复用。所有
-stream 完整 settle 后连接才可归池；带活跃 lease 关闭会淘汰连接。自动 replay、
-redirect retry、priority 与系统 CA 仍未提供。
+stream 完整 settle 后连接才可归池；带活跃 lease 关闭会淘汰连接。幂等 buffered
+请求可使用 `sendWithRetry(...)` 做 status replay；传入
+`reconnectOnConnectionFailure: true` 时，idle session 还可在响应头前断传输后
+退役旧 TLS 连接、重新握手并有界回放。one-pass body、非幂等方法、并发 lease
+迁移、response-body recovery、redirect retry、production priority 与系统 CA
+仍未提供。
 
 ## 响应读取与大包读取
 

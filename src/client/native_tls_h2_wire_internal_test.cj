@@ -446,6 +446,89 @@ public class NativeTlsH2WireInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeTlsH2SessionReconnectsBrokenTransportAndReusesReplacement(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native TLS H2 reconnect test could not reserve loopback port")
+        let serverFuture = spawn {
+            let first = listener.accept()
+            first.readTimeout = Some(Duration.second * 3)
+            first.writeTimeout = Some(Duration.second * 3)
+            try {
+                let tls = openNativeTlsH2FixtureSession(first)
+                let head = nativeTlsH2ReadRequestHead(tls)
+                if (head.streamId != 1) {
+                    throw Exception("native TLS H2 reconnect fixture expected first stream 1")
+                }
+                tls.close()
+            } finally {
+                try { first.close() } catch (_: Exception) {}
+            }
+
+            let second = listener.accept()
+            second.readTimeout = Some(Duration.second * 3)
+            second.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeTlsH2ReconnectReplacementFixture(second)
+            } finally {
+                try { second.close() } catch (_: Exception) {}
+            }
+        }
+        let client = nativeTlsH2SessionTestClient()
+        let retryConfig = ClientRetryConfig(
+            enabled: true,
+            maxAttempts: 2,
+            baseDelayMs: 0,
+            maxDelayMs: 0,
+            jitterMs: 0
+        )
+        var session: ?NativeTlsH2Session = None
+        try {
+            let opened = client.openNativeTlsH2Session(
+                "https://127.0.0.1:${port}/", maxConcurrentStreams: 2
+            )
+            session = Some(opened)
+            let replayed = opened.sendWithRetry(
+                NativeH2BatchRequest("GET", "/tls-reconnect"),
+                config: retryConfig,
+                reconnectOnConnectionFailure: true
+            )
+
+            var activeLeaseRejected = false
+            try {
+                let _ = opened.sendWithRetry(
+                    NativeH2BatchRequest("GET", "/must-not-start"),
+                    config: retryConfig,
+                    reconnectOnConnectionFailure: true
+                )
+            } catch (e: Exception) {
+                activeLeaseRejected = e.message ==
+                    "native TLS H2 session reconnect replay requires an idle session"
+            }
+            @Assert(activeLeaseRejected, true)
+            @Assert(replayed.body(), "tls-reconnected")
+
+            let reused = opened.send(NativeH2BatchRequest("GET", "/tls-reused"))
+            @Assert(reused.body(), "tls-replacement-reused")
+            opened.close()
+            session = None
+            let _ = serverFuture.get(Duration.second * 5)
+
+            let snapshot = client.nativeTlsRuntimeSnapshot().h2
+            @Assert(snapshot.openedConnections, Int64(2))
+            @Assert(snapshot.retiredConnections, Int64(1))
+        } finally {
+            match (session) {
+                case Some(value) => value.close()
+                case None => ()
+            }
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
     public func testNativeTlsH2BatchPrioritizesDataAndFairlyRotatesEqualHints(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()
@@ -763,6 +846,20 @@ func serveNativeTlsH2RetryFixture(socket: TcpSocket): Unit {
         throw Exception("native TLS H2 retry fixture expected stream 3")
     }
     nativeTlsH2WriteResponse(tls, 3, "tls-session-recovered")
+}
+
+func serveNativeTlsH2ReconnectReplacementFixture(socket: TcpSocket): Unit {
+    let tls = openNativeTlsH2FixtureSession(socket)
+    let replayed = nativeTlsH2ReadRequestHead(tls)
+    if (replayed.streamId != 1) {
+        throw Exception("native TLS H2 replacement fixture expected replay stream 1")
+    }
+    nativeTlsH2WriteResponse(tls, 1, "tls-reconnected")
+    let reused = nativeTlsH2ReadRequestHead(tls)
+    if (reused.streamId != 3) {
+        throw Exception("native TLS H2 replacement fixture expected reused stream 3")
+    }
+    nativeTlsH2WriteResponse(tls, 3, "tls-replacement-reused")
 }
 
 func serveNativeTlsH2PriorityFixture(socket: TcpSocket): Unit {

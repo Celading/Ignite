@@ -500,19 +500,20 @@ public class RestClient {
                 )
             }
             let origin = nativeH1PoolOrigin(target)
-            let connection = match (_nativeH2Pool.acquire(origin)) {
-                case Some(existing) => existing
-                case None => openNativeH2Connection(target, _readTimeout, _writeTimeout)
-            }
-            connection.socket.readTimeout = Some(_readTimeout)
-            connection.socket.writeTimeout = Some(_writeTimeout)
+            let transport = acquireNativeH2SessionTransport(
+                origin,
+                target,
+                _readTimeout,
+                _writeTimeout,
+                _nativeH2Pool,
+                maxConcurrentStreams,
+                maxPendingRequests
+            )
+            let connection = transport.connection
 
             var transferred = false
             try {
-                let protocol = connection.protocol.openMultiplexSession(
-                    maxConcurrentStreams: maxConcurrentStreams,
-                    maxPendingRequests: maxPendingRequests
-                )
+                let protocol = transport.protocol
                 let defaults = cloneNativeH1Headers(_defaultHeaders)
                 let responseHooks = ArrayList<ClientResponseHook>()
                 for (hook in _responseHooks) {
@@ -536,6 +537,17 @@ public class RestClient {
                     protocol,
                     connection,
                     _nativeH2Pool,
+                    { =>
+                        acquireNativeH2SessionTransport(
+                            origin,
+                            target,
+                            _readTimeout,
+                            _writeTimeout,
+                            _nativeH2Pool,
+                            maxConcurrentStreams,
+                            maxPendingRequests
+                        )
+                    },
                     responseHooks,
                     errorHooks,
                     { => removeNativeH2Session(capturedSessionId) }
@@ -614,22 +626,21 @@ public class RestClient {
             }
             let origin = nativeH1PoolOrigin(target)
             let sessionOriginUrl = target.scheme + "://" + target.hostHeader
-            let connection = match (_nativeTlsH2Pool.acquire(origin, config)) {
-                case Some(existing) => existing
-                case None =>
-                    let opened = openNativeTlsH2Connection(
-                        target, _readTimeout, _writeTimeout, config
-                    )
-                    _nativeTlsH2Pool.recordOpened()
-                    opened
-            }
+            let transport = acquireNativeTlsH2SessionTransport(
+                origin,
+                target,
+                _readTimeout,
+                _writeTimeout,
+                config,
+                _nativeTlsH2Pool,
+                maxConcurrentStreams,
+                maxPendingRequests
+            )
+            let connection = transport.connection
 
             var transferred = false
             try {
-                let protocol = connection.protocol.openMultiplexSession(
-                    maxConcurrentStreams: maxConcurrentStreams,
-                    maxPendingRequests: maxPendingRequests
-                )
+                let protocol = transport.protocol
                 let defaults = cloneNativeH1Headers(_defaultHeaders)
                 let responseHooks = ArrayList<ClientResponseHook>()
                 for (hook in _responseHooks) {
@@ -655,6 +666,18 @@ public class RestClient {
                     protocol,
                     connection,
                     _nativeTlsH2Pool,
+                    { =>
+                        acquireNativeTlsH2SessionTransport(
+                            origin,
+                            target,
+                            _readTimeout,
+                            _writeTimeout,
+                            config,
+                            _nativeTlsH2Pool,
+                            maxConcurrentStreams,
+                            maxPendingRequests
+                        )
+                    },
                     responseHooks,
                     errorHooks,
                     { => removeNativeTlsH2Session(capturedSessionId) }

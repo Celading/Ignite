@@ -187,7 +187,10 @@ try {
   在未知 peer 消费状态下复用；
 - 支持精确长度和未知长度 one-pass request stream；可通过
   `NativeH2BatchRequest.deadline(Duration)` 取消单个超时 stream 而保留兄弟 stream；
-  不支持自动 RequestBuilder H2 streaming、retry/redirect、priority、
+  幂等 buffered 请求可通过 `sendWithRetry(...)` 做有界 status replay，并可显式设置
+  `reconnectOnConnectionFailure: true` 在 idle session 的响应头前断传输后重建同源
+  session；one-pass body、非幂等方法、active lease、响应体中途失败不会被重放；
+  不支持自动 RequestBuilder H2 streaming、redirect、production priority、
   request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用
@@ -222,7 +225,8 @@ try {
 
 该 TLS session 使用同一 multiplex runtime，支持乱序响应归属和一次性 request
 stream；完整 settle 才归池，带活跃 lease 关闭会淘汰物理连接。它仍要求调用方
-提供 trust anchor/hostname，不代表系统 CA、自动重放或生产默认切换完成。
+提供 trust anchor/hostname。显式 pre-response reconnect 会重新完成 TLS1.3 + `h2`
+握手，但不代表系统 CA、response-body recovery、生产调度或默认切换完成。
 
 ## WebSocket 到底是不是 Native
 

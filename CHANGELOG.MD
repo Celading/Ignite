@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+特性` 显式 cleartext/Native TLS H2 session 的 `sendWithRetry(...)` 可通过 `reconnectOnConnectionFailure: true` 对幂等 buffered 请求执行有界的响应头前断传输重连回放，并继续复用 replacement session
+- `=边界` 重连要求 idle session，默认关闭；不迁移 active lease，不重放 one-pass/非幂等请求，也不恢复响应头后的 body 读取失败
 - `+特性` 新增 `ResponseTransportTransformFactory`、`Ctx.registerResponseTransportTransform(...)` 与 `responseTransportTransformMiddleware(...)`，普通 `transportWriter()` 可按中间件响应洋葱顺序自动组合 fresh 状态变换
 - `=边界` transform 注册在首个 transport writer 打开后冻结；当前不会自动包裹 `writer()`、SSE、sendStream/pull JSON，也不代表现有压缩策略中间件已接入
 - `+特性` 动态 gzip/deflate 的缓冲与流式响应改用 Ignite 自有安全仓颉 DEFLATE/GZIP codec，不再在产品路径构造 `stdx.compress.zlib`

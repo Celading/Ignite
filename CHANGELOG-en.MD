@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Feature` Explicit cleartext and Native TLS H2 sessions can opt into bounded pre-response broken-transport replay for idempotent buffered requests through `sendWithRetry(..., reconnectOnConnectionFailure: true)`, then continue using the replacement session
+- `=Boundary` Reconnect requires an idle session and remains off by default; active leases, one-pass/non-idempotent requests, and response-body failures after a head are never migrated or replayed
 - `+Feature` Add `ResponseTransportTransformFactory`, `Ctx.registerResponseTransportTransform(...)`, and `responseTransportTransformMiddleware(...)` so plain `transportWriter()` calls can compose fresh stateful transforms in response-onion order
 - `=Boundary` Transform registration freezes when the first transport writer opens; this does not automatically wrap `writer()`, SSE, sendStream/pull JSON, or integrate the existing compression-policy middleware
 - `+Feature` Buffered and streamed dynamic gzip/deflate responses now use an Ignite-owned safe Cangjie DEFLATE/GZIP codec; product paths no longer construct `stdx.compress.zlib` codecs

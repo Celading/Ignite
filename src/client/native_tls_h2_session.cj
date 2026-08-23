@@ -5,8 +5,22 @@ import ignite.native_h2.{
     NativeH2ClientRequest,
     NativeH2MultiplexSession
 }
+import ignite.native_tls.NativeTls13ClientConfig
 import std.collection.{ArrayList, HashMap}
 import std.sync.Mutex
+
+class NativeTlsH2SessionTransport {
+    let connection: NativeTlsH2PooledConnection
+    let protocol: NativeH2MultiplexSession
+
+    init(
+        connection: NativeTlsH2PooledConnection,
+        protocol: NativeH2MultiplexSession
+    ) {
+        this.connection = connection
+        this.protocol = protocol
+    }
+}
 
 /// Explicit Preview session for independent H2 stream leases over Native TLS.
 ///
@@ -16,14 +30,17 @@ public class NativeTlsH2Session {
     let resolveUrl: (String) -> String
     let defaultHeaders: HashMap<String, String>
     let cookieStore: ?CookieStore
-    let protocol: NativeH2MultiplexSession
-    let connection: NativeTlsH2PooledConnection
+    var protocol: NativeH2MultiplexSession
+    var connection: NativeTlsH2PooledConnection
     let pool: NativeTlsH2ConnectionPool
+    let reopen: () -> NativeTlsH2SessionTransport
     let responseHooks: ArrayList<ClientResponseHook>
     let errorHooks: ArrayList<ClientErrorHook>
     let closeHook: () -> Unit
     let mtx = Mutex()
     var closed = false
+    var activeCalls: Int64 = 0
+    var reconnectReplayActive = false
 
     init(
         origin: String,
@@ -33,6 +50,7 @@ public class NativeTlsH2Session {
         protocol: NativeH2MultiplexSession,
         connection: NativeTlsH2PooledConnection,
         pool: NativeTlsH2ConnectionPool,
+        reopen: () -> NativeTlsH2SessionTransport,
         responseHooks: ArrayList<ClientResponseHook>,
         errorHooks: ArrayList<ClientErrorHook>,
         closeHook: () -> Unit
@@ -44,6 +62,7 @@ public class NativeTlsH2Session {
         this.protocol = protocol
         this.connection = connection
         this.pool = pool
+        this.reopen = reopen
         this.responseHooks = responseHooks
         this.errorHooks = errorHooks
         this.closeHook = closeHook
@@ -52,6 +71,15 @@ public class NativeTlsH2Session {
     /// Sends one buffered or streamed request over the retained TLS H2 session.
     /// Multiple callers may use this method concurrently.
     public func send(request: NativeH2BatchRequest): ClientResponse {
+        beginSend()
+        try {
+            sendAttempt(request)
+        } finally {
+            endSend()
+        }
+    }
+
+    func sendAttempt(request: NativeH2BatchRequest): ClientResponse {
         try {
             let resolvedUrl = resolveUrl(request.url)
             let target = parseNativeH1Target(resolvedUrl)
@@ -152,32 +180,126 @@ public class NativeTlsH2Session {
     }
 
     /// Replays an idempotent buffered request after configured response statuses.
-    /// One-pass streams and broken sessions are intentionally not replayed.
+    /// Set `reconnectOnConnectionFailure` to replace a broken transport and
+    /// replay a pre-response failure. One-pass streams are never replayed.
     /// Response hooks observe every completed attempt, including drained retries.
     public func sendWithRetry(
         request: NativeH2BatchRequest,
-        config!: ClientRetryConfig = ClientRetryConfig()
+        config!: ClientRetryConfig = ClientRetryConfig(),
+        reconnectOnConnectionFailure!: Bool = false
     ): ClientResponse {
         let retryConfig = config.copy()
         let hasBodyStream = request.bodyStreamSnapshot().isSome()
         if (retryConfig.enabled && retryConfig.maxAttempts > 1 && hasBodyStream) {
             throw Exception("native TLS H2 session cannot replay a one-pass request stream")
         }
-        if (retryConfig.enabled && retryConfig.maxAttempts > 1 &&
-            !nativeH2SessionRetryEligible(request.method, hasBodyStream, retryConfig)) {
+        let replayEligible = nativeH2SessionRetryEligible(
+            request.method, hasBodyStream, retryConfig
+        )
+        if (retryConfig.enabled && retryConfig.maxAttempts > 1 && !replayEligible) {
             throw Exception("native TLS H2 session retry requires an idempotent request method")
         }
-        var attempt: Int64 = 1
-        while (true) {
-            let response = send(request)
-            if (!nativeH2SessionRetryStatus(response.status, retryConfig, attempt)) {
-                return response
-            }
-            response.discard()
-            nativeH2SessionRetryBackoff(retryConfig, attempt)
-            attempt += 1
+        let reconnectReplayEnabled = reconnectOnConnectionFailure && replayEligible
+        if (reconnectReplayEnabled) {
+            beginReconnectReplay()
         }
-        throw Exception("native TLS H2 session retry loop ended unexpectedly")
+        try {
+            var attempt: Int64 = 1
+            while (true) {
+                let response = try {
+                    if (reconnectReplayEnabled) {
+                        sendAttempt(request)
+                    } else {
+                        send(request)
+                    }
+                } catch (e: Exception) {
+                    if (!reconnectReplayEnabled || attempt >= retryConfig.maxAttempts ||
+                        transportReusable()) {
+                        throw e
+                    }
+                    replaceBrokenTransport()
+                    nativeH2SessionRetryBackoff(retryConfig, attempt)
+                    attempt += 1
+                    continue
+                }
+                if (!nativeH2SessionRetryStatus(response.status, retryConfig, attempt)) {
+                    return response
+                }
+                response.discard()
+                nativeH2SessionRetryBackoff(retryConfig, attempt)
+                attempt += 1
+            }
+            throw Exception("native TLS H2 session retry loop ended unexpectedly")
+        } finally {
+            if (reconnectReplayEnabled) {
+                endReconnectReplay()
+            }
+        }
+    }
+
+    func beginSend(): Unit {
+        synchronized(mtx) {
+            if (closed) {
+                throw Exception("native TLS H2 session is closed")
+            }
+            if (reconnectReplayActive) {
+                throw Exception("native TLS H2 session reconnect replay is active")
+            }
+            activeCalls += 1
+        }
+    }
+
+    func endSend(): Unit {
+        synchronized(mtx) {
+            if (activeCalls > 0) {
+                activeCalls -= 1
+            }
+        }
+    }
+
+    func beginReconnectReplay(): Unit {
+        synchronized(mtx) {
+            if (closed) {
+                throw Exception("native TLS H2 session is closed")
+            }
+            if (reconnectReplayActive || activeCalls > 0 ||
+                protocol.activeStreams() > 0 || protocol.pendingAdmissions() > 0) {
+                throw Exception(
+                    "native TLS H2 session reconnect replay requires an idle session"
+                )
+            }
+            reconnectReplayActive = true
+        }
+    }
+
+    func endReconnectReplay(): Unit {
+        synchronized(mtx) {
+            reconnectReplayActive = false
+        }
+    }
+
+    func transportReusable(): Bool {
+        synchronized(mtx) {
+            connection.reusable()
+        }
+    }
+
+    func replaceBrokenTransport(): Unit {
+        pool.retire(connection)
+        let replacement = reopen()
+        var accepted = false
+        synchronized(mtx) {
+            if (!closed) {
+                connection = replacement.connection
+                protocol = replacement.protocol
+                accepted = true
+            }
+        }
+        if (!accepted) {
+            try { let _ = replacement.protocol.close() } catch (_: Exception) {}
+            pool.retire(replacement.connection)
+            throw Exception("native TLS H2 session closed during reconnect replay")
+        }
     }
 
     public func activeStreams(): Int64 {
@@ -233,4 +355,38 @@ func resolveNativeTlsH2SessionUrl(originUrl: String, candidate: String): String 
         return originUrl + normalized
     }
     originUrl + "/" + normalized
+}
+
+func acquireNativeTlsH2SessionTransport(
+    origin: String,
+    target: NativeH1ClientTarget,
+    readTimeout: Duration,
+    writeTimeout: Duration,
+    config: NativeTls13ClientConfig,
+    pool: NativeTlsH2ConnectionPool,
+    maxConcurrentStreams: Int64,
+    maxPendingRequests: Int64
+): NativeTlsH2SessionTransport {
+    let connection = match (pool.acquire(origin, config)) {
+        case Some(existing) => existing
+        case None =>
+            let opened = openNativeTlsH2Connection(
+                target, readTimeout, writeTimeout, config
+            )
+            pool.recordOpened()
+            opened
+    }
+    var transferred = false
+    try {
+        let protocol = connection.protocol.openMultiplexSession(
+            maxConcurrentStreams: maxConcurrentStreams,
+            maxPendingRequests: maxPendingRequests
+        )
+        transferred = true
+        NativeTlsH2SessionTransport(connection, protocol)
+    } finally {
+        if (!transferred) {
+            pool.retire(connection)
+        }
+    }
 }
