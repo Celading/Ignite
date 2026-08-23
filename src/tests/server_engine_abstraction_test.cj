@@ -12009,13 +12009,15 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
-    public func testSocketServerEngineShellContainsUnsupportedVersionRequestHead(): Unit {
+    public func testSocketServerEngineShellReturnsTypedRequestHeadStatusResponses(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
-        setVariable(acceptLimitEnv, "2")
+        setVariable(acceptLimitEnv, "4")
         try {
             let app = App(config: Config(enableTlsPrecheck: false))
             app.serverEngine(SocketServerEngineShell())
+            let handlerRuns = AtomicInt64(0)
             app.get("/shell-unsupported-version-containment", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
                 let _ = ctx
                     .setHeader("x-shell-unsupported-version-containment", "1")
                     .sendString("unsupported-version-ok")
@@ -12026,15 +12028,35 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(app, UInt16(38147))
 
-            let badSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38147"))
-            badSocket.connect()
-            try {
-                badSocket.write("GET /old HTTP/1.0\r\nHost: example.com\r\n\r\n".toArray())
-            } finally {
-                if (!badSocket.isClosed()) {
-                    badSocket.close()
-                }
+            let versionResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET /old HTTP/1.0\r\nHost: example.com\r\n\r\n"
+            )
+
+            var longTarget = "/"
+            var targetByte: Int64 = 0
+            while (targetByte < 4100) {
+                longTarget += "a"
+                targetByte += 1
             }
+            let targetResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET ${longTarget} HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+
+            var headerFlood = ""
+            var headerIndex: Int64 = 0
+            while (headerIndex < 100) {
+                headerFlood += "X-Header-${headerIndex}: value\r\n"
+                headerIndex += 1
+            }
+            let headerResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET /header-flood HTTP/1.1\r\nHost: example.com\r\n${headerFlood}\r\n"
+            )
 
             let validResponseText = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -12043,6 +12065,19 @@ public class ServerEngineAbstractionTestSuite {
             )
             let _ = serverFuture.get(Duration.second * 5)
 
+            @Assert(
+                versionResponse,
+                "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                targetResponse,
+                "HTTP/1.1 414 URI Too Long\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                headerResponse,
+                "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(handlerRuns.load(), Int64(1))
             @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
             @Assert(contains(validResponseText, "x-shell-unsupported-version-containment: 1"), true)
             @Assert(contains(validResponseText, "content-length: 22"), true)

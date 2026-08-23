@@ -33,9 +33,45 @@ let SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT: Int64 = 100
 
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
 
-class SocketServerEngineShellBadRequestException <: Exception {
-    init(message: String) {
+enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngineShellRequestRejectionKind> & ToString {
+    | BadRequest
+    | UriTooLong
+    | HeaderFieldsTooLarge
+    | HttpVersionNotSupported
+
+    public operator func ==(right: SocketServerEngineShellRequestRejectionKind): Bool {
+        ordinalValue() == right.ordinalValue()
+    }
+
+    public operator func !=(right: SocketServerEngineShellRequestRejectionKind): Bool {
+        !(this == right)
+    }
+
+    public func ordinalValue(): Int64 {
+        match (this) {
+            case BadRequest => 0
+            case UriTooLong => 1
+            case HeaderFieldsTooLarge => 2
+            case HttpVersionNotSupported => 3
+        }
+    }
+
+    public func toString(): String {
+        match (this) {
+            case BadRequest => "BAD_REQUEST"
+            case UriTooLong => "URI_TOO_LONG"
+            case HeaderFieldsTooLarge => "HEADER_FIELDS_TOO_LARGE"
+            case HttpVersionNotSupported => "HTTP_VERSION_NOT_SUPPORTED"
+        }
+    }
+}
+
+class SocketServerEngineShellRequestRejectionException <: Exception {
+    let kind: SocketServerEngineShellRequestRejectionKind
+
+    init(kind: SocketServerEngineShellRequestRejectionKind, message: String) {
         super(message)
+        this.kind = kind
     }
 }
 
@@ -795,7 +831,10 @@ func serveSocketServerEngineShellSocketTurns(
             let seed = try {
                 buildSocketHttp11DispatchSeed(request)
             } catch (e: SocketHttp11DispatchSeedException) {
-                throw SocketServerEngineShellBadRequestException(e.message)
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.BadRequest,
+                    e.message
+                )
             }
             let requestBodyBytes = try {
                 readSocketServerEngineShellRequestBodyBytes(
@@ -849,7 +888,7 @@ func serveSocketServerEngineShellSocketTurns(
             } else {
                 moreTurns = false
             }
-        } catch (_: SocketServerEngineShellBadRequestException) {
+        } catch (e: SocketServerEngineShellRequestRejectionException) {
             settleSocketServerEngineShellFailedTurn(
                 control,
                 keepAliveWaitActive,
@@ -858,7 +897,7 @@ func serveSocketServerEngineShellSocketTurns(
             keepAliveWaitActive = false
             requestStarted = false
             try {
-                writeSocketServerEngineShellBadRequestResponse(socket)
+                writeSocketServerEngineShellRequestRejectionResponse(socket, e.kind)
             } catch (e: Exception) {
                 containSocketServerEngineShellExpectedConnectionEnd(e)
             }
@@ -922,10 +961,21 @@ func containSocketServerEngineShellExpectedConnectionEnd(error: Exception): Unit
     }
 }
 
-func writeSocketServerEngineShellBadRequestResponse(socket: TcpSocket): Unit {
+func writeSocketServerEngineShellRequestRejectionResponse(
+    socket: TcpSocket,
+    kind: SocketServerEngineShellRequestRejectionKind
+): Unit {
+    let status = match (kind) {
+        case SocketServerEngineShellRequestRejectionKind.BadRequest => "400 Bad Request"
+        case SocketServerEngineShellRequestRejectionKind.UriTooLong => "414 URI Too Long"
+        case SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge =>
+            "431 Request Header Fields Too Large"
+        case SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported =>
+            "505 HTTP Version Not Supported"
+    }
     socket.write(
         (
-            "HTTP/1.1 400 Bad Request\r\n" +
+            "HTTP/1.1 ${status}\r\n" +
             "Content-Length: 0\r\n" +
             "Connection: close\r\n\r\n"
         ).toArray()
@@ -991,15 +1041,15 @@ func readSocketServerEngineShellRequest(
                 return request
             }
         } catch (e: SocketHttp11HeadException) {
-            if (socketServerEngineShellHeadFailureIsBadRequest(e)) {
-                throw SocketServerEngineShellBadRequestException(e.message)
+            if (let Some(kind) <- socketServerEngineShellHeadFailureRejectionKind(e)) {
+                throw SocketServerEngineShellRequestRejectionException(kind, e.message)
             }
             throw SocketServerEngineShellException(
                 "socket server engine shell request-head parse failed: ${e.message}"
             )
         } catch (e: SocketHttp11SessionException) {
-            if (socketServerEngineShellSessionFailureIsBadRequest(e)) {
-                throw SocketServerEngineShellBadRequestException(e.message)
+            if (let Some(kind) <- socketServerEngineShellSessionFailureRejectionKind(e)) {
+                throw SocketServerEngineShellRequestRejectionException(kind, e.message)
             }
             throw SocketServerEngineShellException(
                 "socket server engine shell request session failed: ${e.message}"
@@ -1011,18 +1061,33 @@ func readSocketServerEngineShellRequest(
     )
 }
 
-func socketServerEngineShellHeadFailureIsBadRequest(
+func socketServerEngineShellHeadFailureRejectionKind(
     error: SocketHttp11HeadException
-): Bool {
-    error.code == SocketHttp11HeadErrorCode.MalformedRequestLine ||
-        error.code == SocketHttp11HeadErrorCode.MalformedHeader ||
-        error.code == SocketHttp11HeadErrorCode.InvalidHeaderName
+): ?SocketServerEngineShellRequestRejectionKind {
+    match (error.code) {
+        case SocketHttp11HeadErrorCode.MalformedRequestLine =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.MalformedHeader =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.InvalidHeaderName =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.RequestTargetTooLong =>
+            Some(SocketServerEngineShellRequestRejectionKind.UriTooLong)
+        case SocketHttp11HeadErrorCode.HeaderFieldsTooLarge =>
+            Some(SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge)
+        case SocketHttp11HeadErrorCode.UnsupportedVersion =>
+            Some(SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported)
+        case SocketHttp11HeadErrorCode.LimitExceeded => None
+    }
 }
 
-func socketServerEngineShellSessionFailureIsBadRequest(
+func socketServerEngineShellSessionFailureRejectionKind(
     error: SocketHttp11SessionException
-): Bool {
-    error.code != SocketHttp11SessionErrorCode.InvalidState
+): ?SocketServerEngineShellRequestRejectionKind {
+    if (error.code == SocketHttp11SessionErrorCode.InvalidState) {
+        return None
+    }
+    Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
 }
 
 func readSocketServerEngineShellRequestBodyBytes(

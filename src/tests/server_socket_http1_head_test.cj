@@ -170,15 +170,32 @@ public class SocketHttp11HeadParseTestSuite {
         let option = SocketHttp11HeadParseOption(maxHeaderBytes: 24)
         assertSocketHttp11HeadFailure(
             "GET /tiny HTTP/1.1\r\nHost: example.com\r\n\r\n".toArray(),
-            SocketHttp11HeadErrorCode.LimitExceeded,
+            SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
             option: option
         )
 
         let countOption = SocketHttp11HeadParseOption(maxHeaderCount: 1)
         assertSocketHttp11HeadFailure(
             "GET /ok HTTP/1.1\r\nHost: example.com\r\nX-Test: value\r\n\r\n".toArray(),
-            SocketHttp11HeadErrorCode.LimitExceeded,
+            SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
             option: countOption
+        )
+    }
+
+    @TestCase
+    public func testParserDistinguishesRequestTargetAndHeaderFieldLimits(): Unit {
+        let targetOption = SocketHttp11HeadParseOption(maxRequestLineBytes: 24)
+        assertSocketHttp11HeadFailure(
+            "GET /request-target-is-too-long HTTP/1.1\r\nHost: example.com\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.RequestTargetTooLong,
+            option: targetOption
+        )
+
+        let headerOption = SocketHttp11HeadParseOption(maxHeaderCount: 1)
+        assertSocketHttp11HeadFailure(
+            "GET /ok HTTP/1.1\r\nHost: example.com\r\nX-Extra: value\r\n\r\n".toArray(),
+            SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
+            option: headerOption
         )
     }
 }

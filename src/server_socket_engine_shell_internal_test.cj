@@ -225,51 +225,69 @@ public class SocketServerEngineShellInternalTestSuite {
     }
 
     @TestCase
-    public func testBadRequestClassifierKeepsStatusTaxonomyAndInternalStateOut(): Unit {
+    public func testRequestRejectionClassifierPreservesStatusTaxonomyAndInternalState(): Unit {
         @Assert(
-            socketServerEngineShellHeadFailureIsBadRequest(
+            socketServerEngineShellHeadFailureRejectionKind(
                 SocketHttp11HeadException(
                     SocketHttp11HeadErrorCode.MalformedHeader,
                     "malformed header"
                 )
-            ),
-            true
+            ) ?? SocketServerEngineShellRequestRejectionKind.UriTooLong,
+            SocketServerEngineShellRequestRejectionKind.BadRequest
         )
         @Assert(
-            socketServerEngineShellHeadFailureIsBadRequest(
+            socketServerEngineShellHeadFailureRejectionKind(
                 SocketHttp11HeadException(
                     SocketHttp11HeadErrorCode.UnsupportedVersion,
                     "unsupported version"
                 )
-            ),
-            false
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported
         )
         @Assert(
-            socketServerEngineShellHeadFailureIsBadRequest(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.RequestTargetTooLong,
+                    "request target limit"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.UriTooLong
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
+                    "header field limit"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
                 SocketHttp11HeadException(
                     SocketHttp11HeadErrorCode.LimitExceeded,
-                    "request limit"
+                    "legacy unclassified limit"
                 )
-            ),
-            false
+            ) == None,
+            true
         )
         @Assert(
-            socketServerEngineShellSessionFailureIsBadRequest(
+            socketServerEngineShellSessionFailureRejectionKind(
                 SocketHttp11SessionException(
                     SocketHttp11SessionErrorCode.InvalidContentLength,
                     "invalid content length"
                 )
-            ),
-            true
+            ) ?? SocketServerEngineShellRequestRejectionKind.UriTooLong,
+            SocketServerEngineShellRequestRejectionKind.BadRequest
         )
         @Assert(
-            socketServerEngineShellSessionFailureIsBadRequest(
+            socketServerEngineShellSessionFailureRejectionKind(
                 SocketHttp11SessionException(
                     SocketHttp11SessionErrorCode.InvalidState,
                     "invalid internal state"
                 )
-            ),
-            false
+            ) == None,
+            true
         )
     }
 

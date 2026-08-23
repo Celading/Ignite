@@ -5,8 +5,10 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` Default Native H1 now uses typed request-head classification to return fixed bodyless `414 URI Too Long`, `431 Request Header Fields Too Large`, or `505 HTTP Version Not Supported`, then closes that connection while leaving the listener available
+- `=Boundary` 414 covers request-target/request-line limits, 431 covers request-head byte or field-count limits, and 505 covers unsupported HTTP versions; this does not add custom error bodies, 408 handling, or body-stage error policy
 - `+Security` Default Native H1 now returns a fixed bodyless `400 Bad Request` for complete requests explicitly rejected by head/session parsing or request-target dispatch validation, then closes that connection
-- `=Boundary` The fixed 400 path excludes incomplete EOF, header timeout, peer abort, and handler failure; it does not replace later `414` / `431` / `505` taxonomy or a custom error-page API
+- `=Boundary` The fixed 400 path excludes incomplete EOF, header timeout, peer abort, handler failure, and a custom error-page API
 - `+Security` Default Native H1 now rejects `CONNECT` without authority-form, authority-form on non-`CONNECT` methods, and asterisk-form on non-`OPTIONS` methods before App dispatch
 - `=Boundary` Valid `CONNECT authority`, `OPTIONS *`, resource-specific `OPTIONS /path`, and ordinary origin/absolute-form routing remain compatible; this does not implement CONNECT tunneling or proxy forwarding
 - `+Performance` Optional buffered compression now requires at least `64` bytes of net savings by default; marginal gains fall back to identity, material gains stay encoded, and `minSavingsBytes` is configurable

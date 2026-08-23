@@ -5,8 +5,10 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在通过 typed request-head 分类返回固定无正文 `414 URI Too Long`、`431 Request Header Fields Too Large` 或 `505 HTTP Version Not Supported`，随后关闭该连接并保持监听器继续服务
+- `=边界` 414 对应请求目标/请求行上限，431 对应请求头字节或字段数上限，505 对应不支持的 HTTP 版本；当前不提供自定义错误体，也不扩展到 408 或 body-stage 错误策略
 - `+安全` 默认 Native H1 现在会对已完整接收、被请求头/session 或 request-target dispatch seed 明确拒绝的坏请求返回固定无正文 `400 Bad Request`，随后关闭该连接
-- `=边界` 固定 400 不覆盖未完整 EOF、header timeout、peer abort、handler 异常，也不代替后续 `414` / `431` / `505` 状态分类或自定义错误页
+- `=边界` 固定 400 不覆盖未完整 EOF、header timeout、peer abort、handler 异常或自定义错误页
 - `+安全` 默认 Native H1 现在对 Host、absolute-form authority 与 CONNECT authority-form 复用同一结构门，拒绝 userinfo、坏百分号编码、坏括号、多冒号歧义与非十进制端口
 - `=边界` 合法 reg-name、括号化 IP-literal 与十进制端口保持兼容；CONNECT 还要求 `1..65535` 的非空端口，本次不宣称完整 DNS/IPv6 语义验证、代理转发或 CONNECT 隧道
 - `+安全` 默认 Native H1 接收 absolute-form request-target 时，会在 App 与请求头中间件入口把 request-target authority 作为有效 Host，忽略冲突的接收 Host 值

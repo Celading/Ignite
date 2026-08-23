@@ -178,10 +178,14 @@ App 路由前收到固定无正文 `400 Bad Request`，随后关闭当前连接�
 的水平制表空白仍按既有规则收敛。相同响应边界也覆盖已完整接收、被 session
 分帧或 request-target dispatch seed 明确拒绝的坏请求。
 
-该固定响应不覆盖未完整 EOF、header timeout、peer abort 或 handler 异常；
-`LimitExceeded` 与不支持版本也保留在后续 `414` / `431` / `505` 状态分类边界，
-而不是被偷懒归并为 400。当前没有自定义错误页 API，也不把同栈回归表述为独立
-代理链合规认证。
+request-head 的 typed 状态分类还会把请求目标/请求行超限映射为固定无正文
+`414 URI Too Long`，把请求头总字节或字段数超限映射为 `431 Request Header Fields
+Too Large`，并把不支持的 HTTP 版本映射为 `505 HTTP Version Not Supported`。
+这些响应同样关闭当前连接，但不停止监听器处理后续有效连接。
+
+固定 400/414/431/505 不覆盖未完整 EOF、header timeout、peer abort、handler 异常、
+408 或 body-stage 错误策略。当前没有自定义错误页 API，也不把同栈回归表述为独立
+代理链合规认证；既有请求 body 过大仍沿用 413 路径。
 
 Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
 门：userinfo、坏百分号编码、坏括号、多冒号歧义和非十进制端口会被拒绝；

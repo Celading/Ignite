@@ -8,6 +8,8 @@ public enum SocketHttp11HeadErrorCode <: Equatable<SocketHttp11HeadErrorCode> & 
     | UnsupportedVersion
     | MalformedHeader
     | InvalidHeaderName
+    | RequestTargetTooLong
+    | HeaderFieldsTooLarge
 
     public operator func ==(right: SocketHttp11HeadErrorCode): Bool {
         ordinalValue() == right.ordinalValue()
@@ -24,6 +26,8 @@ public enum SocketHttp11HeadErrorCode <: Equatable<SocketHttp11HeadErrorCode> & 
             case UnsupportedVersion => 2
             case MalformedHeader => 3
             case InvalidHeaderName => 4
+            case RequestTargetTooLong => 5
+            case HeaderFieldsTooLarge => 6
         }
     }
 
@@ -34,6 +38,8 @@ public enum SocketHttp11HeadErrorCode <: Equatable<SocketHttp11HeadErrorCode> & 
             case UnsupportedVersion => "UNSUPPORTED_VERSION"
             case MalformedHeader => "MALFORMED_HEADER"
             case InvalidHeaderName => "INVALID_HEADER_NAME"
+            case RequestTargetTooLong => "REQUEST_TARGET_TOO_LONG"
+            case HeaderFieldsTooLarge => "HEADER_FIELDS_TOO_LARGE"
         }
     }
 }
@@ -115,19 +121,11 @@ public func tryParseSocketHttp11RequestHead(
     if (headStart < 0) {
         if (bytes.size > option.maxHeaderBytes) {
             throw SocketHttp11HeadException(
-                SocketHttp11HeadErrorCode.LimitExceeded,
+                SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
                 "HTTP/1.1 request head exceeds configured byte limit before terminator"
             )
         }
         return None
-    }
-
-    let consumedBytes = headStart + 4
-    if (consumedBytes > option.maxHeaderBytes) {
-        throw SocketHttp11HeadException(
-            SocketHttp11HeadErrorCode.LimitExceeded,
-            "HTTP/1.1 request head exceeds configured byte limit"
-        )
     }
 
     let headText = decodeSocketHttp11HeadText(bytes, headStart)
@@ -140,8 +138,16 @@ public func tryParseSocketHttp11RequestHead(
     }
     if (requestLineEnd > option.maxRequestLineBytes) {
         throw SocketHttp11HeadException(
-            SocketHttp11HeadErrorCode.LimitExceeded,
+            SocketHttp11HeadErrorCode.RequestTargetTooLong,
             "HTTP/1.1 request line exceeds configured byte limit"
+        )
+    }
+
+    let consumedBytes = headStart + 4
+    if (consumedBytes > option.maxHeaderBytes) {
+        throw SocketHttp11HeadException(
+            SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
+            "HTTP/1.1 request head exceeds configured byte limit"
         )
     }
 
@@ -197,7 +203,7 @@ public func tryParseSocketHttp11RequestHead(
         }
         if (headers.size >= option.maxHeaderCount) {
             throw SocketHttp11HeadException(
-                SocketHttp11HeadErrorCode.LimitExceeded,
+                SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
                 "HTTP/1.1 header count exceeds configured limit"
             )
         }
