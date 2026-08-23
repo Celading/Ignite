@@ -38,6 +38,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
     | UriTooLong
     | HeaderFieldsTooLarge
     | HttpVersionNotSupported
+    | RequestTimeout
 
     public operator func ==(right: SocketServerEngineShellRequestRejectionKind): Bool {
         ordinalValue() == right.ordinalValue()
@@ -53,6 +54,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
             case UriTooLong => 1
             case HeaderFieldsTooLarge => 2
             case HttpVersionNotSupported => 3
+            case RequestTimeout => 4
         }
     }
 
@@ -62,6 +64,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
             case UriTooLong => "URI_TOO_LONG"
             case HeaderFieldsTooLarge => "HEADER_FIELDS_TOO_LARGE"
             case HttpVersionNotSupported => "HTTP_VERSION_NOT_SUPPORTED"
+            case RequestTimeout => "REQUEST_TIMEOUT"
         }
     }
 }
@@ -818,7 +821,14 @@ func serveSocketServerEngineShellSocketTurns(
         var requestStarted = false
         try {
             socket.readTimeout = Some(option.readHeaderTimeout)
-            let request = readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
+            let request = try {
+                readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
+            } catch (e: SocketTimeoutException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.RequestTimeout,
+                    e.message
+                )
+            }
             if (keepAliveWaitActive) {
                 control.keepAliveWaitFinished()
                 keepAliveWaitActive = false
@@ -972,6 +982,8 @@ func writeSocketServerEngineShellRequestRejectionResponse(
             "431 Request Header Fields Too Large"
         case SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported =>
             "505 HTTP Version Not Supported"
+        case SocketServerEngineShellRequestRejectionKind.RequestTimeout =>
+            "408 Request Timeout"
     }
     socket.write(
         (

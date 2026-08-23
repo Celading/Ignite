@@ -227,6 +227,14 @@ public class SocketServerEngineShellInternalTestSuite {
     @TestCase
     public func testRequestRejectionClassifierPreservesStatusTaxonomyAndInternalState(): Unit {
         @Assert(
+            SocketServerEngineShellRequestRejectionKind.RequestTimeout.ordinalValue(),
+            Int64(4)
+        )
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.RequestTimeout.toString(),
+            "REQUEST_TIMEOUT"
+        )
+        @Assert(
             socketServerEngineShellHeadFailureRejectionKind(
                 SocketHttp11HeadException(
                     SocketHttp11HeadErrorCode.MalformedHeader,

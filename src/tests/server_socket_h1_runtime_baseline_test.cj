@@ -573,8 +573,9 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
         var config = Config(enableNetworkChangeNotice: false)
         config.readHeaderTimeout = Duration.millisecond * 100
         let app = App(config: config)
+        let observation = SocketH1RuntimeBaselineMiddlewareObservation()
         app.get("/after-header-timeout", { ctx =>
-            let _ = ctx.sendString("alive")
+            let _ = ctx.sendString(observation.nextLiveBody())
         })
 
         let serverFuture = spawn {
@@ -587,15 +588,16 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             try {
                 stalled.readTimeout = Some(Duration.second)
                 stalled.write("GET /never-finished HTTP/1.1\r\nHost: example.com".toArray())
-                sleep(Duration.millisecond * 250)
-                let buf = Array<UInt8>(16, repeat: 0)
-                var closedAfterTimeout = false
-                try {
-                    closedAfterTimeout = stalled.read(buf) <= 0
-                } catch (_: Exception) {
-                    closedAfterTimeout = true
-                }
-                @Assert(closedAfterTimeout, true)
+                let timeoutResponse = readSocketH1RuntimeBaselineUntil(
+                    stalled,
+                    "\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(
+                    timeoutResponse,
+                    "HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                @Assert(observation.handlerRuns(), 0)
             } finally {
                 if (!stalled.isClosed()) {
                     stalled.close()
@@ -608,7 +610,8 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
                 "GET /after-header-timeout HTTP/1.1\r\nHost: example.com\r\n\r\n"
             )
             @Assert(socketH1RuntimeBaselineContains(accepted, "HTTP/1.1 200 OK"), true)
-            @Assert(socketH1RuntimeBaselineContains(accepted, "\r\n\r\nalive"), true)
+            @Assert(accepted.endsWith("live-body-1"), true)
+            @Assert(observation.handlerRuns(), 1)
         } finally {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
