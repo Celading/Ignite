@@ -147,6 +147,14 @@ native H2 preview 已经具备：
 - 公开 RestClient 多路并发 response lease
 - H2 extended CONNECT WebSocket
 
+## Native H1 请求头安全边界
+
+默认 Native H1 只接受带有一个非空 `Host` 的 HTTP/1.1 请求。缺失、重复、
+逗号合并的 Host，以及字段值中的 NUL、DEL 和其他禁用控制字节，都会在进入
+App 路由前关闭当前连接；普通字段值两侧的水平制表空白仍按既有规则收敛。
+当前没有为这类解析拒绝承诺固定的 `400` 响应体，也不把同栈回归表述为独立
+代理链合规认证。
+
 ## 流式 JSON
 
 传统接口仍然适合小对象：

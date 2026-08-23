@@ -766,6 +766,47 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
             shutdownServerEngineAbstractionApp(app, serverFuture)
         }
     }
+
+    @TestCase
+    public func testDefaultNativeH1ContainsAmbiguousHostWithoutStoppingListener(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let observation = SocketH1RuntimeBaselineMiddlewareObservation()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/authority-safe", { ctx =>
+            let _ = ctx.sendString(observation.nextLiveBody())
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let missingHostResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /authority-safe HTTP/1.1\r\nConnection: close\r\n\r\n"
+            )
+            let duplicateHostResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /authority-safe HTTP/1.1\r\nHost: first.example\r\nHost: second.example\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(missingHostResponse, "")
+            @Assert(duplicateHostResponse, "")
+            @Assert(observation.handlerRuns(), 0)
+
+            let validResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /authority-safe HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(socketH1RuntimeBaselineContains(validResponse, "HTTP/1.1 200 OK"), true)
+            @Assert(validResponse.endsWith("live-body-1"), true)
+            @Assert(observation.handlerRuns(), 1)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
 }
 
 func socketH1RuntimeBaselineRepeatedBody(part: String, count: Int64): String {

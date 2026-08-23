@@ -218,20 +218,78 @@ public func tryParseSocketHttp11RequestHead(
             )
         }
 
-        let value = headText[colon + 1..lineEnd].trimAscii()
+        let rawValue = headText[colon + 1..lineEnd]
+        validateSocketHttp11RequestHeaderValue(rawValue)
+        let value = rawValue.trimAscii()
         headers.add(SocketHttp11Header(normalizeSocketHttp11HeaderName(name), value))
         lineStart = if (lineEnd < headText.size) { lineEnd + 2 } else { headText.size }
     }
+
+    let parsedHeaders = headers.toArray()
+    validateSocketHttp11RequestHost(parsedHeaders)
 
     Some(
         SocketHttp11RequestHead(
             method,
             target,
             version,
-            headers.toArray(),
+            parsedHeaders,
             consumedBytes
         )
     )
+}
+
+func validateSocketHttp11RequestHeaderValue(value: String): Unit {
+    for (byte in value.toArray()) {
+        if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
+            throw SocketHttp11HeadException(
+                SocketHttp11HeadErrorCode.MalformedHeader,
+                "HTTP/1.1 request header value contains a forbidden control byte"
+            )
+        }
+    }
+}
+
+func validateSocketHttp11RequestHost(headers: Array<SocketHttp11Header>): Unit {
+    var hostCount: Int64 = 0
+    var hostValue: String = ""
+    for (header in headers) {
+        if (header.name == "host") {
+            hostCount += 1
+            hostValue = header.value
+        }
+    }
+    if (hostCount == 0) {
+        throw SocketHttp11HeadException(
+            SocketHttp11HeadErrorCode.MalformedHeader,
+            "HTTP/1.1 requests require exactly one Host header"
+        )
+    }
+    if (hostCount > 1) {
+        throw SocketHttp11HeadException(
+            SocketHttp11HeadErrorCode.MalformedHeader,
+            "HTTP/1.1 requests reject multiple Host headers"
+        )
+    }
+    if (!isSocketHttp11HostValueValid(hostValue)) {
+        throw SocketHttp11HeadException(
+            SocketHttp11HeadErrorCode.MalformedHeader,
+            "HTTP/1.1 Host must be one non-empty authority without whitespace or comma joining"
+        )
+    }
+}
+
+func isSocketHttp11HostValueValid(value: String): Bool {
+    let raw = value.trimAscii()
+    if (raw.size == 0) {
+        return false
+    }
+    for (byte in raw.toArray()) {
+        if (byte <= UInt8(32) || byte == UInt8(44) || byte == UInt8(127)) {
+            return false
+        }
+    }
+    true
 }
 
 func cloneSocketHttp11Headers(headers: Array<SocketHttp11Header>): Array<SocketHttp11Header> {

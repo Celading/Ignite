@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` The default Native H1 path now requires exactly one non-empty Host per HTTP/1.1 request and rejects comma-joined authority plus forbidden control bytes in request field values
+- `=Boundary` Malformed requests close their current connection before App dispatch; this does not add a synthetic 400-response contract or claim independent proxy-chain certification
 - `+Feature` Explicit cleartext and Native TLS H2 sessions can opt into bounded pre-response broken-transport replay for idempotent buffered requests through `sendWithRetry(..., reconnectOnConnectionFailure: true)`, then continue using the replacement session
 - `=Boundary` Reconnect requires an idle session and remains off by default; active leases, one-pass/non-idempotent requests, and response-body failures after a head are never migrated or replayed
 - `+Feature` Add `ResponseTransportTransformFactory`, `Ctx.registerResponseTransportTransform(...)`, and `responseTransportTransformMiddleware(...)` so plain `transportWriter()` calls can compose fresh stateful transforms in response-onion order
