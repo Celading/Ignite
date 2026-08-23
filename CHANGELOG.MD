@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+性能` 可选 buffered 压缩现在默认要求至少 `64` bytes 的净节省；微小收益回退 identity，显著收益仍编码，`minSavingsBytes` 可显式调整
+- `=边界` identity 被拒绝时仍优先满足协议要求；该策略不翻转动态 Brotli/Zstd 默认，也不宣称通用熵编码完成
 - `+安全` 显式 Native H1 Client 现在只接受 `100..599` 的有效 HTTP 状态码；普通 REST 路径收到 `101 Switching Protocols` 时会在响应体暴露前失败并淘汰该连接
 - `=边界` cleartext 与 Native TLS H1 共用该状态/Upgrade 收敛；本次不新增升级后传输所有权、WebSocket API，也不宣称完整 HTTP 互操作认证
 - `+安全` 显式 Native H1 Client 现在会校验 chunked 响应 trailer 的字段行、字段名与字段值，并对完整 trailer 区施加 65536-byte 累计上限；失败发生在连接归池之前

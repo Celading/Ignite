@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Performance` Optional buffered compression now requires at least `64` bytes of net savings by default; marginal gains fall back to identity, material gains stay encoded, and `minSavingsBytes` is configurable
+- `=Boundary` Mandatory coding still wins when identity is refused; this policy does not enable dynamic Brotli/Zstd by default or claim general entropy coding
 - `+Security` The explicit Native H1 client now accepts only valid HTTP status codes in `100..599`; an ordinary REST path fails before body exposure and retires the connection when it receives `101 Switching Protocols`
 - `=Boundary` Cleartext and Native TLS H1 share this status/Upgrade containment; this does not add upgraded-transport ownership, a WebSocket API, or complete HTTP interoperability certification
 - `+Security` The explicit Native H1 client now validates chunked response trailer lines, names, and values under a 65536-byte aggregate trailer budget before a connection can return to its pool

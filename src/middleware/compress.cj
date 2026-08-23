@@ -34,6 +34,8 @@ public class CompressConfig {
     public var setVaryHeader: Bool = true
     /// Skip compression when compressed payload is not smaller than original.
     public var skipIfNoGain: Bool = true
+    /// Minimum net byte saving required for optional buffered compression.
+    public var minSavingsBytes: Int64 = 64
 
     public init(
         minBytes!: Int64 = 1024,
@@ -45,7 +47,8 @@ public class CompressConfig {
         level!: CompressLevel = CompressLevel.DefaultCompression,
         bufferSize!: Int64 = 2048,
         setVaryHeader!: Bool = true,
-        skipIfNoGain!: Bool = true
+        skipIfNoGain!: Bool = true,
+        minSavingsBytes!: Int64 = 64
     ) {
         this.minBytes = minBytes
         this.preferGzip = preferGzip
@@ -57,6 +60,7 @@ public class CompressConfig {
         this.bufferSize = bufferSize
         this.setVaryHeader = setVaryHeader
         this.skipIfNoGain = skipIfNoGain
+        this.minSavingsBytes = if (minSavingsBytes < 0) { 0 } else { minSavingsBytes }
     }
 }
 
@@ -64,6 +68,7 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
     let minBytes = if (config.minBytes < 0) { 0 } else { config.minBytes }
     let bufferSize = normalizeBufferSize(config.bufferSize)
     let nativeLevel = nativeCompressionLevel(config.level)
+    let minSavingsBytes = if (config.minSavingsBytes < 0) { 0 } else { config.minSavingsBytes }
 
     { ctx: Ctx =>
         let negotiation = negotiateEncoding(ctx.header("accept-encoding") ?? "", config)
@@ -126,7 +131,8 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
                 return
             }
 
-            if (!encodingMandatory && config.skipIfNoGain && compressed.size >= rawBytes.size) {
+            if (!encodingMandatory && config.skipIfNoGain &&
+                !compressionMeetsMinimumSavings(rawBytes.size, compressed.size, minSavingsBytes)) {
                 return
             }
 
@@ -138,6 +144,15 @@ public func compressMiddleware(config!: CompressConfig = CompressConfig()): Hand
             let _ = ctx.send(compressed)
         }
     }
+}
+
+func compressionMeetsMinimumSavings(
+    rawSize: Int64,
+    compressedSize: Int64,
+    minSavingsBytes: Int64
+): Bool {
+    let savings = rawSize - compressedSize
+    savings > 0 && savings >= minSavingsBytes
 }
 
 func shouldSkipStatus(status: UInt16): Bool {
