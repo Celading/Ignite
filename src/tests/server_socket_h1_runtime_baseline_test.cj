@@ -618,6 +618,61 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
     }
 
     @TestCase
+    public func testDefaultNativeH1AppliesBodyTimeoutWithoutStoppingAcceptLoop(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        var config = Config(enableNetworkChangeNotice: false)
+        config.readTimeout = Duration.millisecond * 100
+        let app = App(config: config)
+        let observation = SocketH1RuntimeBaselineMiddlewareObservation()
+        app.post("/never-finished-body", { ctx =>
+            let _ = ctx.sendString(observation.nextLiveBody())
+        })
+        app.get("/after-body-timeout", { ctx =>
+            let _ = ctx.sendString(observation.nextLiveBody())
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let stalled = TcpSocket(IPSocketAddress.parse("127.0.0.1:${port}"))
+            stalled.connect()
+            try {
+                stalled.readTimeout = Some(Duration.second)
+                stalled.write(
+                    "POST /never-finished-body HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nab".toArray()
+                )
+                let timeoutResponse = readSocketH1RuntimeBaselineUntil(
+                    stalled,
+                    "\r\n\r\n",
+                    Duration.second
+                )
+                @Assert(
+                    timeoutResponse,
+                    "HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                @Assert(observation.handlerRuns(), 0)
+            } finally {
+                if (!stalled.isClosed()) {
+                    stalled.close()
+                }
+            }
+
+            let accepted = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /after-body-timeout HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            @Assert(socketH1RuntimeBaselineContains(accepted, "HTTP/1.1 200 OK"), true)
+            @Assert(accepted.endsWith("live-body-1"), true)
+            @Assert(observation.handlerRuns(), 1)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testDefaultNativeH1StreamsFirstChunkBeforeInputCompletes(): Unit {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let stream = SocketH1RuntimeBaselineDelayedStream()

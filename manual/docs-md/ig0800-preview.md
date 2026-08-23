@@ -183,12 +183,13 @@ request-head 的 typed 状态分类还会把请求目标/请求行超限映射�
 Too Large`，并把不支持的 HTTP 版本映射为 `505 HTTP Version Not Supported`。
 这些响应同样关闭当前连接，但不停止监听器处理后续有效连接。
 
-如果 `readHeaderTimeout` 到期时请求头仍不完整，默认 Native H1 会返回固定无正文
-`408 Request Timeout`，关闭该连接并保留监听器继续接收后续连接。
+如果 `readHeaderTimeout` 到期时请求头仍不完整，或 `readTimeout` 到期时请求体仍
+不完整，默认 Native H1 会返回固定无正文 `408 Request Timeout`，关闭该连接并
+保留监听器继续接收后续连接。
 
-固定 400/408/414/431/505 不把未完整 EOF、peer abort、body-stage timeout 或
-handler 异常转换为同类响应。当前没有自定义错误页 API，也不把同栈回归表述为独立
-代理链合规认证；既有请求 body 过大仍沿用 413 路径。
+固定 400/408/414/431/505 不把未完整 EOF、peer abort、malformed body 或 handler
+异常转换为同类响应。当前没有自定义错误页 API，也不把同栈回归表述为独立代理链
+合规认证；既有请求 body 过大仍沿用 413 路径。
 
 Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
 门：userinfo、坏百分号编码、坏括号、多冒号歧义和非十进制端口会被拒绝；

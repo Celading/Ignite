@@ -863,6 +863,11 @@ func serveSocketServerEngineShellSocketTurns(
                 requestStarted = false
                 moreTurns = false
                 continue
+            } catch (e: SocketTimeoutException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.RequestTimeout,
+                    e.message
+                )
             }
             let carrier = SocketServerEngineShellCurrentRequestCarrier(
                 request,

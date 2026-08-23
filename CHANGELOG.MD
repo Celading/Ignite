@@ -5,8 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
-- `+安全` 默认 Native H1 现在会在 `readHeaderTimeout` 到期而请求头仍不完整时返回固定无正文 `408 Request Timeout`，随后关闭该连接并保持监听器继续服务
-- `=边界` 固定 408 只覆盖 request-head 等待阶段；未完整 EOF、peer abort、body-stage timeout、handler 异常和自定义错误体仍保持独立
+- `+安全` 默认 Native H1 现在会在 `readHeaderTimeout` 到期而请求头仍不完整，或 `readTimeout` 到期而请求体仍不完整时，返回固定无正文 `408 Request Timeout`，随后关闭该连接并保持监听器继续服务
+- `=边界` 固定 408 只覆盖 request-head 与 request-body 各自明确的等待阶段；未完整 EOF、peer abort、malformed body、handler 异常和自定义错误体仍保持独立
 - `+安全` 默认 Native H1 现在通过 typed request-head 分类返回固定无正文 `414 URI Too Long`、`431 Request Header Fields Too Large` 或 `505 HTTP Version Not Supported`，随后关闭该连接并保持监听器继续服务
 - `=边界` 414 对应请求目标/请求行上限，431 对应请求头字节或字段数上限，505 对应不支持的 HTTP 版本；当前不提供自定义错误体，也不扩展到 body-stage 错误策略
 - `+安全` 默认 Native H1 现在会对已完整接收、被请求头/session 或 request-target dispatch seed 明确拒绝的坏请求返回固定无正文 `400 Bad Request`，随后关闭该连接
