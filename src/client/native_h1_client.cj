@@ -607,7 +607,7 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
         throw Exception("native H1 response version must be HTTP/1.1")
     }
     let statusValue = parseNativeH1Decimal(statusParts[1])
-    if (statusValue < 100 || statusValue > 999) {
+    if (statusValue < 100 || statusValue > 599) {
         throw Exception("native H1 response status is invalid")
     }
     let headers = HttpHeaders()
@@ -709,9 +709,10 @@ func readNativeH1Response(
         parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
     }
     let statusValue = parsedHead.status
+    validateNativeH1RestResponseStatus(statusValue)
     let headers = parsedHead.headers
     let framing = resolveNativeH1ResponseFraming(headers)
-    let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" && statusValue != 101 &&
+    let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" &&
         !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {
@@ -754,6 +755,12 @@ func readNativeH1Response(
         stream,
         closeHook: { => stream.close() }
     )
+}
+
+func validateNativeH1RestResponseStatus(status: Int64): Unit {
+    if (status == 101) {
+        throw Exception("native H1 response protocol switch is unsupported")
+    }
 }
 
 func resolveNativeH1ResponseFraming(headers: HttpHeaders): NativeH1ResponseFraming {

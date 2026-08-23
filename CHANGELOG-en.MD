@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` The explicit Native H1 client now accepts only valid HTTP status codes in `100..599`; an ordinary REST path fails before body exposure and retires the connection when it receives `101 Switching Protocols`
+- `=Boundary` Cleartext and Native TLS H1 share this status/Upgrade containment; this does not add upgraded-transport ownership, a WebSocket API, or complete HTTP interoperability certification
 - `+Security` The explicit Native H1 client now validates chunked response trailer lines, names, and values under a 65536-byte aggregate trailer budget before a connection can return to its pool
 - `=Boundary` Cleartext and Native TLS H1 share trailer validation and budgeting; malformed trailers retire the connection without adding a public trailer-access API or claiming complete HTTP/proxy certification
 - `+Security` The explicit Native H1 client now requires an `HTTP/1.1` response version and rejects colonless field lines, invalid field names, plus NUL, DEL, and other forbidden field-value controls before exposing a response body

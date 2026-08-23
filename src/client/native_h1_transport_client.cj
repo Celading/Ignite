@@ -324,9 +324,10 @@ func readNativeH1TransportResponse(
         parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
     }
     let statusValue = parsedHead.status
+    validateNativeH1RestResponseStatus(statusValue)
     let headers: HttpHeaders = parsedHead.headers
     let framing = resolveNativeH1ResponseFraming(headers)
-    var responseReusable = reusable && statusValue != 101 &&
+    var responseReusable = reusable &&
         !nativeH1HeaderContains(headers, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" || statusValue == 204 || statusValue == 304) {
         responseReusable = responseReusable && readResult.prefetchedBody.size == 0

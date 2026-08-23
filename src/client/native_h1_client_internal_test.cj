@@ -95,6 +95,11 @@ public class NativeH1ClientInternalTestSuite {
         @Assert(validValues[0], "value")
 
         assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 600 Internal Status\r\nContent-Length: 0".toArray(),
+            "native H1 response status is invalid"
+        )
+
+        assertNativeH1ResponseHeadRejected(
             "HTTP/1.0 200 OK\r\nContent-Length: 0".toArray(),
             "native H1 response version must be HTTP/1.1"
         )

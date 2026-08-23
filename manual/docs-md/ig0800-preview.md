@@ -103,6 +103,12 @@ chunked 响应的 trailer 也会在 body drain 完成、连接可归池之前复
 或超预算都会淘汰当前 cleartext / Native TLS H1 连接；当前只做校验与连接收敛，
 不新增公开 trailer 访问 API，也不宣称完整代理矩阵或 HTTP 合规认证。
 
+共享响应解析器还会把有效状态范围限制为 `100..599`。普通 REST H1 路径不会
+把 `101 Switching Protocols` 伪装成带普通 body 的响应：它会在暴露升级后字节前
+失败并淘汰当前 cleartext / Native TLS 连接，后续同源请求必须经过新连接或新
+TLS 握手恢复。该收敛不提供升级后传输所有权或 WebSocket API，也不代表完整
+HTTP 互操作认证。
+
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
 
