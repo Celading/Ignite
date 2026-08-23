@@ -88,6 +88,9 @@ public class NativeH2Header {
 public type NativeH2SingleStreamHandler =
     (NativeH2SingleStreamRequest) -> NativeH2SingleStreamResponse
 
+type NativeH2LiveSingleStreamHandler =
+    (NativeH2SingleStreamRequest, NativeH2ResponseHeadCommit) -> NativeH2SingleStreamResponse
+
 public class NativeH2ConnectionControl {
     let closeRequested = AtomicBool(false)
     let drainRequested = AtomicBool(false)
@@ -473,15 +476,24 @@ class NativeH2PendingHandler {
     let future: Future<NativeH2SingleStreamResponse>
     let requestMethod: String
     var sendWindow: Int64
+    let responseHeadCommit: ?NativeH2ResponseHeadCommit
 
     init(
         future: Future<NativeH2SingleStreamResponse>,
         requestMethod: String,
-        sendWindow: Int64
+        sendWindow: Int64,
+        responseHeadCommit!: ?NativeH2ResponseHeadCommit = None
     ) {
         this.future = future
         this.requestMethod = requestMethod
         this.sendWindow = sendWindow
+        this.responseHeadCommit = responseHeadCommit
+    }
+
+    func failResponseHeadCommit(message: String): Unit {
+        if (let Some(commit) <- responseHeadCommit) {
+            commit.markFailed(message)
+        }
     }
 }
 
@@ -508,6 +520,18 @@ public func serveNativeH2SingleStreamTransport(
     maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
 ): Unit {
     serveNativeH2TransportConnection(
+        transport, handler,
+        maxCompletedStreams: 1,
+        maxRequestBodySize: maxRequestBodySize
+    )
+}
+
+func serveNativeH2LiveSingleStreamTransport(
+    transport: NativeH2DuplexTransport,
+    handler: NativeH2LiveSingleStreamHandler,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+): Unit {
+    serveNativeH2LiveTransportConnection(
         transport, handler,
         maxCompletedStreams: 1,
         maxRequestBodySize: maxRequestBodySize
@@ -559,12 +583,39 @@ public func serveNativeH2TransportConnection(
     }
 }
 
+func serveNativeH2LiveTransportConnection(
+    socket: NativeH2DuplexTransport,
+    handler: NativeH2LiveSingleStreamHandler,
+    maxCompletedStreams!: Int64 = 0,
+    control!: ?NativeH2ConnectionControl = None,
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+): Unit {
+    if (let Some(connectionControl) <- control) {
+        connectionControl.connectionOpened()
+    }
+    try {
+        nativeH2ServeTransportConnection(
+            socket,
+            { _ => throw Exception("native H2 live handler fallback is unreachable") },
+            maxCompletedStreams: maxCompletedStreams,
+            control: control,
+            maxRequestBodySize: maxRequestBodySize,
+            liveHandler: Some(handler)
+        )
+    } finally {
+        if (let Some(connectionControl) <- control) {
+            connectionControl.connectionClosed()
+        }
+    }
+}
+
 func nativeH2ServeTransportConnection(
     socket: NativeH2DuplexTransport,
     handler: NativeH2SingleStreamHandler,
     maxCompletedStreams!: Int64 = 0,
     control!: ?NativeH2ConnectionControl = None,
-    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY
+    maxRequestBodySize!: Int64 = NATIVE_H2_MAX_FIRST_SLICE_BODY,
+    liveHandler!: ?NativeH2LiveSingleStreamHandler = None
 ): Unit {
     if (maxCompletedStreams < 0) {
         throw Exception("native H2 maxCompletedStreams cannot be negative")
@@ -621,6 +672,12 @@ func nativeH2ServeTransportConnection(
     try {
         while (maxCompletedStreams == 0 || completedStreams < maxCompletedStreams ||
             handlers.size > 0 || outbound.size > 0 || discardedRequestStreams.size > 0) {
+            nativeH2HarvestCommittedResponseHeads(
+                socket,
+                handlers,
+                peerSettings,
+                hpackEncoder
+            )
             nativeH2HarvestCompletedHandlers(
                 socket,
                 handlers,
@@ -748,7 +805,7 @@ func nativeH2ServeTransportConnection(
                             hpackDecoder.decodeRequestTrailers(pending.headerBlock())
                         )
                         nativeH2CompleteInboundStream(
-                            socket, streams, handlers, stream, handler
+                            socket, streams, handlers, stream, handler, liveHandler
                         )
                         completedStreams += 1
                     } else {
@@ -764,7 +821,7 @@ func nativeH2ServeTransportConnection(
                             streams.add(pending.streamId, stream)
                             if (pending.endStream) {
                                 nativeH2CompleteInboundStream(
-                                    socket, streams, handlers, stream, handler
+                                    socket, streams, handlers, stream, handler, liveHandler
                                 )
                                 completedStreams += 1
                             }
@@ -807,7 +864,7 @@ func nativeH2ServeTransportConnection(
                     if ((frame.flags & UInt8(0x4)) != UInt8(0)) {
                         stream.setTrailers(hpackDecoder.decodeRequestTrailers(headerBlock))
                         nativeH2CompleteInboundStream(
-                            socket, streams, handlers, stream, handler
+                            socket, streams, handlers, stream, handler, liveHandler
                         )
                         completedStreams += 1
                     } else {
@@ -861,7 +918,7 @@ func nativeH2ServeTransportConnection(
                         streams.add(frame.streamId, stream)
                         if (endStream) {
                             nativeH2CompleteInboundStream(
-                                socket, streams, handlers, stream, handler
+                                socket, streams, handlers, stream, handler, liveHandler
                             )
                             completedStreams += 1
                         }
@@ -914,7 +971,7 @@ func nativeH2ServeTransportConnection(
                 )
                 if (endStream) {
                     nativeH2CompleteInboundStream(
-                        socket, streams, handlers, stream, handler
+                        socket, streams, handlers, stream, handler, liveHandler
                     )
                     completedStreams += 1
                 }
@@ -992,6 +1049,7 @@ func nativeH2ServeTransportConnection(
                 let _ = streams.remove(frame.streamId)
                 let _ = discardedRequestStreams.remove(frame.streamId)
                 if (let Some(pending) <- handlers.remove(frame.streamId)) {
+                    pending.failResponseHeadCommit("native H2 stream reset before response HEADERS commit")
                     pending.future.cancel()
                 }
                 if (let Some(stream) <- outbound.remove(frame.streamId)) {
@@ -1052,6 +1110,7 @@ func nativeH2ServeTransportConnection(
         throw e
     } finally {
         for ((_streamId, pending) in handlers) {
+            pending.failResponseHeadCommit("native H2 connection closed before response HEADERS commit")
             pending.future.cancel()
         }
         for ((_streamId, stream) in outbound) {
@@ -1207,7 +1266,8 @@ func nativeH2CompleteInboundStream(
     streams: HashMap<Int64, NativeH2InboundStream>,
     handlers: HashMap<Int64, NativeH2PendingHandler>,
     stream: NativeH2InboundStream,
-    handler: NativeH2SingleStreamHandler
+    handler: NativeH2SingleStreamHandler,
+    liveHandler: ?NativeH2LiveSingleStreamHandler
 ): Unit {
     if (!stream.contentLengthMatches()) {
         nativeH2WriteFrame(
@@ -1221,14 +1281,67 @@ func nativeH2CompleteInboundStream(
         return
     }
     let request = stream.request()
+    let responseHeadCommit: ?NativeH2ResponseHeadCommit = if (liveHandler.isSome()) {
+        Some(NativeH2ResponseHeadCommit())
+    } else {
+        None
+    }
     let future = spawn {
-        handler(request)
+        if (let Some(live) <- liveHandler) {
+            live(request, responseHeadCommit ??
+                throw Exception("native H2 live response head state is missing"))
+        } else {
+            handler(request)
+        }
     }
     handlers.add(
         stream.streamId,
-        NativeH2PendingHandler(future, request.method, stream.sendWindow)
+        NativeH2PendingHandler(
+            future,
+            request.method,
+            stream.sendWindow,
+            responseHeadCommit: responseHeadCommit
+        )
     )
     let _ = streams.remove(stream.streamId)
+}
+
+func nativeH2HarvestCommittedResponseHeads(
+    socket: NativeH2DuplexTransport,
+    handlers: HashMap<Int64, NativeH2PendingHandler>,
+    peerSettings: NativeH2PeerSettings,
+    hpackEncoder: NativeH2HpackEncoderState
+): Unit {
+    for ((streamId, pending) in handlers) {
+        if (let Some(commit) <- pending.responseHeadCommit) {
+            if (let Some(head) <- commit.pendingHead()) {
+                let bodyForbidden = nativeH2ResponseBodyForbidden(
+                    pending.requestMethod,
+                    head.status
+                )
+                try {
+                    nativeH2WriteFrame(
+                        socket,
+                        NativeH2Frame(
+                            UInt8(0x1),
+                            if (bodyForbidden) { UInt8(0x5) } else { UInt8(0x4) },
+                            streamId,
+                            nativeH2EncodeResponseHead(
+                                head.status,
+                                head.headers,
+                                peerSettings.maxHeaderListSize,
+                                hpackEncoder
+                            )
+                        )
+                    )
+                    commit.markWritten()
+                } catch (e: Exception) {
+                    commit.markFailed(e.message)
+                    throw e
+                }
+            }
+        }
+    }
 }
 
 func nativeH2HarvestCompletedHandlers(
@@ -1245,19 +1358,23 @@ func nativeH2HarvestCompletedHandlers(
                 pending.requestMethod,
                 response.status
             )
-            nativeH2WriteFrame(
-                socket,
-                NativeH2Frame(
-                    UInt8(0x1),
-                    if (bodyForbidden) { UInt8(0x5) } else { UInt8(0x4) },
-                    streamId,
-                    nativeH2EncodeResponseHead(
-                        response.status, response.headers,
-                        peerSettings.maxHeaderListSize,
-                        hpackEncoder
+            let responseHeadAlreadyWritten = if (let Some(commit) <-
+                pending.responseHeadCommit) { commit.written() } else { false }
+            if (!responseHeadAlreadyWritten) {
+                nativeH2WriteFrame(
+                    socket,
+                    NativeH2Frame(
+                        UInt8(0x1),
+                        if (bodyForbidden) { UInt8(0x5) } else { UInt8(0x4) },
+                        streamId,
+                        nativeH2EncodeResponseHead(
+                            response.status, response.headers,
+                            peerSettings.maxHeaderListSize,
+                            hpackEncoder
+                        )
                     )
                 )
-            )
+            }
             if (!bodyForbidden) {
                 outbound.add(
                     streamId,
@@ -1444,6 +1561,9 @@ func nativeH2ResetStreamForFlowError(
     )
     let _ = streams.remove(streamId)
     if (let Some(pending) <- handlers.remove(streamId)) {
+        pending.failResponseHeadCommit(
+            "native H2 flow-control reset occurred before response HEADERS commit"
+        )
         pending.future.cancel()
     }
     if (let Some(stream) <- outbound.remove(streamId)) {

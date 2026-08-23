@@ -1,6 +1,12 @@
 package ignite.native_h2
 
-import ignite.{App, CurrentRequestCarrier, ResponseTransportLifecycle, ResponseTransportWriter}
+import ignite.{
+    App,
+    CurrentRequestCarrier,
+    ResponseCommitStateCarrier,
+    ResponseTransportLifecycle,
+    ResponseTransportWriter
+}
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
@@ -12,8 +18,10 @@ public func serveNativeH2SingleStreamApp(
     app: App,
     remoteAddress!: String = ""
 ): Unit {
-    serveNativeH2SingleStream(socket, { request =>
-        let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
+    serveNativeH2LiveSingleStreamTransport(NativeH2TcpTransport(socket), { request, headCommit =>
+        let carrier = NativeH2AppCurrentRequestCarrier(
+            request, remoteAddress, responseHeadCommit: Some(headCommit)
+        )
         app.handleRequest(carrier)
         carrier.response()
     }, maxRequestBodySize: app.config.bodyLimit)
@@ -43,8 +51,10 @@ public func serveNativeH2AppTransportConnection(
     maxCompletedStreams!: Int64 = 0,
     control!: ?NativeH2ConnectionControl = None
 ): Unit {
-    serveNativeH2TransportConnection(transport, { request =>
-        let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
+    serveNativeH2LiveTransportConnection(transport, { request, headCommit =>
+        let carrier = NativeH2AppCurrentRequestCarrier(
+            request, remoteAddress, responseHeadCommit: Some(headCommit)
+        )
         app.handleRequest(carrier)
         carrier.response()
     }, maxCompletedStreams: maxCompletedStreams, control: control,
@@ -61,7 +71,14 @@ func serveTrackedNativeH2AppConnection(
         let carrier = NativeH2AppCurrentRequestCarrier(request, remoteAddress)
         app.handleRequest(carrier)
         carrier.response()
-    }, control: Some(control), maxRequestBodySize: app.config.bodyLimit)
+    }, control: Some(control), maxRequestBodySize: app.config.bodyLimit,
+        liveHandler: Some({ request, headCommit =>
+            let carrier = NativeH2AppCurrentRequestCarrier(
+                request, remoteAddress, responseHeadCommit: Some(headCommit)
+            )
+            app.handleRequest(carrier)
+            carrier.response()
+        }))
 }
 
 class NativeH2AppBytesInputStream <: InputStream {
@@ -100,6 +117,7 @@ class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTr
         if (closed) {
             throw Exception("response transport writer is closed")
         }
+        carrier.commitResponseHead()
         carrier.appendResponseBytes(data)
     }
 
@@ -107,8 +125,7 @@ class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTr
         if (closed) {
             throw Exception("response transport writer is closed")
         }
-        // Native H2 application responses enter the bounded protocol stream
-        // after the handler returns; flush preserves the carrier boundary.
+        carrier.commitResponseHead()
     }
 
     public override func close(): Unit {
@@ -116,7 +133,7 @@ class NativeH2AppResponseTransportWriter <: ResponseTransportWriter & ResponseTr
     }
 }
 
-class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
+class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommitStateCarrier {
     let request: NativeH2SingleStreamRequest
     let remoteAddress: String
     let requestPathValue: String
@@ -127,8 +144,13 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     var responseStatusValue: UInt16 = 200
     var responseBodyValue = ArrayList<UInt8>()
     var responseBodyStreamValue: ?InputStream = None
+    let responseHeadCommit: ?NativeH2ResponseHeadCommit
 
-    init(request: NativeH2SingleStreamRequest, remoteAddress: String) {
+    init(
+        request: NativeH2SingleStreamRequest,
+        remoteAddress: String,
+        responseHeadCommit!: ?NativeH2ResponseHeadCommit = None
+    ) {
         this.request = request
         this.remoteAddress = remoteAddress
         let targetParts = request.path.split("?", 2)
@@ -149,6 +171,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
             trailers.add(trailer.name, trailer.value)
         }
         this.requestTrailersValue = trailers
+        this.responseHeadCommit = responseHeadCommit
     }
 
     public override func rawHttpContext(): HttpContext {
@@ -213,6 +236,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func setResponseStatus(code: UInt16): Unit {
+        ensureResponseMetadataMutable()
         let numeric = Int64(code)
         if (numeric < 200 || numeric > 999) {
             throw Exception("native H2 first slice requires a final response status between 200 and 999")
@@ -221,6 +245,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func setResponseHeader(key: String, value: String): Unit {
+        ensureResponseMetadataMutable()
         let normalized = nativeH2NormalizeAppResponseHeaderName(key)
         nativeH2ValidateHeaderValue(value)
         let values = ArrayList<String>()
@@ -229,6 +254,7 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
     }
 
     public override func addResponseHeaders(headers: HttpHeaders): Unit {
+        ensureResponseMetadataMutable()
         for ((name, values) in headers) {
             for (value in values) {
                 appendResponseHeader(name, value)
@@ -252,21 +278,48 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier {
         responseBodyStreamValue = Some(stream)
     }
 
+    public override func responseCommitted(): Bool {
+        if (let Some(commit) <- responseHeadCommit) {
+            return commit.written()
+        }
+        false
+    }
+
+    func commitResponseHead(): Unit {
+        if (let Some(commit) <- responseHeadCommit) {
+            commit.request(responseStatusValue, responseHeaders())
+            commit.awaitWritten()
+        }
+    }
+
     func response(): NativeH2SingleStreamResponse {
+        let headers = responseHeaders()
+        let stream = responseBodyStreamValue
+        responseBodyStreamValue = None
+        NativeH2SingleStreamResponse(
+            status: responseStatusValue,
+            headers: headers,
+            body: responseBodyValue.toArray(),
+            bodyStream: stream
+        )
+    }
+
+    func responseHeaders(): Array<NativeH2Header> {
         let headers = ArrayList<NativeH2Header>()
         for ((name, values) in responseHeadersValue) {
             for (value in values) {
                 headers.add(NativeH2Header(name, value))
             }
         }
-        let stream = responseBodyStreamValue
-        responseBodyStreamValue = None
-        NativeH2SingleStreamResponse(
-            status: responseStatusValue,
-            headers: headers.toArray(),
-            body: responseBodyValue.toArray(),
-            bodyStream: stream
-        )
+        headers.toArray()
+    }
+
+    func ensureResponseMetadataMutable(): Unit {
+        if (let Some(commit) <- responseHeadCommit) {
+            if (commit.requested()) {
+                throw Exception("native H2 response metadata is frozen after HEADERS commit")
+            }
+        }
     }
 
     func appendResponseHeader(key: String, value: String): Unit {

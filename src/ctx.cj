@@ -495,8 +495,9 @@ public class Ctx {
             }
         }
         let http2Request = isHttp2Protocol(protocol)
-        // H2 response writers are finalized after the handler returns. Reuse the
-        // bounded InputStream path instead of accumulating direct writer calls.
+        // Native H2 can commit response HEADERS during the handler, but direct
+        // writer DATA still settles after handler return. Keep JSON on the
+        // bounded InputStream path until live H2 DATA flow control is owned.
         if (http2Request || currentStreamCompressionPlan(this, None).isSome()) {
             return jsonStream(writerFn)
         }

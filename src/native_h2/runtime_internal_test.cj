@@ -42,6 +42,102 @@ public class NativeH2RuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testAppTransportWriterCommitsHeadersBeforeHandlerReturns(): Unit {
+        let handlerObservedCommit = AtomicBool(false)
+        let middlewareObservedCommit = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use({ ctx =>
+            ctx.next()
+            middlewareObservedCommit.store(ctx.responseCommitted)
+        })
+        app.post("/early-headers", { ctx =>
+            let _ = ctx.status(201).setHeader("x-ignite-live", "headers")
+            let writer = ctx.transportWriter()
+            writer.write("live-body".toArray())
+            handlerObservedCommit.store(ctx.responseCommitted)
+            sleep(Duration.millisecond * 120)
+            closeResponseTransportWriter(writer)
+            handlerReturned.store(true)
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 early HEADERS test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2SingleStreamApp(accepted, app, remoteAddress: "127.0.0.1")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeaders("/early-headers")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+            let decoded = NativeH2HpackDecoderState()
+                .decodeResponseHead(responseHeaders.payload)
+            @Assert(decoded.status, UInt16(201))
+            var liveHeader = ""
+            for (header in decoded.headers) {
+                if (header.name == "x-ignite-live") {
+                    liveHeader = header.value
+                }
+            }
+            @Assert(liveHeader, "headers")
+            for (_ in 0..100) {
+                if (handlerObservedCommit.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(handlerObservedCommit.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(responseData.frameType, UInt8(0x0))
+            @Assert(responseData.flags, UInt8(0x1))
+            @Assert(responseData.streamId, 1)
+            @Assert(String.fromUtf8(responseData.payload), "live-body")
+            @Assert(handlerReturned.load(), true)
+            @Assert(middlewareObservedCommit.load(), true)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
     public func testResetIdleStreamClassifierPreservesImplicitlyClosedStreams(): Unit {
         @Assert(nativeH2ResetReferencesIdleStream(5, 3), true)
         @Assert(nativeH2ResetReferencesIdleStream(2, 3), true)
