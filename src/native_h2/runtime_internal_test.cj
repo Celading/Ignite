@@ -914,24 +914,23 @@ public class NativeH2RuntimeInternalTestSuite {
         @Assert(carrier.requestHeaderValue("accept") ?? "", "*/*")
         var duplicateCount: Int64 = 0
         var duplicateJoined = ""
-        for ((name, values) in carrier.requestHeaders()) {
+        for ((name, value) in carrier.requestHeaderFields()) {
             if (name == "x-dup") {
-                duplicateCount = values.size
-                for (value in values) {
-                    if (duplicateJoined.size > 0) { duplicateJoined += "," }
-                    duplicateJoined += value
-                }
+                duplicateCount += 1
+                if (duplicateJoined.size > 0) { duplicateJoined += "," }
+                duplicateJoined += value
             }
         }
         @Assert(duplicateCount, 2)
         @Assert(duplicateJoined, "one,two")
         var trailerCount: Int64 = 0
-        for ((name, values) in carrier.requestTrailers()) {
+        for ((name, value) in carrier.requestTrailerFields()) {
             if (name == "x-trailer") {
-                trailerCount = values.size
+                let _ = value
+                trailerCount += 1
             }
         }
-        @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
+        @Assert(carrier.requestTrailerValue("x-trailer") ?? "", "first")
         @Assert(trailerCount, 2)
 
         carrier.addResponseHeader("set-cookie", "first=one; Path=/")

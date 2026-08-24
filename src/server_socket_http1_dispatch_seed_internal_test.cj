@@ -81,7 +81,7 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
         )
 
         @Assert(absoluteCarrier.requestHeaderValue("host") ?? "", "target.example:9443")
-        @Assert(absoluteCarrier.requestHeaders().getFirst("host") ?? "", "target.example:9443")
+        @Assert(firstSocketDispatchHeaderValue(absoluteCarrier.requestHeaderFields(), "host") ?? "", "target.example:9443")
 
         let originRequest = openSocketHttp11DispatchSeedTestRequest(
             "GET /health HTTP/1.1\r\nHost: origin.example\r\n\r\n"
@@ -95,7 +95,7 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
         )
 
         @Assert(originCarrier.requestHeaderValue("host") ?? "", "origin.example")
-        @Assert(originCarrier.requestHeaders().getFirst("host") ?? "", "origin.example")
+        @Assert(firstSocketDispatchHeaderValue(originCarrier.requestHeaderFields(), "host") ?? "", "origin.example")
     }
 
     @TestCase
@@ -238,6 +238,19 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
             SocketHttp11DispatchSeedErrorCode.InvalidAuthority
         )
     }
+}
+
+func firstSocketDispatchHeaderValue(
+    fields: Array<(String, String)>,
+    key: String
+): ?String {
+    let normalized = key.trimAscii().toAsciiLower()
+    for ((name, value) in fields) {
+        if (name.trimAscii().toAsciiLower() == normalized) {
+            return Some(value)
+        }
+    }
+    None
 }
 
 func openSocketHttp11DispatchSeedTestRequest(wire: String): SocketHttp11SessionRequest {

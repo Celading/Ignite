@@ -8425,12 +8425,22 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        requestTrailersValue
+    public override func requestTrailerValue(key: String): ?String {
+        requestTrailersValue.getFirst(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestTrailersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -8546,12 +8556,17 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -8664,12 +8679,17 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {

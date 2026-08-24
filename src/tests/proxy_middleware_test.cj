@@ -13,6 +13,59 @@ import std.time.DateTime
 @Test
 public class ProxyMiddlewareTestSuite {
     @TestCase
+    public func testProxyMiddlewarePreservesDuplicateRequestHeaderValues(): Unit {
+        let upstreamPort = choosePort(1852)
+        let proxyPort = choosePort(1853)
+
+        let upstream = App(config: Config())
+        upstream.get("/up/duplicate-fields", { ctx =>
+            var count: Int64 = 0
+            var joined = ""
+            for ((name, value) in ctx.currentRequestCarrier().requestHeaderFields()) {
+                if (name.trimAscii().toAsciiLower() == "x-duplicate") {
+                    count += 1
+                    if (joined.size > 0) {
+                        joined += ","
+                    }
+                    joined += value
+                }
+            }
+            _ = ctx.sendString("count=${count};values=${joined}")
+        })
+
+        let proxy = App(config: Config())
+        proxy.use(proxyMiddleware(
+            ProxyConfig(
+                "http://127.0.0.1:${upstreamPort}",
+                pathRewrite: [("/proxy", "/up")]
+            )
+        ))
+
+        let upstreamFuture = spawn {
+            upstream.listen("127.0.0.1", upstreamPort)
+        }
+        let proxyFuture = spawn {
+            proxy.listen("127.0.0.1", proxyPort)
+        }
+
+        try {
+            let response = sendRawProxyHttpWithRetry(
+                proxyPort,
+                "GET",
+                "/proxy/duplicate-fields",
+                [("x-duplicate", "one"), ("x-duplicate", "two")]
+            )
+            @Assert(response.status, UInt16(200))
+        // stdx normalizes repeated HTTP/1 fields into one comma-joined field.
+        // The proxy contract is that neither value is lost on the wire.
+        @Assert(response.bodyText, "count=1;values=one,two")
+        } finally {
+            shutdownApp(upstream, upstreamFuture)
+            shutdownApp(proxy, proxyFuture)
+        }
+    }
+
+    @TestCase
     public func testProxyMiddlewareStreamsLargeUploadAndPreservesQuery(): Unit {
         let upstreamPort = choosePort(1801)
         let proxyPort = choosePort(1807)

@@ -2110,12 +2110,23 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         request.head.header(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        requestHeadersValue
+    public override func requestHeaderFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestHeadersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {

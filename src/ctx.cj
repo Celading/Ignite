@@ -203,7 +203,7 @@ public class Ctx {
     }
 
     public func trailer(key: String): ?String {
-        _currentRequestCarrier.requestTrailers().getFirst(key)
+        _currentRequestCarrier.requestTrailerValue(key)
     }
 
     public func requestBody(): InputStream {

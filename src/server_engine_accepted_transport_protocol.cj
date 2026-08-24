@@ -880,12 +880,28 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         logicalRequest.headers.getFirst(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        logicalRequest.headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in logicalRequest.headers) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        logicalRequest.trailers
+    public override func requestTrailerValue(key: String): ?String {
+        logicalRequest.trailers.getFirst(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in logicalRequest.trailers) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
     public override func requestBodyStream(): InputStream {

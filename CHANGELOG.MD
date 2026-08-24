@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=边界` `CurrentRequestCarrier` 的请求头/拖尾读取改用 Ignite 自有的扁平字段序列与单值拖尾契约；代理转发不再从 carrier 获取 stdx `HttpHeaders`，重复请求字段值仍完整保留
+- `=边界` 本次不替换 adapter 内部 provider 集合，也不处理 raw `HttpContext`、WebSocket、请求体、client response 或最终 stdx 依赖移除
 - `=边界` `CurrentRequestCarrier` 的响应头追加改用 Ignite 自有的单字段契约；流压缩与代理下游不再为 carrier 边界构造或传递 stdx `HttpHeaders`，重复字段仍逐值保留
 - `=边界` 本次只收口服务端响应头 mutation seam；请求头集合读取、raw `HttpContext`、WebSocket 与 client response provider 类型仍是后续 IG0900 分层任务
 - `=依赖` JWT 中间件的签名后 header/claims DOM 解析改用 Ignite-owned SeaJson 值契约，不再直接导入 stdx JSON；HS256、String/数字时间声明和现有拒绝分类保持兼容

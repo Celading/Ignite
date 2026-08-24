@@ -20,8 +20,9 @@ public interface CurrentRequestCarrier {
     func requestQueryValue(key: String): ?String
     func requestFormValue(key: String): ?String
     func requestHeaderValue(key: String): ?String
-    func requestHeaders(): HttpHeaders
-    func requestTrailers(): HttpHeaders
+    func requestHeaderFields(): Array<(String, String)>
+    func requestTrailerValue(key: String): ?String
+    func requestTrailerFields(): Array<(String, String)>
     func requestBodyStream(): InputStream
     func requestBodySize(): ?Int64
     func setResponseStatus(code: UInt16): Unit
@@ -163,12 +164,17 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & Pre
         _httpCtx.request.headers.getFirst(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        _httpCtx.request.headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        flattenCurrentRequestCarrierHeaderFields(_httpCtx.request.headers)
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -285,12 +291,16 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         _downstream.requestHeaderValue(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        _downstream.requestHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        _downstream.requestHeaderFields()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        _downstream.requestTrailers()
+    public override func requestTrailerValue(key: String): ?String {
+        _downstream.requestTrailerValue(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        _downstream.requestTrailerFields()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -355,6 +365,18 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
             closeCurrentRequestCarrierStreamIfResource(stream)
         }
     }
+}
+
+func flattenCurrentRequestCarrierHeaderFields(
+    headers: HttpHeaders
+): Array<(String, String)> {
+    let fields = ArrayList<(String, String)>()
+    for ((name, values) in headers) {
+        for (value in values) {
+            fields.add((name, value))
+        }
+    }
+    fields.toArray()
 }
 
 func wrapCurrentRequestCarrier(httpCtx: HttpContext): CurrentRequestCarrier {

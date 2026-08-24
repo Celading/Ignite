@@ -196,15 +196,13 @@ public func proxyObserveHeaderMiddleware(): Handler {
 func buildProxyRequestHeaders(ctx: Ctx): HttpHeaders {
     let carrier = ctx.currentRequestCarrier()
     let headers = HttpHeaders()
-    let requestHeaders = carrier.requestHeaders()
-    let connectionTokens = parseConnectionHeaderTokens(requestHeaders)
-    for ((name, values) in requestHeaders) {
+    let requestHeaderFields = carrier.requestHeaderFields()
+    let connectionTokens = parseConnectionHeaderFieldTokens(requestHeaderFields)
+    for ((name, value) in requestHeaderFields) {
         if (shouldSkipProxyRequestHeader(name, connectionTokens)) {
             continue
         }
-        for (value in values) {
-            headers.add(name, value)
-        }
+        headers.add(name, value)
     }
 
     headers.add("x-forwarded-for", appendForwardedFor(ctx.header("x-forwarded-for") ?? "", ctx.ip))
@@ -678,6 +676,27 @@ func shouldSkipProxyResponseHeader(name: String, connectionTokens: ArrayList<Str
 func parseConnectionHeaderTokens(headers: HttpHeaders): ArrayList<String> {
     let tokens = ArrayList<String>()
     for (value in headers.get("connection")) {
+        for (part in value.split(",")) {
+            let token = part.trimAscii().toAsciiLower()
+            if (token.size == 0) {
+                continue
+            }
+            if (!containsHeaderName(tokens, token)) {
+                tokens.add(token)
+            }
+        }
+    }
+    tokens
+}
+
+func parseConnectionHeaderFieldTokens(
+    fields: Array<(String, String)>
+): ArrayList<String> {
+    let tokens = ArrayList<String>()
+    for ((name, value) in fields) {
+        if (name.trimAscii().toAsciiLower() != "connection") {
+            continue
+        }
         for (part in value.split(",")) {
             let token = part.trimAscii().toAsciiLower()
             if (token.size == 0) {

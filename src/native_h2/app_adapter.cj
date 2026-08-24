@@ -234,12 +234,28 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         requestHeadersValue.getFirst(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        requestHeadersValue
+    public override func requestHeaderFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestHeadersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        requestTrailersValue
+    public override func requestTrailerValue(key: String): ?String {
+        requestTrailersValue.getFirst(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestTrailersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
     public override func requestBodyStream(): InputStream {

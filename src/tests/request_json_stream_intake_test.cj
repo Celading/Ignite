@@ -540,14 +540,17 @@ class RequestJsonStreamTestCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        let headers = HttpHeaders()
-        headers.add("content-length", requestBytes.size.toString())
-        headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        [("content-length", requestBytes.size.toString())]
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
