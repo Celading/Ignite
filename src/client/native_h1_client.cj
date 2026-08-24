@@ -4,9 +4,9 @@ import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
-import stdx.net.http.HttpHeaders
 
 let NATIVE_H1_CLIENT_BACKEND = "ignite-native-h1-client"
+let NATIVE_H1_RESPONSE_TRAILER_LIMIT: Int64 = 65536
 
 class NativeH1ClientTarget {
     let scheme: String
@@ -129,12 +129,22 @@ class NativeH1ClientHeaderReadResult {
 class NativeH1ClientParsedResponseHead {
     let version: String
     let status: Int64
-    let headers: HttpHeaders
+    let headerFields: Array<(String, String)>
 
-    init(version: String, status: Int64, headers: HttpHeaders) {
+    init(version: String, status: Int64, headerFields: Array<(String, String)>) {
         this.version = version
         this.status = status
-        this.headers = headers
+        this.headerFields = headerFields
+    }
+}
+
+class NativeH1ResponseFraming {
+    let mode: String
+    let contentLength: Int64
+
+    init(mode: String, contentLength: Int64) {
+        this.mode = mode
+        this.contentLength = contentLength
     }
 }
 
@@ -341,8 +351,11 @@ class NativeH1ClientResponseInputStream <: InputStream & Resource {
     }
 
     func consumeTrailers(): Unit {
+        var consumedBytes: Int64 = 0
         while (true) {
-            if (reader.readLine().size == 0) {
+            let line = reader.readLine()
+            consumedBytes = validateNativeH1ResponseTrailerLine(line, consumedBytes)
+            if (line.size == 0) {
                 return
             }
         }
@@ -589,24 +602,95 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
     if (statusParts.size < 2) {
         throw Exception("native H1 response status line is invalid")
     }
+    if (statusParts[0] != "HTTP/1.1") {
+        throw Exception("native H1 response version must be HTTP/1.1")
+    }
     let statusValue = parseNativeH1Decimal(statusParts[1])
-    if (statusValue < 100 || statusValue > 999) {
+    if (statusValue < 100 || statusValue > 599) {
         throw Exception("native H1 response status is invalid")
     }
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     var lineIndex: Int64 = 1
     while (lineIndex < lines.size) {
-        let line = lines[lineIndex]
-        let colon = nativeH1IndexOf(line, ":")
-        if (colon > 0) {
-            let runes = line.toRuneArray()
-            let name = nativeH1RuneSlice(runes, 0, colon).trimAscii()
-            let value = nativeH1RuneSlice(runes, colon + 1, runes.size).trimAscii()
-            headers.add(name, value)
-        }
+        addNativeH1ResponseFieldLine(headerFields, lines[lineIndex])
         lineIndex += 1
     }
-    NativeH1ClientParsedResponseHead(statusParts[0].trimAscii().toAsciiUpper(), statusValue, headers)
+    NativeH1ClientParsedResponseHead(
+        statusParts[0],
+        statusValue,
+        headerFields.toArray()
+    )
+}
+
+func addNativeH1ResponseFieldLine(
+    headerFields: ArrayList<(String, String)>,
+    line: String,
+    section!: String = "header"
+): Unit {
+    let colon = nativeH1IndexOf(line, ":")
+    if (colon <= 0) {
+        throw Exception("native H1 response ${section} line is malformed")
+    }
+    let runes = line.toRuneArray()
+    let name = nativeH1RuneSlice(runes, 0, colon)
+    if (!isNativeH1ResponseHeaderName(name)) {
+        throw Exception("native H1 response ${section} name is invalid")
+    }
+    let rawValue = nativeH1RuneSlice(runes, colon + 1, runes.size)
+    validateNativeH1ResponseHeaderValue(rawValue, section: section)
+    headerFields.add((name, rawValue.trimAscii()))
+}
+
+func validateNativeH1ResponseTrailerLine(line: String, consumedBytes: Int64): Int64 {
+    let nextBytes = consumedBytes + line.toArray().size + 2
+    if (nextBytes > NATIVE_H1_RESPONSE_TRAILER_LIMIT) {
+        throw Exception("native H1 response trailers exceed 65536 bytes")
+    }
+    if (line.size > 0) {
+        let ignored = ArrayList<(String, String)>()
+        addNativeH1ResponseFieldLine(ignored, line, section: "trailer")
+    }
+    nextBytes
+}
+
+func isNativeH1ResponseHeaderName(input: String): Bool {
+    if (input.size == 0) {
+        return false
+    }
+    for (byte in input.toArray()) {
+        if (!nativeH1ResponseTokenByteAllowed(byte)) {
+            return false
+        }
+    }
+    true
+}
+
+func nativeH1ResponseTokenByteAllowed(code: UInt8): Bool {
+    (code >= UInt8(48) && code <= UInt8(57)) ||
+    (code >= UInt8(65) && code <= UInt8(90)) ||
+    (code >= UInt8(97) && code <= UInt8(122)) ||
+    code == UInt8(33) ||
+    (code >= UInt8(35) && code <= UInt8(39)) ||
+    code == UInt8(42) ||
+    code == UInt8(43) ||
+    code == UInt8(45) ||
+    code == UInt8(46) ||
+    code == UInt8(94) ||
+    code == UInt8(95) ||
+    code == UInt8(96) ||
+    code == UInt8(124) ||
+    code == UInt8(126)
+}
+
+func validateNativeH1ResponseHeaderValue(
+    value: String,
+    section!: String = "header"
+): Unit {
+    for (byte in value.toArray()) {
+        if ((byte < UInt8(32) && byte != UInt8(9)) || byte == UInt8(127)) {
+            throw Exception("native H1 response ${section} value contains a forbidden control byte")
+        }
+    }
 }
 
 func readNativeH1Response(
@@ -628,40 +712,39 @@ func readNativeH1Response(
         parsedHead = parseNativeH1ResponseHead(readResult.headerBytes)
     }
     let statusValue = parsedHead.status
-    let headers = parsedHead.headers
-    let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" && statusValue != 101 &&
-        !nativeH1HeaderContains(headers, "connection", "close")
+    validateNativeH1RestResponseStatus(statusValue)
+    let headerFields = parsedHead.headerFields
+    let framing = resolveNativeH1ResponseFraming(headerFields)
+    let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" &&
+        !nativeH1HeaderContains(headerFields, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {
         settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
-        return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+        return ClientResponse(UInt16(statusValue), headerFields, NativeH1ClientBytesInputStream(Array<UInt8>()))
     }
-    if (nativeH1HeaderContains(headers, "transfer-encoding", "chunked")) {
+    if (framing.mode == "chunked") {
         let stream = NativeH1ClientResponseInputStream(
             socket, readResult.prefetchedBody, "chunked", -1, pool, origin, responseReusable
         )
         return ClientResponse(
             UInt16(statusValue),
-            headers,
+            headerFields,
             stream,
             closeHook: { => stream.close() }
         )
     }
-    if (let Some(lengthText) <- headers.getFirst("content-length")) {
-        let length = parseNativeH1Decimal(lengthText)
-        if (length < 0) {
-            throw Exception("native H1 response Content-Length is invalid")
-        }
+    if (framing.mode == "length") {
+        let length = framing.contentLength
         if (length == 0) {
             settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
-            return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+            return ClientResponse(UInt16(statusValue), headerFields, NativeH1ClientBytesInputStream(Array<UInt8>()))
         }
         let stream = NativeH1ClientResponseInputStream(
             socket, readResult.prefetchedBody, "length", length, pool, origin, responseReusable
         )
         return ClientResponse(
             UInt16(statusValue),
-            headers,
+            headerFields,
             stream,
             closeHook: { => stream.close() }
         )
@@ -671,10 +754,86 @@ func readNativeH1Response(
     )
     ClientResponse(
         UInt16(statusValue),
-        headers,
+        headerFields,
         stream,
         closeHook: { => stream.close() }
     )
+}
+
+func validateNativeH1RestResponseStatus(status: Int64): Unit {
+    if (status == 101) {
+        throw Exception("native H1 response protocol switch is unsupported")
+    }
+}
+
+func resolveNativeH1ResponseFraming(
+    headerFields: Array<(String, String)>
+): NativeH1ResponseFraming {
+    let transferEncodingValues = collectNativeH1ResponseHeaderValues(
+        headerFields,
+        "transfer-encoding"
+    )
+    let contentLengthValues = collectNativeH1ResponseHeaderValues(
+        headerFields,
+        "content-length"
+    )
+    if (transferEncodingValues.size > 0 && contentLengthValues.size > 0) {
+        throw Exception("native H1 response mixes Transfer-Encoding and Content-Length")
+    }
+    if (transferEncodingValues.size > 0) {
+        let tokens = parseNativeH1ResponseCommaTokens(transferEncodingValues, "Transfer-Encoding")
+        if (tokens.size != 1 || tokens[0] != "chunked") {
+            throw Exception("native H1 response Transfer-Encoding is unsupported")
+        }
+        return NativeH1ResponseFraming("chunked", -1)
+    }
+    if (contentLengthValues.size > 0) {
+        let values = parseNativeH1ResponseCommaTokens(contentLengthValues, "Content-Length")
+        var selected: ?Int64 = None
+        for (value in values) {
+            let parsed = parseNativeH1Decimal(value)
+            if (parsed < 0) {
+                throw Exception("native H1 response Content-Length is invalid")
+            }
+            match (selected) {
+                case Some(existing) =>
+                    if (existing != parsed) {
+                        throw Exception("native H1 response Content-Length values conflict")
+                    }
+                case None => selected = Some(parsed)
+            }
+        }
+        return NativeH1ResponseFraming("length", selected ?? 0)
+    }
+    NativeH1ResponseFraming("close", -1)
+}
+
+func collectNativeH1ResponseHeaderValues(
+    headerFields: Array<(String, String)>,
+    name: String
+): Array<String> {
+    let out = ArrayList<String>()
+    let normalized = name.trimAscii().toAsciiLower()
+    for ((candidateName, value) in headerFields) {
+        if (candidateName.trimAscii().toAsciiLower() == normalized) {
+            out.add(value)
+        }
+    }
+    out.toArray()
+}
+
+func parseNativeH1ResponseCommaTokens(values: Array<String>, name: String): Array<String> {
+    let out = ArrayList<String>()
+    for (value in values) {
+        for (part in value.split(",")) {
+            let token = part.trimAscii().toAsciiLower()
+            if (token.size == 0) {
+                throw Exception("native H1 response ${name} is invalid")
+            }
+            out.add(token)
+        }
+    }
+    out.toArray()
 }
 
 func settleNativeH1BodylessSocket(
@@ -789,9 +948,15 @@ func nativeH1HeaderValueContains(
     false
 }
 
-func nativeH1HeaderContains(headers: HttpHeaders, name: String, target: String): Bool {
-    for (value in headers.get(name)) {
-        if (nativeH1IndexOf(value.toAsciiLower(), target.toAsciiLower()) >= 0) {
+func nativeH1HeaderContains(
+    headerFields: Array<(String, String)>,
+    name: String,
+    target: String
+): Bool {
+    let normalized = name.trimAscii().toAsciiLower()
+    for ((candidateName, value) in headerFields) {
+        if (candidateName.trimAscii().toAsciiLower() == normalized &&
+            nativeH1IndexOf(value.toAsciiLower(), target.toAsciiLower()) >= 0) {
             return true
         }
     }

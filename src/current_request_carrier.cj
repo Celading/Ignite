@@ -9,8 +9,6 @@ import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 /// The current implementation is still stdx-backed, but `Ctx` no longer needs
 /// to be constructed directly from `HttpContext`.
 public interface CurrentRequestCarrier {
-    func rawHttpContext(): HttpContext
-    func upgradeWebSocketRaw(): WebSocket
     func openResponseTransportWriterRaw(): ResponseTransportWriter
     func requestMethod(): String
     func requestPath(): String
@@ -20,16 +18,48 @@ public interface CurrentRequestCarrier {
     func requestQueryValue(key: String): ?String
     func requestFormValue(key: String): ?String
     func requestHeaderValue(key: String): ?String
-    func requestHeaders(): HttpHeaders
-    func requestTrailers(): HttpHeaders
+    func requestHeaderFields(): Array<(String, String)>
+    func requestTrailerValue(key: String): ?String
+    func requestTrailerFields(): Array<(String, String)>
     func requestBodyStream(): InputStream
     func requestBodySize(): ?Int64
     func setResponseStatus(code: UInt16): Unit
     func setResponseHeader(key: String, value: String): Unit
-    func addResponseHeaders(headers: HttpHeaders): Unit
+    func addResponseHeader(key: String, value: String): Unit
     func setResponseString(body: String): Unit
     func setResponseBytes(data: Array<UInt8>): Unit
     func attachResponseBodyStream(stream: InputStream): Unit
+}
+
+/// Optional compatibility capability for carriers backed by stdx
+/// `HttpContext`. Native transports are not required to implement it.
+public interface StdxHttpContextCompatibilityCarrier {
+    func rawHttpContextCompatibility(): HttpContext
+}
+
+func currentRequestCarrierRawHttpContextCompatibility(
+    carrier: CurrentRequestCarrier
+): HttpContext {
+    if (let Some(compatibility) <-
+        (carrier as StdxHttpContextCompatibilityCarrier)) {
+        return compatibility.rawHttpContextCompatibility()
+    }
+    throw Exception(
+        "current request carrier does not expose stdx HttpContext compatibility"
+    )
+}
+
+/// Optional carrier capability for transports that can commit a response
+/// before the handler and post-handler middleware finish.
+public interface ResponseCommitStateCarrier {
+    func responseCommitted(): Bool
+}
+
+func currentRequestCarrierResponseCommitted(carrier: CurrentRequestCarrier): Bool {
+    if (let Some(commitState) <- (carrier as ResponseCommitStateCarrier)) {
+        return commitState.responseCommitted()
+    }
+    false
 }
 
 // Raw socket carriers do not pass through stdx URL parsing, so they must
@@ -99,19 +129,33 @@ func urlQueryHexNibble(value: UInt8): Int64 {
     -1
 }
 
-public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
+public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
     let _httpCtx: HttpContext
 
     public init(httpCtx: HttpContext) {
         this._httpCtx = httpCtx
     }
 
-    public override func rawHttpContext(): HttpContext {
+    public override func rawHttpContextCompatibility(): HttpContext {
         _httpCtx
     }
 
-    public override func upgradeWebSocketRaw(): WebSocket {
-        WebSocket.upgradeFromServer(_httpCtx)
+    public override func upgradeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        if (subProtocols.size == 0) {
+            return WsConn(
+                WebSocket.upgradeFromServer(_httpCtx),
+                maxIncomingMessageBytes: options.maxIncomingMessageBytes
+            )
+        }
+        let allowed = ArrayList<String>()
+        for (protocol in subProtocols) { allowed.add(protocol) }
+        WsConn(
+            WebSocket.upgradeFromServer(_httpCtx, subProtocols: allowed),
+            maxIncomingMessageBytes: options.maxIncomingMessageBytes
+        )
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -150,12 +194,17 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & Pre
         _httpCtx.request.headers.getFirst(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        _httpCtx.request.headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        flattenCurrentRequestCarrierHeaderFields(_httpCtx.request.headers)
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -174,7 +223,9 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & Pre
         _httpCtx.responseBuilder.header(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let headers = HttpHeaders()
+        headers.add(key, value)
         _httpCtx.responseBuilder.addHeaders(headers)
     }
 
@@ -199,7 +250,7 @@ type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
 
 let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
 
-class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let _downstream: CurrentRequestCarrier
     let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
     var _responseWriter: ?ResponseTransportWriter = None
@@ -222,16 +273,27 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         }
     }
 
-    public override func rawHttpContext(): HttpContext {
-        _downstream.rawHttpContext()
+    public override func rawHttpContextCompatibility(): HttpContext {
+        currentRequestCarrierRawHttpContextCompatibility(_downstream)
     }
 
-    public override func upgradeWebSocketRaw(): WebSocket {
-        _downstream.upgradeWebSocketRaw()
+    public override func upgradeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        currentRequestCarrierUpgradeWebSocket(
+            _downstream,
+            subProtocols,
+            options
+        )
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         ensureResponseWriter()
+    }
+
+    public override func responseCommitted(): Bool {
+        currentRequestCarrierResponseCommitted(_downstream)
     }
 
     public override func requestMethod(): String {
@@ -266,12 +328,16 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         _downstream.requestHeaderValue(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        _downstream.requestHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        _downstream.requestHeaderFields()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        _downstream.requestTrailers()
+    public override func requestTrailerValue(key: String): ?String {
+        _downstream.requestTrailerValue(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        _downstream.requestTrailerFields()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -290,8 +356,8 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         _downstream.setResponseHeader(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        _downstream.addResponseHeaders(headers)
+    public override func addResponseHeader(key: String, value: String): Unit {
+        _downstream.addResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -336,6 +402,18 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
             closeCurrentRequestCarrierStreamIfResource(stream)
         }
     }
+}
+
+func flattenCurrentRequestCarrierHeaderFields(
+    headers: HttpHeaders
+): Array<(String, String)> {
+    let fields = ArrayList<(String, String)>()
+    for ((name, values) in headers) {
+        for (value in values) {
+            fields.add((name, value))
+        }
+    }
+    fields.toArray()
 }
 
 func wrapCurrentRequestCarrier(httpCtx: HttpContext): CurrentRequestCarrier {

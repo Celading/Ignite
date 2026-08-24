@@ -5,7 +5,7 @@ import ignite.middleware.*
 import std.collection.HashMap
 import std.fs.{exists, removeIfExists}
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 @Test
 public class RequestBodyStreamLimitContractTestSuite {
@@ -115,14 +115,6 @@ class RequestBodyStreamOverflowTestCarrier <: CurrentRequestCarrier {
         responseHeaders.get(name.trimAscii().toAsciiLower())
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for request body stream limit tests")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in request body stream limit tests")
-    }
-
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         throw Exception("response transport writer should not open in request body stream limit tests")
     }
@@ -164,14 +156,17 @@ class RequestBodyStreamOverflowTestCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        let headers = HttpHeaders()
-        headers.add("content-length", requestBytes.size.toString())
-        headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        [("content-length", requestBytes.size.toString())]
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -190,8 +185,8 @@ class RequestBodyStreamOverflowTestCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
     public override func setResponseString(body: String): Unit {

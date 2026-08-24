@@ -148,8 +148,7 @@ try {
 
 该 session 只支持同一 cleartext origin；request body 可以是 buffered bytes/string、
 `bodyStream(input, exactLength)` 指定的精确长度 one-pass stream，或
-`bodyStream(input)` 指定的 EOF 终止 unknown-length one-pass stream。精确长度模式会
-补齐 `content-length`，unknown-length 模式不会发送该头。stream producer
+`bodyStream(input)` 指定的未知长度 source。stream producer
 每次最多读取 8 KiB、每 stream 最多预取 32 KiB，并且不会在读取用户 stream 时
 持有协议锁。Ignite 不会关闭 source；取消在一次 `read` 返回后生效，因此可能阻塞
 的 source 应由调用方提供可取消或有界超时的读取实现。DATA 会服从
@@ -159,9 +158,13 @@ connection/stream send window，并由 `WINDOW_UPDATE`
 连接复用；任一 response 提前关闭会发送 CANCEL，已打开兄弟 stream 可继续；若
 request body 尚未发完，连接会进入 retiring。TLS1.3 场景可在同一 client 配置上
 改用 `openNativeTlsH2Session("https://...")`，保留相同的流控、响应归属和
-one-pass stream 语义。两种 session 都不包含自动 RequestBuilder H2 streaming、
-retry/redirect 重放、priority 或逐 stream deadline；TLS session 也不会自动读取
-系统 CA。
+one-pass stream 语义。两种 session 都支持通过
+`NativeH2BatchRequest.deadline(Duration)` 做逐 stream CANCEL。幂等 buffered
+请求可通过 `sendWithRetry(...)` 做 status replay；显式传入
+`reconnectOnConnectionFailure: true` 时，idle session 可在响应头前断传输后重建
+同源 cleartext/TLS session 并有界回放。one-pass body、非幂等方法、active lease、
+response-body recovery、自动 RequestBuilder H2 streaming、redirect 或 production
+priority 不在该合同内；TLS session 也不会自动读取系统 CA。
 
 适合的 0800 使用方式：
 

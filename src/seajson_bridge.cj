@@ -6,16 +6,16 @@ import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 
 /// Ignite-owned JSON backend bridge.
 ///
-/// The current first cut is still stdx-backed, but all core writer creation
-/// now goes through this one seam so future SeaJson/Cangku backend work can be
-/// plugged in without re-touching every JSON response path in Ignite Core.
+/// The default callback path is SeaJson-backed. The typed
+/// `JsonSerializable` helpers below remain an explicit stdx compatibility
+/// lane until a later reader/typed-contract migration packet.
 func writeJsonCallbackThroughSeaJsonBridge(
     out: OutputStream,
-    writerFn: (JsonWriter) -> Unit
+    writerFn: (IgniteJsonWriter) -> Unit
 ): Unit {
-    let writer = StdxJsonWriter(out)
+    let writer = IgniteJsonWriter(out)
     writerFn(writer)
-    writer.flush()
+    writer.finish()
 }
 
 func writeJsonSerializableThroughSeaJsonBridge<T>(

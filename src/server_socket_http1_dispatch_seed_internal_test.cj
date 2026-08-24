@@ -44,12 +44,12 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
         })
 
         let request = openSocketHttp11DispatchSeedTestRequest(
-            "GET http://127.0.0.1:8080/health/live?probe=1 HTTP/1.1\r\nHost: ignored.example.com\r\n\r\n"
+            "GET http://api%2Dedge.example:8080/health/live?probe=1 HTTP/1.1\r\nHost: ignored.example.com\r\n\r\n"
         )
         let seed = buildSocketHttp11DispatchSeed(request)
 
         @Assert(seed.targetFormName(), "absolute-form")
-        @Assert(seed.authority, "127.0.0.1:8080")
+        @Assert(seed.authority, "api%2Dedge.example:8080")
         @Assert(seed.scheme, "http")
         @Assert(seed.queryString, "probe=1")
         @Assert(seed.normalizedDispatchTarget(), "/health/live?probe=1")
@@ -68,6 +68,37 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
     }
 
     @TestCase
+    public func testAbsoluteFormCarrierProjectsRequestTargetAuthorityAsEffectiveHost(): Unit {
+        let absoluteRequest = openSocketHttp11DispatchSeedTestRequest(
+            "GET http://target.example:9443/health HTTP/1.1\r\nHost: attacker.example\r\n\r\n"
+        )
+        let absoluteSeed = buildSocketHttp11DispatchSeed(absoluteRequest)
+        let absoluteCarrier = SocketServerEngineShellCurrentRequestCarrier(
+            absoluteRequest,
+            absoluteSeed,
+            "127.0.0.1",
+            Array<UInt8>(0, repeat: 0)
+        )
+
+        @Assert(absoluteCarrier.requestHeaderValue("host") ?? "", "target.example:9443")
+        @Assert(firstSocketDispatchHeaderValue(absoluteCarrier.requestHeaderFields(), "host") ?? "", "target.example:9443")
+
+        let originRequest = openSocketHttp11DispatchSeedTestRequest(
+            "GET /health HTTP/1.1\r\nHost: origin.example\r\n\r\n"
+        )
+        let originSeed = buildSocketHttp11DispatchSeed(originRequest)
+        let originCarrier = SocketServerEngineShellCurrentRequestCarrier(
+            originRequest,
+            originSeed,
+            "127.0.0.1",
+            Array<UInt8>(0, repeat: 0)
+        )
+
+        @Assert(originCarrier.requestHeaderValue("host") ?? "", "origin.example")
+        @Assert(firstSocketDispatchHeaderValue(originCarrier.requestHeaderFields(), "host") ?? "", "origin.example")
+    }
+
+    @TestCase
     public func testAuthorityAndAsteriskTargetsStayNonDispatchable(): Unit {
         let connectRequest = openSocketHttp11DispatchSeedTestRequest(
             "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"
@@ -81,6 +112,14 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
             case None => ()
         }
 
+        let bracketedConnectRequest = openSocketHttp11DispatchSeedTestRequest(
+            "CONNECT [2001:db8::1]:8443 HTTP/1.1\r\nHost: [2001:db8::1]:8443\r\n\r\n"
+        )
+        let bracketedConnectSeed = buildSocketHttp11DispatchSeed(bracketedConnectRequest)
+        @Assert(bracketedConnectSeed.targetFormName(), "authority-form")
+        @Assert(bracketedConnectSeed.authority, "[2001:db8::1]:8443")
+        @Assert(bracketedConnectSeed.canResolveDispatchPlan(), false)
+
         let optionsRequest = openSocketHttp11DispatchSeedTestRequest(
             "OPTIONS * HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
         )
@@ -92,6 +131,47 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
             case Some(_) => @Fail("asterisk-form target should stay non-dispatchable")
             case None => ()
         }
+
+        let resourceOptions = openSocketHttp11DispatchSeedTestRequest(
+            "OPTIONS /resource HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+        )
+        let resourceOptionsSeed = buildSocketHttp11DispatchSeed(resourceOptions)
+        @Assert(resourceOptionsSeed.targetFormName(), "origin-form")
+        @Assert(resourceOptionsSeed.canResolveDispatchPlan(), true)
+    }
+
+    @TestCase
+    public func testDispatchSeedRejectsInvalidMethodTargetFormCombinations(): Unit {
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT /route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT http://api.example.com/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT * HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET api.example.com:443 HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET * HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidMethodTargetForm
+        )
     }
 
     @TestCase
@@ -112,6 +192,65 @@ public class SocketHttp11DispatchSeedInternalTestSuite {
             SocketHttp11DispatchSeedErrorCode.MissingAbsoluteAuthority
         )
     }
+
+    @TestCase
+    public func testDispatchSeedRejectsMalformedRequestTargetAuthorities(): Unit {
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET http://user@api.example.com/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET http://api.example.com:not-port/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET http://[2001:db8::1/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "GET http://bad%2.example/route HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT api.example.com: HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT api.example.com:0 HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+        assertSocketHttp11DispatchSeedFailure(
+            openSocketHttp11DispatchSeedTestRequest(
+                "CONNECT api.example.com:65536 HTTP/1.1\r\nHost: api.example.com\r\n\r\n"
+            ),
+            SocketHttp11DispatchSeedErrorCode.InvalidAuthority
+        )
+    }
+}
+
+func firstSocketDispatchHeaderValue(
+    fields: Array<(String, String)>,
+    key: String
+): ?String {
+    let normalized = key.trimAscii().toAsciiLower()
+    for ((name, value) in fields) {
+        if (name.trimAscii().toAsciiLower() == normalized) {
+            return Some(value)
+        }
+    }
+    None
 }
 
 func openSocketHttp11DispatchSeedTestRequest(wire: String): SocketHttp11SessionRequest {

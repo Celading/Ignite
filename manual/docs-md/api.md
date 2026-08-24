@@ -169,7 +169,7 @@ app.get("/me", { ctx =>
 - `ctx.send(bytes)`：原始字节
 - `ctx.sendStream(stream, ...)`：直接发送 `InputStream`，适合大响应体或文件式输出
 - `ctx.writer()`：增量写响应体；HTTP/1.1 下可表现为 chunked，HTTP/2 下不应该再补 `Transfer-Encoding`
-- `ctx.sse()`：SSE 单向推送；H2 检测路径下不会再主动注入 H1 专属头，并会补最小 anti-buffering 头与 heartbeat helper
+- `ctx.sse()`：SSE 单向推送；H2 路径不注入 H1 专属头，并补最小 anti-buffering 头与 heartbeat helper；Native H2 ServerEngine 已验证 handler-time event DATA 和显式 close END_STREAM
 - `ctx.sendStatus(404)`：状态码 + 默认消息
 - `ctx.redirect("/login")`：重定向
 - `ctx.noContent()`：`204 No Content`
@@ -202,8 +202,11 @@ app.post("/upload-large", { ctx =>
 - RFC 7540 禁止在 HTTP/2 消息里使用 `Transfer-Encoding`
 - `ctx.sendStream(...)` 现在已经有真实 HTTP/1.1 `known-length`、`unknown-length`、`HEAD` 三条线路的回归覆盖
 - `ctx.jsonEncodeStream(...)` 是 `JsonEncodable` family 的显式流式 twin：`ctx.jsonEncode(...)` 继续保持 full-buffer，并继续只在这条 full-buffer 路上使用 `Config.jsonEncoder`
-- `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下应该依赖底层 writer 的分次发送能力，而不是 H1 的 chunked 头部语义
-- 所以 H2 路径的重点是“不要发错头”，以及“确认底层 transport 的多次 write 的确被逐次发出”
+- `ctx.writer()` / `sendFile(...)` 这类增量写路径在 H2 下依赖 DATA frame 与流控，而不是 H1 的 chunked 头部语义
+- `ctx.transportWriterWithTransform(...)` 可把有状态 `ResponseTransportTransform` 的 write、flush 与 close-tail 输出接入 live writer；调用方仍负责状态、响应头与 framing
+- `responseTransportTransformMiddleware({=> ...})` 可在洋葱中间件里注册 fresh transform factory，handler 继续使用普通 `ctx.transportWriter()`；最后注册的内层 transform 先处理字节，再向外层展开。首个 transport writer 打开后注册即冻结，迟到注册会被拒绝
+- 这条自动组合 seam 当前只覆盖 `transportWriter()` / `transportOutputStream()`，不会自动改写 `writer()`、SSE、`sendStream(...)` 或 pull-stream JSON，也不代表现有压缩策略中间件已经接入
+- Native H2 App writer 的多次 write 已有 handler-time wire 回归；自定义 carrier 仍需自己的 wire 证明
 - 如果你想先从 runnable sample 体验 `sendStream(...)` 的公开用法，也可以直接看 [`manual/samples/files/README.md`](../samples/files/README.md)
 
 如果你在 Client 侧用了 `RestClient`，响应拿回来后还可以继续读结构化 transport 留痕：

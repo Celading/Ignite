@@ -45,4 +45,165 @@ public class NativeH1ClientInternalTestSuite {
         }
         @Assert(rejected, true)
     }
+
+    @TestCase
+    public func testAcceptsOnlyUnambiguousNativeH1ResponseFraming(): Unit {
+        let equalLengths = [
+            ("content-length", "5"),
+            ("content-length", "5, 5")
+        ]
+        let lengthFraming = resolveNativeH1ResponseFraming(equalLengths)
+        @Assert(lengthFraming.mode, "length")
+        @Assert(lengthFraming.contentLength, Int64(5))
+
+        let chunked = [("transfer-encoding", "chunked")]
+        @Assert(resolveNativeH1ResponseFraming(chunked).mode, "chunked")
+
+        assertNativeH1ResponseFramingRejected([
+            ("transfer-encoding", "chunked"),
+            ("content-length", "5")
+        ])
+        assertNativeH1ResponseFramingRejected([
+            ("content-length", "5"),
+            ("content-length", "6")
+        ])
+        assertNativeH1ResponseFramingRejected([
+            ("transfer-encoding", "gzip, chunked")
+        ])
+        assertNativeH1ResponseFramingRejected([
+            ("transfer-encoding", "chunked, chunked")
+        ])
+        assertNativeH1ResponseFramingRejected([
+            ("content-length", "5,")
+        ])
+    }
+
+    @TestCase
+    public func testAcceptsOnlyValidNativeH1ResponseHeadMetadata(): Unit {
+        let valid = parseNativeH1ResponseHead(
+            "HTTP/1.1 200 OK\r\nX!#$%&'*+-.^_`|~Token:\t value \t".toArray()
+        )
+        @Assert(valid.version, "HTTP/1.1")
+        @Assert(valid.status, Int64(200))
+        let validValues = collectNativeH1ResponseHeaderValues(
+            valid.headerFields,
+            "x!#$%&'*+-.^_`|~token"
+        )
+        @Assert(validValues.size, Int64(1))
+        @Assert(validValues[0], "value")
+
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 600 Internal Status\r\nContent-Length: 0".toArray(),
+            "native H1 response status is invalid"
+        )
+
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.0 200 OK\r\nContent-Length: 0".toArray(),
+            "native H1 response version must be HTTP/1.1"
+        )
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 200 OK\r\nMalformed-Field".toArray(),
+            "native H1 response header line is malformed"
+        )
+        assertNativeH1ResponseHeadRejected(
+            "HTTP/1.1 200 OK\r\nBad Header: value".toArray(),
+            "native H1 response header name is invalid"
+        )
+
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(0)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(31)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+        assertNativeH1ResponseHeadRejected(
+            nativeH1ResponseHeadWithControl(UInt8(127)),
+            "native H1 response header value contains a forbidden control byte"
+        )
+    }
+
+    @TestCase
+    public func testAcceptsOnlyBoundedValidNativeH1ResponseTrailers(): Unit {
+        let first = validateNativeH1ResponseTrailerLine("X-Trailer: value", 0)
+        @Assert(first, Int64("X-Trailer: value".toArray().size + 2))
+        let completed = validateNativeH1ResponseTrailerLine("", first)
+        @Assert(completed, first + 2)
+
+        assertNativeH1ResponseTrailerRejected(
+            "Malformed-Trailer",
+            0,
+            "native H1 response trailer line is malformed"
+        )
+        assertNativeH1ResponseTrailerRejected(
+            "Bad Trailer: value",
+            0,
+            "native H1 response trailer name is invalid"
+        )
+        assertNativeH1ResponseTrailerRejected(
+            "X-Control: safe" + String.fromUtf8([UInt8(0)]) + "unsafe",
+            0,
+            "native H1 response trailer value contains a forbidden control byte"
+        )
+        assertNativeH1ResponseTrailerRejected(
+            "X: y",
+            NATIVE_H1_RESPONSE_TRAILER_LIMIT - 4,
+            "native H1 response trailers exceed 65536 bytes"
+        )
+    }
+}
+
+func assertNativeH1ResponseFramingRejected(
+    headerFields: Array<(String, String)>
+): Unit {
+    var rejected = false
+    try {
+        let _ = resolveNativeH1ResponseFraming(headerFields)
+    } catch (_: Exception) {
+        rejected = true
+    }
+    @Assert(rejected, true)
+}
+
+func assertNativeH1ResponseHeadRejected(head: Array<UInt8>, message: String): Unit {
+    var rejected = false
+    try {
+        let _ = parseNativeH1ResponseHead(head)
+    } catch (e: Exception) {
+        rejected = e.message == message
+    }
+    @Assert(rejected, true)
+}
+
+func assertNativeH1ResponseTrailerRejected(
+    line: String,
+    consumedBytes: Int64,
+    message: String
+): Unit {
+    var rejected = false
+    try {
+        let _ = validateNativeH1ResponseTrailerLine(line, consumedBytes)
+    } catch (e: Exception) {
+        rejected = e.message == message
+    }
+    @Assert(rejected, true)
+}
+
+func nativeH1ResponseHeadWithControl(control: UInt8): Array<UInt8> {
+    let prefix = "HTTP/1.1 200 OK\r\nX-Control: safe".toArray()
+    let suffix = "unsafe".toArray()
+    let out = Array<UInt8>(prefix.size + 1 + suffix.size, repeat: 0)
+    var cursor: Int64 = 0
+    for (byte in prefix) {
+        out[cursor] = byte
+        cursor += 1
+    }
+    out[cursor] = control
+    cursor += 1
+    for (byte in suffix) {
+        out[cursor] = byte
+        cursor += 1
+    }
+    out
 }

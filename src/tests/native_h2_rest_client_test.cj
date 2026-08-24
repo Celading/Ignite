@@ -71,6 +71,28 @@ class NativeH2RestOwnedRequestStream <: InputStream & Resource {
 @Test
 public class NativeH2RestClientTestSuite {
     @TestCase
+    public func testNativeH2BatchPriorityHintIsBoundedAndChainable(): Unit {
+        let request = NativeH2BatchRequest("GET", "/priority").priority(200)
+        let _ = request
+
+        var lowFailure = false
+        try {
+            let _ = NativeH2BatchRequest("GET", "/priority").priority(-1)
+        } catch (_: Exception) {
+            lowFailure = true
+        }
+        @Assert(lowFailure, true)
+
+        var highFailure = false
+        try {
+            let _ = NativeH2BatchRequest("GET", "/priority").priority(256)
+        } catch (_: Exception) {
+            highFailure = true
+        }
+        @Assert(highFailure, true)
+    }
+
+    @TestCase
     public func testExplicitBackendCarriesRequestAndObserveSemantics(): Unit {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let ready = AtomicBool(false)
@@ -108,7 +130,8 @@ public class NativeH2RestClientTestSuite {
             let _ = ctx.setHeader("x-h2-peer", ctx.ip).sendString("pool-ok")
         })
         let serverFuture = spawn { app.listen("127.0.0.1", port) }
-        let client = nativeH2RestClient()
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
         try {
             waitForNativeH2RestClientReady(ready)
             let url = "http://127.0.0.1:${port}/h2-pool"
@@ -161,6 +184,183 @@ public class NativeH2RestClientTestSuite {
         } finally {
             client.close()
             shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitSessionReplaysBufferedIdempotentStatusOnNextStream(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let ready = AtomicBool(false)
+        let counter = NativeH2RestClientCounter()
+        let app = nativeH2RestClientApp(ready)
+        app.get("/h2-session-retry", { ctx =>
+            if (counter.next() == 1) {
+                let _ = ctx.status(503).sendString("retry")
+            } else {
+                let _ = ctx.sendString("session-recovered")
+            }
+        })
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let retryStatusCodes = ArrayList<Int64>()
+        retryStatusCodes.add(503)
+        let retryConfig = ClientRetryConfig(
+            enabled: true,
+            maxAttempts: 2,
+            baseDelayMs: 0,
+            maxDelayMs: 0,
+            jitterMs: 0,
+            retryStatusCodes: retryStatusCodes
+        )
+        try {
+            waitForNativeH2RestClientReady(ready)
+            let session = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+            try {
+                let response = session.sendWithRetry(
+                    NativeH2BatchRequest("GET", "/h2-session-retry"),
+                    config: retryConfig
+                )
+                @Assert(response.body(), "session-recovered")
+                @Assert(counter.current(), Int64(2))
+
+                let streamed = NativeH2RestOwnedRequestStream("one-pass".toArray())
+                var streamRejected = false
+                try {
+                    let _ = session.sendWithRetry(
+                        NativeH2BatchRequest("PUT", "/h2-session-retry")
+                            .bodyStream(streamed, 8),
+                        config: retryConfig,
+                        reconnectOnConnectionFailure: true
+                    )
+                } catch (e: Exception) {
+                    streamRejected = e.message ==
+                        "native H2 session cannot replay a one-pass request stream"
+                }
+                @Assert(streamRejected, true)
+                @Assert(streamed.offset, Int64(0))
+                @Assert(counter.current(), Int64(2))
+
+                var methodRejected = false
+                try {
+                    let _ = session.sendWithRetry(
+                        NativeH2BatchRequest("POST", "/h2-session-retry")
+                            .bodyString("buffered"),
+                        config: retryConfig,
+                        reconnectOnConnectionFailure: true
+                    )
+                } catch (e: Exception) {
+                    methodRejected = e.message ==
+                        "native H2 session retry requires an idempotent request method"
+                }
+                @Assert(methodRejected, true)
+                @Assert(counter.current(), Int64(2))
+            } finally {
+                session.close()
+            }
+        } finally {
+            client.close()
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
+    public func testExplicitSessionReconnectsBrokenTransportAndReusesReplacement(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("Native H2 reconnect test could not reserve a port")
+        let accepts = NativeH2RestClientCounter()
+        let serverFuture = spawn {
+            let first = listener.accept()
+            let _ = accepts.next()
+            try {
+                try {
+                    serveNativeH2Connection(
+                        first,
+                        { request =>
+                            if (request.streamId != 1) {
+                                throw Exception(
+                                    "Native H2 reconnect fixture expected first stream 1"
+                                )
+                            }
+                            first.close()
+                            NativeH2SingleStreamResponse(body: "not-written".toArray())
+                        },
+                        maxCompletedStreams: 1
+                    )
+                } catch (_: Exception) {}
+            } finally {
+                try { first.close() } catch (_: Exception) {}
+            }
+
+            let second = listener.accept()
+            let _ = accepts.next()
+            try {
+                serveNativeH2Connection(
+                    second,
+                    { request =>
+                        if (request.streamId == 1) {
+                            NativeH2SingleStreamResponse(
+                                headers: [NativeH2Header("x-reconnect", "replayed")],
+                                body: "reconnected".toArray()
+                            )
+                        } else if (request.streamId == 3) {
+                            NativeH2SingleStreamResponse(body: "replacement-reused".toArray())
+                        } else {
+                            throw Exception(
+                                "Native H2 reconnect fixture expected replacement streams 1 and 3"
+                            )
+                        }
+                    },
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { second.close() } catch (_: Exception) {}
+            }
+        }
+
+        let base = "http://127.0.0.1:${port}"
+        let client = nativeH2RestClient().baseUrl(base)
+        let retryConfig = ClientRetryConfig(
+            enabled: true,
+            maxAttempts: 2,
+            baseDelayMs: 0,
+            maxDelayMs: 0,
+            jitterMs: 0
+        )
+        let session = client.openNativeH2Session(base, maxConcurrentStreams: 2)
+        try {
+            let replayed = session.sendWithRetry(
+                NativeH2BatchRequest("GET", "/reconnect"),
+                config: retryConfig,
+                reconnectOnConnectionFailure: true
+            )
+            @Assert(nativeH2RestHeader(replayed, "x-reconnect"), "replayed")
+
+            var activeLeaseRejected = false
+            try {
+                let _ = session.sendWithRetry(
+                    NativeH2BatchRequest("GET", "/must-not-start"),
+                    config: retryConfig,
+                    reconnectOnConnectionFailure: true
+                )
+            } catch (e: Exception) {
+                activeLeaseRejected = e.message ==
+                    "native H2 session reconnect replay requires an idle session"
+            }
+            @Assert(activeLeaseRejected, true)
+            @Assert(replayed.body(), "reconnected")
+
+            let reused = session.send(NativeH2BatchRequest("GET", "/reused"))
+            @Assert(reused.body(), "replacement-reused")
+            @Assert(accepts.current(), Int64(2))
+            session.close()
+            let _ = serverFuture.get(Duration.second * 5)
+        } finally {
+            session.close()
+            client.close()
+            try { listener.close() } catch (_: Exception) {}
         }
     }
 

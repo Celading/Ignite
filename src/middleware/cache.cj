@@ -75,6 +75,11 @@ public func cacheMiddleware(
         ctx.setHeader("X-Cache", "MISS")
         ctx.next()
 
+        if (ctx.responseCommitted) {
+            ctx.setLocal("__ignite_cache_skip_reason", "response-committed")
+            return
+        }
+
         if (let Some(body) <- ctx.responseBody) {
             let ct = ctx.header("content-type") ?? "text/plain"
             cacheStore.put(key, body, ct, MonoTime.now())

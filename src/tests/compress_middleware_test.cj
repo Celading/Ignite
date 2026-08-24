@@ -19,12 +19,15 @@ public class CompressMiddlewareTestSuite {
         let defaultLevel = CompressConfig(level: CompressLevel.DefaultCompression)
         let best = CompressConfig(level: CompressLevel.BestCompression)
         let brotli = CompressConfig(brotliEnabled: true)
+        let lowFloor = CompressConfig(minSavingsBytes: 1)
 
         @Assert(speed.minBytes, 1024)
         @Assert(defaultLevel.minBytes, 1024)
         @Assert(best.minBytes, 1024)
         @Assert(defaultLevel.brotliEnabled, false)
+        @Assert(defaultLevel.minSavingsBytes, Int64(64))
         @Assert(brotli.brotliEnabled, true)
+        @Assert(lowFloor.minSavingsBytes, Int64(1))
     }
 
     @TestCase
@@ -327,6 +330,107 @@ public class CompressMiddlewareTestSuite {
             @Assert(smallResp.status, 200)
             @Assert(smallResp.encoding, "")
             @Assert(String.fromUtf8(smallResp.body), "tiny")
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareRequiresMeasuredMinimumSavingsOverRealHttp(): Unit {
+        let smallGain = "A" * 64
+        let largeGain = "A" * 4096
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            deflateEnabled: false
+        )))
+        app.get("/small-gain", { ctx => ctx.sendString(smallGain) })
+        app.get("/large-gain", { ctx => ctx.sendString(largeGain) })
+        app.get("/mandatory-small-gain", { ctx => ctx.sendString(smallGain) })
+
+        let port = choosePort(305)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let small = sendRawBinarySnapshotWithRetry(port, "/small-gain", "gzip")
+            @Assert(small.status, 200)
+            @Assert(small.encoding, "")
+            @Assert(String.fromUtf8(small.body), smallGain)
+
+            let large = sendRawBinarySnapshotWithRetry(port, "/large-gain", "gzip")
+            @Assert(large.status, 200)
+            @Assert(large.encoding, "gzip")
+            @Assert(decompressBody(large.body, large.encoding), largeGain)
+            @Assert(large.body.size <= largeGain.toArray().size - 64, true)
+
+            let mandatory = sendRawBinarySnapshotWithRetry(
+                port,
+                "/mandatory-small-gain",
+                "gzip;q=1, identity;q=0"
+            )
+            @Assert(mandatory.status, 200)
+            @Assert(mandatory.encoding, "gzip")
+            @Assert(decompressBody(mandatory.body, mandatory.encoding), smallGain)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareHonorsConfiguredMinimumSavingsFloor(): Unit {
+        let payload = "A" * 64
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            deflateEnabled: false,
+            minSavingsBytes: 1
+        )))
+        app.get("/configured-gain", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(307)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let response = sendRawBinarySnapshotWithRetry(port, "/configured-gain", "gzip")
+            @Assert(response.status, 200)
+            @Assert(response.encoding, "gzip")
+            @Assert(decompressBody(response.body, response.encoding), payload)
+        } finally {
+            app.shutdown()
+            try {
+                let _ = serverFuture.get(Duration.second * 1)
+            } catch (_: Exception) {
+                serverFuture.cancel()
+            }
+        }
+    }
+
+    @TestCase
+    public func testCompressMiddlewareCanDisableMinimumSavingsGate(): Unit {
+        let payload = "A" * 64
+        let app = App(config: Config())
+        app.use(compressMiddleware(config: CompressConfig(
+            minBytes: 0,
+            deflateEnabled: false,
+            skipIfNoGain: false
+        )))
+        app.get("/disabled-gain-gate", { ctx => ctx.sendString(payload) })
+
+        let port = choosePort(309)
+        let serverFuture = spawn { app.listen("127.0.0.1", port) }
+        try {
+            let response = sendRawBinarySnapshotWithRetry(port, "/disabled-gain-gate", "gzip")
+            @Assert(response.status, 200)
+            @Assert(response.encoding, "gzip")
+            @Assert(decompressBody(response.body, response.encoding), payload)
         } finally {
             app.shutdown()
             try {

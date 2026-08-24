@@ -8,7 +8,8 @@ import std.io.InputStream
 
 public class ClientResponse {
     let _status: UInt16
-    let _headers: HttpHeaders
+    let _headerFields: ArrayList<(String, String)>
+    var _compatHeaders: ?HttpHeaders
     let _body: InputStream
     let _closeHook: ?(() -> Unit)
     var _bodyCache: ?Array<UInt8> = None
@@ -16,7 +17,8 @@ public class ClientResponse {
 
     public init(resp: HttpResponse) {
         _status = resp.status
-        _headers = resp.headers
+        _headerFields = cloneClientResponseHeaderFields(resp.headers)
+        _compatHeaders = Some(resp.headers)
         _body = resp.body
         _closeHook = None
     }
@@ -28,7 +30,23 @@ public class ClientResponse {
         closeHook!: ?(() -> Unit) = None
     ) {
         _status = status
-        _headers = headers
+        _headerFields = cloneClientResponseHeaderFields(headers)
+        _compatHeaders = Some(headers)
+        _body = body
+        _closeHook = closeHook
+    }
+
+    /// Builds an Ignite client response from provider-independent flattened
+    /// header fields while preserving duplicate field order.
+    public init(
+        status: UInt16,
+        headerFields: Array<(String, String)>,
+        body: InputStream,
+        closeHook!: ?(() -> Unit) = None
+    ) {
+        _status = status
+        _headerFields = cloneClientResponseHeaderFields(headerFields)
+        _compatHeaders = None
         _body = body
         _closeHook = closeHook
     }
@@ -38,7 +56,14 @@ public class ClientResponse {
     }
 
     public prop headers: HttpHeaders {
-        get() { _headers }
+        get() {
+            if (let Some(compatibility) <- _compatHeaders) {
+                return compatibility
+            }
+            let compatibility = materializeClientResponseHeaders(_headerFields)
+            _compatHeaders = Some(compatibility)
+            compatibility
+        }
     }
 
     public func isOk(): Bool {
@@ -121,15 +146,41 @@ public class ClientResponse {
     }
 
     public func header(name: String): ?String {
-        _headers.getFirst(name)
+        if (let Some(compatibility) <- _compatHeaders) {
+            return compatibility.getFirst(name)
+        }
+        let normalized = name.trimAscii().toAsciiLower()
+        for ((candidateName, value) in _headerFields) {
+            if (candidateName.trimAscii().toAsciiLower() == normalized) {
+                return Some(value)
+            }
+        }
+        None
     }
 
     public func headerValues(name: String): ArrayList<String> {
         let list = ArrayList<String>()
-        for (v in _headers.get(name)) {
-            list.add(v)
+        if (let Some(compatibility) <- _compatHeaders) {
+            for (value in compatibility.get(name)) {
+                list.add(value)
+            }
+            return list
+        }
+        let normalized = name.trimAscii().toAsciiLower()
+        for ((candidateName, value) in _headerFields) {
+            if (candidateName.trimAscii().toAsciiLower() == normalized) {
+                list.add(value)
+            }
         }
         list
+    }
+
+    func appendHeader(name: String, value: String): Unit {
+        if (let Some(compatibility) <- _compatHeaders) {
+            compatibility.add(name, value)
+            return
+        }
+        _headerFields.add((name, value))
     }
 
     /// Returns the observe snapshot parsed from response headers.
@@ -268,6 +319,38 @@ public class ClientResponse {
         }
         fallback
     }
+}
+
+func cloneClientResponseHeaderFields(
+    headers: HttpHeaders
+): ArrayList<(String, String)> {
+    let fields = ArrayList<(String, String)>()
+    for ((name, values) in headers) {
+        for (value in values) {
+            fields.add((name, value))
+        }
+    }
+    fields
+}
+
+func cloneClientResponseHeaderFields(
+    headerFields: Array<(String, String)>
+): ArrayList<(String, String)> {
+    let fields = ArrayList<(String, String)>()
+    for ((name, value) in headerFields) {
+        fields.add((name, value))
+    }
+    fields
+}
+
+func materializeClientResponseHeaders(
+    headerFields: ArrayList<(String, String)>
+): HttpHeaders {
+    let headers = HttpHeaders()
+    for ((name, value) in headerFields) {
+        headers.add(name, value)
+    }
+    headers
 }
 
 func parseDecimalInt64(value: String, fallback: Int64): Int64 {

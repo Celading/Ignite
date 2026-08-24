@@ -109,16 +109,14 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
-- 依赖接入：`0.7.7` 稳定版与 `0.8.7` Preview 均可走中心仓；托管源码验证仍应选择 GitCode 或 GitHub 的 `ig0800` 分支。完整说明见 [`Guide.md`](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/Guide.md)。
+- 依赖接入：稳定版可走中心仓，0800 Preview 必须选择 GitCode 或 GitHub 的 `ig0800` 分支；完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
 
-0800 Preview 中心仓：
+稳定版中心仓：
 
 ```toml
 [dependencies]
-ignite = "0.8.7"
+ignite = "0.7.7"
 ```
-
-如需 0700 稳定兼容线，请固定 `ignite = "0.7.7"`。
 
 0800 Preview 请选择一个托管源，不要同时声明多个来源：
 
@@ -193,7 +191,7 @@ Ignite 的核心对象不多，但都很像“拿来就能干活”的那种狠�
 
 - `App`：负责把服务真正支起来，路由、生命周期、错误处理、Swagger 都从这里起手。
 - `Router / Group`：负责把接口按模块排整齐，不用每个项目自己重新发明组织方式。
-- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，也是 request locals 的承载面；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`。
+- `Ctx`：负责拿请求、回响应、读参数、写 Cookie、做流式输出，也是 request locals 的承载面；其中 `writer()` 是增量写接口，H2 路径不依赖 `Transfer-Encoding`；低层 `transportWriter()` 还可通过 fresh transform-factory middleware 按响应洋葱顺序自动组合。
 - `Config`：负责把服务名、版本、请求体上限、超时、Swagger、TLS、Banner、kMode 这些运行期口径收在一起；`bodyLimit` 是 canonical 名，`maxRequestBodySize` 是同义搜索/构造入口。
 - `RouteOption`：负责把接口的 `summary`、`tag`、`operationId`、请求体、响应和测试元数据挂上去。
 - `RestClient`：负责让调用端别再另造一套陌生心智，联调时直接沿用 Ignite 的语义。

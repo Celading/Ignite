@@ -144,6 +144,7 @@ try {
             NativeH2BatchRequest("POST", "/slow")
                 .header("content-type", "text/plain")
                 .bodyString("buffered payload")
+                .deadline(Duration.second)
         )
     }
     let fast = spawn {
@@ -168,9 +169,9 @@ try {
 这条路径的边界是：
 
 - 只支持同一 cleartext `http://` origin；request body 可以是 buffered
-  bytes/string、`bodyStream(input, exactLength)` 指定的精确长度 one-pass
-  stream，或 `bodyStream(input)` 指定的 EOF 终止 unknown-length stream；精确长度
-  模式会补齐 `content-length`，unknown-length 模式不会发送该头；
+  bytes/string、`bodyStream(input, exactLength)` 指定的精确长度 one-pass stream，
+  或 `bodyStream(input)` 指定的未知长度 source；精确长度缺少 `content-length` 时
+  由 session 自动补齐，未知长度则不发送该 header；
 - stream producer 每次最多读取 8 KiB、每 stream 最多预取 32 KiB，读取用户
   `InputStream` 时不持有 session-state 或 writer mutex；调用方继续持有 stream，
   Ignite 不会关闭或为 retry/redirect 重放它；取消在一次 `read` 返回后生效，可能
@@ -184,9 +185,12 @@ try {
 - 完整读到 EOF 后连接可复用；提前关闭一个 response 会取消该 stream、保留
   已打开的兄弟 stream；若 request body 尚未发完，连接同时进入 retiring，避免
   在未知 peer 消费状态下复用；
-- cleartext 与 TLS session 都支持精确长度和 EOF 终止未知长度的 one-pass request
-  stream；不支持自动 RequestBuilder
-  H2 streaming、retry/redirect、逐 stream deadline、priority、
+- 支持精确长度和未知长度 one-pass request stream；可通过
+  `NativeH2BatchRequest.deadline(Duration)` 取消单个超时 stream 而保留兄弟 stream；
+  幂等 buffered 请求可通过 `sendWithRetry(...)` 做有界 status replay，并可显式设置
+  `reconnectOnConnectionFailure: true` 在 idle session 的响应头前断传输后重建同源
+  session；one-pass body、非幂等方法、active lease、响应体中途失败不会被重放；
+  不支持自动 RequestBuilder H2 streaming、redirect、production priority、
   request/observe/transport-touchpoint hook。
 
 `RestClient.close()` 会关闭尚未显式结束的 session，但消费方仍应优先使用
@@ -221,7 +225,8 @@ try {
 
 该 TLS session 使用同一 multiplex runtime，支持乱序响应归属和一次性 request
 stream；完整 settle 才归池，带活跃 lease 关闭会淘汰物理连接。它仍要求调用方
-提供 trust anchor/hostname，不代表系统 CA、自动重放或生产默认切换完成。
+提供 trust anchor/hostname。显式 pre-response reconnect 会重新完成 TLS1.3 + `h2`
+握手，但不代表系统 CA、response-body recovery、生产调度或默认切换完成。
 
 ## WebSocket 到底是不是 Native
 
@@ -279,8 +284,8 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 | 普通 `App.listen` 默认选择 | 是 | 否，需安装实验 ServerEngine |
 | 路由与基础 buffered 响应 | 是 | 是，通过 App adapter |
 | `app.ws(...)` | Native RFC 6455 | 否，缺 extended CONNECT |
-| SSE 已验收主路径 | 是 | 尚未形成等价验收 |
-| `ctx.writer()` / JSON stream | 真正增量 socket 写出 | App adapter 当前会先聚合完整响应 |
+| SSE 已验收主路径 | 是 | Preview：公开 retry/heartbeat/event handler-time DATA 与显式 close END_STREAM 已有 wire 验收 |
+| `ctx.writer()` / JSON stream | 真正增量 socket 写出 | 直接 writer 已有 handler-time DATA；JSON stream 走独立有界 producer |
 | 动态压缩流 | H1 有真实 wire 回归 | 尚不能宣称 App 层真流式等价 |
 | server runtime snapshot | 有 Native H1 计数 | 当前不覆盖 H2 |
 | RestClient response | H1 支持 streamed response | 单 streamed lease；另有显式 buffered batch multiplex |
@@ -293,5 +298,10 @@ Huffman。当前 Zstd/Brotli 仍是 RAW/RLE Preview，也没有完整熵编码�
 - 受控服务间明文 H2：显式安装 Native H2 ServerEngine，并使用 prior-knowledge
   client。
 - 受控 Native TLS H2 Client：显式提供 trust policy 和 `h2` ALPN。
-- WebSocket、SSE、流式 JSON/压缩要求成熟时：0800 当前优先使用 Native H1；
-  不要假设切换 H2 后自动获得同等能力。
+- WebSocket 或自动动态压缩中间件要求成熟时：0800 当前优先使用 Native H1。
+  Native H2 SSE、显式 `transportWriterWithTransform(...)`，以及通过
+  `responseTransportTransformMiddleware(...)` 自动组合到普通 transport
+  writer 的 fresh transform factory 已可受控评估；真实 H2 wire 已证明内层
+  到外层的 write/flush/close-tail 顺序与同连接复用。但自动
+  heartbeat/reconnect/Last-Event-ID、现有压缩策略中间件的 live-writer
+  接入和 H2 WebSocket 仍需应用或后续能力补齐。

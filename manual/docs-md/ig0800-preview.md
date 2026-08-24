@@ -20,20 +20,14 @@
 
 ## 依赖接入
 
-中心仓提供 `0.8.7` Preview；需要 0700 稳定兼容线时仍可固定 `0.7.7`：
+中心仓当前提供稳定版 `0.7.7`，不提供 0800 Preview：
 
 ```toml
-[dependencies]
-ignite = "0.8.7"
-```
-
-```toml
-# 0700 稳定兼容线
 [dependencies]
 ignite = "0.7.7"
 ```
 
-如果需要直接跟踪源码，0800 Preview 也可以选择一个托管源并固定 `ig0800` 分支：
+0800 Preview 必须选择一个托管源并固定 `ig0800` 分支：
 
 ```toml
 # GitCode
@@ -102,6 +96,29 @@ let client = RestClient()
 
 不配置 `useNativeTls(...)` 时，HTTPS 仍走默认 stdx Client。Native H1 backend
 如果协商到 `h2`，会显式失败而不是静默降级——你选了 H1 就是 H1。
+
+cleartext 与 Native TLS H1 Client 共用同一响应分帧判定：同时出现
+`Transfer-Encoding` 与 `Content-Length`、冲突的重复 `Content-Length`，或当前
+无法正确解码的 transfer coding 会在响应体暴露前失败，并淘汰当前连接。合法的
+等值重复长度仍可接受。该保护有恶意 loopback wire 与连接恢复回归，但不等同于
+完整代理矩阵或独立 HTTP 合规认证。
+
+同一个共享解析器只接受 `HTTP/1.1` 响应版本，并拒绝缺少冒号的字段行、包含
+非法 token 字符的字段名，以及字段值中的 NUL、DEL 和其他禁用控制字节。合法
+RFC token 标点与水平制表空白仍保持兼容；解析失败的连接不会归池，后续同源请求
+需要新建连接。该行为已有 cleartext 恶意 wire / 新连接恢复与 Native TLS H1
+回归，但不代表完整 HTTP 或代理互操作认证。
+
+chunked 响应的 trailer 也会在 body drain 完成、连接可归池之前复用同一字段
+语法校验，并受 65536-byte 累计预算约束。缺少冒号、非法字段名、禁用控制字节
+或超预算都会淘汰当前 cleartext / Native TLS H1 连接；当前只做校验与连接收敛，
+不新增公开 trailer 访问 API，也不宣称完整代理矩阵或 HTTP 合规认证。
+
+共享响应解析器还会把有效状态范围限制为 `100..599`。普通 REST H1 路径不会
+把 `101 Switching Protocols` 伪装成带普通 body 的响应：它会在暴露升级后字节前
+失败并淘汰当前 cleartext / Native TLS 连接，后续同源请求必须经过新连接或新
+TLS 握手恢复。该收敛不提供升级后传输所有权或 WebSocket API，也不代表完整
+HTTP 互操作认证。
 
 如果服务端支持明文 HTTP/2 prior knowledge，也可以显式进入 Native H2
 RestClient Preview：
@@ -173,6 +190,43 @@ native H2 preview 已经具备：
 - TLS + ALPN 下 native H2 成为默认生产路径
 - 系统 CA、自动重放、逐 stream deadline/priority 与最终生产级公平调度
 - H2 extended CONNECT WebSocket
+
+## Native H1 请求头安全边界
+
+默认 Native H1 只接受带有一个非空 `Host` 的 HTTP/1.1 请求。缺失、重复、
+逗号合并的 Host，以及字段值中的 NUL、DEL 和其他禁用控制字节，都会在进入
+App 路由前收到固定无正文 `400 Bad Request`，随后关闭当前连接；普通字段值两侧
+的水平制表空白仍按既有规则收敛。相同响应边界也覆盖已完整接收、被 session
+分帧或 request-target dispatch seed 明确拒绝的坏请求，以及 body-stage 已经检测
+出的非法 chunk-size、chunk payload CRLF 和 trailer 字段名。
+
+request-head 的 typed 状态分类还会把请求目标/请求行超限映射为固定无正文
+`414 URI Too Long`，把请求头总字节或字段数超限映射为 `431 Request Header Fields
+Too Large`，并把不支持的 HTTP 版本映射为 `505 HTTP Version Not Supported`。
+这些响应同样关闭当前连接，但不停止监听器处理后续有效连接。
+
+如果 `readHeaderTimeout` 到期时请求头仍不完整，或 `readTimeout` 到期时请求体仍
+不完整，默认 Native H1 会返回固定无正文 `408 Request Timeout`，关闭该连接并
+保留监听器继续接收后续连接。
+
+固定 400/408/414/431/505 不把未完整 EOF、peer abort、chunk/trailer 元数据超限、
+不支持的 pipelining 或 handler 异常转换为同类响应。malformed chunked-body 400
+也不宣称完整 chunk-extension 或 trailer-value 语法覆盖。当前没有自定义错误页 API，
+也不把同栈回归表述为独立代理链合规认证；既有请求 body 过大仍沿用 413 路径。
+
+Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
+门：userinfo、坏百分号编码、坏括号、多冒号歧义和非十进制端口会被拒绝；
+CONNECT 端口必须非空且位于 `1..65535`。合法 reg-name、括号化 IP-literal 与
+十进制端口继续兼容；这里不宣称完整 DNS/IPv6 语义验证。
+
+request-target 也按方法收敛：`CONNECT` 必须使用 authority-form，authority-form
+只供 `CONNECT` 使用，asterisk-form 只供 `OPTIONS` 使用。合法的
+`CONNECT example.com:443`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通
+origin/absolute-form 路由不受影响；非法组合会在 App dispatch 前关闭当前连接，
+后续连接仍可继续由监听器处理。absolute-form 请求进入 App 与请求头中间件时，
+有效 `Host` 来自 request-target authority，冲突的接收 Host 值会被忽略；
+origin-form 仍使用唯一有效的接收 Host。这里不包含 CONNECT 隧道、代理转发、
+Host 不一致拒绝策略或自定义错误响应体。
 
 ## 流式 JSON
 

@@ -181,7 +181,8 @@ func nativeH2ClientOpenStreamedResponse(
                 NativeH2ClientOutboundStream(
                     lease.streamId,
                     request.body,
-                    connection.peerSettings.initialStreamWindow
+                    connection.peerSettings.initialStreamWindow,
+                    request.priorityHint
                 )
             )
         }

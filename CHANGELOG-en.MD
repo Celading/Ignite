@@ -26,6 +26,30 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+Security` Default Native H1 now returns a fixed bodyless `408 Request Timeout` when `readHeaderTimeout` expires before the request head is complete, then closes that connection while leaving the listener available
+- `=Boundary` The fixed 408 covers only request-head waiting; incomplete EOF, peer abort, body-stage timeout, handler failure, and custom error bodies remain distinct
+- `+Security` Default Native H1 now uses typed request-head classification to return fixed bodyless `414 URI Too Long`, `431 Request Header Fields Too Large`, or `505 HTTP Version Not Supported`, then closes that connection while leaving the listener available
+- `=Boundary` 414 covers request-target/request-line limits, 431 covers request-head byte or field-count limits, and 505 covers unsupported HTTP versions; this does not add custom error bodies or body-stage error policy
+- `+Security` Default Native H1 now returns a fixed bodyless `400 Bad Request` for complete requests explicitly rejected by head/session parsing or request-target dispatch validation, then closes that connection
+- `=Boundary` The fixed 400 path excludes incomplete EOF, header timeout, peer abort, handler failure, and a custom error-page API
+- `+Security` Default Native H1 now rejects `CONNECT` without authority-form, authority-form on non-`CONNECT` methods, and asterisk-form on non-`OPTIONS` methods before App dispatch
+- `=Boundary` Valid `CONNECT authority`, `OPTIONS *`, resource-specific `OPTIONS /path`, and ordinary origin/absolute-form routing remain compatible; this does not implement CONNECT tunneling or proxy forwarding
+- `+Performance` Optional buffered compression now requires at least `64` bytes of net savings by default; marginal gains fall back to identity, material gains stay encoded, and `minSavingsBytes` is configurable
+- `=Boundary` Mandatory coding still wins when identity is refused; this policy does not enable dynamic Brotli/Zstd by default or claim general entropy coding
+- `+Security` The explicit Native H1 client now accepts only valid HTTP status codes in `100..599`; an ordinary REST path fails before body exposure and retires the connection when it receives `101 Switching Protocols`
+- `=Boundary` Cleartext and Native TLS H1 share this status/Upgrade containment; this does not add upgraded-transport ownership, a WebSocket API, or complete HTTP interoperability certification
+- `+Security` The explicit Native H1 client now validates chunked response trailer lines, names, and values under a 65536-byte aggregate trailer budget before a connection can return to its pool
+- `=Boundary` Cleartext and Native TLS H1 share trailer validation and budgeting; malformed trailers retire the connection without adding a public trailer-access API or claiming complete HTTP/proxy certification
+- `+Security` The explicit Native H1 client now requires an `HTTP/1.1` response version and rejects colonless field lines, invalid field names, plus NUL, DEL, and other forbidden field-value controls before exposing a response body
+- `=Boundary` Cleartext and Native TLS H1 share this response-head parser; valid RFC token punctuation and horizontal-tab whitespace remain accepted, while malformed connections are retired without claiming complete HTTP or proxy interoperability certification
+- `+Security` The explicit Native H1 client now rejects `Transfer-Encoding + Content-Length`, conflicting duplicate `Content-Length`, and unsupported transfer coding before exposing a response body; cleartext and Native TLS H1 share the same decision
+- `=Boundary` Equal duplicate `Content-Length` values remain accepted; malformed-response connections are retired instead of pooled, without claiming complete HTTP interoperability certification
+- `+Security` The default Native H1 path now requires exactly one non-empty Host per HTTP/1.1 request and rejects comma-joined authority plus forbidden control bytes in request field values
+- `=Boundary` Malformed requests receive a fixed bodyless 400 and close their current connection before App dispatch; this does not claim independent proxy-chain certification
+- `+Feature` Explicit cleartext and Native TLS H2 sessions can opt into bounded pre-response broken-transport replay for idempotent buffered requests through `sendWithRetry(..., reconnectOnConnectionFailure: true)`, then continue using the replacement session
+- `=Boundary` Reconnect requires an idle session and remains off by default; active leases, one-pass/non-idempotent requests, and response-body failures after a head are never migrated or replayed
+- `+Feature` Add `ResponseTransportTransformFactory`, `Ctx.registerResponseTransportTransform(...)`, and `responseTransportTransformMiddleware(...)` so plain `transportWriter()` calls can compose fresh stateful transforms in response-onion order
+- `=Boundary` Transform registration freezes when the first transport writer opens; this does not automatically wrap `writer()`, SSE, sendStream/pull JSON, or integrate the existing compression-policy middleware
 - `+Feature` Buffered and streamed dynamic gzip/deflate responses now use an Ignite-owned safe Cangjie DEFLATE/GZIP codec; product paths no longer construct `stdx.compress.zlib` codecs
 - `+Feature` Buffered responses use fixed Huffman coding with bounded LZ77 matching; streamed responses emit incremental stored blocks without capturing the complete response
 - `+Feature` Brotli/Zstd remain available through precompressed `.br` / `.zst` static representations while preserving Range, HEAD, Vary, and MIME semantics

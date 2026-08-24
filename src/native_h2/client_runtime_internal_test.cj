@@ -143,6 +143,157 @@ public class NativeH2ClientRuntimeInternalTestSuite {
     }
 
     @TestCase
+    public func testNativeClientBatchPrioritizesDataAndFairlyRotatesEqualHints(): Unit {
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 priority test could not reserve loopback port")
+        let bodySize: Int64 = 20000
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            try {
+                let preface = nativeH2ReadExactly(accepted, NATIVE_H2_PREFACE.size)
+                @Assert(nativeH2BytesEqual(preface, NATIVE_H2_PREFACE), true)
+                let clientSettings = nativeH2ReadFrame(accepted)
+                @Assert(clientSettings.frameType, UInt8(0x4))
+                @Assert(clientSettings.streamId, Int64(0))
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(
+                        UInt8(0x4), UInt8(0), 0,
+                        [UInt8(0), UInt8(4), UInt8(0), UInt8(0), UInt8(0x40), UInt8(0)]
+                    )
+                )
+                nativeH2WriteFrame(
+                    accepted,
+                    NativeH2Frame(UInt8(0x4), UInt8(0x1), 0, Array<UInt8>())
+                )
+                let clientAck = nativeH2ReadFrame(accepted)
+                @Assert(clientAck.frameType, UInt8(0x4))
+                @Assert(clientAck.flags & UInt8(0x1), UInt8(0x1))
+
+                for (streamId in [Int64(1), Int64(3), Int64(5)]) {
+                    let head = nativeH2ReadFrame(accepted)
+                    @Assert(head.frameType, UInt8(0x1))
+                    @Assert(head.streamId, streamId)
+                }
+
+                let first = nativeH2ReadFrame(accepted)
+                let second = nativeH2ReadFrame(accepted)
+                let third = nativeH2ReadFrame(accepted)
+                @Assert(first.frameType, UInt8(0x0))
+                @Assert(second.frameType, UInt8(0x0))
+                @Assert(third.frameType, UInt8(0x0))
+                @Assert(first.streamId, Int64(3))
+                @Assert(second.streamId, Int64(1))
+                @Assert(third.streamId, Int64(5))
+                @Assert(first.payload.size, Int64(16384))
+                @Assert(second.payload.size, Int64(16384))
+                @Assert(third.payload.size, Int64(16384))
+                @Assert(first.flags & UInt8(0x1), UInt8(0))
+                @Assert(second.flags & UInt8(0x1), UInt8(0))
+                @Assert(third.flags & UInt8(0x1), UInt8(0))
+
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(3, bodySize))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(1, bodySize))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(5, bodySize))
+                nativeH2WriteFrame(accepted, nativeH2ClientWindowUpdate(0, 60000))
+
+                let remainingOne = nativeH2ReadFrame(accepted)
+                let remainingTwo = nativeH2ReadFrame(accepted)
+                let remainingThree = nativeH2ReadFrame(accepted)
+                @Assert(remainingOne.frameType, UInt8(0x0))
+                @Assert(remainingTwo.frameType, UInt8(0x0))
+                @Assert(remainingThree.frameType, UInt8(0x0))
+                @Assert(remainingOne.streamId, Int64(3))
+                @Assert(remainingTwo.streamId, Int64(1))
+                @Assert(remainingThree.streamId, Int64(5))
+                @Assert(remainingOne.payload.size, Int64(3616))
+                @Assert(remainingTwo.payload.size, Int64(3616))
+                @Assert(remainingThree.payload.size, Int64(3616))
+                @Assert(remainingOne.flags & UInt8(0x1), UInt8(0x1))
+                @Assert(remainingTwo.flags & UInt8(0x1), UInt8(0x1))
+                @Assert(remainingThree.flags & UInt8(0x1), UInt8(0x1))
+
+                for (streamId in [Int64(1), Int64(3), Int64(5)]) {
+                    nativeH2WriteFrame(
+                        accepted,
+                        NativeH2Frame(
+                            UInt8(0x1), UInt8(0x5), streamId,
+                            nativeH2ClientTestEncodeResponseHead(
+                                204, Array<NativeH2Header>()
+                            )
+                        )
+                    )
+                }
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let socket = TcpSocket("127.0.0.1", port)
+        try {
+            socket.connect(timeout: Some(Duration.second * 2))
+            socket.readTimeout = Some(Duration.second * 3)
+            socket.writeTimeout = Some(Duration.second * 3)
+            let responses = sendNativeH2Requests(socket, [
+                NativeH2ClientRequest(
+                    "POST", "http", "localhost", "/low-1",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x61)),
+                    priorityHint: 10
+                ),
+                NativeH2ClientRequest(
+                    "POST", "http", "localhost", "/high",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x68)),
+                    priorityHint: 200
+                ),
+                NativeH2ClientRequest(
+                    "POST", "http", "localhost", "/low-2",
+                    body: Array<UInt8>(bodySize, repeat: UInt8(0x62)),
+                    priorityHint: 10
+                )
+            ])
+            @Assert(responses.size, 3)
+            @Assert(responses[0].status, UInt16(204))
+            @Assert(responses[1].status, UInt16(204))
+            @Assert(responses[2].status, UInt16(204))
+            let _ = serverFuture.get(Duration.second * 3)
+        } finally {
+            try { socket.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+        }
+    }
+
+    @TestCase
+    public func testNativeH2PriorityHintBoundsAndDefault(): Unit {
+        let neutral = NativeH2ClientRequest("GET", "http", "localhost", "/")
+        @Assert(neutral.priorityHint, NATIVE_H2_DEFAULT_PRIORITY_HINT)
+        let bounded = NativeH2ClientRequest(
+            "GET", "http", "localhost", "/", priorityHint: NATIVE_H2_MAX_PRIORITY_HINT
+        )
+        @Assert(bounded.priorityHint, NATIVE_H2_MAX_PRIORITY_HINT)
+
+        var lowFailure = false
+        try {
+            let _ = NativeH2ClientRequest("GET", "http", "localhost", "/", priorityHint: -1)
+        } catch (_: Exception) {
+            lowFailure = true
+        }
+        @Assert(lowFailure, true)
+
+        var highFailure = false
+        try {
+            let _ = NativeH2ClientRequest(
+                "GET", "http", "localhost", "/",
+                priorityHint: NATIVE_H2_MAX_PRIORITY_HINT + 1
+            )
+        } catch (_: Exception) {
+            highFailure = true
+        }
+        @Assert(highFailure, true)
+    }
+
+    @TestCase
     public func testNativeClientReusesConnectionAcrossSequentialBatches(): Unit {
         let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
         listener.bind()

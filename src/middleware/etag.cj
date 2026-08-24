@@ -14,6 +14,11 @@ public func etagMiddleware(config!: ETagConfig = ETagConfig()): Handler {
     { ctx: Ctx =>
         ctx.next()
 
+        if (ctx.responseCommitted) {
+            ctx.setLocal("__ignite_etag_skip_reason", "response-committed")
+            return
+        }
+
         if (let Some(body) <- ctx.responseBody) {
             if (body.size == 0) { return }
 

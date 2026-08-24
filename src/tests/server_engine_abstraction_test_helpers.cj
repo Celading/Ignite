@@ -8,7 +8,7 @@ import std.env.{removeVariable, setVariable}
 import std.fs.{File, exists}
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
 import jinguissl.live.{
@@ -8378,14 +8378,6 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         }
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport response probe carrier")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run for accepted transport response probe carrier")
-    }
-
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         writer
     }
@@ -8425,12 +8417,22 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        requestTrailersValue
+    public override func requestTrailerValue(key: String): ?String {
+        requestTrailersValue.getFirst(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestTrailersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -8449,8 +8451,8 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -8491,14 +8493,6 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         this.pathText = pathText
         this.lifecycle = lifecycle
         this.failOnOpen = failOnOpen
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport H2 lifecycle application-data probe carrier")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run for accepted transport H2 lifecycle application-data probe carrier")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -8546,12 +8540,17 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -8570,8 +8569,8 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -8615,14 +8614,6 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         socket.write(bytes)
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport response socket-sink probe carrier")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run for accepted transport response socket-sink probe carrier")
-    }
-
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         openSinkBackedResponseTransportWriter({ bytes =>
             writeSocketResponseBytes(bytes)
@@ -8664,12 +8655,17 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -8688,8 +8684,8 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

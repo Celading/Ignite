@@ -24,7 +24,7 @@ import std.net.{
     TcpSocket
 }
 import std.sync.Mutex
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 let SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT: Int64 = 1024
 let SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT: Int64 = 16 * 1024
@@ -32,6 +32,60 @@ let SOCKET_SERVER_ENGINE_SHELL_TRAILER_TOTAL_LIMIT: Int64 = 16 * 1024
 let SOCKET_SERVER_ENGINE_SHELL_TRAILER_FIELD_LIMIT: Int64 = 100
 
 let SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT_ENV = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+
+enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngineShellRequestRejectionKind> & ToString {
+    | BadRequest
+    | UriTooLong
+    | HeaderFieldsTooLarge
+    | HttpVersionNotSupported
+    | RequestTimeout
+    | ExpectationFailed
+
+    public operator func ==(right: SocketServerEngineShellRequestRejectionKind): Bool {
+        ordinalValue() == right.ordinalValue()
+    }
+
+    public operator func !=(right: SocketServerEngineShellRequestRejectionKind): Bool {
+        !(this == right)
+    }
+
+    public func ordinalValue(): Int64 {
+        match (this) {
+            case BadRequest => 0
+            case UriTooLong => 1
+            case HeaderFieldsTooLarge => 2
+            case HttpVersionNotSupported => 3
+            case RequestTimeout => 4
+            case ExpectationFailed => 5
+        }
+    }
+
+    public func toString(): String {
+        match (this) {
+            case BadRequest => "BAD_REQUEST"
+            case UriTooLong => "URI_TOO_LONG"
+            case HeaderFieldsTooLarge => "HEADER_FIELDS_TOO_LARGE"
+            case HttpVersionNotSupported => "HTTP_VERSION_NOT_SUPPORTED"
+            case RequestTimeout => "REQUEST_TIMEOUT"
+            case ExpectationFailed => "EXPECTATION_FAILED"
+        }
+    }
+}
+
+class SocketServerEngineShellRequestRejectionException <: Exception {
+    let kind: SocketServerEngineShellRequestRejectionKind
+
+    init(kind: SocketServerEngineShellRequestRejectionKind, message: String) {
+        super(message)
+        this.kind = kind
+    }
+}
+
+class SocketServerEngineShellMalformedChunkedBodyException <: Exception {
+    init(message: String) {
+        super(message)
+    }
+}
 
 public class SocketServerEngineShellRuntimeControl {
     let _mtx = Mutex()
@@ -776,7 +830,14 @@ func serveSocketServerEngineShellSocketTurns(
         var requestStarted = false
         try {
             socket.readTimeout = Some(option.readHeaderTimeout)
-            let request = readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
+            let request = try {
+                readSocketServerEngineShellRequest(socket, requestHeadReadBuffer)
+            } catch (e: SocketTimeoutException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.RequestTimeout,
+                    e.message
+                )
+            }
             if (keepAliveWaitActive) {
                 control.keepAliveWaitFinished()
                 keepAliveWaitActive = false
@@ -786,7 +847,29 @@ func serveSocketServerEngineShellSocketTurns(
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
-            let seed = buildSocketHttp11DispatchSeed(request)
+            if (socketServerEngineShellHasUnsupportedExpectation(request)) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.ExpectationFailed,
+                    "native H1 request carries an unsupported expectation"
+                )
+            }
+            let seed = try {
+                buildSocketHttp11DispatchSeed(request)
+            } catch (e: SocketHttp11DispatchSeedException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.BadRequest,
+                    e.message
+                )
+            }
+            if (
+                socketServerEngineShellShouldWriteContinue(request) &&
+                !socketServerEngineShellKnownBodyExceedsLimit(
+                    request,
+                    option.maxRequestBodySize
+                )
+            ) {
+                socket.write("HTTP/1.1 100 Continue\r\n\r\n".toArray())
+            }
             let requestBodyBytes = try {
                 readSocketServerEngineShellRequestBodyBytes(
                     socket,
@@ -804,13 +887,25 @@ func serveSocketServerEngineShellSocketTurns(
                 requestStarted = false
                 moreTurns = false
                 continue
+            } catch (e: SocketServerEngineShellMalformedChunkedBodyException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.BadRequest,
+                    e.message
+                )
+            } catch (e: SocketTimeoutException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.RequestTimeout,
+                    e.message
+                )
             }
             let carrier = SocketServerEngineShellCurrentRequestCarrier(
                 request,
                 seed,
                 socket.remoteAddress.toString(),
                 requestBodyBytes,
-                nativeWebSocketSocket: Some(socket)
+                nativeWebSocketSocket: Some(socket),
+                liveResponseSocket: Some(socket),
+                liveResponseCloseAfterWrite: !keepAliveAfterWrite
             )
             app.handleRequest(carrier)
             if (carrier.nativeWebSocketUpgraded()) {
@@ -819,13 +914,17 @@ func serveSocketServerEngineShellSocketTurns(
                 moreTurns = false
                 continue
             }
-            let closeAfterWrite = !keepAliveAfterWrite
-            writeSocketServerEngineShellResponse(
-                socket,
-                request,
-                carrier,
-                closeAfterWrite
-            )
+            if (carrier.hasLiveResponseWriter()) {
+                carrier.finishLiveResponseWriter()
+            } else {
+                let closeAfterWrite = !keepAliveAfterWrite
+                writeSocketServerEngineShellResponse(
+                    socket,
+                    request,
+                    carrier,
+                    closeAfterWrite
+                )
+            }
             control.requestCompleted()
             requestStarted = false
             if (keepAliveAfterWrite) {
@@ -833,6 +932,20 @@ func serveSocketServerEngineShellSocketTurns(
             } else {
                 moreTurns = false
             }
+        } catch (e: SocketServerEngineShellRequestRejectionException) {
+            settleSocketServerEngineShellFailedTurn(
+                control,
+                keepAliveWaitActive,
+                requestStarted
+            )
+            keepAliveWaitActive = false
+            requestStarted = false
+            try {
+                writeSocketServerEngineShellRequestRejectionResponse(socket, e.kind)
+            } catch (e: Exception) {
+                containSocketServerEngineShellExpectedConnectionEnd(e)
+            }
+            moreTurns = false
         } catch (_: SocketServerEngineShellException) {
             settleSocketServerEngineShellFailedTurn(
                 control,
@@ -890,6 +1003,83 @@ func containSocketServerEngineShellExpectedConnectionEnd(error: Exception): Unit
     if (!socketServerEngineShellIsExpectedConnectionEnd(error)) {
         throw error
     }
+}
+
+func writeSocketServerEngineShellRequestRejectionResponse(
+    socket: TcpSocket,
+    kind: SocketServerEngineShellRequestRejectionKind
+): Unit {
+    let status = match (kind) {
+        case SocketServerEngineShellRequestRejectionKind.BadRequest => "400 Bad Request"
+        case SocketServerEngineShellRequestRejectionKind.UriTooLong => "414 URI Too Long"
+        case SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge =>
+            "431 Request Header Fields Too Large"
+        case SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported =>
+            "505 HTTP Version Not Supported"
+        case SocketServerEngineShellRequestRejectionKind.RequestTimeout =>
+            "408 Request Timeout"
+        case SocketServerEngineShellRequestRejectionKind.ExpectationFailed =>
+            "417 Expectation Failed"
+    }
+    socket.write(
+        (
+            "HTTP/1.1 ${status}\r\n" +
+            "Content-Length: 0\r\n" +
+            "Connection: close\r\n\r\n"
+        ).toArray()
+    )
+}
+
+func socketServerEngineShellHasUnsupportedExpectation(
+    request: SocketHttp11SessionRequest
+): Bool {
+    for (header in request.head.headers) {
+        if (header.name != "expect") {
+            continue
+        }
+        if (header.value.trimAscii().size == 0) {
+            return true
+        }
+        for (part in header.value.split(",")) {
+            if (part.trimAscii().toAsciiLower() != "100-continue") {
+                return true
+            }
+        }
+    }
+    false
+}
+
+func socketServerEngineShellShouldWriteContinue(
+    request: SocketHttp11SessionRequest
+): Bool {
+    if (
+        !request.bodyPlan.requiresBodyStage ||
+        !request.bodyPlan.needsMoreNetworkBytes
+    ) {
+        return false
+    }
+    for (header in request.head.headers) {
+        if (header.name != "expect") {
+            continue
+        }
+        for (part in header.value.split(",")) {
+            if (part.trimAscii().toAsciiLower() == "100-continue") {
+                return true
+            }
+        }
+    }
+    false
+}
+
+func socketServerEngineShellKnownBodyExceedsLimit(
+    request: SocketHttp11SessionRequest,
+    maxRequestBodySize: Int64
+): Bool {
+    if (maxRequestBodySize <= 0) {
+        return false
+    }
+    request.bodyPlan.declaredBodyBytes > maxRequestBodySize ||
+        request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize
 }
 
 func socketServerEngineShellShouldKeepAliveAfterWrite(
@@ -951,10 +1141,16 @@ func readSocketServerEngineShellRequest(
                 return request
             }
         } catch (e: SocketHttp11HeadException) {
+            if (let Some(kind) <- socketServerEngineShellHeadFailureRejectionKind(e)) {
+                throw SocketServerEngineShellRequestRejectionException(kind, e.message)
+            }
             throw SocketServerEngineShellException(
                 "socket server engine shell request-head parse failed: ${e.message}"
             )
         } catch (e: SocketHttp11SessionException) {
+            if (let Some(kind) <- socketServerEngineShellSessionFailureRejectionKind(e)) {
+                throw SocketServerEngineShellRequestRejectionException(kind, e.message)
+            }
             throw SocketServerEngineShellException(
                 "socket server engine shell request session failed: ${e.message}"
             )
@@ -963,6 +1159,35 @@ func readSocketServerEngineShellRequest(
     throw SocketServerEngineShellException(
         "socket server engine shell requires one complete HTTP/1.1 request head before it can dispatch"
     )
+}
+
+func socketServerEngineShellHeadFailureRejectionKind(
+    error: SocketHttp11HeadException
+): ?SocketServerEngineShellRequestRejectionKind {
+    match (error.code) {
+        case SocketHttp11HeadErrorCode.MalformedRequestLine =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.MalformedHeader =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.InvalidHeaderName =>
+            Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
+        case SocketHttp11HeadErrorCode.RequestTargetTooLong =>
+            Some(SocketServerEngineShellRequestRejectionKind.UriTooLong)
+        case SocketHttp11HeadErrorCode.HeaderFieldsTooLarge =>
+            Some(SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge)
+        case SocketHttp11HeadErrorCode.UnsupportedVersion =>
+            Some(SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported)
+        case SocketHttp11HeadErrorCode.LimitExceeded => None
+    }
+}
+
+func socketServerEngineShellSessionFailureRejectionKind(
+    error: SocketHttp11SessionException
+): ?SocketServerEngineShellRequestRejectionKind {
+    if (error.code == SocketHttp11SessionErrorCode.InvalidState) {
+        return None
+    }
+    Some(SocketServerEngineShellRequestRejectionKind.BadRequest)
 }
 
 func readSocketServerEngineShellRequestBodyBytes(
@@ -1109,7 +1334,7 @@ func socketServerEngineShellDecodeChunkedBody(
         }
         cursor += chunkSize
         if (network[cursor] != UInt8(13) || network[cursor + 1] != UInt8(10)) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut requires CRLF after each chunk payload"
             )
         }
@@ -1190,14 +1415,14 @@ func socketServerEngineShellValidateChunkedTrailerLine(
 ): Unit {
     let colon = socketServerEngineShellFindByteInRange(network, start, end, UInt8(58))
     if (colon <= start) {
-        throw SocketServerEngineShellException(
+        throw SocketServerEngineShellMalformedChunkedBodyException(
             "socket server engine shell chunked body-stage first cut received an invalid trailer line"
         )
     }
     var i = start
     while (i < colon) {
         if (!socketServerEngineShellIsHttp11TokenByte(network[i])) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut received an invalid trailer line"
             )
         }
@@ -1327,16 +1552,21 @@ func socketServerEngineShellParseChunkSizeLine(
         }
         let digit = socketServerEngineShellHexDigitValue(b)
         if (digit < 0) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut received an invalid chunk size"
             )
         }
         seenDigit = true
+        if (out > 576460752303423487) {
+            throw SocketServerEngineShellMalformedChunkedBodyException(
+                "socket server engine shell chunked body-stage first cut received an overflowing chunk size"
+            )
+        }
         out = out * 16 + digit
         i += 1
     }
     if (!seenDigit) {
-        throw SocketServerEngineShellException(
+        throw SocketServerEngineShellMalformedChunkedBodyException(
             "socket server engine shell chunked body-stage first cut requires a chunk size"
         )
     }
@@ -1682,19 +1912,119 @@ class SocketServerEngineShellBytesInputStream <: InputStream {
     }
 }
 
-class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter {
+class SocketServerEngineShellResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
     let carrier: SocketServerEngineShellCurrentRequestCarrier
+    var closed: Bool = false
 
     init(carrier: SocketServerEngineShellCurrentRequestCarrier) {
         this.carrier = carrier
     }
 
     public override func write(data: Array<UInt8>): Unit {
+        ensureResponseTransportWriterOpen(closed)
         carrier.appendResponseBodyBytes(data)
+    }
+
+    public override func flush(): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        // The native H1 carrier owns a complete response body until the
+        // request handler returns; there is no earlier socket flush here.
+    }
+
+    public override func close(): Unit {
+        closed = true
     }
 }
 
-class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
+class SocketServerEngineShellLiveResponseTransportWriter <: ResponseTransportWriter & ResponseTransportLifecycle {
+    let carrier: SocketServerEngineShellCurrentRequestCarrier
+    let socket: TcpSocket
+    let request: SocketHttp11SessionRequest
+    let closeAfterWrite: Bool
+    var lifecycle: ?SocketHttp11ResponseWriterLifecycle = None
+    var closed: Bool = false
+
+    init(
+        carrier: SocketServerEngineShellCurrentRequestCarrier,
+        socket: TcpSocket,
+        request: SocketHttp11SessionRequest,
+        closeAfterWrite: Bool
+    ) {
+        this.carrier = carrier
+        this.socket = socket
+        this.request = request
+        this.closeAfterWrite = closeAfterWrite
+    }
+
+    public override func write(data: Array<UInt8>): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        let writer = ensureLifecycle()
+        let wire = writer.writeBodyChunkBorrowedForSocket(data)
+        if (wire.size > 0) {
+            socket.write(wire)
+        }
+    }
+
+    public override func flush(): Unit {
+        ensureResponseTransportWriterOpen(closed)
+        let _ = ensureLifecycle()
+    }
+
+    public override func close(): Unit {
+        if (closed) {
+            return
+        }
+        closed = true
+        let writer = ensureLifecycle()
+        let tail = writer.finish()
+        if (tail.size > 0) {
+            socket.write(tail)
+        }
+    }
+
+    func ensureLifecycle(): SocketHttp11ResponseWriterLifecycle {
+        match (lifecycle) {
+            case Some(writer) => writer
+            case None =>
+                let responseHeaders = carrier.responseHeadersForSocket()
+                let responseHasChunkedTransfer = carrier.responseHeader("transfer-encoding") ?? ""
+                let responseContentLength = carrier.responseHeader("content-length") ?? ""
+                let statusCode = Int64(carrier.responseStatusCode())
+                let bodyMode = if (isSocketHttp11ResponseBodyForbiddenStatus(statusCode)) {
+                    SocketHttp11ResponseBodyMode.Bodyless
+                } else if (responseHasChunkedTransfer.toAsciiLower() == "chunked") {
+                    SocketHttp11ResponseBodyMode.UnknownLength
+                } else if (responseContentLength.trimAscii().size == 0) {
+                    SocketHttp11ResponseBodyMode.UnknownLength
+                } else {
+                    SocketHttp11ResponseBodyMode.KnownLength
+                }
+                let declaredBodyBytes = if (bodyMode == SocketHttp11ResponseBodyMode.KnownLength) {
+                    socketServerEngineShellDeclaredStreamLength(responseContentLength)
+                } else {
+                    0
+                }
+                let plan = buildSocketHttp11ResponseWritePlan(
+                    request,
+                    statusCode,
+                    responseHeaders,
+                    bodyMode,
+                    declaredBodyBytes: declaredBodyBytes,
+                    option: SocketHttp11ResponseWriteOption(closeAfterWrite: closeAfterWrite)
+                )
+                let writer = SocketHttp11ResponseWriterLifecycle(plan)
+                let head = writer.takeHeadBytes()
+                if (head.size > 0) {
+                    socket.write(head)
+                    carrier.markResponseCommitted()
+                }
+                lifecycle = Some(writer)
+                writer
+        }
+    }
+}
+
+class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
     let remoteAddress: String
@@ -1702,43 +2032,39 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     let requestBodyBytesValue: Array<UInt8>
     let responseHeadersValue: HashMap<String, ArrayList<String>>
     let nativeWebSocketSocket: ?TcpSocket
+    let liveResponseSocket: ?TcpSocket
+    let liveResponseCloseAfterWrite: Bool
+    var liveResponseWriterValue: ?ResponseTransportWriter = None
     var responseBodyBytesValue: Array<UInt8> = Array<UInt8>(0, repeat: 0)
     var responseBodyAppendBufferValue: ?ArrayList<UInt8> = None
     var responseBodyStreamValue: ?InputStream = None
     var responseStatusCodeValue: UInt16 = 200
     var nativeWebSocketUpgradedValue: Bool = false
+    var responseCommittedValue: Bool = false
 
     init(
         request: SocketHttp11SessionRequest,
         seed: SocketHttp11DispatchSeed,
         remoteAddress: String,
         requestBodyBytes: Array<UInt8>,
-        nativeWebSocketSocket!: ?TcpSocket = None
+        nativeWebSocketSocket!: ?TcpSocket = None,
+        liveResponseSocket!: ?TcpSocket = None,
+        liveResponseCloseAfterWrite!: Bool = false
     ) {
         this.request = request
         this.seed = seed
         this.remoteAddress = remoteAddress
-        this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request)
+        this.requestHeadersValue = buildSocketServerEngineShellRequestHeaders(request, seed)
         this.requestBodyBytesValue = socketServerEngineShellCloneBytes(requestBodyBytes)
         this.responseHeadersValue = HashMap<String, ArrayList<String>>()
         this.nativeWebSocketSocket = nativeWebSocketSocket
+        this.liveResponseSocket = liveResponseSocket
+        this.liveResponseCloseAfterWrite = liveResponseCloseAfterWrite
         this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
         this.responseBodyAppendBufferValue = None
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw SocketServerEngineShellException(
-            "socket server engine shell does not expose raw HttpContext"
-        )
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw SocketServerEngineShellException(
-            "socket server engine shell cleartext first-runnable path does not support WebSocket upgrade"
-        )
-    }
-
-    public override func upgradeNativeWebSocket(
+    public override func upgradeWebSocket(
         subProtocols: Array<String>,
         options: WebSocketOptions
     ): WsConn {
@@ -1766,7 +2092,40 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
-        SocketServerEngineShellResponseTransportWriter(this)
+        match (liveResponseWriterValue) {
+            case Some(writer) => writer
+            case None =>
+                let writer: ResponseTransportWriter = match (liveResponseSocket) {
+                    case Some(socket) =>
+                        SocketServerEngineShellLiveResponseTransportWriter(
+                            this,
+                            socket,
+                            request,
+                            liveResponseCloseAfterWrite
+                        )
+                    case None => SocketServerEngineShellResponseTransportWriter(this)
+                }
+                liveResponseWriterValue = Some(writer)
+                writer
+        }
+    }
+
+    public func hasLiveResponseWriter(): Bool {
+        liveResponseSocket.isSome() && liveResponseWriterValue.isSome()
+    }
+
+    public override func responseCommitted(): Bool {
+        responseCommittedValue
+    }
+
+    func markResponseCommitted(): Unit {
+        responseCommittedValue = true
+    }
+
+    public func finishLiveResponseWriter(): Unit {
+        if (let Some(writer) <- liveResponseWriterValue) {
+            closeResponseTransportWriter(writer)
+        }
     }
 
     public override func requestMethod(): String {
@@ -1802,15 +2161,32 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
     }
 
     public override func requestHeaderValue(key: String): ?String {
+        if (
+            seed.targetForm == SocketHttp11RequestTargetForm.AbsoluteForm &&
+            key.trimAscii().toAsciiLower() == "host"
+        ) {
+            return Some(seed.authority)
+        }
         request.head.header(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        requestHeadersValue
+    public override func requestHeaderFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in requestHeadersValue) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -1839,12 +2215,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         responseHeadersValue.add(key.toAsciiLower(), values)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        for ((name, values) in headers) {
-            for (value in values) {
-                appendResponseHeader(name, value)
-            }
-        }
+    public override func addResponseHeader(key: String, value: String): Unit {
+        appendResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -1973,10 +2345,20 @@ func ensureSocketServerEngineShellFinalStatusSupported(code: UInt16): Unit {
     }
 }
 
-func buildSocketServerEngineShellRequestHeaders(request: SocketHttp11SessionRequest): HttpHeaders {
+func buildSocketServerEngineShellRequestHeaders(
+    request: SocketHttp11SessionRequest,
+    seed: SocketHttp11DispatchSeed
+): HttpHeaders {
     let headers = HttpHeaders()
     for (header in request.head.headers) {
-        headers.add(header.name, header.value)
+        if (
+            seed.targetForm == SocketHttp11RequestTargetForm.AbsoluteForm &&
+            header.name.trimAscii().toAsciiLower() == "host"
+        ) {
+            headers.add(header.name, seed.authority)
+        } else {
+            headers.add(header.name, header.value)
+        }
     }
     headers
 }

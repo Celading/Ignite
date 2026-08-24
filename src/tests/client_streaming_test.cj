@@ -117,6 +117,39 @@ public class ClientStreamingTestSuite {
         @Assert(drained.size, 0)
         assertObservedMetadata(afterDiscard, 202)
     }
+
+    @TestCase
+    public func testOwnedHeaderFieldsPreserveDuplicatesAndRawCompatibilityMutation(): Unit {
+        let raw = HttpResponseBuilder()
+            .status(206)
+            .body(Array<UInt8>())
+            .build()
+        let response = ClientResponse(
+            UInt16(206),
+            [
+                ("Set-Cookie", "a=1"),
+                ("set-cookie", "b=2"),
+                ("X-Case", "Value")
+            ],
+            raw.body
+        )
+
+        @Assert(response.header("x-case") ?? "", "Value")
+        let beforeCompatibility = response.headerValues("SET-cookie")
+        @Assert(beforeCompatibility.size, Int64(2))
+        @Assert(beforeCompatibility[0], "a=1")
+        @Assert(beforeCompatibility[1], "b=2")
+
+        let compatibility = response.headers
+        @Assert(compatibility.getFirst("x-case") ?? "", "Value")
+        let afterMaterialization = response.headerValues("set-cookie")
+        @Assert(afterMaterialization.size, Int64(2))
+        @Assert(afterMaterialization[0], "a=1")
+        @Assert(afterMaterialization[1], "b=2")
+
+        compatibility.add("X-Legacy-Mutation", "visible")
+        @Assert(response.header("x-legacy-mutation") ?? "", "visible")
+    }
 }
 
 func makePayload(size: Int64): Array<UInt8> {

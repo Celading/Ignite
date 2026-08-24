@@ -225,6 +225,89 @@ public class SocketServerEngineShellInternalTestSuite {
     }
 
     @TestCase
+    public func testRequestRejectionClassifierPreservesStatusTaxonomyAndInternalState(): Unit {
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.RequestTimeout.ordinalValue(),
+            Int64(4)
+        )
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.RequestTimeout.toString(),
+            "REQUEST_TIMEOUT"
+        )
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.ExpectationFailed.ordinalValue(),
+            Int64(5)
+        )
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.ExpectationFailed.toString(),
+            "EXPECTATION_FAILED"
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.MalformedHeader,
+                    "malformed header"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.UriTooLong,
+            SocketServerEngineShellRequestRejectionKind.BadRequest
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.UnsupportedVersion,
+                    "unsupported version"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.HttpVersionNotSupported
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.RequestTargetTooLong,
+                    "request target limit"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.UriTooLong
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.HeaderFieldsTooLarge,
+                    "header field limit"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.BadRequest,
+            SocketServerEngineShellRequestRejectionKind.HeaderFieldsTooLarge
+        )
+        @Assert(
+            socketServerEngineShellHeadFailureRejectionKind(
+                SocketHttp11HeadException(
+                    SocketHttp11HeadErrorCode.LimitExceeded,
+                    "legacy unclassified limit"
+                )
+            ) == None,
+            true
+        )
+        @Assert(
+            socketServerEngineShellSessionFailureRejectionKind(
+                SocketHttp11SessionException(
+                    SocketHttp11SessionErrorCode.InvalidContentLength,
+                    "invalid content length"
+                )
+            ) ?? SocketServerEngineShellRequestRejectionKind.UriTooLong,
+            SocketServerEngineShellRequestRejectionKind.BadRequest
+        )
+        @Assert(
+            socketServerEngineShellSessionFailureRejectionKind(
+                SocketHttp11SessionException(
+                    SocketHttp11SessionErrorCode.InvalidState,
+                    "invalid internal state"
+                )
+            ) == None,
+            true
+        )
+    }
+
+    @TestCase
     public func testFailedTurnSettlementDistinguishesKeepAliveWaitAndStartedRequest(): Unit {
         let keepAliveControl = SocketServerEngineShellRuntimeControl()
         keepAliveControl.connectionAccepted()

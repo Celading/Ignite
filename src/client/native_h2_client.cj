@@ -8,17 +8,31 @@ import ignite.native_h2.{
     NativeH2MultiplexResponse,
     NativeH2MultiplexSession,
     NativeH2ClientStreamedResponse,
-    NativeH2Header
+    NativeH2Header,
+    NATIVE_H2_DEFAULT_PRIORITY_HINT,
+    NATIVE_H2_MAX_PRIORITY_HINT
 }
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
-import stdx.net.http.HttpHeaders
 import ignite.transport.NativeByteTransport
 
 let NATIVE_H2_CLIENT_BACKEND = "ignite-native-h2-client"
 let NATIVE_H2_REST_BATCH_LIMIT: Int64 = 32
+
+class NativeH2SessionTransport {
+    let connection: NativeH2PooledConnection
+    let protocol: NativeH2MultiplexSession
+
+    init(
+        connection: NativeH2PooledConnection,
+        protocol: NativeH2MultiplexSession
+    ) {
+        this.connection = connection
+        this.protocol = protocol
+    }
+}
 
 /// One buffered request inside an explicit RestClient H2 multiplex turn.
 public class NativeH2BatchRequest {
@@ -29,6 +43,8 @@ public class NativeH2BatchRequest {
     var requestBodyStream: ?InputStream = None
     var requestBodyStreamLength: Int64 = 0
     var requestBodyStreamHasKnownLength = false
+    var responseDeadlineMs: Int64 = 0
+    var requestPriorityHint: Int64 = NATIVE_H2_DEFAULT_PRIORITY_HINT
 
     public init(method: String, url: String) {
         this.method = method
@@ -83,6 +99,31 @@ public class NativeH2BatchRequest {
         this
     }
 
+    /// Bounds stream admission and response lifetime without changing the shared
+    /// H2 connection timeout.
+    public func deadline(timeout: Duration): NativeH2BatchRequest {
+        let milliseconds = timeout.toMilliseconds()
+        if (milliseconds <= 0) {
+            throw IllegalArgumentException("native H2 request deadline must be positive")
+        }
+        responseDeadlineMs = milliseconds
+        this
+    }
+
+    /// Sets a bounded local outbound scheduling hint for multiplexed H2 DATA.
+    /// Higher values are preferred; equal values remain fair. This is not
+    /// RFC 7540 dependency-tree or browser priority interoperability.
+    public func priority(value: Int64): NativeH2BatchRequest {
+        if (value < NATIVE_H2_DEFAULT_PRIORITY_HINT ||
+            value > NATIVE_H2_MAX_PRIORITY_HINT) {
+            throw IllegalArgumentException(
+                "native H2 priority hint must be between 0 and ${NATIVE_H2_MAX_PRIORITY_HINT}"
+            )
+        }
+        requestPriorityHint = value
+        this
+    }
+
     func headersSnapshot(): HashMap<String, String> {
         cloneNativeH1Headers(requestHeaders)
     }
@@ -102,6 +143,14 @@ public class NativeH2BatchRequest {
     func bodyStreamHasKnownLengthSnapshot(): Bool {
         requestBodyStreamHasKnownLength
     }
+
+    func deadlineMsSnapshot(): Int64 {
+        responseDeadlineMs
+    }
+
+    func priorityHintSnapshot(): Int64 {
+        requestPriorityHint
+    }
 }
 
 /// Explicit Preview session for independent cleartext H2 request/response leases.
@@ -110,14 +159,17 @@ public class NativeH2Session {
     let resolveUrl: (String) -> String
     let defaultHeaders: HashMap<String, String>
     let cookieStore: ?CookieStore
-    let protocol: NativeH2MultiplexSession
-    let connection: NativeH2PooledConnection
+    var protocol: NativeH2MultiplexSession
+    var connection: NativeH2PooledConnection
     let pool: NativeH2ClientConnectionPool
+    let reopen: () -> NativeH2SessionTransport
     let responseHooks: ArrayList<ClientResponseHook>
     let errorHooks: ArrayList<ClientErrorHook>
     let closeHook: () -> Unit
     let mtx = Mutex()
     var closed = false
+    var activeCalls: Int64 = 0
+    var reconnectReplayActive = false
 
     init(
         origin: String,
@@ -127,6 +179,7 @@ public class NativeH2Session {
         protocol: NativeH2MultiplexSession,
         connection: NativeH2PooledConnection,
         pool: NativeH2ClientConnectionPool,
+        reopen: () -> NativeH2SessionTransport,
         responseHooks: ArrayList<ClientResponseHook>,
         errorHooks: ArrayList<ClientErrorHook>,
         closeHook: () -> Unit
@@ -138,6 +191,7 @@ public class NativeH2Session {
         this.protocol = protocol
         this.connection = connection
         this.pool = pool
+        this.reopen = reopen
         this.responseHooks = responseHooks
         this.errorHooks = errorHooks
         this.closeHook = closeHook
@@ -149,6 +203,15 @@ public class NativeH2Session {
     /// Multiple callers may invoke this method concurrently. Each returned body is
     /// an independent one-pass lease coordinated by one connection-owned reader.
     public func send(request: NativeH2BatchRequest): ClientResponse {
+        beginSend()
+        try {
+            sendAttempt(request)
+        } finally {
+            endSend()
+        }
+    }
+
+    func sendAttempt(request: NativeH2BatchRequest): ClientResponse {
         try {
             let resolvedUrl = resolveUrl(request.url)
             let target = parseNativeH1Target(resolvedUrl)
@@ -201,15 +264,28 @@ public class NativeH2Session {
                     target.hostHeader,
                     target.requestTarget,
                     body: body,
-                    headers: nativeH2RequestHeaders(headers)
+                    headers: nativeH2RequestHeaders(headers),
+                    priorityHint: request.priorityHintSnapshot()
                 )
                 match (bodyStream) {
                     case Some(stream) => if (bodyStreamHasKnownLength) {
-                        protocol.sendStream(nativeRequest, stream, bodyLength)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            bodyLength,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     } else {
-                        protocol.sendStream(nativeRequest, stream)
+                        protocol.sendStream(
+                            nativeRequest,
+                            stream,
+                            deadlineMs: request.deadlineMsSnapshot()
+                        )
                     }
-                    case None => protocol.send(nativeRequest)
+                    case None => protocol.send(
+                        nativeRequest,
+                        deadlineMs: request.deadlineMsSnapshot()
+                    )
                 }
             } catch (e: NativeH2ClientException) {
                 throw nativeH2ProtocolTransportException(e)
@@ -237,8 +313,135 @@ public class NativeH2Session {
         }
     }
 
+    /// Replays an idempotent buffered request after configured response statuses.
+    /// Set `reconnectOnConnectionFailure` to replace a broken transport and
+    /// replay a pre-response failure. One-pass streams are never replayed.
+    /// Response hooks observe every completed attempt, including drained retries.
+    public func sendWithRetry(
+        request: NativeH2BatchRequest,
+        config!: ClientRetryConfig = ClientRetryConfig(),
+        reconnectOnConnectionFailure!: Bool = false
+    ): ClientResponse {
+        let retryConfig = config.copy()
+        let hasBodyStream = request.bodyStreamSnapshot().isSome()
+        if (retryConfig.enabled && retryConfig.maxAttempts > 1 && hasBodyStream) {
+            throw Exception("native H2 session cannot replay a one-pass request stream")
+        }
+        let replayEligible = nativeH2SessionRetryEligible(
+            request.method, hasBodyStream, retryConfig
+        )
+        if (retryConfig.enabled && retryConfig.maxAttempts > 1 && !replayEligible) {
+            throw Exception("native H2 session retry requires an idempotent request method")
+        }
+        let reconnectReplayEnabled = reconnectOnConnectionFailure && replayEligible
+        if (reconnectReplayEnabled) {
+            beginReconnectReplay()
+        }
+        try {
+            var attempt: Int64 = 1
+            while (true) {
+                let response = try {
+                    if (reconnectReplayEnabled) {
+                        sendAttempt(request)
+                    } else {
+                        send(request)
+                    }
+                } catch (e: Exception) {
+                    if (!reconnectReplayEnabled || attempt >= retryConfig.maxAttempts ||
+                        transportReusable()) {
+                        throw e
+                    }
+                    replaceBrokenTransport()
+                    nativeH2SessionRetryBackoff(retryConfig, attempt)
+                    attempt += 1
+                    continue
+                }
+                if (!nativeH2SessionRetryStatus(response.status, retryConfig, attempt)) {
+                    return response
+                }
+                response.discard()
+                nativeH2SessionRetryBackoff(retryConfig, attempt)
+                attempt += 1
+            }
+            throw Exception("native H2 session retry loop ended unexpectedly")
+        } finally {
+            if (reconnectReplayEnabled) {
+                endReconnectReplay()
+            }
+        }
+    }
+
+    func beginSend(): Unit {
+        synchronized(mtx) {
+            if (closed) {
+                throw Exception("native H2 session is closed")
+            }
+            if (reconnectReplayActive) {
+                throw Exception("native H2 session reconnect replay is active")
+            }
+            activeCalls += 1
+        }
+    }
+
+    func endSend(): Unit {
+        synchronized(mtx) {
+            if (activeCalls > 0) {
+                activeCalls -= 1
+            }
+        }
+    }
+
+    func beginReconnectReplay(): Unit {
+        synchronized(mtx) {
+            if (closed) {
+                throw Exception("native H2 session is closed")
+            }
+            if (reconnectReplayActive || activeCalls > 0 ||
+                protocol.activeStreams() > 0 || protocol.pendingAdmissions() > 0) {
+                throw Exception(
+                    "native H2 session reconnect replay requires an idle session"
+                )
+            }
+            reconnectReplayActive = true
+        }
+    }
+
+    func endReconnectReplay(): Unit {
+        synchronized(mtx) {
+            reconnectReplayActive = false
+        }
+    }
+
+    func transportReusable(): Bool {
+        synchronized(mtx) {
+            connection.reusable()
+        }
+    }
+
+    func replaceBrokenTransport(): Unit {
+        closeNativeH2Connection(connection)
+        let replacement = reopen()
+        var accepted = false
+        synchronized(mtx) {
+            if (!closed) {
+                connection = replacement.connection
+                protocol = replacement.protocol
+                accepted = true
+            }
+        }
+        if (!accepted) {
+            try { let _ = replacement.protocol.close() } catch (_: Exception) {}
+            closeNativeH2Connection(replacement.connection)
+            throw Exception("native H2 session closed during reconnect replay")
+        }
+    }
+
     public func activeStreams(): Int64 {
         protocol.activeStreams()
+    }
+
+    public func pendingRequests(): Int64 {
+        protocol.pendingAdmissions()
     }
 
     public func maxConcurrentStreams(): Int64 {
@@ -416,7 +619,8 @@ func executeNativeH2Batch(
                 target.hostHeader,
                 target.requestTarget,
                 body: body,
-                headers: nativeH2RequestHeaders(headers)
+                headers: nativeH2RequestHeaders(headers),
+                priorityHint: request.priorityHintSnapshot()
             )
         )
     }
@@ -575,6 +779,36 @@ func openNativeH2Connection(
     }
 }
 
+func acquireNativeH2SessionTransport(
+    origin: String,
+    target: NativeH1ClientTarget,
+    readTimeout: Duration,
+    writeTimeout: Duration,
+    pool: NativeH2ClientConnectionPool,
+    maxConcurrentStreams: Int64,
+    maxPendingRequests: Int64
+): NativeH2SessionTransport {
+    let connection = match (pool.acquire(origin)) {
+        case Some(existing) => existing
+        case None => openNativeH2Connection(target, readTimeout, writeTimeout)
+    }
+    connection.socket.readTimeout = Some(readTimeout)
+    connection.socket.writeTimeout = Some(writeTimeout)
+    var transferred = false
+    try {
+        let protocol = connection.protocol.openMultiplexSession(
+            maxConcurrentStreams: maxConcurrentStreams,
+            maxPendingRequests: maxPendingRequests
+        )
+        transferred = true
+        NativeH2SessionTransport(connection, protocol)
+    } finally {
+        if (!transferred) {
+            closeNativeH2Connection(connection)
+        }
+    }
+}
+
 func nativeH2RequestHeaders(input: HashMap<String, String>): Array<NativeH2Header> {
     let out = ArrayList<NativeH2Header>()
     for ((name, value) in input) {
@@ -591,13 +825,13 @@ func adaptNativeH2Response(
     origin: String,
     pool: NativeH2ClientConnectionPool
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { =>
             response.close()
@@ -611,25 +845,25 @@ func adaptNativeH2Response(
 }
 
 func adaptNativeH2BufferedResponse(response: NativeH2ClientResponse): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         NativeH1ClientBytesInputStream(response.body)
     )
 }
 
 func adaptNativeH2MultiplexResponse(response: NativeH2MultiplexResponse): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { => response.close() }
     )
@@ -640,13 +874,13 @@ func adaptNativeH2TransportResponse(
     protocol: NativeH2ClientConnection,
     transport: NativeByteTransport
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { =>
             response.close()
@@ -661,14 +895,14 @@ func adaptNativeH2PooledTransportResponse(
     transport: NativeByteTransport,
     settle: (Bool) -> Unit
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     let stream = NativeH2PooledResponseInputStream(response, transport, settle)
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         stream,
         closeHook: { => stream.close() }
     )

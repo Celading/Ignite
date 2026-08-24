@@ -52,20 +52,16 @@ Ignite 的价值不在于否定底层，而在于帮你把这些“每个服务�
 
 ### 稳定版：中心仓
 
-当前中心仓可直接消费 `0.8.7` Preview；需要 0700 稳定兼容线时使用 `0.7.7`：
+当前中心仓可直接消费的稳定版是 `0.7.7`：
 
 ```toml
-[dependencies]
-ignite = "0.8.7"
-```
-
-```toml
-# 0700 稳定兼容线
 [dependencies]
 ignite = "0.7.7"
 ```
 
-### 0800 Preview 源码：GitCode
+`0.8.7 Preview` 尚未进入中心仓，不要把 `ignite = "0.8.7"` 写成可用示例。
+
+### 0800 Preview：GitCode
 
 ```toml
 [dependencies]

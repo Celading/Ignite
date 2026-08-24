@@ -513,7 +513,7 @@ public class JsonSeaStreamCtxSugarTestSuite {
     }
 }
 
-/// Focused proof for the current stdx-backed `SeaJson-Bridge` first cut.
+/// Focused proof for the remaining typed-serialization compatibility bridge.
 ///
 /// This suite keeps two truths honest:
 /// 1. old full-buffer `serializeJson(...)` still returns the same string
@@ -799,7 +799,8 @@ func hexOfJsonWriterInputRune(ch: Rune): Int64 {
 
 func chooseJsonWriterInputStreamTestPort(seed: Int64): UInt16 {
     let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
-    UInt16(44000 + ((nowMs + seed) % 16000))
+    let raw = 47000 + ((nowMs + seed) % 8000)
+    UInt16(raw)
 }
 
 func buildJsonSerializeStreamValues(): ArrayList<Int64> {

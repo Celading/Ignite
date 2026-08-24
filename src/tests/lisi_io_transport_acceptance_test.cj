@@ -139,6 +139,32 @@ public class LisiIoTransportAcceptanceTestSuite {
         @Assert(lisiIoCloseOutcome(sink.close()), "CLOSED_NOW")
         @Assert(lisiIoCloseOutcome(sink.close()), "ALREADY_CLOSED")
     }
+
+    @TestCase
+    public func testResponseTransportSinkPropagatesFlushAndCloseLifecycle(): Unit {
+        let events = ArrayList<String>()
+        let writer = openLifecycleSinkBackedResponseTransportWriter(
+            {bytes => events.add("write:${String.fromUtf8(bytes)}")},
+            {=> events.add("flush")},
+            {=> events.add("close")}
+        )
+        let sink = IgniteResponseTransportIoSink(writer)
+        let context = IoOperationContext(false, false)
+
+        let writeTurn = sink.write("body".toArray(), 0, 4, context)
+        let flushTurn = sink.flush(context)
+        let closeTurn = sink.close()
+        let secondCloseTurn = sink.close()
+
+        @Assert(writeTurn.failure.isNone(), true)
+        @Assert(flushTurn.failure.isNone(), true)
+        @Assert(lisiIoCloseOutcome(closeTurn), "CLOSED_NOW")
+        @Assert(lisiIoCloseOutcome(secondCloseTurn), "ALREADY_CLOSED")
+        @Assert(events.size, Int64(3))
+        @Assert(events[0], "write:body")
+        @Assert(events[1], "flush")
+        @Assert(events[2], "close")
+    }
 }
 
 class LisiIoChunkedInputStream <: InputStream {

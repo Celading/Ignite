@@ -6,8 +6,7 @@ import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
 import ignite.api2
 import ignite.security
-import stdx.net.http.{HttpContext, HttpHeaders}
-import stdx.encoding.json.JsonValue
+import stdx.net.http.HttpContext
 import stdx.encoding.json.stream.{
     JsonWriter as StdxJsonWriter,
     JsonReader as StdxJsonReader
@@ -133,6 +132,9 @@ public class Ctx {
     var _responseBody: ?String = None
     var _pathOverride: ?String = None
     var _trustedPrecompressedEncoding: ?String = None
+    let _responseTransportTransformFactories: ArrayList<ResponseTransportTransformFactory> =
+        ArrayList<ResponseTransportTransformFactory>()
+    var _responseTransportTransformsFrozen: Bool = false
 
     public init(currentRequestCarrier: CurrentRequestCarrier, app: App) {
         this._currentRequestCarrier = currentRequestCarrier
@@ -201,7 +203,7 @@ public class Ctx {
     }
 
     public func trailer(key: String): ?String {
-        _currentRequestCarrier.requestTrailers().getFirst(key)
+        _currentRequestCarrier.requestTrailerValue(key)
     }
 
     public func requestBody(): InputStream {
@@ -471,9 +473,9 @@ public class Ctx {
         this
     }
 
-    /// Stream a JSON payload through a `JsonWriter` callback.
+    /// Stream a JSON payload through an Ignite-owned SeaJson-backed writer.
     ///
-    /// The callback receives a `JsonWriter` backed by Ignite's current
+    /// The callback receives an `IgniteJsonWriter` backed by SeaJson and Ignite's
     /// response transport writer seam. On HTTP/1.x this path is chunked by default;
     /// on HTTP/2 it uses the bounded `JsonWriterInputStream` response path and emits
     /// flow-controlled DATA segments.
@@ -486,7 +488,7 @@ public class Ctx {
     /// delegates to `jsonStream(...)` so the bounded response-stream seam is reused.
     ///
     /// For `HEAD` requests the callback is not invoked and no body is sent.
-    public func jsonWrite(writerFn: (JsonWriter) -> Unit): Ctx {
+    public func jsonWrite(writerFn: (IgniteJsonWriter) -> Unit): Ctx {
         setResponseHeaderTracked("content-type", "application/json; charset=utf-8")
         if (let Some(plan) <- currentMandatoryStreamCompressionPlan(this)) {
             let declaredEncoding = (responseHeader("content-encoding") ?? "").trimAscii().toAsciiLower()
@@ -496,8 +498,9 @@ public class Ctx {
             }
         }
         let http2Request = isHttp2Protocol(protocol)
-        // H2 response writers are finalized after the handler returns. Reuse the
-        // bounded InputStream path instead of accumulating direct writer calls.
+        // Native H2 direct writers now own handler-time flow-controlled DATA.
+        // Keep JSON on the bounded InputStream path until its separate public
+        // multi-write and streaming-transform contract is deliberately opened.
         if (http2Request || currentStreamCompressionPlan(this, None).isSome()) {
             return jsonStream(writerFn)
         }
@@ -535,7 +538,7 @@ public class Ctx {
     /// If a caller needs a custom bridge buffer limit, instantiate
     /// `JsonWriterInputStream` directly and call `sendStream(...)`.
     public func jsonStream(
-        writerFn: (JsonWriter) -> Unit,
+        writerFn: (IgniteJsonWriter) -> Unit,
         contentLength!: ?Int64 = None
     ): Ctx {
         setLocal("__ignite_response_kind", "json-stream")
@@ -547,19 +550,29 @@ public class Ctx {
         )
     }
 
-    /// Stream a `JsonSerializable` payload through the accepted `jsonStream(...)` seam.
+    /// Stream a legacy `JsonSerializable` payload through the bounded response seam.
     ///
     /// Unlike `jsonSerialize(...)`, this method does not full-buffer through
     /// `serializeJson(...) -> String`. It keeps typed callers on the accepted
     /// stream bridge path and therefore inherits the same current middleware and
-    /// H2/TLS non-promises as `jsonStream(...)`.
+    /// H2/TLS non-promises as `jsonStream(...)`. The serializer itself remains an
+    /// explicit stdx compatibility path; new code should prefer
+    /// `JsonWriterEncodable` or `IgniteJsonWriter`.
     public func jsonSerializeStream<T>(
         obj: T,
         contentLength!: ?Int64 = None
     ): Ctx where T <: JsonSerializable {
-        jsonStream({ jw =>
-            writeJsonSerializableThroughSeaJsonBridge(jw, obj)
-        }, contentLength: contentLength)
+        setLocal("__ignite_response_kind", "json-stream")
+        let stream = JsonWriterInputStream(outputProducer: { out =>
+            let writer = StdxJsonWriter(out)
+            writeJsonSerializableThroughSeaJsonBridge(writer, obj)
+            writer.flush()
+        })
+        sendStream(
+            stream,
+            contentType: "application/json; charset=utf-8",
+            contentLength: contentLength
+        )
     }
 
     /// Stream a `JsonWriterEncodable` payload through the accepted `sendStream(...)` seam.
@@ -586,12 +599,12 @@ public class Ctx {
         )
     }
 
-    /// Stream JSON through SeaJson's native writer without exposing stdx JSON types.
+    /// Stream JSON through SeaJson's native writer directly.
     ///
     /// The producer runs behind a bounded bridge and is consumed through
     /// `sendStream(...)`, so a slow socket applies backpressure instead of forcing
-    /// the complete JSON value into memory. `jsonStream(...)` remains available as
-    /// the stdx-compatible callback surface.
+    /// the complete JSON value into memory. `jsonStream(...)` provides Ignite's
+    /// compatibility-named fluent adapter over the same SeaJson backend.
     public func jsonSeaStream(
         writerFn: (SeaJsonWriter) -> Unit,
         contentLength!: ?Int64 = None,
@@ -892,19 +905,52 @@ public class Ctx {
 
     // ── Streaming ──
 
+    /// Register a fresh stateful transform factory for transport writers.
+    ///
+    /// Registration must finish before the first transport writer is opened.
+    /// Later registrations are rejected so every writer in this response sees
+    /// one stable middleware composition.
+    public func registerResponseTransportTransform(
+        factory: ResponseTransportTransformFactory
+    ): Ctx {
+        if (_responseTransportTransformsFrozen) {
+            throw Exception("response transport transform registration is frozen")
+        }
+        _responseTransportTransformFactories.add(factory)
+        this
+    }
+
     /// Open the low-level response transport writer without mutating framing headers.
     ///
     /// Callers own status, content headers, and framing decisions when using this
     /// seam directly. Unlike `writer()` and `jsonWrite(...)`, this method does not
     /// auto-enable HTTP/1.1 chunked transfer encoding.
     public func transportWriter(): ResponseTransportWriter {
+        _responseTransportTransformsFrozen = true
         _responded = true
         setLocal("__ignite_response_kind", "transport-stream")
+        var writer: ResponseTransportWriter
         if (let Some(_) <- currentMandatoryStreamCompressionPlan(this)) {
             rejectMandatoryStreamCompressionFallback(406)
-            return openDiscardingResponseTransportWriter()
+            writer = openDiscardingResponseTransportWriter()
+        } else {
+            writer = openResponseTransportWriter(_currentRequestCarrier)
         }
-        openResponseTransportWriter(_currentRequestCarrier)
+        openComposedResponseTransportWriter(
+            writer,
+            _responseTransportTransformFactories
+        )
+    }
+
+    /// Open the low-level response writer through one stateful transformation.
+    ///
+    /// Transform write/flush/close output is delivered synchronously through
+    /// the current backend. This method keeps the same status, header and
+    /// framing responsibilities as `transportWriter()`.
+    public func transportWriterWithTransform(
+        transform: ResponseTransportTransform
+    ): ResponseTransportWriter {
+        openTransformingResponseTransportWriter(transportWriter(), transform)
     }
 
     public func transportOutputStream(): ResponseTransportOutputStream {
@@ -945,13 +991,10 @@ public class Ctx {
 
     public func upgradeWebSocketWithOptions(options: WebSocketOptions): WsConn {
         _responded = true
-        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket([], options)
-        }
-        let ws = _currentRequestCarrier.upgradeWebSocketRaw()
-        WsConn(
-            ws,
-            maxIncomingMessageBytes: options.maxIncomingMessageBytes
+        currentRequestCarrierUpgradeWebSocket(
+            _currentRequestCarrier,
+            [],
+            options
         )
     }
 
@@ -960,16 +1003,17 @@ public class Ctx {
         options: WebSocketOptions
     ): WsConn {
         _responded = true
-        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket(subProtocols, options)
-        }
-        upgradeStdxWebSocketWithSubProtocols(_currentRequestCarrier, subProtocols, options)
+        currentRequestCarrierUpgradeWebSocket(
+            _currentRequestCarrier,
+            subProtocols,
+            options
+        )
     }
 
     // ── Internal HttpContext access ──
 
     public func httpContext(): HttpContext {
-        _currentRequestCarrier.rawHttpContext()
+        currentRequestCarrierRawHttpContextCompatibility(_currentRequestCarrier)
     }
 
     public func currentRequestCarrier(): CurrentRequestCarrier {
@@ -1096,6 +1140,14 @@ public class Ctx {
         get() { _responseBody }
     }
 
+    /// Whether the active transport has already committed response bytes.
+    ///
+    /// Post-handler middleware must not rewrite headers or persist a buffered
+    /// shadow body after this becomes true.
+    public prop responseCommitted: Bool {
+        get() { currentRequestCarrierResponseCommitted(_currentRequestCarrier) }
+    }
+
     public prop responseStatus: UInt16 {
         get() { _statusCode }
     }
@@ -1119,9 +1171,7 @@ public class Ctx {
 
     func addResponseHeaderTracked(key: String, value: String): Unit {
         rememberResponseHeader(key, value)
-        let headers = HttpHeaders()
-        headers.add(key, value)
-        _currentRequestCarrier.addResponseHeaders(headers)
+        _currentRequestCarrier.addResponseHeader(key, value)
     }
 
     func applyStreamCompressionHeaders(plan: StreamCompressionPlan): Unit {
@@ -1262,7 +1312,7 @@ public class Ctx {
     func parseJsonBody(): ?JsonValue {
         let raw = bodyString()
         try {
-            Some(JsonValue.fromStr(raw))
+            Some(parseJsonValue(raw))
         } catch (_: Exception) {
             jsonBadRequest("invalid_json", "request body is not valid json")
             None

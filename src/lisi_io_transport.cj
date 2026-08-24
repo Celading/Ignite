@@ -208,7 +208,18 @@ public class IgniteResponseTransportIoSink <: IoByteSink {
                 )
             )
         }
-        ioFlushSuccess(IoFlushResult(IoFlushState.Flushed))
+        try {
+            flushResponseTransportWriter(_writer)
+            ioFlushSuccess(IoFlushResult(IoFlushState.Flushed))
+        } catch (e: Exception) {
+            ioFlushFailure(
+                mapIoBackendFailure(
+                    IoOperation.Flush,
+                    "BACKEND_FAILURE",
+                    "Ignite response transport flush failed: ${e}"
+                )
+            )
+        }
     }
 
     public override func closeSemantics(): IoCloseSemantics {
@@ -216,7 +227,21 @@ public class IgniteResponseTransportIoSink <: IoByteSink {
     }
 
     public override func close(): IoCloseTurn {
-        ioCloseSuccess(_closeGuard.close())
+        if (_closeGuard.isClosed()) {
+            return ioCloseSuccess(_closeGuard.close())
+        }
+        try {
+            closeResponseTransportWriter(_writer)
+            ioCloseSuccess(_closeGuard.close())
+        } catch (e: Exception) {
+            ioCloseFailure(
+                mapIoBackendFailure(
+                    IoOperation.Close,
+                    "BACKEND_FAILURE",
+                    "Ignite response transport close failed: ${e}"
+                )
+            )
+        }
     }
 }
 

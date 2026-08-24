@@ -11,7 +11,8 @@ private let JSON_WRITER_INPUT_STREAM_POLL_INTERVAL_MS: Int64 = 1
 ///
 /// Callers can pair this seam with `ctx.sendStream(...)` when they want to reuse
 /// the already-proven InputStream response path instead of the current direct
-/// `ctx.jsonWrite(...)` writer seam.
+/// `ctx.jsonWrite(...)` writer seam. The callback writer is Ignite-owned and
+/// SeaJson-backed; typed stdx serialization uses the output-producer overload.
 public class JsonWriterInputStream <: InputStream & Resource {
     let _producerFn: (OutputStream) -> Unit
     let _bufferLimit: Int64
@@ -25,7 +26,7 @@ public class JsonWriterInputStream <: InputStream & Resource {
     var _closed: Bool = false
 
     public init(
-        writerFn: (JsonWriter) -> Unit,
+        writerFn: (IgniteJsonWriter) -> Unit,
         bufferLimit!: Int64 = JSON_WRITER_INPUT_STREAM_DEFAULT_BUFFER_LIMIT
     ) {
         _producerFn = { out =>

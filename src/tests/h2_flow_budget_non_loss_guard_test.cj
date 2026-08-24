@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import std.collection.ArrayList
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 @Test
 public class H2FlowBudgetNonLossGuardTestSuite {
@@ -2128,8 +2128,8 @@ public class H2FlowBudgetNonLossGuardTestSuite {
         @Assert(propagated, true)
         @Assert(carrier.openCalls, 1)
         @Assert(handoff.acquisitionCount(), 1)
-        @Assert(lifecycle.socketWriteCount, 1)
-        @Assert(lifecycle.totalEncodedSocketBytes, 13)
+        @Assert(lifecycle.socketWriteCount, 0)
+        @Assert(lifecycle.totalEncodedSocketBytes, 0)
         @Assert(failingSink.writeCalls, 1)
     }
 }
@@ -2146,14 +2146,6 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
     ) {
         this.lifecycle = lifecycle
         this.failOnOpen = failOnOpen
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for H2 accepted-socket lifecycle probe")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in H2 accepted-socket lifecycle probe")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -2199,12 +2191,17 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -2224,8 +2221,9 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
         let _ = value
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {
@@ -2250,14 +2248,6 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
     init(writer: ResponseTransportWriter, failOnOpen: Bool) {
         this.writer = writer
         this.failOnOpen = failOnOpen
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for H2 live response writer acquisition gate")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in H2 live response writer acquisition gate")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -2303,12 +2293,17 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -2328,8 +2323,9 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
         let _ = value
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {

@@ -1,6 +1,13 @@
 package ignite.native_h2
 
-import ignite.{App, Config}
+import ignite.{
+    App,
+    Config,
+    ResponseTransportTransform,
+    closeResponseTransportWriter,
+    flushResponseTransportWriter,
+    responseTransportTransformMiddleware
+}
 import std.collection.ArrayList
 import std.net.{IPSocketAddress, SocketTimeoutException, TcpServerSocket, TcpSocket}
 import std.sync.AtomicBool
@@ -9,6 +16,692 @@ import stdx.net.http.HttpHeaders
 
 @Test
 public class NativeH2RuntimeInternalTestSuite {
+    @TestCase
+    public func testNativeH2AppResponseWriterLifecycleRejectsWritesAfterClose(): Unit {
+        let request = NativeH2SingleStreamRequest(
+            1,
+            "GET",
+            "http",
+            "localhost:18880",
+            "/writer-lifecycle",
+            Array<UInt8>(),
+            headers: [],
+            trailers: []
+        )
+        let carrier = NativeH2AppCurrentRequestCarrier(request, "127.0.0.1")
+        let writer = carrier.openResponseTransportWriterRaw()
+
+        writer.write("first".toArray())
+        flushResponseTransportWriter(writer)
+        closeResponseTransportWriter(writer)
+        closeResponseTransportWriter(writer)
+
+        var rejected = false
+        try {
+            writer.write("late".toArray())
+        } catch (_: Exception) {
+            rejected = true
+        }
+
+        let response = carrier.response()
+        @Assert(rejected, true)
+        @Assert(String.fromUtf8(response.body), "first")
+    }
+
+    @TestCase
+    public func testPublicTransformWriterLifecycleReachesWireBeforeHandlerReturns(): Unit {
+        let closeReturned = AtomicBool(false)
+        let postCloseRejected = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/transform-writer", { ctx =>
+            let _ = ctx.status(200).setHeader("content-type", "application/octet-stream")
+            let writer = ctx.transportWriterWithTransform(
+                NativeH2CountingResponseTransportTransform()
+            )
+            writer.write("one".toArray())
+            flushResponseTransportWriter(writer)
+            writer.write("two".toArray())
+            closeResponseTransportWriter(writer)
+            closeReturned.store(true)
+            closeResponseTransportWriter(writer)
+            try {
+                writer.write("late".toArray())
+            } catch (_: Exception) {
+                postCloseRejected.store(true)
+            }
+            sleep(Duration.millisecond * 120)
+            handlerReturned.store(true)
+        })
+        app.get("/after-transform", { ctx =>
+            let _ = ctx.sendString("still-open")
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 transform writer test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2AppConnection(
+                    accepted,
+                    app,
+                    remoteAddress: "127.0.0.1",
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeadersForMethod("/transform-writer", "GET")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+
+            let responseDecoder = NativeH2HpackDecoderState()
+            @Assert(
+                responseDecoder.decodeResponseHead(responseHeaders.payload).status,
+                UInt16(200)
+            )
+            let firstWrite = nativeH2ReadFrame(client)
+            let flushOutput = nativeH2ReadFrame(client)
+            let secondWrite = nativeH2ReadFrame(client)
+            let closeOutput = nativeH2ReadFrame(client)
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(firstWrite.frameType, UInt8(0x0))
+            @Assert(firstWrite.flags, UInt8(0))
+            @Assert(String.fromUtf8(firstWrite.payload), "w1:one")
+            @Assert(flushOutput.frameType, UInt8(0x0))
+            @Assert(flushOutput.flags, UInt8(0))
+            @Assert(String.fromUtf8(flushOutput.payload), "f1")
+            @Assert(secondWrite.frameType, UInt8(0x0))
+            @Assert(secondWrite.flags, UInt8(0))
+            @Assert(String.fromUtf8(secondWrite.payload), "w2:two")
+            @Assert(closeOutput.frameType, UInt8(0x0))
+            @Assert(closeOutput.flags, UInt8(0))
+            @Assert(String.fromUtf8(closeOutput.payload), "c2")
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+
+            for (_ in 0..100) {
+                if (closeReturned.load() && postCloseRejected.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(closeReturned.load(), true)
+            @Assert(postCloseRejected.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 3,
+                    nativeH2TestRequestHeadersForMethod("/after-transform", "GET")
+                )
+            )
+            let reusedHeaders = nativeH2ReadFrame(client)
+            let reusedData = nativeH2ReadFrame(client)
+            @Assert(reusedHeaders.frameType, UInt8(0x1))
+            @Assert(reusedHeaders.streamId, 3)
+            @Assert(responseDecoder.decodeResponseHead(reusedHeaders.payload).status, UInt16(200))
+            @Assert(reusedData.frameType, UInt8(0x0))
+            @Assert(reusedData.flags, UInt8(0x1))
+            @Assert(reusedData.streamId, 3)
+            @Assert(String.fromUtf8(reusedData.payload), "still-open")
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
+    public func testPublicTransformMiddlewareComposesOnPlainWriterBeforeHandlerReturns(): Unit {
+        let closeReturned = AtomicBool(false)
+        let lateRegistrationRejected = AtomicBool(false)
+        let postCloseRejected = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use(responseTransportTransformMiddleware({=>
+            NativeH2LabelResponseTransportTransform("outer")
+        }))
+        app.use(responseTransportTransformMiddleware({=>
+            NativeH2LabelResponseTransportTransform("inner")
+        }))
+        app.get("/transform-middleware", { ctx =>
+            let _ = ctx.status(200).setHeader("content-type", "application/octet-stream")
+            let writer = ctx.transportWriter()
+            try {
+                let _ = ctx.registerResponseTransportTransform({=>
+                    NativeH2LabelResponseTransportTransform("late")
+                })
+            } catch (_: Exception) {
+                lateRegistrationRejected.store(true)
+            }
+            writer.write("one".toArray())
+            flushResponseTransportWriter(writer)
+            writer.write("two".toArray())
+            closeResponseTransportWriter(writer)
+            closeReturned.store(true)
+            try {
+                writer.write("late".toArray())
+            } catch (_: Exception) {
+                postCloseRejected.store(true)
+            }
+            sleep(Duration.millisecond * 120)
+            handlerReturned.store(true)
+        })
+        app.get("/after-transform-middleware", { ctx =>
+            let _ = ctx.sendString("still-open")
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 transform middleware test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2AppConnection(
+                    accepted,
+                    app,
+                    remoteAddress: "127.0.0.1",
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeadersForMethod("/transform-middleware", "GET")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+
+            let responseDecoder = NativeH2HpackDecoderState()
+            @Assert(
+                responseDecoder.decodeResponseHead(responseHeaders.payload).status,
+                UInt16(200)
+            )
+            let expectedData = [
+                "outer[inner[one]]",
+                "outer[inner-flush]",
+                "outer-flush",
+                "outer[inner[two]]",
+                "outer[inner-close]",
+                "outer-close"
+            ]
+            for (expected in expectedData) {
+                let data = nativeH2ReadFrame(client)
+                @Assert(data.frameType, UInt8(0x0))
+                @Assert(data.flags, UInt8(0))
+                @Assert(data.streamId, 1)
+                @Assert(String.fromUtf8(data.payload), expected)
+            }
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+
+            for (_ in 0..100) {
+                if (closeReturned.load() && lateRegistrationRejected.load() &&
+                    postCloseRejected.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(closeReturned.load(), true)
+            @Assert(lateRegistrationRejected.load(), true)
+            @Assert(postCloseRejected.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 3,
+                    nativeH2TestRequestHeadersForMethod("/after-transform-middleware", "GET")
+                )
+            )
+            let reusedHeaders = nativeH2ReadFrame(client)
+            let reusedData = nativeH2ReadFrame(client)
+            @Assert(reusedHeaders.frameType, UInt8(0x1))
+            @Assert(reusedHeaders.streamId, 3)
+            @Assert(responseDecoder.decodeResponseHead(reusedHeaders.payload).status, UInt16(200))
+            @Assert(reusedData.frameType, UInt8(0x0))
+            @Assert(reusedData.flags, UInt8(0x1))
+            @Assert(reusedData.streamId, 3)
+            @Assert(String.fromUtf8(reusedData.payload), "still-open")
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
+    public func testPublicSseWritesAndClosesBeforeHandlerReturns(): Unit {
+        let closeReturned = AtomicBool(false)
+        let postCloseRejected = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.get("/public-sse", { ctx =>
+            let sse = ctx.sse()
+            sse.sendRetry(3000)
+            sse.sendHeartbeat(comment: "ready")
+            sse.sendEvent("line-1\nline-2", event: "tick", id: "evt-1")
+            sse.flush()
+            sse.close()
+            closeReturned.store(true)
+            sse.close()
+            try {
+                sse.sendEvent("late")
+            } catch (_: Exception) {
+                postCloseRejected.store(true)
+            }
+            sleep(Duration.millisecond * 120)
+            handlerReturned.store(true)
+        })
+        app.get("/after-sse", { ctx =>
+            let _ = ctx.sendString("still-open")
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 public SSE test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2AppConnection(
+                    accepted,
+                    app,
+                    remoteAddress: "127.0.0.1",
+                    maxCompletedStreams: 2
+                )
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeadersForMethod("/public-sse", "GET")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+
+            let responseDecoder = NativeH2HpackDecoderState()
+            let decoded = responseDecoder.decodeResponseHead(responseHeaders.payload)
+            @Assert(decoded.status, UInt16(200))
+            var contentType = ""
+            var cacheControl = ""
+            var antiBuffering = ""
+            var connectionHeader = ""
+            var transferEncoding = ""
+            for (header in decoded.headers) {
+                if (header.name == "content-type") {
+                    contentType = header.value
+                } else if (header.name == "cache-control") {
+                    cacheControl = header.value
+                } else if (header.name == "x-accel-buffering") {
+                    antiBuffering = header.value
+                } else if (header.name == "connection") {
+                    connectionHeader = header.value
+                } else if (header.name == "transfer-encoding") {
+                    transferEncoding = header.value
+                }
+            }
+            @Assert(contentType, "text/event-stream")
+            @Assert(cacheControl, "no-cache")
+            @Assert(antiBuffering, "no")
+            @Assert(connectionHeader, "")
+            @Assert(transferEncoding, "")
+
+            let retry = nativeH2ReadFrame(client)
+            let heartbeat = nativeH2ReadFrame(client)
+            let event = nativeH2ReadFrame(client)
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(retry.frameType, UInt8(0x0))
+            @Assert(retry.flags, UInt8(0))
+            @Assert(String.fromUtf8(retry.payload), "retry: 3000\n\n")
+            @Assert(heartbeat.frameType, UInt8(0x0))
+            @Assert(heartbeat.flags, UInt8(0))
+            @Assert(String.fromUtf8(heartbeat.payload), ": ready\n\n")
+            @Assert(event.frameType, UInt8(0x0))
+            @Assert(event.flags, UInt8(0))
+            @Assert(
+                String.fromUtf8(event.payload),
+                "id: evt-1\nevent: tick\ndata: line-1\ndata: line-2\n\n"
+            )
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+
+            for (_ in 0..100) {
+                if (closeReturned.load() && postCloseRejected.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(closeReturned.load(), true)
+            @Assert(postCloseRejected.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 3,
+                    nativeH2TestRequestHeadersForMethod("/after-sse", "GET")
+                )
+            )
+            let reusedHeaders = nativeH2ReadFrame(client)
+            let reusedData = nativeH2ReadFrame(client)
+            @Assert(reusedHeaders.frameType, UInt8(0x1))
+            @Assert(reusedHeaders.streamId, 3)
+            @Assert(responseDecoder.decodeResponseHead(reusedHeaders.payload).status, UInt16(200))
+            @Assert(reusedData.frameType, UInt8(0x0))
+            @Assert(reusedData.flags, UInt8(0x1))
+            @Assert(reusedData.streamId, 3)
+            @Assert(String.fromUtf8(reusedData.payload), "still-open")
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
+    public func testAppTransportWriterCommitsHeadersBeforeHandlerReturns(): Unit {
+        let handlerObservedCommit = AtomicBool(false)
+        let middlewareObservedCommit = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.use({ ctx =>
+            ctx.next()
+            middlewareObservedCommit.store(ctx.responseCommitted)
+        })
+        app.post("/early-headers", { ctx =>
+            let _ = ctx.status(201).setHeader("x-ignite-live", "headers")
+            let writer = ctx.transportWriter()
+            writer.write("live-body".toArray())
+            handlerObservedCommit.store(ctx.responseCommitted)
+            sleep(Duration.millisecond * 120)
+            closeResponseTransportWriter(writer)
+            handlerReturned.store(true)
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 early HEADERS test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2SingleStreamApp(accepted, app, remoteAddress: "127.0.0.1")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeaders("/early-headers")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.flags, UInt8(0x4))
+            @Assert(responseHeaders.streamId, 1)
+            let decoded = NativeH2HpackDecoderState()
+                .decodeResponseHead(responseHeaders.payload)
+            @Assert(decoded.status, UInt16(201))
+            var liveHeader = ""
+            for (header in decoded.headers) {
+                if (header.name == "x-ignite-live") {
+                    liveHeader = header.value
+                }
+            }
+            @Assert(liveHeader, "headers")
+            for (_ in 0..100) {
+                if (handlerObservedCommit.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(handlerObservedCommit.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            let responseData = nativeH2ReadFrame(client)
+            @Assert(responseData.frameType, UInt8(0x0))
+            @Assert(responseData.flags, UInt8(0))
+            @Assert(responseData.streamId, 1)
+            @Assert(String.fromUtf8(responseData.payload), "live-body")
+
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+            for (_ in 0..100) {
+                if (handlerReturned.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(handlerReturned.load(), true)
+            @Assert(middlewareObservedCommit.load(), true)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
+    @TestCase
+    public func testAppTransportWriterDataResumesThroughFlowControlBeforeHandlerReturns(): Unit {
+        let writeReturned = AtomicBool(false)
+        let handlerReturned = AtomicBool(false)
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.post("/live-flow-data", { ctx =>
+            let _ = ctx.status(200).setHeader("x-ignite-live", "flow-data")
+            let writer = ctx.transportWriter()
+            writer.write(Array<UInt8>(70000, repeat: UInt8(0x7a)))
+            writeReturned.store(true)
+            sleep(Duration.millisecond * 120)
+            closeResponseTransportWriter(writer)
+            handlerReturned.store(true)
+        })
+
+        let listener = TcpServerSocket(bindAt: IPSocketAddress.parse("127.0.0.1:0"))
+        listener.bind()
+        let port = (listener.localAddress as IPSocketAddress)?.port ??
+            throw Exception("native H2 live DATA test could not reserve loopback port")
+        let serverFuture = spawn {
+            let accepted = listener.accept()
+            accepted.readTimeout = Some(Duration.second * 3)
+            accepted.writeTimeout = Some(Duration.second * 3)
+            try {
+                serveNativeH2SingleStreamApp(accepted, app, remoteAddress: "127.0.0.1")
+            } finally {
+                try { accepted.close() } catch (_: Exception) {}
+            }
+        }
+
+        let client = TcpSocket("127.0.0.1", port)
+        try {
+            client.connect(timeout: Some(Duration.second * 2))
+            client.readTimeout = Some(Duration.second * 3)
+            client.writeTimeout = Some(Duration.second * 3)
+            client.write(NATIVE_H2_PREFACE)
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(UInt8(0x4), UInt8(0), 0, Array<UInt8>())
+            )
+            nativeH2WriteFrame(
+                client,
+                NativeH2Frame(
+                    UInt8(0x1), UInt8(0x5), 1,
+                    nativeH2TestRequestHeaders("/live-flow-data")
+                )
+            )
+
+            let serverSettings = nativeH2ReadFrame(client)
+            let settingsAck = nativeH2ReadFrame(client)
+            let responseHeaders = nativeH2ReadFrame(client)
+            @Assert(serverSettings.frameType, UInt8(0x4))
+            @Assert(settingsAck.flags, UInt8(0x1))
+            @Assert(responseHeaders.frameType, UInt8(0x1))
+            @Assert(responseHeaders.streamId, 1)
+
+            var receivedBeforeUpdate: Int64 = 0
+            while (receivedBeforeUpdate < NATIVE_H2_INITIAL_FLOW_WINDOW) {
+                let data = nativeH2ReadFrame(client)
+                @Assert(data.frameType, UInt8(0x0))
+                @Assert(data.streamId, 1)
+                @Assert(data.flags, UInt8(0))
+                receivedBeforeUpdate += data.payload.size
+            }
+            @Assert(receivedBeforeUpdate, NATIVE_H2_INITIAL_FLOW_WINDOW)
+            @Assert(writeReturned.load(), false)
+            @Assert(handlerReturned.load(), false)
+
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(0, 10000))
+            nativeH2WriteFrame(client, nativeH2TestWindowUpdate(1, 10000))
+            let resumedData = nativeH2ReadFrame(client)
+            @Assert(resumedData.frameType, UInt8(0x0))
+            @Assert(resumedData.flags, UInt8(0))
+            @Assert(resumedData.streamId, 1)
+            @Assert(resumedData.payload.size, 4465)
+
+            for (_ in 0..100) {
+                if (writeReturned.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(writeReturned.load(), true)
+            @Assert(handlerReturned.load(), false)
+
+            let endStream = nativeH2ReadFrame(client)
+            @Assert(endStream.frameType, UInt8(0x0))
+            @Assert(endStream.flags, UInt8(0x1))
+            @Assert(endStream.streamId, 1)
+            @Assert(endStream.payload.size, 0)
+            for (_ in 0..100) {
+                if (handlerReturned.load()) {
+                    break
+                }
+                sleep(Duration.millisecond)
+            }
+            @Assert(handlerReturned.load(), true)
+        } finally {
+            try { client.close() } catch (_: Exception) {}
+            try { listener.close() } catch (_: Exception) {}
+            let _ = serverFuture.get(Duration.second * 3)
+        }
+    }
+
     @TestCase
     public func testResetIdleStreamClassifierPreservesImplicitlyClosedStreams(): Unit {
         @Assert(nativeH2ResetReferencesIdleStream(5, 3), true)
@@ -221,30 +914,27 @@ public class NativeH2RuntimeInternalTestSuite {
         @Assert(carrier.requestHeaderValue("accept") ?? "", "*/*")
         var duplicateCount: Int64 = 0
         var duplicateJoined = ""
-        for ((name, values) in carrier.requestHeaders()) {
+        for ((name, value) in carrier.requestHeaderFields()) {
             if (name == "x-dup") {
-                duplicateCount = values.size
-                for (value in values) {
-                    if (duplicateJoined.size > 0) { duplicateJoined += "," }
-                    duplicateJoined += value
-                }
+                duplicateCount += 1
+                if (duplicateJoined.size > 0) { duplicateJoined += "," }
+                duplicateJoined += value
             }
         }
         @Assert(duplicateCount, 2)
         @Assert(duplicateJoined, "one,two")
         var trailerCount: Int64 = 0
-        for ((name, values) in carrier.requestTrailers()) {
+        for ((name, value) in carrier.requestTrailerFields()) {
             if (name == "x-trailer") {
-                trailerCount = values.size
+                let _ = value
+                trailerCount += 1
             }
         }
-        @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
+        @Assert(carrier.requestTrailerValue("x-trailer") ?? "", "first")
         @Assert(trailerCount, 2)
 
-        let responseHeaders = HttpHeaders()
-        responseHeaders.add("set-cookie", "first=one; Path=/")
-        responseHeaders.add("set-cookie", "second=two; Path=/")
-        carrier.addResponseHeaders(responseHeaders)
+        carrier.addResponseHeader("set-cookie", "first=one; Path=/")
+        carrier.addResponseHeader("set-cookie", "second=two; Path=/")
         let response = carrier.response()
         var responseCookieCount: Int64 = 0
         var responseCookieJoined = ""
@@ -2195,6 +2885,43 @@ func nativeH2AssertResponseBodySuppressed(method: String, status: UInt16): Unit 
     } finally {
         try { client.close() } catch (_: Exception) {}
         try { listener.close() } catch (_: Exception) {}
+    }
+}
+
+class NativeH2CountingResponseTransportTransform <: ResponseTransportTransform {
+    var writes: Int64 = 0
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        writes += 1
+        [("w${writes}:" + String.fromUtf8(data)).toArray()]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        [("f${writes}").toArray()]
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        [("c${writes}").toArray()]
+    }
+}
+
+class NativeH2LabelResponseTransportTransform <: ResponseTransportTransform {
+    let label: String
+
+    init(label: String) {
+        this.label = label
+    }
+
+    public override func transformWrite(data: Array<UInt8>): Array<Array<UInt8>> {
+        [("${label}[" + String.fromUtf8(data) + "]").toArray()]
+    }
+
+    public override func transformFlush(): Array<Array<UInt8>> {
+        [("${label}-flush").toArray()]
+    }
+
+    public override func transformClose(): Array<Array<UInt8>> {
+        [("${label}-close").toArray()]
     }
 }
 

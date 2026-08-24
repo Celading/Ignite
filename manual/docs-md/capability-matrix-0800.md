@@ -21,21 +21,21 @@
 | HTTP/1.1 Client | Preview | `preferTransportBackend("ignite-native-h1-client")` 可显式进入 native H1，支持连接复用、流式请求体、重定向和统一错误；配合 `useNativeTls(...)` 可走 Contract-backed TLS1.3 HTTPS，并在完整消费后安全复用同源、同信任策略连接。 | `RestClient` 默认仍是稳定 stdx Client；Native HTTPS 要求调用方提供 trust anchor/hostname，部分 request hook 仍不兼容。 |
 | HTTPS / TLS | 稳定继承 + Preview | 默认继续使用稳定的 stdx TLS 路径；显式 Native H1/H2 TLS1.3 会完成 ClientHello、server-flight 验证、client Finished、application-data seal/open 与有界连接复用。`openNativeTlsH2Session(...)` 还可在一条 TLS H2 连接上持有独立并发 stream lease。Native TLS pool 默认 idle 上限为 30s，可通过 `nativeTlsIdleTimeout(...)` 调整，并可由 `nativeTlsRuntimeSnapshot()` 查看 H1/H2 opened/reused/retired/expired/idle 事实。 | Native TLS 当前要求调用方提供 trust anchor/hostname；快照只覆盖显式 Native TLS RestClient 池。系统 CA、TLS1.2、session resumption、0-RTT、mTLS、TLS batch 与默认切换仍未完成。 |
 | native HTTP/2 Server | Preview | `useExperimentalNativeH2ServerEngine(app)` 可让 `App.listen(...)` 运行明文 prior-knowledge H2；低层 API 也可在 caller 提供的 `TcpSocket` 上运行单流或多流连接。 | 非默认 listener，不接受 TLS cert/key；不是浏览器 HTTPS 默认路径。 |
-| native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2；配合 `useNativeTls(...)` 和 `h2` ALPN 可走 Contract-backed TLS1.3。普通请求支持一个公开 streamed-response lease；`sendNativeH2Batch(...)` 另提供最多 32 个同源明文 buffered 请求的单连接多路复用；`openNativeH2Session(...)` 与 `openNativeTlsH2Session(...)` 分别提供 cleartext/TLS 同源并发 response lease，并支持 buffered、精确长度或 EOF 终止的未知长度 one-pass request stream。 | 必须显式选择实验 backend。TLS session 还要求显式 trust/hostname 配置。batch 不支持 TLS；session 不支持 retry/redirect 重放、逐 stream deadline/priority 或 request/observe/touchpoint hook。默认切换仍未完成。 |
-| H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 与 SETTINGS 初始窗口恢复、并发 buffered upload、精确长度或 EOF 终止未知长度的 32 KiB 有界 streamed-upload producer、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭、精确长度 source 早 EOF 或未完成 upload 会发送 CANCEL 并让连接进入 retiring。当前不是零拷贝 request streaming 或最终生产级公平调度。 |
+| native HTTP/2 Client | Preview | `RestClient` 显式选择 `ignite-native-h2-client` 后，可通过明文 prior knowledge 使用 native H2；配合 `useNativeTls(...)` 和 `h2` ALPN 可走 Contract-backed TLS1.3。普通请求支持一个公开 streamed-response lease；`sendNativeH2Batch(...)` 另提供最多 32 个同源明文 buffered 请求的单连接多路复用；`openNativeH2Session(...)` 与 `openNativeTlsH2Session(...)` 分别提供 cleartext/TLS 同源并发 response lease、逐 stream deadline、幂等 buffered status replay，以及 idle-session 上显式开启的 pre-response broken-transport reconnect。 | 必须显式选择实验 backend。TLS session 还要求显式 trust/hostname 配置。batch 不支持 TLS；one-pass body、非幂等方法、active lease、response-body failure、redirect、production priority/scheduling 与 request/observe/touchpoint hook 不在 reconnect replay 合同内。默认切换仍未完成。 |
+| H2 flow control | Preview | connection/stream 双窗口、请求 DATA 暂存、`WINDOW_UPDATE` 与 SETTINGS 初始窗口恢复、并发 buffered upload、精确或未知长度的 32 KiB 有界 streamed-upload producer、增量 response body 消费与 receive-window refill 已有 wire 回归。 | `RestClient` 在完整消费后才归池；提前关闭、精确长度 source 早 EOF 或未完成 upload 会发送 CANCEL 并让连接进入 retiring。当前不是零拷贝 request streaming 或最终生产级公平调度。 |
 | HPACK / Huffman | Preview | Native H2 主实现包含 RFC 7541 Appendix B 的 257 项 code table、EOS/padding 校验、完整 256-octet symbol 覆盖、可变长字符串和有界动态表；outbound 仅在 Huffman 更短时启用，并对敏感 Header 使用 never-index。 | 解码后的公开 `String` 仍要求合法 UTF-8；Jingui accepted-transport compatibility parser 不是同一条完整 HPACK 路径，现有 byte profile 也不代表所有负载的吞吐收益。 |
 | Native H1 WebSocket | 0800 默认 | 普通 `app.ws(...)` 在 Native H1 backend 下进入 Ignite 自研 RFC 6455 路径，支持文本、二进制、Ping/Pong、Close、分片、子协议、消息上限和并发 writer 串行化。 | 同一 API 在 `stdx-default` 下使用 compatibility backend；H2 extended CONNECT、Native WSS、permessage-deflate 和客户端 Dialer 未完成。 |
-| SSE | Native H1 accepted | `ctx.sse()` 已进入 native H1 长响应主路径。 | Native H2 App adapter 尚未形成等价流式验收；显式 flush/close 的跨后端契约仍需收紧。 |
+| SSE | Native H1 accepted + H2 Preview | `ctx.sse()` 在 Native H1 上保持已验收长响应路径；显式 Native H2 ServerEngine 下，retry、heartbeat/comment 与 event 会在 handler 内经双窗口逐次送到 wire，幂等 `close()` 发送 END_STREAM 而不关闭物理连接。 | H2 仍是显式 Preview；没有自动 heartbeat scheduler、断线重连、Last-Event-ID 状态；通用 writer transform 合同也不会自动改写 SSE。 |
 
 ## 请求、响应与数据
 
 | 能力 | 状态 | 0800 行为 | 当前边界 |
 | --- | --- | --- | --- |
 | buffered JSON | 稳定继承 | `ctx.json(String)`、`jsonSerialize(...)` 等继续适合小对象。 | 调用方必须先构造完整字符串或完整结果。 |
-| streaming JSON | Native H1 + H2 Preview | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出；H2 `jsonWrite` 复用有界 producer bridge 和 flow-controlled DATA 流，不再经 carrier 数组聚合。 | 依赖全量 body 的 ETag/cache/idempotency 中间件不自动兼容；H2 SSE 与所有 streaming surface 的跨后端 flush/close 等价仍未完成。 |
+| streaming JSON | Native H1 + H2 Preview | `jsonWrite`、`jsonStream`、`jsonSerializeStream`、`jsonEncodeStream`、`jsonSeaStream` 可在 Native H1 边生成边写出；H2 `jsonWrite` 复用有界 producer bridge 和 flow-controlled DATA 流，不再经 carrier 数组聚合。 | 依赖全量 body 的 ETag/cache/idempotency 中间件不自动兼容；`transportWriterWithTransform(...)` 是显式 live-writer 合同，不会自动包裹这些 pull-stream JSON API。 |
 | 请求体流 | 0800 默认 | `requestBody()` 返回受 `Config.bodyLimit` 保护的流，`saveBodyToFile()` 可直接落盘。 | 流先被消费后，不承诺还能完整回放给 buffered API。 |
-| 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam。 | 调用方负责状态、响应头和 framing；不自动设置 H1 chunked。 |
-| 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本，追求高压缩比时首选。 | 需要发布流水线预生成文件。 |
+| 响应传输 writer | Preview | `transportWriter()` / `transportOutputStream()` 提供低层写入 seam；`transportWriterWithTransform(...)` 接受显式有状态变换。`responseTransportTransformMiddleware(...)` 可注册 fresh factory，并按内层到外层的响应洋葱顺序自动组合到普通 transport writer；注册在首个 writer 打开后冻结。Ignite 自有 writer 统一支持 flush、幂等 response-close 与 close 后写拒绝；Native H2 已有组合 DATA/END_STREAM wire proof。 | close 不关闭物理连接；调用方仍负责状态、响应头和 framing。现有压缩策略中间件、`writer()` / SSE / sendStream / pull JSON、自定义 carrier 与其他 backend 仍需各自接入或证明。 |
+| 静态 `.br` / `.zst` | Preview | 可根据 `Accept-Encoding` 选择预压缩副本。 | 这是发布阶段预压缩交付，不依赖动态 codec。 |
 | 动态 gzip/deflate | Preview | 压缩中间件通过 Ignite 自有安全仓颉 codec 支持缓冲与增量流式响应。 | 当前优先协议正确性；高级字典、SIMD 与极致压缩比未承诺。 |
 | 动态 Zstd baseline | Preview / opt-in | `CompressConfig(zstdEnabled: true)` 可协商缓冲与增量流式 `zstd` 响应；frame、128 KiB window/block、content-size 与 checksum 由安全仓颉实现。 | 当前仅生成 RAW/RLE block；可压缩同值 run，但通用 sequence/FSE/Huffman、字典、level 调优和默认选择仍未完成。 |
 | 动态 Brotli baseline | Preview / opt-in | `CompressConfig(brotliEnabled: true)` 可协商缓冲与增量流式 `br` 响应；安全仓颉 encoder 使用有界 RAW metablock，并用单 literal + distance-one copy 压缩同值 run。 | 不是完整 Brotli：通用 LZ 匹配、context modeling、多符号 Huffman、静态字典、quality/window 调优和默认选择仍未完成。 |
@@ -54,13 +54,11 @@
 
 ## 选择建议
 
-怎么选，按场景说：
-
-- **新的明文 H1 服务**：直接用默认配置，留一份 `stdx-default` 回滚配置在手边。Client 想试原生实现，显式选 `ignite-native-h1-client` 或 `ignite-native-h2-client`。
-- **大 JSON 数组**：优先 `jsonSeaStream`；需要 stdx `JsonWriter` 兼容时用 `jsonStream`。
-- **native H2**：明文 prior knowledge 走显式 `RestClient` backend；受控 HTTPS client 可用 `openNativeTlsH2Session(...)` 验证 TLS 多路并发。系统信任、自动重放、逐流 deadline/priority 和默认生产路径仍未完成。
-- **生产 HTTPS**：继续默认稳定路径。别因为 0800 的标题就打开实验 backend——系统 CA 和会话恢复没完成，切了没有好处。
-- **静态 Brotli/Zstd**：在构建或发布阶段预生成 `.br` / `.zst`。
-- **动态 Zstd/Brotli**：分别显式设置 `zstdEnabled: true` / `brotliEnabled: true`。注意通用 buffered 数据可能因 `skipIfNoGain` 回退 identity——RAW/RLE 预览的压缩比有限，这是子集实现的正常表现，不是 bug。
+- 新的明文 H1 服务可直接使用默认配置，并保留一条 `stdx-default` 回滚配置；Client 需要显式选择 `ignite-native-h1-client` 或 `ignite-native-h2-client` 才进入对应 Preview。
+- 大 JSON 数组优先使用 `jsonSeaStream`；需要 stdx `JsonWriter` 兼容时使用 `jsonStream`。
+- native H2 可通过显式 `RestClient` backend 接入明文 prior knowledge；受控 HTTPS client 可使用 `openNativeTlsH2Session(...)` 验证 TLS 多路并发和显式、幂等、响应头前的断传输重连。默认生产路径、系统信任、任意自动重放和完整调度仍应留在稳定 stdx 路径或显式受控环境。
+- HTTPS 生产服务继续使用默认稳定路径，不要仅因为 0800 标题就强制打开实验 backend。
+- 静态 Brotli/Zstd 需要在构建或发布阶段生成 `.br` / `.zst` 文件。
+- 动态 Zstd/Brotli 需分别显式设置 `zstdEnabled: true` / `brotliEnabled: true`；通用 buffered 数据默认仍可能因 `skipIfNoGain` 回退 identity，不要把 RAW/RLE Preview 当作完整高压缩比实现。
 
 更具体的签名见 [`api-0800.md`](api-0800.md)，从 0700 升级见 [`migration-0700-to-0800.md`](migration-0700-to-0800.md)。

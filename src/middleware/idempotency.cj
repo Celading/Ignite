@@ -67,6 +67,11 @@ public func idempotencyMiddleware(
 
         ctx.next()
 
+        if (ctx.responseCommitted) {
+            ctx.setLocal("__ignite_idempotency_skip_reason", "response-committed")
+            return
+        }
+
         if (let Some(body) <- ctx.responseBody) {
             idempotencyStore.put(key, body, MonoTime.now())
         }

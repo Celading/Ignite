@@ -6,6 +6,7 @@ import std.env.{removeVariable, setVariable}
 import std.fs.exists
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
+import std.sync.AtomicInt64
 import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
@@ -1609,7 +1610,7 @@ public class ServerEngineAbstractionTestSuite {
         )
         @Assert(engine.failureWriterOpenCalls, 1)
         @Assert(engine.failureHandoffAcquisitionCount, 1)
-        @Assert(engine.failureSocketWriteCount, 1)
+        @Assert(engine.failureSocketWriteCount, 0)
         @Assert(engine.failureSinkAttempts, 1)
         @Assert(engine.failureAttemptedEncodedBytes > 0, true)
         @Assert(engine.failureLifecycleClosed, false)
@@ -9757,7 +9758,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38145),
                 "POST /shell-invalid-chunked-trailer-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer seen\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -9805,7 +9806,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38146),
                 "POST /shell-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer seen: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -9971,7 +9972,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38154),
                 "POST /shell-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer: seen\r\nx-shell-trailer seen: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10019,7 +10020,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38155),
                 "POST /shell-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer: seen\r\nx-shell-trailer seen\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10067,7 +10068,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38160),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10115,7 +10116,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38161),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10163,7 +10164,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38172),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10211,7 +10212,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38173),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10259,7 +10260,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38174),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10307,7 +10308,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38175),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10355,7 +10356,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38176),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10403,7 +10404,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38177),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10451,7 +10452,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38162),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10499,7 +10500,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38163),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10547,7 +10548,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38164),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10595,7 +10596,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38171),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-second-invalid-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid trailer: again\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10643,7 +10644,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38165),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10691,7 +10692,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38170),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-second-invalid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10739,7 +10740,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38166),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10787,7 +10788,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38167),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10835,7 +10836,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38168),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10883,7 +10884,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38169),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11049,7 +11050,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38178),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11097,7 +11098,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38179),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11145,7 +11146,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38180),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11193,7 +11194,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38181),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11241,7 +11242,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38182),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-later-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11289,7 +11290,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38183),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-later-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11337,7 +11338,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38184),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-later-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-trailer: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11385,7 +11386,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38185),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-later-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-declared-trailer: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11829,13 +11830,194 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
-    public func testSocketServerEngineShellContainsUnsupportedVersionRequestHead(): Unit {
+    public func testSocketServerEngineShellContainsInvalidMethodTargetFormsBeforeAppDispatch(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "3")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.all("/shell-target-form-containment", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx
+                    .setHeader("x-shell-target-form-containment", "1")
+                    .sendString("target-form-containment-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38186))
+            }
+            waitForShellReady(app, UInt16(38186))
+
+            let invalidConnectResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                (
+                    "CONNECT /shell-target-form-containment HTTP/1.1\r\n" +
+                    "Host: example.com\r\n\r\n"
+                )
+            )
+
+            let invalidAuthorityResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                "GET example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+
+            let validResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38186),
+                "GET /shell-target-form-containment HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(handlerRuns.load(), Int64(1))
+            @Assert(
+                invalidConnectResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                invalidAuthorityResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(validResponseText, "x-shell-target-form-containment: 1"), true)
+            @Assert(contains(validResponseText, "target-form-containment-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
+    public func testSocketServerEngineShellProjectsAbsoluteFormAuthorityBeforeAppDispatch(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
         setVariable(acceptLimitEnv, "2")
         try {
             let app = App(config: Config(enableTlsPrecheck: false))
             app.serverEngine(SocketServerEngineShell())
+            app.get("/shell-absolute-authority", { ctx =>
+                let host = ctx.header("host") ?? ""
+                let _ = ctx.sendString("${host}|${ctx.path}|${ctx.originalUrl}")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38187))
+            }
+            waitForShellReady(app, UInt16(38187))
+
+            let absoluteResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38187),
+                (
+                    "GET http://target.example:9443/shell-absolute-authority?probe=1 HTTP/1.1\r\n" +
+                    "Host: attacker.example\r\n\r\n"
+                )
+            )
+            let originResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38187),
+                "GET /shell-absolute-authority HTTP/1.1\r\nHost: origin.example\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(contains(absoluteResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(
+                contains(
+                    absoluteResponseText,
+                    "target.example:9443|/shell-absolute-authority|/shell-absolute-authority?probe=1"
+                ),
+                true
+            )
+            @Assert(contains(absoluteResponseText, "attacker.example"), false)
+            @Assert(contains(originResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(
+                contains(
+                    originResponseText,
+                    "origin.example|/shell-absolute-authority|/shell-absolute-authority"
+                ),
+                true
+            )
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
+    public func testSocketServerEngineShellContainsInvalidRequestAuthorityStructure(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "3")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.get("/shell-authority-structure", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx
+                    .setHeader("x-shell-authority-structure", "1")
+                    .sendString("authority-structure-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38188))
+            }
+            waitForShellReady(app, UInt16(38188))
+
+            let userinfoSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38188"))
+            userinfoSocket.connect()
+            try {
+                userinfoSocket.write(
+                    (
+                        "GET http://user@target.example/shell-authority-structure HTTP/1.1\r\n" +
+                        "Host: target.example\r\n\r\n"
+                    ).toArray()
+                )
+            } finally {
+                if (!userinfoSocket.isClosed()) {
+                    userinfoSocket.close()
+                }
+            }
+
+            let invalidPortSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38188"))
+            invalidPortSocket.connect()
+            try {
+                invalidPortSocket.write(
+                    (
+                        "GET http://target.example:not-port/shell-authority-structure HTTP/1.1\r\n" +
+                        "Host: target.example\r\n\r\n"
+                    ).toArray()
+                )
+            } finally {
+                if (!invalidPortSocket.isClosed()) {
+                    invalidPortSocket.close()
+                }
+            }
+
+            let validResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38188),
+                "GET /shell-authority-structure HTTP/1.1\r\nHost: [2001:db8::1]:8080\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(handlerRuns.load(), Int64(1))
+            @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(validResponseText, "x-shell-authority-structure: 1"), true)
+            @Assert(contains(validResponseText, "authority-structure-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
+    public func testSocketServerEngineShellReturnsTypedRequestHeadStatusResponses(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "4")
+        try {
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            let handlerRuns = AtomicInt64(0)
             app.get("/shell-unsupported-version-containment", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
                 let _ = ctx
                     .setHeader("x-shell-unsupported-version-containment", "1")
                     .sendString("unsupported-version-ok")
@@ -11846,15 +12028,35 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(app, UInt16(38147))
 
-            let badSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38147"))
-            badSocket.connect()
-            try {
-                badSocket.write("GET /old HTTP/1.0\r\nHost: example.com\r\n\r\n".toArray())
-            } finally {
-                if (!badSocket.isClosed()) {
-                    badSocket.close()
-                }
+            let versionResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET /old HTTP/1.0\r\nHost: example.com\r\n\r\n"
+            )
+
+            var longTarget = "/"
+            var targetByte: Int64 = 0
+            while (targetByte < 4100) {
+                longTarget += "a"
+                targetByte += 1
             }
+            let targetResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET ${longTarget} HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+
+            var headerFlood = ""
+            var headerIndex: Int64 = 0
+            while (headerIndex < 100) {
+                headerFlood += "X-Header-${headerIndex}: value\r\n"
+                headerIndex += 1
+            }
+            let headerResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38147),
+                "GET /header-flood HTTP/1.1\r\nHost: example.com\r\n${headerFlood}\r\n"
+            )
 
             let validResponseText = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -11863,11 +12065,113 @@ public class ServerEngineAbstractionTestSuite {
             )
             let _ = serverFuture.get(Duration.second * 5)
 
+            @Assert(
+                versionResponse,
+                "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                targetResponse,
+                "HTTP/1.1 414 URI Too Long\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                headerResponse,
+                "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(handlerRuns.load(), Int64(1))
             @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
             @Assert(contains(validResponseText, "x-shell-unsupported-version-containment: 1"), true)
             @Assert(contains(validResponseText, "content-length: 22"), true)
             @Assert(contains(validResponseText, "connection: close"), true)
             @Assert(contains(validResponseText, "unsupported-version-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
+    public func testSocketServerEngineShellSettlesExpectContinueAndUnsupportedExpectation(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "4")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.post("/shell-expect", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx.sendString("expect:" + ctx.bodyString())
+            })
+            app.get("/shell-expect-recovery", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx.sendString("expect-recovery-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38189))
+            }
+            waitForShellReady(app, UInt16(38189))
+
+            let continueSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38189"))
+            continueSocket.connect()
+            try {
+                continueSocket.write(
+                    (
+                        "POST /shell-expect HTTP/1.1\r\n" +
+                        "Host: example.com\r\n" +
+                        "Content-Length: 4\r\n" +
+                        "Expect: 100-Continue\r\n" +
+                        "Connection: close\r\n\r\n"
+                    ).toArray()
+                )
+                let interim = readSocketServerEngineShellResponseFrame(continueSocket)
+                @Assert(interim, "HTTP/1.1 100 Continue\r\n\r\n")
+                continueSocket.write("body".toArray())
+                let finalResponse = readSocketServerEngineShellResponseFrame(continueSocket)
+                @Assert(contains(finalResponse, "HTTP/1.1 200 OK"), true)
+                @Assert(contains(finalResponse, "expect:body"), true)
+            } finally {
+                if (!continueSocket.isClosed()) {
+                    continueSocket.close()
+                }
+            }
+
+            let unsupportedResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                (
+                    "POST /shell-expect HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 4\r\n" +
+                    "Expect: 100-continue, custom-feature\r\n\r\n"
+                )
+            )
+            let emptyExpectationResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                (
+                    "POST /shell-expect HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 4\r\n" +
+                    "Expect:\r\n\r\n"
+                )
+            )
+            let recoveryResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                "GET /shell-expect-recovery HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(
+                unsupportedResponse,
+                "HTTP/1.1 417 Expectation Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                emptyExpectationResponse,
+                "HTTP/1.1 417 Expectation Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(handlerRuns.load(), Int64(2))
+            @Assert(contains(recoveryResponse, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(recoveryResponse, "expect-recovery-ok"), true)
         } finally {
             removeVariable(acceptLimitEnv)
         }
@@ -11891,22 +12195,16 @@ public class ServerEngineAbstractionTestSuite {
             }
             waitForShellReady(app, UInt16(38148))
 
-            let badSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38148"))
-            badSocket.connect()
-            try {
-                badSocket.write(
-                    (
-                        "POST /bad-body-plan HTTP/1.1\r\n" +
-                        "Host: example.com\r\n" +
-                        "Content-Length: 3\r\n" +
-                        "Transfer-Encoding: chunked\r\n\r\n"
-                    ).toArray()
+            let badResponseText = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38148),
+                (
+                    "POST /bad-body-plan HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 3\r\n" +
+                    "Transfer-Encoding: chunked\r\n\r\n"
                 )
-            } finally {
-                if (!badSocket.isClosed()) {
-                    badSocket.close()
-                }
-            }
+            )
 
             let validResponseText = runSocketServerEngineShellClient(
                 "127.0.0.1",
@@ -11915,6 +12213,10 @@ public class ServerEngineAbstractionTestSuite {
             )
             let _ = serverFuture.get(Duration.second * 5)
 
+            @Assert(
+                badResponseText,
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
             @Assert(contains(validResponseText, "HTTP/1.1 200 OK"), true)
             @Assert(contains(validResponseText, "x-shell-body-plan-rejection-containment: 1"), true)
             @Assert(contains(validResponseText, "content-length: 22"), true)

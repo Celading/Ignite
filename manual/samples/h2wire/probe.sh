@@ -112,9 +112,11 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" || -z "${IGNITE_SAMPLE_TLS_KEY:-}" ]]; then
-  echo "[sample/h2wire] set IGNITE_SAMPLE_TLS_CERT and IGNITE_SAMPLE_TLS_KEY before running the TLS probe." >&2
-  exit 1
+if [[ -z "${IGNITE_SAMPLE_TLS_CERT:-}" && -f "${ROOT}/testdata/tls/server-cert-a.pem" ]]; then
+  export IGNITE_SAMPLE_TLS_CERT="${ROOT}/testdata/tls/server-cert-a.pem"
+fi
+if [[ -z "${IGNITE_SAMPLE_TLS_KEY:-}" && -f "${ROOT}/testdata/tls/server-key-a.pem" ]]; then
+  export IGNITE_SAMPLE_TLS_KEY="${ROOT}/testdata/tls/server-key-a.pem"
 fi
 
 ensure_cangjie_env

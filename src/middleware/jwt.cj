@@ -1,10 +1,17 @@
 package ignite.middleware
 
-import ignite.{Handler, Ctx}
+import ignite.{
+    Handler,
+    Ctx,
+    JsonValue,
+    parseJsonValue,
+    jsonValueIsObject,
+    jsonStringField,
+    jsonIntField
+}
 import ignite.binary.base64UrlDecode
 import std.collection.ArrayList
 import std.time.DateTime
-import stdx.encoding.json.{JsonValue, JsonObject}
 import jinguissl.contract.{HashAlgorithm, contractHmac}
 
 public class JwtConfig {
@@ -225,10 +232,15 @@ func splitJwtToken(tokenRaw: String): ?(String, String, String, String) {
     Some((headerSegment, payloadSegment, signatureSegment, signingInput))
 }
 
-func parseJwtObjectSegment(segment: String): ?JsonObject {
+func parseJwtObjectSegment(segment: String): ?JsonValue {
     try {
         let decoded = String.fromUtf8(base64UrlDecode(segment))
-        Some(JsonValue.fromStr(decoded).asObject())
+        let value = parseJsonValue(decoded)
+        if (jsonValueIsObject(value)) {
+            Some(value)
+        } else {
+            None
+        }
     } catch (_: Exception) {
         None
     }
@@ -242,31 +254,23 @@ func decodeJwtPayloadAsString(payloadSegment: String): ?String {
     }
 }
 
-func readJwtString(payload: JsonObject, key: String): ?String {
-    if (let Some(v) <- payload.get(key)) {
-        try {
-            return Some(v.asString().getValue())
-        } catch (_: Exception) { }
+func readJwtString(payload: JsonValue, key: String): ?String {
+    jsonStringField(payload, key)
+}
+
+func readJwtInt(payload: JsonValue, key: String): ?Int64 {
+    if (let Some(value) <- jsonIntField(payload, key)) {
+        return Some(value)
+    }
+    if (let Some(text) <- jsonStringField(payload, key)) {
+        if (let Some(parsed) <- parseInt64Strict(text.trimAscii())) {
+            return Some(parsed)
+        }
     }
     None
 }
 
-func readJwtInt(payload: JsonObject, key: String): ?Int64 {
-    if (let Some(v) <- payload.get(key)) {
-        try {
-            return Some(v.asInt().getValue())
-        } catch (_: Exception) { }
-        try {
-            let s = v.asString().getValue().trimAscii()
-            if (let Some(parsed) <- parseInt64Strict(s)) {
-                return Some(parsed)
-            }
-        } catch (_: Exception) { }
-    }
-    None
-}
-
-func validateTimeClaims(payload: JsonObject, nowSec: Int64, skewSec: Int64): Bool {
+func validateTimeClaims(payload: JsonValue, nowSec: Int64, skewSec: Int64): Bool {
     if (let Some(exp) <- readJwtInt(payload, "exp")) {
         if (nowSec > exp + skewSec) {
             return false

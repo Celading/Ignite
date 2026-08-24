@@ -4,7 +4,7 @@ import std.fs.{File, OpenMode}
 import std.collection.ArrayList
 import std.io.InputStream
 import std.net.TcpSocket
-import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpHeaders}
 import ignite.api2
 import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
@@ -781,9 +781,9 @@ public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
                 "accepted transport socket response writer lifecycle is closed: ${closeReason}"
             )
         }
+        _sink(bytes)
         socketWriteCount += 1
         totalEncodedSocketBytes += bytes.size
-        _sink(bytes)
     }
 
     public func openResponseTransportWriter(): ResponseTransportWriter {
@@ -798,7 +798,7 @@ public class ServerJinguiAcceptedTransportSocketResponseWriterLifecycle {
     }
 }
 
-class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrier {
+class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrier & ResponseCommitStateCarrier {
     let logicalRequest: ServerJinguiAcceptedTransportLogicalRequest
     let socket: TcpSocket
     let requestBodyStreamValue: InputStream
@@ -828,16 +828,12 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         responseWriterLifecycle.writeSocketResponseBytes(bytes)
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport socket response carrier")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run for accepted transport socket response carrier")
-    }
-
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         responseWriterLifecycle.openResponseTransportWriter()
+    }
+
+    public override func responseCommitted(): Bool {
+        responseWriterLifecycle.socketWriteCount > 0
     }
 
     public override func requestMethod(): String {
@@ -876,12 +872,28 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         logicalRequest.headers.getFirst(key)
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        logicalRequest.headers
+    public override func requestHeaderFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in logicalRequest.headers) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        logicalRequest.trailers
+    public override func requestTrailerValue(key: String): ?String {
+        logicalRequest.trailers.getFirst(key)
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        let fields = ArrayList<(String, String)>()
+        for ((name, values) in logicalRequest.trailers) {
+            for (value in values) {
+                fields.add((name, value))
+            }
+        }
+        fields.toArray()
     }
 
     public override func requestBodyStream(): InputStream {
@@ -910,12 +922,8 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         )
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        for ((name, values) in headers) {
-            for (value in values) {
-                setResponseHeader(name, value)
-            }
-        }
+    public override func addResponseHeader(key: String, value: String): Unit {
+        setResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

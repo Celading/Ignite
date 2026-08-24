@@ -31,6 +31,12 @@ app.use(securityMiddleware())
 app.use(compressMiddleware())
 ```
 
+可选 buffered 响应默认还要求压缩后至少净省 `64` bytes；不足时回退
+identity，避免为微小 wire 收益支付 codec 与 content-coding 成本。可通过
+`CompressConfig(minSavingsBytes: ...)` 调整门槛，或用
+`skipIfNoGain: false` 显式关闭收益门。客户端拒绝 identity 时，协议要求优先，
+不会因为该门槛泄漏未编码表示。
+
 ## 安全类
 
 ### `securityMiddleware`

@@ -26,6 +26,48 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在会在等待请求体网络字节前完成 `Expect: 100-continue` 临时响应握手，并在 App dispatch 前用固定无正文 `417 Expectation Failed` 拒绝空、混合或不支持的 expectation
+- `=边界` `ClientResponse` 核心存储新增 Ignite 自有扁平响应字段入口；Native H1 的响应解析/分帧和 Native H2 的五条 response adapter 不再构造 stdx `HttpHeaders`，observe 元数据也改走自有 append seam
+- `=兼容` 公开 `ClientResponse(HttpResponse)` 与 `headers: HttpHeaders` 继续保留为 stdx 兼容面，并保持重复字段顺序、大小写无关读取及既有 raw-header mutation 可见性；proxy `HttpResponse`、request builder provider 与最终 stdx 删除仍是后续独立工作
+- `=边界` `CurrentRequestCarrier` 核心契约不再强制所有后端返回 stdx `WebSocket`；公开 `WebSocketUpgradeCarrier` 以 Ignite `WsConn`、子协议与 `WebSocketOptions` 表达可选升级能力，stdx adapter、Native H1 与透明响应 writer wrapper 通过该能力接入
+- `=边界` Native H1 WebSocket 真实 socket 回归保持通过；macOS Cangjie/stdx `1.1.3` 上新增的 stdx-default 真实升级探针在 provider `upgradeFromServer` 后可复现 `SIGABRT` 与 unsafe-libcrypto 警告，因此本次只确认 stdx adapter 编译兼容，不宣称其 live WebSocket 已认证，也不扩张到 WSS/H2WS 或 provider 修复
+- `=边界` `CurrentRequestCarrier` 核心契约不再强制所有 native/test carrier 暴露 stdx `HttpContext`；原有 `Ctx.httpContext()` 兼容入口改由可选 `StdxHttpContextCompatibilityCarrier` 能力提供，stdx carrier 与透明响应 writer wrapper 保持可用
+- `=边界` 未提供该可选能力的 native H1/H2/accepted-transport carrier 会在请求 raw context 时给出明确拒绝；本次不替换 WebSocket upgrade provider、请求体流、client response，也不移除最终 stdx 依赖
+- `=边界` `CurrentRequestCarrier` 的请求头/拖尾读取改用 Ignite 自有的扁平字段序列与单值拖尾契约；代理转发不再从 carrier 获取 stdx `HttpHeaders`，重复请求字段值仍完整保留
+- `=边界` 本次不替换 adapter 内部 provider 集合，也不处理 raw `HttpContext`、WebSocket、请求体、client response 或最终 stdx 依赖移除
+- `=边界` `CurrentRequestCarrier` 的响应头追加改用 Ignite 自有的单字段契约；流压缩与代理下游不再为 carrier 边界构造或传递 stdx `HttpHeaders`，重复字段仍逐值保留
+- `=边界` 本次只收口服务端响应头 mutation seam；请求头集合读取、raw `HttpContext`、WebSocket 与 client response provider 类型仍是后续 IG0900 分层任务
+- `=依赖` JWT 中间件的签名后 header/claims DOM 解析改用 Ignite-owned SeaJson 值契约，不再直接导入 stdx JSON；HS256、String/数字时间声明和现有拒绝分类保持兼容
+- `+安全` 默认 Native H1 现在会把已检测到的非法 chunk-size、chunk payload 分隔符和 trailer 字段名映射为固定无正文 `400 Bad Request`，随后关闭该连接并保持监听器继续服务
+- `=边界` malformed chunked-body 400 不覆盖未完整 EOF、peer abort、超时、chunk/trailer 元数据超限、不支持的 pipelining、完整 chunk-extension 语法或自定义错误体
+- `+安全` 默认 Native H1 现在会在 `readHeaderTimeout` 到期而请求头仍不完整，或 `readTimeout` 到期而请求体仍不完整时，返回固定无正文 `408 Request Timeout`，随后关闭该连接并保持监听器继续服务
+- `=边界` 固定 408 只覆盖 request-head 与 request-body 各自明确的等待阶段；未完整 EOF、peer abort、malformed body、handler 异常和自定义错误体仍保持独立
+- `+安全` 默认 Native H1 现在通过 typed request-head 分类返回固定无正文 `414 URI Too Long`、`431 Request Header Fields Too Large` 或 `505 HTTP Version Not Supported`，随后关闭该连接并保持监听器继续服务
+- `=边界` 414 对应请求目标/请求行上限，431 对应请求头字节或字段数上限，505 对应不支持的 HTTP 版本；当前不提供自定义错误体，也不扩展到 body-stage 错误策略
+- `+安全` 默认 Native H1 现在会对已完整接收、被请求头/session 或 request-target dispatch seed 明确拒绝的坏请求返回固定无正文 `400 Bad Request`，随后关闭该连接
+- `=边界` 固定 400 不覆盖未完整 EOF、header timeout、peer abort、handler 异常或自定义错误页
+- `+安全` 默认 Native H1 现在对 Host、absolute-form authority 与 CONNECT authority-form 复用同一结构门，拒绝 userinfo、坏百分号编码、坏括号、多冒号歧义与非十进制端口
+- `=边界` 合法 reg-name、括号化 IP-literal 与十进制端口保持兼容；CONNECT 还要求 `1..65535` 的非空端口，本次不宣称完整 DNS/IPv6 语义验证、代理转发或 CONNECT 隧道
+- `+安全` 默认 Native H1 接收 absolute-form request-target 时，会在 App 与请求头中间件入口把 request-target authority 作为有效 Host，忽略冲突的接收 Host 值
+- `=边界` origin-form 继续使用唯一有效的接收 Host；当前不新增 Host 不一致拒绝、CONNECT 隧道或代理转发
+- `+安全` 默认 Native H1 现在会在 App dispatch 前拒绝不使用 authority-form 的 `CONNECT`、非 `CONNECT` 的 authority-form，以及非 `OPTIONS` 的 asterisk-form 请求目标
+- `=边界` 合法 `CONNECT authority`、`OPTIONS *`、资源级 `OPTIONS /path` 与普通 origin/absolute-form 路由保持兼容；本次不实现 CONNECT 隧道或代理转发
+- `+性能` 可选 buffered 压缩现在默认要求至少 `64` bytes 的净节省；微小收益回退 identity，显著收益仍编码，`minSavingsBytes` 可显式调整
+- `=边界` identity 被拒绝时仍优先满足协议要求；该策略不翻转动态 Brotli/Zstd 默认，也不宣称通用熵编码完成
+- `+安全` 显式 Native H1 Client 现在只接受 `100..599` 的有效 HTTP 状态码；普通 REST 路径收到 `101 Switching Protocols` 时会在响应体暴露前失败并淘汰该连接
+- `=边界` cleartext 与 Native TLS H1 共用该状态/Upgrade 收敛；本次不新增升级后传输所有权、WebSocket API，也不宣称完整 HTTP 互操作认证
+- `+安全` 显式 Native H1 Client 现在会校验 chunked 响应 trailer 的字段行、字段名与字段值，并对完整 trailer 区施加 65536-byte 累计上限；失败发生在连接归池之前
+- `=边界` cleartext 与 Native TLS H1 共用该 trailer 校验与预算；畸形 trailer 会淘汰当前连接，但本次不新增公开 trailer 访问 API，也不宣称完整 HTTP/代理合规认证
+- `+安全` 显式 Native H1 Client 现在只接受 `HTTP/1.1` 响应版本，并在暴露响应体前拒绝缺少冒号的字段行、非法字段名以及字段值中的 NUL、DEL 和其他禁用控制字节
+- `=边界` cleartext 与 Native TLS H1 共用该响应头解析器；合法 RFC token 标点和水平制表空白仍可接受，畸形连接会被淘汰，但本次不宣称完整 HTTP 或代理互操作认证
+- `+安全` 显式 Native H1 Client 现在会在暴露响应体前拒绝 `Transfer-Encoding + Content-Length`、冲突的重复 `Content-Length` 与不支持的 transfer coding；cleartext 与 Native TLS H1 共用同一判定
+- `=边界` 合法的等值重复 `Content-Length` 仍可接受；畸形响应连接会被淘汰且不归池，本次不宣称完整 HTTP 互操作认证
+- `+安全` 默认 Native H1 现在要求每个 HTTP/1.1 请求携带且只携带一个非空 Host，并拒绝逗号合并 authority 与请求字段值中的禁用控制字节
+- `=边界` 畸形请求会在 App dispatch 前返回固定无正文 400 并关闭当前连接；这不等同于独立代理链合规认证
+- `+特性` 显式 cleartext/Native TLS H2 session 的 `sendWithRetry(...)` 可通过 `reconnectOnConnectionFailure: true` 对幂等 buffered 请求执行有界的响应头前断传输重连回放，并继续复用 replacement session
+- `=边界` 重连要求 idle session，默认关闭；不迁移 active lease，不重放 one-pass/非幂等请求，也不恢复响应头后的 body 读取失败
+- `+特性` 新增 `ResponseTransportTransformFactory`、`Ctx.registerResponseTransportTransform(...)` 与 `responseTransportTransformMiddleware(...)`，普通 `transportWriter()` 可按中间件响应洋葱顺序自动组合 fresh 状态变换
+- `=边界` transform 注册在首个 transport writer 打开后冻结；当前不会自动包裹 `writer()`、SSE、sendStream/pull JSON，也不代表现有压缩策略中间件已接入
 - `+特性` 动态 gzip/deflate 的缓冲与流式响应改用 Ignite 自有安全仓颉 DEFLATE/GZIP codec，不再在产品路径构造 `stdx.compress.zlib`
 - `+特性` 缓冲响应使用固定 Huffman 与有界 LZ77；流式响应使用增量 stored blocks，避免完整响应捕获
 - `+特性` Brotli/Zstd 继续通过 `.br` / `.zst` 预压缩静态副本交付，保持 Range、HEAD、Vary 与 MIME 语义

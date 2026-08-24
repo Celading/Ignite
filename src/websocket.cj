@@ -1,6 +1,6 @@
 package ignite
 
-import stdx.net.http.{HttpContext, WebSocket, WebSocketFrame, WebSocketFrameType}
+import stdx.net.http.{WebSocket, WebSocketFrame, WebSocketFrameType}
 import std.collection.ArrayList
 import std.sync.Mutex
 
@@ -35,23 +35,23 @@ class WebSocketIncomingMessageTooLargeException <: Exception {
     }
 }
 
-interface NativeWebSocketUpgradeCarrier {
-    func upgradeNativeWebSocket(
+public interface WebSocketUpgradeCarrier {
+    func upgradeWebSocket(
         subProtocols: Array<String>,
         options: WebSocketOptions
     ): WsConn
 }
 
-func upgradeStdxWebSocketWithSubProtocols(
+func currentRequestCarrierUpgradeWebSocket(
     carrier: CurrentRequestCarrier,
     subProtocols: Array<String>,
     options: WebSocketOptions
 ): WsConn {
-    let allowed = ArrayList<String>()
-    for (protocol in subProtocols) { allowed.add(protocol) }
-    WsConn(
-        WebSocket.upgradeFromServer(carrier.rawHttpContext(), subProtocols: allowed),
-        maxIncomingMessageBytes: options.maxIncomingMessageBytes
+    if (let Some(upgrader) <- (carrier as WebSocketUpgradeCarrier)) {
+        return upgrader.upgradeWebSocket(subProtocols, options)
+    }
+    throw Exception(
+        "current request carrier does not expose WebSocket upgrade capability"
     )
 }
 

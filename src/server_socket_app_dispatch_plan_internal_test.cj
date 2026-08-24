@@ -3,7 +3,7 @@ package ignite
 import std.collection.ArrayList
 import std.collection.HashMap
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 @Test
 public class AppDispatchPlanInternalTestSuite {
@@ -135,14 +135,6 @@ class DispatchPlanTrackingCarrier <: CurrentRequestCarrier {
         responseHeaders.get(name.trimAscii().toAsciiLower())
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required in dispatch plan internal tests")
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in dispatch plan internal tests")
-    }
-
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
         throw Exception("response transport writer should not open in dispatch plan internal tests")
     }
@@ -182,12 +174,17 @@ class DispatchPlanTrackingCarrier <: CurrentRequestCarrier {
         None
     }
 
-    public override func requestHeaders(): HttpHeaders {
-        HttpHeaders()
+    public override func requestHeaderFields(): Array<(String, String)> {
+        []
     }
 
-    public override func requestTrailers(): HttpHeaders {
-        HttpHeaders()
+    public override func requestTrailerValue(key: String): ?String {
+        let _ = key
+        None
+    }
+
+    public override func requestTrailerFields(): Array<(String, String)> {
+        []
     }
 
     public override func requestBodyStream(): InputStream {
@@ -206,8 +203,9 @@ class DispatchPlanTrackingCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {

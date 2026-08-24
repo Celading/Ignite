@@ -86,8 +86,85 @@ public class JwtMiddlewareTestSuite {
         @Assert(resp.body, "ok:q-user")
     }
 
+    @TestCase
+    public func testJwtMiddlewareAcceptsNumericTimeClaimsThroughSeaJson(): Unit {
+        let app = App(config: Config())
+        app.use(jwtMiddleware(JwtConfig(secret: "ignite-secret", clockSkewSec: 0)))
+        app.get("/secure", { ctx =>
+            let sub = ctx.getLocal("jwt_sub") ?? ""
+            _ = ctx.sendString("ok:${sub}")
+        })
+
+        let payload = #"{"sub":"numeric-user","exp":"# +
+            (nowUnixSeconds() + 300).toString() + "}"
+        let token = signHs256("ignite-secret", payload)
+        let resp = app.handleForTest(
+            "GET",
+            "/secure",
+            headers: [("Authorization", "Bearer " + token)]
+        )
+        @Assert(resp.status, UInt16(200))
+        @Assert(resp.body, "ok:numeric-user")
+    }
+
+    @TestCase
+    public func testJwtMiddlewareRejectsSignedNonObjectSegmentsAsInvalidToken(): Unit {
+        let app = App(config: Config())
+        app.use(jwtMiddleware(JwtConfig(secret: "ignite-secret")))
+        app.get("/secure", { ctx => _ = ctx.sendString("unexpected") })
+
+        let objectPayload = #"{"sub":"u1"}"#
+        let arrayHeaderToken = signHs256WithHeader(
+            "ignite-secret",
+            #"["HS256"]"#,
+            objectPayload
+        )
+        let arrayPayloadToken = signHs256WithHeader(
+            "ignite-secret",
+            #"{"alg":"HS256","typ":"JWT"}"#,
+            #"["u1"]"#
+        )
+        let headerResp = app.handleForTest(
+            "GET",
+            "/secure",
+            headers: [("Authorization", "Bearer " + arrayHeaderToken)]
+        )
+        let payloadResp = app.handleForTest(
+            "GET",
+            "/secure",
+            headers: [("Authorization", "Bearer " + arrayPayloadToken)]
+        )
+        @Assert(headerResp.status, UInt16(401))
+        @Assert(contains(headerResp.header("www-authenticate") ?? "", #""invalid_token""#), true)
+        @Assert(payloadResp.status, UInt16(401))
+        @Assert(contains(payloadResp.header("www-authenticate") ?? "", #""invalid_token""#), true)
+    }
+
+    @TestCase
+    public func testJwtMiddlewareKeepsUnsupportedAlgorithmTaxonomy(): Unit {
+        let app = App(config: Config())
+        app.use(jwtMiddleware(JwtConfig(secret: "ignite-secret")))
+        app.get("/secure", { ctx => _ = ctx.sendString("unexpected") })
+
+        let token = signHs256WithHeader(
+            "ignite-secret",
+            #"{"alg":"HS512","typ":"JWT"}"#,
+            #"{"sub":"u1"}"#
+        )
+        let resp = app.handleForTest(
+            "GET",
+            "/secure",
+            headers: [("Authorization", "Bearer " + token)]
+        )
+        @Assert(resp.status, UInt16(401))
+        @Assert(contains(resp.header("www-authenticate") ?? "", #""unsupported_alg""#), true)
+    }
+
     func signHs256(secret: String, payloadJson: String): String {
-        let headerJson = #"{"alg":"HS256","typ":"JWT"}"#
+        signHs256WithHeader(secret, #"{"alg":"HS256","typ":"JWT"}"#, payloadJson)
+    }
+
+    func signHs256WithHeader(secret: String, headerJson: String, payloadJson: String): String {
         let header = base64UrlEncode(headerJson.toArray())
         let payload = base64UrlEncode(payloadJson.toArray())
         let signingInput = header + "." + payload
