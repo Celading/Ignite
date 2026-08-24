@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import std.collection.ArrayList
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 @Test
 public class H2FlowBudgetNonLossGuardTestSuite {
@@ -2148,10 +2148,6 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
         this.failOnOpen = failOnOpen
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for H2 accepted-socket lifecycle probe")
-    }
-
     public override func upgradeWebSocketRaw(): WebSocket {
         throw Exception("websocket upgrade should not run in H2 accepted-socket lifecycle probe")
     }
@@ -2256,10 +2252,6 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
     init(writer: ResponseTransportWriter, failOnOpen: Bool) {
         this.writer = writer
         this.failOnOpen = failOnOpen
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for H2 live response writer acquisition gate")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

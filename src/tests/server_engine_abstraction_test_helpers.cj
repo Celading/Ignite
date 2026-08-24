@@ -8,7 +8,7 @@ import std.env.{removeVariable, setVariable}
 import std.fs.{File, exists}
 import std.io.InputStream
 import std.net.{IPSocketAddress, TcpServerSocket, TcpSocket}
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 import stdx.encoding.json.stream.JsonWriter as StdxJsonWriter
 import jinguissl.contract.ContractErrorCode
 import jinguissl.live.{
@@ -8378,10 +8378,6 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         }
     }
 
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport response probe carrier")
-    }
-
     public override func upgradeWebSocketRaw(): WebSocket {
         throw Exception("websocket upgrade should not run for accepted transport response probe carrier")
     }
@@ -8501,10 +8497,6 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         this.pathText = pathText
         this.lifecycle = lifecycle
         this.failOnOpen = failOnOpen
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport H2 lifecycle application-data probe carrier")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {
@@ -8628,10 +8620,6 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         socketWriteCount += 1
         totalEncodedSocketBytes += bytes.size
         socket.write(bytes)
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport response socket-sink probe carrier")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

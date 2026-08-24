@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=边界` `CurrentRequestCarrier` 核心契约不再强制所有 native/test carrier 暴露 stdx `HttpContext`；原有 `Ctx.httpContext()` 兼容入口改由可选 `StdxHttpContextCompatibilityCarrier` 能力提供，stdx carrier 与透明响应 writer wrapper 保持可用
+- `=边界` 未提供该可选能力的 native H1/H2/accepted-transport carrier 会在请求 raw context 时给出明确拒绝；本次不替换 WebSocket upgrade provider、请求体流、client response，也不移除最终 stdx 依赖
 - `=边界` `CurrentRequestCarrier` 的请求头/拖尾读取改用 Ignite 自有的扁平字段序列与单值拖尾契约；代理转发不再从 carrier 获取 stdx `HttpHeaders`，重复请求字段值仍完整保留
 - `=边界` 本次不替换 adapter 内部 provider 集合，也不处理 raw `HttpContext`、WebSocket、请求体、client response 或最终 stdx 依赖移除
 - `=边界` `CurrentRequestCarrier` 的响应头追加改用 Ignite 自有的单字段契约；流压缩与代理下游不再为 carrier 边界构造或传递 stdx `HttpHeaders`，重复字段仍逐值保留

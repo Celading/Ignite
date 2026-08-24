@@ -3,7 +3,7 @@ package ignite
 import std.collection.ArrayList
 import std.collection.HashMap
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 @Test
 public class AppDispatchPlanInternalTestSuite {
@@ -133,10 +133,6 @@ class DispatchPlanTrackingCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required in dispatch plan internal tests")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

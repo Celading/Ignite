@@ -4,7 +4,7 @@ import ignite.*
 import ignite.middleware.*
 import std.collection.HashMap
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 @Test
 public class RequestBodyBufferCeilingContractTestSuite {
@@ -80,10 +80,6 @@ class RequestBodyOverflowTestCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for request body overflow tests")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

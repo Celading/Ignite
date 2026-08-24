@@ -10,7 +10,7 @@ import ignite.{
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 /// Serves the first native H2 stream through Ignite's existing App dispatch.
 public func serveNativeH2SingleStreamApp(
@@ -187,10 +187,6 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         this.requestTrailersValue = trailers
         this.responseHeadCommit = responseHeadCommit
         this.responseDataCommit = responseDataCommit
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("native H2 App carrier does not expose raw HttpContext")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

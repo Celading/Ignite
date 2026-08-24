@@ -1015,7 +1015,7 @@ public class Ctx {
     // ── Internal HttpContext access ──
 
     public func httpContext(): HttpContext {
-        _currentRequestCarrier.rawHttpContext()
+        currentRequestCarrierRawHttpContextCompatibility(_currentRequestCarrier)
     }
 
     public func currentRequestCarrier(): CurrentRequestCarrier {

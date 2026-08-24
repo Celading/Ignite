@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 @Test
 public class ServerSocketAppDispatchExecutionTestSuite {
@@ -115,7 +115,7 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let app = App(config: Config(serverPreferredBackendHint: "stdx-default"))
         app.get("/carrier", { ctx =>
             let carrier = ctx.currentRequestCarrier()
-            let request = carrier.rawHttpContext().request
+            let request = ctx.httpContext().request
             let mode = carrier.requestQueryValue("mode") ?? ""
             let _ = ctx
                 .setHeader("x-carrier-method", carrier.requestMethod())
@@ -130,6 +130,22 @@ public class ServerSocketAppDispatchExecutionTestSuite {
     }
 
     @TestCase
+    public func testCoreCarrierRejectsOptionalRawHttpContextCompatibilityWithoutProvider(): Unit {
+        let carrier = DispatchEntryTrackingCarrier("GET", "/carrier-entry")
+        let ctx = Ctx(carrier, App())
+
+        try {
+            let _ = ctx.httpContext()
+            @Fail("core-only carrier should not expose stdx HttpContext compatibility")
+        } catch (e: Exception) {
+            @Assert(
+                e.message,
+                "current request carrier does not expose stdx HttpContext compatibility"
+            )
+        }
+    }
+
+    @TestCase
     public func testWebSocketUpgradeUsesCarrierSeamWithoutEagerRawHttpContextFetch(): Unit {
         let carrier = WebSocketUpgradeSentinelCarrier()
         let ctx = Ctx(carrier, App())
@@ -139,7 +155,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
             @Fail("websocket upgrade should stop at the carrier seam sentinel")
         } catch (_: WebSocketUpgradeSentinelException) {}
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.upgradeWebSocketCalls, Int64(1))
     }
 
@@ -155,7 +170,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let carrier = DispatchEntryTrackingCarrier("GET", "/carrier-entry")
         app.handleRequest(carrier)
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.responseStatus, UInt16(200))
         @Assert(carrier.header("content-type") ?? "", "text/plain; charset=utf-8")
         @Assert(carrier.header("x-entry") ?? "", "1")
@@ -172,7 +186,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let carrier = DispatchEntryTrackingCarrier("GET", "/panic-entry")
         app.handleRequest(carrier)
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.responseStatus, UInt16(500))
         @Assert(carrier.header("content-type") ?? "", "text/plain; charset=utf-8")
         @Assert(carrier.responseBody, "Internal Server Error")
@@ -184,7 +197,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let writer = ResponseWriter(carrier)
         writer.writeString("stream-body")
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.responseTransportOpenCalls, Int64(1))
         @Assert(carrier.responseTransportWriteCalls, Int64(1))
         @Assert(carrier.responseTransportBody, "stream-body")
@@ -198,7 +210,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let writer = ctx.transportWriter()
         writer.write("transport-body".toArray())
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.responseTransportOpenCalls, Int64(1))
         @Assert(carrier.responseTransportWriteCalls, Int64(1))
         @Assert(carrier.responseTransportBody, "transport-body")
@@ -212,7 +223,6 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         let out = ctx.transportOutputStream()
         out.write(toDispatchTestByteArray("transport-out".toArray()))
 
-        @Assert(carrier.rawHttpContextCalls, Int64(0))
         @Assert(carrier.responseTransportOpenCalls, Int64(1))
         @Assert(carrier.responseTransportWriteCalls, Int64(1))
         @Assert(carrier.responseTransportBody, "transport-out")
@@ -278,14 +288,8 @@ class WebSocketUpgradeSentinelException <: Exception {
 }
 
 class WebSocketUpgradeSentinelCarrier <: CurrentRequestCarrier {
-    public var rawHttpContextCalls: Int64 = 0
     public var upgradeWebSocketCalls: Int64 = 0
     let body = EmptyCarrierInputStream()
-
-    public override func rawHttpContext(): HttpContext {
-        rawHttpContextCalls += 1
-        throw Exception("raw HttpContext should not be fetched eagerly")
-    }
 
     public override func upgradeWebSocketRaw(): WebSocket {
         upgradeWebSocketCalls += 1
@@ -393,7 +397,6 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
     let pathText: String
     let body = EmptyCarrierInputStream()
     let responseHeaders = HashMap<String, String>()
-    public var rawHttpContextCalls: Int64 = 0
     public var upgradeWebSocketCalls: Int64 = 0
     public var responseStatus: UInt16 = 200
     public var responseBody: String = ""
@@ -405,11 +408,6 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        rawHttpContextCalls += 1
-        throw Exception("raw HttpContext should not be required for dispatch entry")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {
@@ -505,7 +503,6 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
 class ResponseTransportSeamTrackingCarrier <: CurrentRequestCarrier {
     let body = EmptyCarrierInputStream()
     let responseHeaders = HashMap<String, String>()
-    public var rawHttpContextCalls: Int64 = 0
     public var responseTransportOpenCalls: Int64 = 0
     public var responseTransportWriteCalls: Int64 = 0
     public var responseTransportBody: String = ""
@@ -513,11 +510,6 @@ class ResponseTransportSeamTrackingCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        rawHttpContextCalls += 1
-        throw Exception("raw HttpContext should not be required for response transport writer seam")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

@@ -1,6 +1,6 @@
 package ignite
 
-import stdx.net.http.{HttpContext, WebSocket, WebSocketFrame, WebSocketFrameType}
+import stdx.net.http.{WebSocket, WebSocketFrame, WebSocketFrameType}
 import std.collection.ArrayList
 import std.sync.Mutex
 
@@ -50,7 +50,10 @@ func upgradeStdxWebSocketWithSubProtocols(
     let allowed = ArrayList<String>()
     for (protocol in subProtocols) { allowed.add(protocol) }
     WsConn(
-        WebSocket.upgradeFromServer(carrier.rawHttpContext(), subProtocols: allowed),
+        WebSocket.upgradeFromServer(
+            currentRequestCarrierRawHttpContextCompatibility(carrier),
+            subProtocols: allowed
+        ),
         maxIncomingMessageBytes: options.maxIncomingMessageBytes
     )
 }

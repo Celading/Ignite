@@ -24,7 +24,7 @@ import std.net.{
     TcpSocket
 }
 import std.sync.Mutex
-import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{HttpHeaders, WebSocket}
 
 let SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT: Int64 = 1024
 let SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT: Int64 = 16 * 1024
@@ -1990,12 +1990,6 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.liveResponseCloseAfterWrite = liveResponseCloseAfterWrite
         this.responseBodyBytesValue = Array<UInt8>(0, repeat: 0)
         this.responseBodyAppendBufferValue = None
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw SocketServerEngineShellException(
-            "socket server engine shell does not expose raw HttpContext"
-        )
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

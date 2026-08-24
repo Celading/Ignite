@@ -4,7 +4,7 @@ import std.fs.{File, OpenMode}
 import std.collection.ArrayList
 import std.io.InputStream
 import std.net.TcpSocket
-import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpContext, HttpHeaders, WebSocket}
+import stdx.net.http.{ServerBuilder, Server, HttpRequestDistributor, HttpRequestHandler, HttpHeaders, WebSocket}
 import ignite.api2
 import jinguissl.live.{
     ContractAcceptedTransportDescriptor,
@@ -826,10 +826,6 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
 
     func writeSocketResponseBytes(bytes: Array<UInt8>): Unit {
         responseWriterLifecycle.writeSocketResponseBytes(bytes)
-    }
-
-    public override func rawHttpContext(): HttpContext {
-        throw Exception("raw HttpContext should not be required for accepted transport socket response carrier")
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {

@@ -9,7 +9,6 @@ import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 /// The current implementation is still stdx-backed, but `Ctx` no longer needs
 /// to be constructed directly from `HttpContext`.
 public interface CurrentRequestCarrier {
-    func rawHttpContext(): HttpContext
     func upgradeWebSocketRaw(): WebSocket
     func openResponseTransportWriterRaw(): ResponseTransportWriter
     func requestMethod(): String
@@ -31,6 +30,24 @@ public interface CurrentRequestCarrier {
     func setResponseString(body: String): Unit
     func setResponseBytes(data: Array<UInt8>): Unit
     func attachResponseBodyStream(stream: InputStream): Unit
+}
+
+/// Optional compatibility capability for carriers backed by stdx
+/// `HttpContext`. Native transports are not required to implement it.
+public interface StdxHttpContextCompatibilityCarrier {
+    func rawHttpContextCompatibility(): HttpContext
+}
+
+func currentRequestCarrierRawHttpContextCompatibility(
+    carrier: CurrentRequestCarrier
+): HttpContext {
+    if (let Some(compatibility) <-
+        (carrier as StdxHttpContextCompatibilityCarrier)) {
+        return compatibility.rawHttpContextCompatibility()
+    }
+    throw Exception(
+        "current request carrier does not expose stdx HttpContext compatibility"
+    )
 }
 
 /// Optional carrier capability for transports that can commit a response
@@ -113,14 +130,14 @@ func urlQueryHexNibble(value: UInt8): Int64 {
     -1
 }
 
-public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier {
+public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & PreparedResponseBodyCarrier {
     let _httpCtx: HttpContext
 
     public init(httpCtx: HttpContext) {
         this._httpCtx = httpCtx
     }
 
-    public override func rawHttpContext(): HttpContext {
+    public override func rawHttpContextCompatibility(): HttpContext {
         _httpCtx
     }
 
@@ -220,7 +237,7 @@ type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
 
 let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
 
-class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let _downstream: CurrentRequestCarrier
     let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
     var _responseWriter: ?ResponseTransportWriter = None
@@ -243,8 +260,8 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         }
     }
 
-    public override func rawHttpContext(): HttpContext {
-        _downstream.rawHttpContext()
+    public override func rawHttpContextCompatibility(): HttpContext {
+        currentRequestCarrierRawHttpContextCompatibility(_downstream)
     }
 
     public override func upgradeWebSocketRaw(): WebSocket {
