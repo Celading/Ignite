@@ -1,6 +1,6 @@
-# Ignite 0.8.7 Preview
+# Ignite 0.8.16 Preview
 
-`0.8.7` 将已接受的 `036383d` 开发检查点提升到 0800 发布线。在 `0.8.2` 的 Native TLS 生命周期、Native H1 可观测性、断连收敛、query 单次解码和 WebSocket production-core 之上，本版补齐完整 HPACK Huffman、有界动态表、Native TLS H2 ingress、H2 response streaming/drain、cleartext/TLS multiplex session、精确长度与未知长度 one-pass request stream，以及 H2 `jsonWrite` 有界流式写出；同时消费 lisi transport contract，并收紧压缩 identity refusal 与 private precompressed trust 边界。
+`0.8.16` 将已接受的 `e99283f` 开发检查点提升到 0800 发布线。在 `0.8.7` 的 Native TLS H2、response streaming/drain 与 multiplex session 之上，本版补齐有界调度、deadline/priority/admission、响应头与 DATA 的 handler-time commit、SSE 完整生命周期、状态化 response transform、断连前响应头重放、Native H1/H2 Client 收敛，以及 Native H1 请求/响应 framing、authority、timeout、`Expect` 和 typed error containment。
 
 一句话概括这条线的原则：**只开放已经在真实 socket/wire 回归里跑通的能力，并且每一项都留着回滚路径。** 它不是"已经完全脱离 stdx"或"全部协议都已 LTS"的宣言。
 
@@ -262,7 +262,7 @@ ctx.jsonSeaStream({ writer =>
 
 ## 仍需保留的 stdx 面
 
-`0.8.7` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
+`0.8.16` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
 
 ## 推荐验证顺序
 

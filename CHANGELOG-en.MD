@@ -3,6 +3,15 @@
 ## Ignite `0800`
 > Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
 
+### v0.8.16 `Ignite Preview`
+
+- `+Feature` Promote accepted product checkpoint `e99283f`, including bounded H2 deadline/priority/admission, handler-time HEADERS/DATA, complete SSE lifecycle, response transforms, and pre-header reconnect replay
+- `+Security` Complete bounded Native H1 Server/Client request-target, authority, framing, metadata, trailer, timeout, typed-error, and `Expect: 100-continue` containment
+- `=Boundary` ClientResponse, request/response headers, WebSocket upgrade, and raw-context compatibility move behind Ignite-owned seams; stdx live WebSocket remains blocked by a provider/runtime abort and is not certified
+- `+Validation` The product checkpoint passed build plus full serial `1660/1660`; the release candidate reruns build, regression, and public-leak checks before push
+- `=Boundary` This remains a Preview checkpoint; center publication, tag, hosted Release, main merge, LTS, production-network matrices, and complete platform certification are not claimed by 0.8.16
+- `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, and the 0800 Manual are aligned to `0.8.16`
+
 ### v0.8.7 `Ignite Preview`
 
 - `+Feature` Native H2 completes RFC 7541 HPACK Huffman 256-octet decoding, encode-when-smaller output, EOS/padding validation, sensitive-header never-index policy, and a bounded dynamic table

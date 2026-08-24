@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.7-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.16-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                  <span style="color:#88C0D0;">Ignite v0.8.7</span>                     │
+│                 <span style="color:#88C0D0;">Ignite v0.8.16</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.7</i></span> │
+│                                     <span style="color:#8A8A8A;"><i>_Ignite 0.8.16</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -49,7 +49,7 @@ Cangjie is a programming language by Huawei. **Ignite** is a web framework built
 
 We believe a good framework should be as light as a leaf and yet strike like flint. We took **“叶” (leaf)** for agility and **“燧” (flint)** for ignition, and named it **叶燧 (Ignite)**.
 
-## Current Status (0.8.7 Preview)
+## Current Status (0.8.16 Preview)
 
 - Cleartext HTTP/1.1 now defaults to Ignite native H1, with an explicit `stdx-default` rollback.
 - Native H1 client, WebSocket, SSE, streamed responses, and request body limits have real socket regressions; ordinary `app.ws(...)` uses the Ignite-owned WebSocket when Native H1 is selected.

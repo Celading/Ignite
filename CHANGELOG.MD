@@ -3,6 +3,15 @@
 ## Ignite `0800`
 > 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
 
+### v0.8.16 `Ignite Preview`
+
+- `+特性` 提升已接受的 `e99283f` 产品检查点，包含有界 H2 deadline/priority/admission、handler-time HEADERS/DATA、SSE 生命周期、response transform 与断连前响应头重放
+- `+安全` Native H1 Server/Client 补齐 request-target/authority、framing、metadata、trailer、timeout、typed error 与 `Expect: 100-continue` 收敛
+- `=边界` ClientResponse、request/response header 与 WebSocket/raw-context compatibility 进入 Ignite-owned seam；stdx live WebSocket 仍受 provider/runtime abort 阻断，不作认证声明
+- `+验证` 合并前产品检查点 build 与完整串行 `1660/1660` 通过；发布候选在推送前重新执行 build、回归与公开泄漏审计
+- `=边界` 本版仍是 Preview；中心仓、tag、Release、main merge、LTS、生产网络矩阵和完整平台认证均不由 0.8.16 检查点宣称
+- `=杂项` 包版本、框架常量、Banner、Benchmark、三语 README 与 0800 Manual 对齐到 `0.8.16`
+
 ### v0.8.7 `Ignite Preview`
 
 - `+特性` Native H2 补齐 RFC 7541 HPACK Huffman 256-octet 解码/按收益编码、EOS/padding 校验、敏感 Header never-index 与有界动态表

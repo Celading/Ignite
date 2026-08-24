@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.7-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.16-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌───────────────────────────────────────────────────────┐
-│                   <span style="color:#88C0D0;">Ignite v0.8.7</span>                      │
+│                  <span style="color:#88C0D0;">Ignite v0.8.16</span>                      │
 │   <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>    │
 │                                                       │
 │   Touchpoints .......... 16   Processes .......... 1  │
 │   Prefork ......... Disabled   PID .......... 67271   │
-│                                       <span style="color:#8A8A8A;"><i>_Ignite 0.8.7</i></span>  │
+│                                      <span style="color:#8A8A8A;"><i>_Ignite 0.8.16</i></span>  │
 └───────────────────────────────────────────────────────┘
 </pre>
 <span style="font-weight:300;font-size:38px">Ignite / 叶燧</span><br/>
@@ -39,7 +39,7 @@
 我们相信，好的框架应该像一片叶子轻盈穿梭，又能像燧石碰撞瞬间点燃。  
 因此我们取 **“叶”** 之灵动，取 **“燧”** 之开创，命名它为 **叶燧 (Ignite)**。
 
-## 当前状态（0.8.7 Preview）
+## 当前状态（0.8.16 Preview）
 
 - 明文 HTTP/1.1 默认进入 Ignite native H1，保留 `stdx-default` 显式回滚入口。
 - 原生 H1 Client、WebSocket、SSE、流式响应与请求体上限已经进入真实 socket 回归面；普通 `app.ws(...)` 在 Native H1 backend 下就是 Ignite 自研 WebSocket，不需要第二个开关。
