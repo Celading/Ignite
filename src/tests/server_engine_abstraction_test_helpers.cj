@@ -8449,8 +8449,8 @@ class AcceptedTransportResponseProbeCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -8570,8 +8570,8 @@ class AcceptedTransportH2LifecycleApplicationDataProbeCarrier <: CurrentRequestC
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -8688,8 +8688,8 @@ class AcceptedTransportResponseSocketSinkProbeCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

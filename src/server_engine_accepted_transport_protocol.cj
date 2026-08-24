@@ -914,12 +914,8 @@ class ServerJinguiAcceptedTransportSocketResponseCarrier <: CurrentRequestCarrie
         )
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        for ((name, values) in headers) {
-            for (value in values) {
-                setResponseHeader(name, value)
-            }
-        }
+    public override func addResponseHeader(key: String, value: String): Unit {
+        setResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

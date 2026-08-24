@@ -934,10 +934,8 @@ public class NativeH2RuntimeInternalTestSuite {
         @Assert(carrier.requestTrailers().getFirst("x-trailer") ?? "", "first")
         @Assert(trailerCount, 2)
 
-        let responseHeaders = HttpHeaders()
-        responseHeaders.add("set-cookie", "first=one; Path=/")
-        responseHeaders.add("set-cookie", "second=two; Path=/")
-        carrier.addResponseHeaders(responseHeaders)
+        carrier.addResponseHeader("set-cookie", "first=one; Path=/")
+        carrier.addResponseHeader("set-cookie", "second=two; Path=/")
         let response = carrier.response()
         var responseCookieCount: Int64 = 0
         var responseCookieJoined = ""

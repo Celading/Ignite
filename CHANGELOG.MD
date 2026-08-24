@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=边界` `CurrentRequestCarrier` 的响应头追加改用 Ignite 自有的单字段契约；流压缩与代理下游不再为 carrier 边界构造或传递 stdx `HttpHeaders`，重复字段仍逐值保留
+- `=边界` 本次只收口服务端响应头 mutation seam；请求头集合读取、raw `HttpContext`、WebSocket 与 client response provider 类型仍是后续 IG0900 分层任务
 - `=依赖` JWT 中间件的签名后 header/claims DOM 解析改用 Ignite-owned SeaJson 值契约，不再直接导入 stdx JSON；HS256、String/数字时间声明和现有拒绝分类保持兼容
 - `+安全` 默认 Native H1 现在会把已检测到的非法 chunk-size、chunk payload 分隔符和 trailer 字段名映射为固定无正文 `400 Bad Request`，随后关闭该连接并保持监听器继续服务
 - `=边界` malformed chunked-body 400 不覆盖未完整 EOF、peer abort、超时、chunk/trailer 元数据超限、不支持的 pipelining、完整 chunk-extension 语法或自定义错误体

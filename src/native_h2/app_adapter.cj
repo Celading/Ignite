@@ -268,13 +268,9 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         responseHeadersValue.add(normalized, values)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+    public override func addResponseHeader(key: String, value: String): Unit {
         ensureResponseMetadataMutable()
-        for ((name, values) in headers) {
-            for (value in values) {
-                appendResponseHeader(name, value)
-            }
-        }
+        appendResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

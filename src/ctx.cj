@@ -6,7 +6,7 @@ import std.fs.{exists, File, FileInfo, OpenMode, removeIfExists}
 import std.unicode.*
 import ignite.api2
 import ignite.security
-import stdx.net.http.{HttpContext, HttpHeaders}
+import stdx.net.http.HttpContext
 import stdx.encoding.json.stream.{
     JsonWriter as StdxJsonWriter,
     JsonReader as StdxJsonReader
@@ -1173,9 +1173,7 @@ public class Ctx {
 
     func addResponseHeaderTracked(key: String, value: String): Unit {
         rememberResponseHeader(key, value)
-        let headers = HttpHeaders()
-        headers.add(key, value)
-        _currentRequestCarrier.addResponseHeaders(headers)
+        _currentRequestCarrier.addResponseHeader(key, value)
     }
 
     func applyStreamCompressionHeaders(plan: StreamCompressionPlan): Unit {

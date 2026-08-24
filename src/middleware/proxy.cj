@@ -469,7 +469,11 @@ func relayProxyResponse(ctx: Ctx, resp: HttpResponse): Unit {
     observeProxyResponseBody(ctx, resp)
     observeProxyDownstreamBody(ctx, resp)
     _ = ctx.status(resp.status)
-    carrier.addResponseHeaders(buildProxyResponseHeaders(ctx, resp))
+    for ((name, values) in buildProxyResponseHeaders(ctx, resp)) {
+        for (value in values) {
+            carrier.addResponseHeader(name, value)
+        }
+    }
     if (proxyResponseMustBeBodyless(ctx.method, resp.status)) {
         return
     }

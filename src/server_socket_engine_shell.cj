@@ -2144,12 +2144,8 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         responseHeadersValue.add(key.toAsciiLower(), values)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        for ((name, values) in headers) {
-            for (value in values) {
-                appendResponseHeader(name, value)
-            }
-        }
+    public override func addResponseHeader(key: String, value: String): Unit {
+        appendResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

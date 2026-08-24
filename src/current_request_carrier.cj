@@ -26,7 +26,7 @@ public interface CurrentRequestCarrier {
     func requestBodySize(): ?Int64
     func setResponseStatus(code: UInt16): Unit
     func setResponseHeader(key: String, value: String): Unit
-    func addResponseHeaders(headers: HttpHeaders): Unit
+    func addResponseHeader(key: String, value: String): Unit
     func setResponseString(body: String): Unit
     func setResponseBytes(data: Array<UInt8>): Unit
     func attachResponseBodyStream(stream: InputStream): Unit
@@ -187,7 +187,9 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & Pre
         _httpCtx.responseBuilder.header(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let headers = HttpHeaders()
+        headers.add(key, value)
         _httpCtx.responseBuilder.addHeaders(headers)
     }
 
@@ -307,8 +309,8 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         _downstream.setResponseHeader(key, value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        _downstream.addResponseHeaders(headers)
+    public override func addResponseHeader(key: String, value: String): Unit {
+        _downstream.addResponseHeader(key, value)
     }
 
     public override func setResponseString(body: String): Unit {

@@ -2224,8 +2224,9 @@ class H2FlowBudgetNonLossGuardAcceptedSocketLifecycleCarrier <: CurrentRequestCa
         let _ = value
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {
@@ -2328,8 +2329,9 @@ class H2FlowBudgetNonLossGuardCurrentRequestCarrier <: CurrentRequestCarrier {
         let _ = value
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {

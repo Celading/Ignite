@@ -356,8 +356,9 @@ class WebSocketUpgradeSentinelCarrier <: CurrentRequestCarrier {
         let _ = value
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        let _ = key
+        let _ = value
     }
 
     public override func setResponseString(body: String): Unit {
@@ -474,8 +475,8 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
     public override func setResponseString(body: String): Unit {
@@ -577,8 +578,8 @@ class ResponseTransportSeamTrackingCarrier <: CurrentRequestCarrier {
         responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
-    public override func addResponseHeaders(headers: HttpHeaders): Unit {
-        let _ = headers
+    public override func addResponseHeader(key: String, value: String): Unit {
+        responseHeaders.add(key.trimAscii().toAsciiLower(), value)
     }
 
     public override func setResponseString(body: String): Unit {
