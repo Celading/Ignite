@@ -12089,6 +12089,95 @@ public class ServerEngineAbstractionTestSuite {
     }
 
     @TestCase
+    public func testSocketServerEngineShellSettlesExpectContinueAndUnsupportedExpectation(): Unit {
+        let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
+        setVariable(acceptLimitEnv, "4")
+        try {
+            let handlerRuns = AtomicInt64(0)
+            let app = App(config: Config(enableTlsPrecheck: false))
+            app.serverEngine(SocketServerEngineShell())
+            app.post("/shell-expect", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx.sendString("expect:" + ctx.bodyString())
+            })
+            app.get("/shell-expect-recovery", { ctx =>
+                let _ = handlerRuns.fetchAdd(1)
+                let _ = ctx.sendString("expect-recovery-ok")
+            })
+
+            let serverFuture = spawn {
+                app.listen("127.0.0.1", UInt16(38189))
+            }
+            waitForShellReady(app, UInt16(38189))
+
+            let continueSocket = TcpSocket(IPSocketAddress.parse("127.0.0.1:38189"))
+            continueSocket.connect()
+            try {
+                continueSocket.write(
+                    (
+                        "POST /shell-expect HTTP/1.1\r\n" +
+                        "Host: example.com\r\n" +
+                        "Content-Length: 4\r\n" +
+                        "Expect: 100-Continue\r\n" +
+                        "Connection: close\r\n\r\n"
+                    ).toArray()
+                )
+                let interim = readSocketServerEngineShellResponseFrame(continueSocket)
+                @Assert(interim, "HTTP/1.1 100 Continue\r\n\r\n")
+                continueSocket.write("body".toArray())
+                let finalResponse = readSocketServerEngineShellResponseFrame(continueSocket)
+                @Assert(contains(finalResponse, "HTTP/1.1 200 OK"), true)
+                @Assert(contains(finalResponse, "expect:body"), true)
+            } finally {
+                if (!continueSocket.isClosed()) {
+                    continueSocket.close()
+                }
+            }
+
+            let unsupportedResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                (
+                    "POST /shell-expect HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 4\r\n" +
+                    "Expect: 100-continue, custom-feature\r\n\r\n"
+                )
+            )
+            let emptyExpectationResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                (
+                    "POST /shell-expect HTTP/1.1\r\n" +
+                    "Host: example.com\r\n" +
+                    "Content-Length: 4\r\n" +
+                    "Expect:\r\n\r\n"
+                )
+            )
+            let recoveryResponse = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                UInt16(38189),
+                "GET /shell-expect-recovery HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            let _ = serverFuture.get(Duration.second * 5)
+
+            @Assert(
+                unsupportedResponse,
+                "HTTP/1.1 417 Expectation Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(
+                emptyExpectationResponse,
+                "HTTP/1.1 417 Expectation Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            @Assert(handlerRuns.load(), Int64(2))
+            @Assert(contains(recoveryResponse, "HTTP/1.1 200 OK"), true)
+            @Assert(contains(recoveryResponse, "expect-recovery-ok"), true)
+        } finally {
+            removeVariable(acceptLimitEnv)
+        }
+    }
+
+    @TestCase
     public func testSocketServerEngineShellContainsRejectedBodyPlanRequestHead(): Unit {
         let acceptLimitEnv = "IGNITE_SOCKET_SERVER_ENGINE_SHELL_ACCEPT_LIMIT"
         setVariable(acceptLimitEnv, "2")

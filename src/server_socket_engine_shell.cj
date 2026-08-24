@@ -39,6 +39,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
     | HeaderFieldsTooLarge
     | HttpVersionNotSupported
     | RequestTimeout
+    | ExpectationFailed
 
     public operator func ==(right: SocketServerEngineShellRequestRejectionKind): Bool {
         ordinalValue() == right.ordinalValue()
@@ -55,6 +56,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
             case HeaderFieldsTooLarge => 2
             case HttpVersionNotSupported => 3
             case RequestTimeout => 4
+            case ExpectationFailed => 5
         }
     }
 
@@ -65,6 +67,7 @@ enum SocketServerEngineShellRequestRejectionKind <: Equatable<SocketServerEngine
             case HeaderFieldsTooLarge => "HEADER_FIELDS_TOO_LARGE"
             case HttpVersionNotSupported => "HTTP_VERSION_NOT_SUPPORTED"
             case RequestTimeout => "REQUEST_TIMEOUT"
+            case ExpectationFailed => "EXPECTATION_FAILED"
         }
     }
 }
@@ -844,6 +847,12 @@ func serveSocketServerEngineShellSocketTurns(
             socket.readTimeout = Some(option.readTimeout)
             let keepAliveAfterWrite =
                 socketServerEngineShellShouldKeepAliveAfterWrite(request)
+            if (socketServerEngineShellHasUnsupportedExpectation(request)) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.ExpectationFailed,
+                    "native H1 request carries an unsupported expectation"
+                )
+            }
             let seed = try {
                 buildSocketHttp11DispatchSeed(request)
             } catch (e: SocketHttp11DispatchSeedException) {
@@ -851,6 +860,15 @@ func serveSocketServerEngineShellSocketTurns(
                     SocketServerEngineShellRequestRejectionKind.BadRequest,
                     e.message
                 )
+            }
+            if (
+                socketServerEngineShellShouldWriteContinue(request) &&
+                !socketServerEngineShellKnownBodyExceedsLimit(
+                    request,
+                    option.maxRequestBodySize
+                )
+            ) {
+                socket.write("HTTP/1.1 100 Continue\r\n\r\n".toArray())
             }
             let requestBodyBytes = try {
                 readSocketServerEngineShellRequestBodyBytes(
@@ -1000,6 +1018,8 @@ func writeSocketServerEngineShellRequestRejectionResponse(
             "505 HTTP Version Not Supported"
         case SocketServerEngineShellRequestRejectionKind.RequestTimeout =>
             "408 Request Timeout"
+        case SocketServerEngineShellRequestRejectionKind.ExpectationFailed =>
+            "417 Expectation Failed"
     }
     socket.write(
         (
@@ -1008,6 +1028,58 @@ func writeSocketServerEngineShellRequestRejectionResponse(
             "Connection: close\r\n\r\n"
         ).toArray()
     )
+}
+
+func socketServerEngineShellHasUnsupportedExpectation(
+    request: SocketHttp11SessionRequest
+): Bool {
+    for (header in request.head.headers) {
+        if (header.name != "expect") {
+            continue
+        }
+        if (header.value.trimAscii().size == 0) {
+            return true
+        }
+        for (part in header.value.split(",")) {
+            if (part.trimAscii().toAsciiLower() != "100-continue") {
+                return true
+            }
+        }
+    }
+    false
+}
+
+func socketServerEngineShellShouldWriteContinue(
+    request: SocketHttp11SessionRequest
+): Bool {
+    if (
+        !request.bodyPlan.requiresBodyStage ||
+        !request.bodyPlan.needsMoreNetworkBytes
+    ) {
+        return false
+    }
+    for (header in request.head.headers) {
+        if (header.name != "expect") {
+            continue
+        }
+        for (part in header.value.split(",")) {
+            if (part.trimAscii().toAsciiLower() == "100-continue") {
+                return true
+            }
+        }
+    }
+    false
+}
+
+func socketServerEngineShellKnownBodyExceedsLimit(
+    request: SocketHttp11SessionRequest,
+    maxRequestBodySize: Int64
+): Bool {
+    if (maxRequestBodySize <= 0) {
+        return false
+    }
+    request.bodyPlan.declaredBodyBytes > maxRequestBodySize ||
+        request.bodyPlan.prefetchedBodyBytes.size > maxRequestBodySize
 }
 
 func socketServerEngineShellShouldKeepAliveAfterWrite(

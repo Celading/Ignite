@@ -235,6 +235,14 @@ public class SocketServerEngineShellInternalTestSuite {
             "REQUEST_TIMEOUT"
         )
         @Assert(
+            SocketServerEngineShellRequestRejectionKind.ExpectationFailed.ordinalValue(),
+            Int64(5)
+        )
+        @Assert(
+            SocketServerEngineShellRequestRejectionKind.ExpectationFailed.toString(),
+            "EXPECTATION_FAILED"
+        )
+        @Assert(
             socketServerEngineShellHeadFailureRejectionKind(
                 SocketHttp11HeadException(
                     SocketHttp11HeadErrorCode.MalformedHeader,

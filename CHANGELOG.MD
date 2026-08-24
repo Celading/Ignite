@@ -5,6 +5,7 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `+安全` 默认 Native H1 现在会在等待请求体网络字节前完成 `Expect: 100-continue` 临时响应握手，并在 App dispatch 前用固定无正文 `417 Expectation Failed` 拒绝空、混合或不支持的 expectation
 - `=边界` `ClientResponse` 核心存储新增 Ignite 自有扁平响应字段入口；Native H1 的响应解析/分帧和 Native H2 的五条 response adapter 不再构造 stdx `HttpHeaders`，observe 元数据也改走自有 append seam
 - `=兼容` 公开 `ClientResponse(HttpResponse)` 与 `headers: HttpHeaders` 继续保留为 stdx 兼容面，并保持重复字段顺序、大小写无关读取及既有 raw-header mutation 可见性；proxy `HttpResponse`、request builder provider 与最终 stdx 删除仍是后续独立工作
 - `=边界` `CurrentRequestCarrier` 核心契约不再强制所有后端返回 stdx `WebSocket`；公开 `WebSocketUpgradeCarrier` 以 Ignite `WsConn`、子协议与 `WebSocketOptions` 表达可选升级能力，stdx adapter、Native H1 与透明响应 writer wrapper 通过该能力接入
