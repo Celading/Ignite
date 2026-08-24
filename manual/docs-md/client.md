@@ -347,6 +347,12 @@ stream 完整 settle 后连接才可归池；带活跃 lease 关闭会淘汰连�
 
 这些诊断方法仅解析响应头，不受 body 是否已读、是否 discard 的影响。
 
+Native H1/H2 在内部以 Ignite 自有的扁平字段保存响应头；重复字段保持原顺序，
+`header(name)` 大小写无关地读取首值，`headerValues(name)` 返回全部值。公开
+`ClientResponse(HttpResponse)` 与 `headers` stdx 兼容面仍然保留，并且兼容对象上
+已有的 raw-header 修改仍会被上述读取方法看到。这个兼容面不代表 proxy provider
+或最终 stdx 依赖已经移除。
+
 处理大响应时，建议走 `bodyStream()` 流式读取或用 `discard()` 及时排空，不要把所有请求都当成小 JSON 用 `bodyBytes()` 读完。
 
 ## 客户端 retained recovery 快照

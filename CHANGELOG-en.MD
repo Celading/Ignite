@@ -3,6 +3,15 @@
 ## Ignite `0800`
 > Native H1 default, native H2 preview, SeaJson streaming JSON, and hosted dependency closure
 
+### v0.8.17 `Ignite Preview`
+
+- `=Docs` Extend the trilingual README with the 0.8.16 capability boundaries, and document Native H1 100/417, typed request admission, plus ClientResponse owned-header compatibility in the Manual
+- `=Docs` Split the sample index into getting-started, advanced, and maintainer verification tracks; add standalone README files for middleware, dualport, Native H2 interop, proxy, Brotli, and Zstd so every sample directory has a public role
+- `=Docs` Replace the docs-web placeholder with an auditable route/source map, and remove worktree, internal-role, and internal-process wording from public docs and scripts
+- `+Validation` Recheck Markdown relative links, public external links, all shell/Node script syntax, version surfaces, internal-term leakage, build, and full serial regression before tagging
+- `=Boundary` Center upload, public indexing, and a fresh consumer are distinct states; until public indexing is confirmed, README keeps `0.7.7` as the center-stable version and `0.8.17` as a hosted-branch Preview
+- `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, and the 0800 Manual are aligned to `0.8.17`
+
 ### v0.8.16 `Ignite Preview`
 
 - `+Feature` Promote accepted product checkpoint `e99283f`, including bounded H2 deadline/priority/admission, handler-time HEADERS/DATA, complete SSE lifecycle, response transforms, and pre-header reconnect replay
@@ -30,7 +39,7 @@
 - `+Feature` Native H1, Jingui accepted transport, and Native H2 share one form-query component decode, avoiding application-side compensating double decode
 - `+Feature` Native H1 WebSocket adds complete-message bounds, strict RSV/opcode/masking/length/UTF-8/Close admission, fragmentation, subprotocol selection, and serialized concurrent writers
 - `+Validation` WebSocket focused `14/14`, full serial `1537/1537`, and the repository h2spec profile `145 passed / 1 skipped / 0 failed`; canonical regression/build are rerun before publication
-- `=Boundary` WSS, H2 extended CONNECT, permessage-deflate, client Dialer, system CA, TLS1.2/resumption, mTLS, browser/proxy/long-window matrices, and AP9/lisi provider acceptance remain open
+- `=Boundary` WSS, H2 extended CONNECT, permessage-deflate, client Dialer, system CA, TLS1.2/resumption, mTLS, browser/proxy/long-window matrices, and lisi broker/provider acceptance remain open
 - `=Misc` Package metadata, framework constant, banner, Benchmark, trilingual README, 0800 Manual, and bilingual changelog are aligned to `0.8.2`
 
 ### v0.8.1 `Ignite Preview`
@@ -63,7 +72,7 @@
 - `+Feature` Buffered responses use fixed Huffman coding with bounded LZ77 matching; streamed responses emit incremental stored blocks without capturing the complete response
 - `+Feature` Brotli/Zstd remain available through precompressed `.br` / `.zst` static representations while preserving Range, HEAD, Vary, and MIME semantics
 - `=Boundary` The native codec currently prioritizes safety and protocol correctness; higher compression ratios, dictionaries, SIMD, and dynamic Brotli/Zstd remain later performance/provider work
-- `=Misc` IgniteNEXT package metadata, framework version, banner fixtures, trilingual README, and bilingual changelog are aligned to `0.8.1`
+- `=Misc` Package metadata, framework version, banner fixtures, trilingual README, and bilingual changelog are aligned to `0.8.1`
 
 ### v0.8.0 `Ignite Preview`
 

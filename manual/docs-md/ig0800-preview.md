@@ -1,6 +1,6 @@
-# Ignite 0.8.16 Preview
+# Ignite 0.8.17 Preview
 
-`0.8.16` 将已接受的 `e99283f` 开发检查点提升到 0800 发布线。在 `0.8.7` 的 Native TLS H2、response streaming/drain 与 multiplex session 之上，本版补齐有界调度、deadline/priority/admission、响应头与 DATA 的 handler-time commit、SSE 完整生命周期、状态化 response transform、断连前响应头重放、Native H1/H2 Client 收敛，以及 Native H1 请求/响应 framing、authority、timeout、`Expect` 和 typed error containment。
+`0.8.17` 以 `0.8.16` 的 `e99283f` 产品检查点为能力基线，并收口公开说明与 Manual 完备性。在 `0.8.7` 的 Native TLS H2、response streaming/drain 与 multiplex session 之上，本线补齐有界调度、deadline/priority/admission、响应头与 DATA 的 handler-time commit、SSE 完整生命周期、状态化 response transform、断连前响应头重放、Native H1/H2 Client 收敛，以及 Native H1 请求/响应 framing、authority、timeout、`Expect` 和 typed error containment。
 
 一句话概括这条线的原则：**只开放已经在真实 socket/wire 回归里跑通的能力，并且每一项都留着回滚路径。** 它不是"已经完全脱离 stdx"或"全部协议都已 LTS"的宣言。
 
@@ -209,7 +209,14 @@ Too Large`，并把不支持的 HTTP 版本映射为 `505 HTTP Version Not Suppo
 不完整，默认 Native H1 会返回固定无正文 `408 Request Timeout`，关闭该连接并
 保留监听器继续接收后续连接。
 
-固定 400/408/414/431/505 不把未完整 EOF、peer abort、chunk/trailer 元数据超限、
+带请求体且只声明 `Expect: 100-continue` 的请求，会在服务端等待网络 body 字节
+前先收到 `HTTP/1.1 100 Continue`；这样只在收到临时响应后才发送 body 的客户端
+不会与服务端互相等待。空 expectation、混合 token 或任何不支持的 expectation
+会在 App dispatch 前收到固定无正文 `417 Expectation Failed`，当前连接随后关闭，
+监听器仍可服务后续连接。这个合同不包含 application handler 的自定义 early
+rejection、pipelining 或代理级 expectation 转发。
+
+固定 400/408/414/431/505/417 不把未完整 EOF、peer abort、chunk/trailer 元数据超限、
 不支持的 pipelining 或 handler 异常转换为同类响应。malformed chunked-body 400
 也不宣称完整 chunk-extension 或 trailer-value 语法覆盖。当前没有自定义错误页 API，
 也不把同栈回归表述为独立代理链合规认证；既有请求 body 过大仍沿用 413 路径。
@@ -262,7 +269,7 @@ ctx.jsonSeaStream({ writer =>
 
 ## 仍需保留的 stdx 面
 
-`0.8.16` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
+`0.8.17` 仍在 TLS 默认路径、部分 JSON compatibility、proxy/client compatibility 和部分平台链接面使用 stdx。具体进度以源码依赖和测试为准——"native preview"是标题，不是替代完成的证据。
 
 ## 推荐验证顺序
 

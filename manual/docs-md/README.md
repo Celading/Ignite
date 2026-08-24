@@ -38,7 +38,7 @@
 - 根 [`../../README.md`](../../README.md)：项目首页门面，只负责讲方向、竞争力与入口分流。
 - [`../samples/README.md`](../samples/README.md)：可运行路径，重点是怎么最快验证能力，而不是解释全部语义；当前 `H1` 推荐路径与 `H2 guarded intake` 路径都优先从这里进入。
 - [`../../CHANGELOG.MD`](../../CHANGELOG.MD)：版本时间线与阶段收口，不替代手册正文。
-- [`../docs-web/README.md`](../docs-web/README.md)：网站文档占位，后续消费本目录内容。
+- [`../docs-web/README.md`](../docs-web/README.md)：网站路由与本目录正文源稿的对应表。
 
 ## docs-web 对应关系
 

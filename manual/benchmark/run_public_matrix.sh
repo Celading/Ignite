@@ -36,7 +36,7 @@ CONCURRENCIES="${IGNITE_BENCH_CONCURRENCIES:-${DEFAULT_CONCURRENCIES}}"
 : >"${OUTPUT}"
 
 if [[ "${IGNITE_SAMPLE_SKIP_BUILD:-0}" != "1" ]]; then
-  echo "[public-benchmark] building IgniteNEXT once before the interleaved matrix"
+  echo "[public-benchmark] building the current Ignite checkout once before the interleaved matrix"
   (cd "${ROOT}" && cjpm build)
 fi
 

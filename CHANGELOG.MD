@@ -3,6 +3,15 @@
 ## Ignite `0800`
 > 原生 H1 默认化、原生 H2 预览、SeaJson 流式 JSON 与托管依赖收口
 
+### v0.8.17 `Ignite Preview`
+
+- `=文档` 三语 README 补齐 0.8.16 能力边界，Manual 新增 Native H1 100/417、typed request admission 与 ClientResponse 自有响应头兼容说明
+- `=文档` 样例索引按入门、进阶与维护验证分层；middleware、dualport、Native H2 interop、proxy、Brotli、Zstd 六个目录补齐独立 README，所有样例目录都有公开角色说明
+- `=文档` docs-web 从占位说明收口为可审计的 route/source 映射；公开文档与脚本移除工作树、内部角色和内部流程词汇
+- `+验证` Markdown 相对链接、外部公开链接、全部 shell/Node 脚本语法、版本面、内部词泄漏、构建与完整串行回归在 tag 前复查
+- `=边界` 中心仓上传、公开索引与 fresh consumer 是三种状态；README 在公开索引确认前继续把 `0.7.7` 写作中心仓稳定版，把 `0.8.17` 写作托管分支 Preview
+- `=杂项` 包版本、框架常量、Banner、Benchmark、三语 README 与 0800 Manual 对齐到 `0.8.17`
+
 ### v0.8.16 `Ignite Preview`
 
 - `+特性` 提升已接受的 `e99283f` 产品检查点，包含有界 H2 deadline/priority/admission、handler-time HEADERS/DATA、SSE 生命周期、response transform 与断连前响应头重放
@@ -30,7 +39,7 @@
 - `+特性` Native H1、Jingui accepted transport 与 Native H2 统一 query component 单次 form 解码，避免应用层补偿性 double-decode
 - `+特性` Native H1 WebSocket 增加入站完整消息上限、严格 RSV/opcode/masking/length/UTF-8/Close 校验、分片、子协议与并发 writer 串行化
 - `+验证` WebSocket focused `14/14`、完整 serial `1537/1537`、当前仓库 h2spec profile `145 passed / 1 skipped / 0 failed`；本版发布前重新运行 canonical regression/build
-- `=边界` WSS、H2 extended CONNECT、permessage-deflate、客户端 Dialer、系统 CA、TLS1.2/resumption、mTLS、浏览器/代理/长窗口矩阵与 AP9/lisi provider acceptance 仍未完成
+- `=边界` WSS、H2 extended CONNECT、permessage-deflate、客户端 Dialer、系统 CA、TLS1.2/resumption、mTLS、浏览器/代理/长窗口矩阵与 lisi broker/provider acceptance 仍未完成
 - `=杂项` 包版本、框架常量、Banner、Benchmark、三语 README、0800 Manual 与双语 changelog 更新到 `0.8.2`
 
 ### v0.8.1 `Ignite Preview`
@@ -81,7 +90,7 @@
 - `+特性` 缓冲响应使用固定 Huffman 与有界 LZ77；流式响应使用增量 stored blocks，避免完整响应捕获
 - `+特性` Brotli/Zstd 继续通过 `.br` / `.zst` 预压缩静态副本交付，保持 Range、HEAD、Vary 与 MIME 语义
 - `=边界` 当前 native codec 优先完成安全与协议正确性；更高压缩比、字典、SIMD 和动态 Brotli/Zstd 留待后续性能/provider 包
-- `=杂项` IgniteNEXT 包版本、框架版本常量、Banner fixtures、三语 README 与双语 changelog 更新到 `0.8.1`
+- `=杂项` 包版本、框架版本常量、Banner fixtures、三语 README 与双语 changelog 更新到 `0.8.1`
 
 ### v0.8.0 `Ignite Preview`
 

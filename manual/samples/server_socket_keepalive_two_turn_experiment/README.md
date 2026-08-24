@@ -1,6 +1,6 @@
 # Server Socket Keep-Alive Two-Turn Experiment
 
-This sample runs the HQ-only `single-connection keep-alive two-turn` loopback proof
+This sample runs the bounded `single-connection keep-alive two-turn` loopback proof
 for `ignite.server.socket`.
 
 It proves:

@@ -2,7 +2,7 @@
 # Probe: proxy_transport_acceptance
 #
 # Usage:
-#   cd /path/to/IgniteNEXT
+#   cd /path/to/ignite-checkout
 #   ./manual/samples/proxy_transport_acceptance/probe.sh
 #
 # This probe covers the proxy HTTPS unknown-length upload transport:
@@ -36,4 +36,4 @@ echo ""
 echo "=== Done ==="
 echo ""
 echo "If both suites pass, the current https unknown-length transport answer is re-proven"
-echo "and the TlsClientConfig seam is confirmed wired on the HQ mainline."
+echo "and the TlsClientConfig seam is confirmed in the current checkout."

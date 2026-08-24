@@ -316,7 +316,7 @@ public class NativeH2ClientConnection {
 /// Completes one HTTP/2 request on an already connected cleartext socket.
 ///
 /// The caller retains socket ownership. TLS/ALPN and connection pooling belong
-/// to later AP4/AP5 slices rather than this first real-wire client turn.
+/// to later transport integrations rather than this first real-wire client turn.
 public func sendNativeH2SingleStreamRequest(
     socket: TcpSocket,
     request: NativeH2ClientRequest

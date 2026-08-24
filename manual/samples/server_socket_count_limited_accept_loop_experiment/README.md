@@ -1,6 +1,6 @@
 # Server Socket Count-Limited Accept-Loop Experiment
 
-This sample runs the HQ-only `count-limited accept-loop two-connection` loopback
+This sample runs the bounded `count-limited accept-loop two-connection` loopback
 proof for `ignite.server.socket`.
 
 It proves:

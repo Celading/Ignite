@@ -64,6 +64,23 @@ than a public cross-framework ranking.
 - `manual/samples/native_h1_small_heap_hardening`
   - Mixed prepared HTML, polling, reused HTTP/1.1 sessions, and slow-request load
   - A hardening receipt rather than a public cross-framework benchmark
+- `manual/samples/zstd_interop`
+  - Generate buffered/streamed Zstd Preview fixtures and decode them with the system `zstd` CLI
+
+## Advanced verification probes
+
+这些目录不是首跑教程。它们保留明确的运行前提、验证范围和非声明边界，适合维护者或需要精确复查某条 transport/runtime 合同的使用者：
+
+- [`native_h2_rest_client_interop`](native_h2_rest_client_interop/README.md)：Node.js H2 fixture 与 Native H2 RestClient 复用、重试和取消。
+- [`native_tls_pool_hardening`](native_tls_pool_hardening/README.md)：有界 heap 下的真实 TLS H1/H2 pool 压力与收敛。
+- [`proxy_transport_acceptance`](proxy_transport_acceptance/README.md)：unknown-length HTTPS proxy upload 与 TLS 配置边界。
+- [`server_socket_runtime_experiment`](server_socket_runtime_experiment/README.md)：单次 HTTP/1.1 runtime 组装实验。
+- [`server_socket_accept_once_experiment`](server_socket_accept_once_experiment/README.md)：一个 listener/connection 的 serve-once loopback。
+- [`server_socket_double_accept_experiment`](server_socket_double_accept_experiment/README.md)：两个独立连接的顺序接收。
+- [`server_socket_keepalive_two_turn_experiment`](server_socket_keepalive_two_turn_experiment/README.md)：同一连接上的两次 keep-alive turn。
+- [`server_socket_count_limited_accept_loop_experiment`](server_socket_count_limited_accept_loop_experiment/README.md)：有上限的两连接 accept loop。
+
+`_shared/run_server_sample.sh` 是上述样例共用的构建/运行器，不是独立样例。
 
 ## Typical commands
 
@@ -77,6 +94,11 @@ than a public cross-framework ranking.
 ./manual/samples/h2wire/h2spec_smoke.sh
 ./manual/samples/handlefortest/probe.sh
 ./manual/samples/native_h1_small_heap_hardening/probe.sh
+./manual/samples/native_h2_rest_client_interop/probe.sh
+./manual/samples/native_tls_pool_hardening/probe.sh
+./manual/samples/proxy_transport_acceptance/probe.sh
+./manual/samples/brotli_interop/probe.sh
+./manual/samples/zstd_interop/probe.sh
 ./manual/benchmark/run.sh
 ```
 

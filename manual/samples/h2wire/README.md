@@ -3,7 +3,7 @@
 Ignite 0800 的 H2 preview / compatibility smoke，分开验证三类事实：
 
 - 默认 TLS + ALPN compatibility 路径下的 `ctx.writer()` / `sendFile(...)`
-- IgniteNEXT native H2 的 flow-control、生命周期与 raw-wire fixtures
+- 当前 native H2 的 flow-control、生命周期与 raw-wire fixtures
 - provider 稳定后可继续使用的 `h2spec` smoke 工位
 
 它不是浏览器兼容性证书。native H2 的准确公开边界见 [`../../docs-md/ig0800-preview.md`](../../docs-md/ig0800-preview.md)。
@@ -148,11 +148,11 @@ IGNITE_H2SPEC_PREPARE_ONLY=1 ./manual/samples/h2wire/h2spec_smoke.sh
 新增的 `verify_window_update_stall.mjs` 用于有界复现 H2 大响应在客户端延迟读取时的 WINDOW_UPDATE stall / write-timeout 行为。
 脚本默认跑一个小矩阵，也支持 `single` 模式精确指定 `path + delay + concurrency`。
 
-### issue #9 继承 blocker 与 IgniteNEXT guardrail
+### issue #9 继承 blocker 与 native H2 guardrail
 
-GitCode issue #9 指向的是 stdx H2 flow-control 路径：当 connection-level window 不足时，DATA frame 可能已经从发送队列移出，但 `writeFrame` 因窗口不足没有真正写出，随后 frame 没有被重新入队；如果 stream budget 又被提前扣减，就会造成服务端、客户端和队列状态不一致。IgniteNEXT 的自研 H2 writer 必须把这条作为 hard guardrail，而不是把 `writeTimeout` 调大当修复。
+GitCode issue #9 指向的是 stdx H2 flow-control 路径：当 connection-level window 不足时，DATA frame 可能已经从发送队列移出，但 `writeFrame` 因窗口不足没有真正写出，随后 frame 没有被重新入队；如果 stream budget 又被提前扣减，就会造成服务端、客户端和队列状态不一致。Ignite 的 native H2 writer 必须把这条作为 hard guardrail，而不是把 `writeTimeout` 调大当修复。
 
-IgniteNEXT 后续 H2 writer 的 non-loss invariant 是：
+当前 native H2 writer 的 non-loss invariant 是：
 
 - DATA frame 不能在 connection window 和 stream window 都可覆盖前永久出队；
 - 如果 connection budget 不足，frame 必须原子地 requeue / park，并可被 WINDOW_UPDATE 唤醒；

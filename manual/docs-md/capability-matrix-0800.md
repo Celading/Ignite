@@ -1,4 +1,4 @@
-# Ignite 0.8.16 能力矩阵
+# Ignite 0.8.17 能力矩阵
 
 这张表帮你判断一件事：哪些能力今天就能放心用，哪些还要你自己把关。它回答的是"现在可以怎样使用"，不是未来路线图。
 
@@ -18,6 +18,7 @@
 | --- | --- | --- | --- |
 | 路由、Group、中间件、Swagger | 稳定继承 | 延续 `App`、`Group`、洋葱中间件和 Swagger 入口。 | 不因 native transport 自动获得新的业务级并发策略。 |
 | 明文 HTTP/1.1 Server | 0800 默认 | 空的 `serverPreferredBackendHint` 默认选择 Ignite native H1。 | 可用 `stdx-default` 显式回滚。 |
+| Native H1 request admission | 0800 默认 | 在 App dispatch 前验证 Host/authority、request-target form、framing 与 header metadata；按明确原因返回固定无正文 400/408/414/417/431/505。对带 body 的唯一 `100-continue` expectation，会在等待 body 网络字节前先发送临时 100。 | 不是完整代理链认证；不包含自定义错误页、application early rejection、pipelining、CONNECT tunnel 或 expectation forwarding。 |
 | HTTP/1.1 Client | Preview | `preferTransportBackend("ignite-native-h1-client")` 可显式进入 native H1，支持连接复用、流式请求体、重定向和统一错误；配合 `useNativeTls(...)` 可走 Contract-backed TLS1.3 HTTPS，并在完整消费后安全复用同源、同信任策略连接。 | `RestClient` 默认仍是稳定 stdx Client；Native HTTPS 要求调用方提供 trust anchor/hostname，部分 request hook 仍不兼容。 |
 | HTTPS / TLS | 稳定继承 + Preview | 默认继续使用稳定的 stdx TLS 路径；显式 Native H1/H2 TLS1.3 会完成 ClientHello、server-flight 验证、client Finished、application-data seal/open 与有界连接复用。`openNativeTlsH2Session(...)` 还可在一条 TLS H2 连接上持有独立并发 stream lease。Native TLS pool 默认 idle 上限为 30s，可通过 `nativeTlsIdleTimeout(...)` 调整，并可由 `nativeTlsRuntimeSnapshot()` 查看 H1/H2 opened/reused/retired/expired/idle 事实。 | Native TLS 当前要求调用方提供 trust anchor/hostname；快照只覆盖显式 Native TLS RestClient 池。系统 CA、TLS1.2、session resumption、0-RTT、mTLS、TLS batch 与默认切换仍未完成。 |
 | native HTTP/2 Server | Preview | `useExperimentalNativeH2ServerEngine(app)` 可让 `App.listen(...)` 运行明文 prior-knowledge H2；低层 API 也可在 caller 提供的 `TcpSocket` 上运行单流或多流连接。 | 非默认 listener，不接受 TLS cert/key；不是浏览器 HTTPS 默认路径。 |

@@ -18,7 +18,7 @@
 
 ## 公开边界
 
-- `manual/` 只放公开面向的文档，不承接归档实验、维护者私有流程或 `_helper` 内部材料。
+- `manual/` 只放公开面向的文档，不承接归档实验或维护者私有流程。
 - 如果公开表达和内部表达不同，以根 README、`manual/` 与 `CHANGELOG*` 为准。
 - 本目录不负责定义新的技术承诺，只负责把当前已经公开确认的能力讲清楚。
 - `0800` 的 native H1/H2、TLS 回滚与流式 JSON 边界统一从 [`docs-md/ig0800-preview.md`](docs-md/ig0800-preview.md) 进入。
@@ -28,5 +28,5 @@
 ## docs-md 与 docs-web 的关系
 
 - `docs-md` 是正文源。
-- `docs-web` 是后续的网站呈现层。
-- 网站内容以后直接从 `docs-md` 抽取，不再反向定义 `docs-md` 的章节结构。
+- `docs-web` 维护网站路由到正文源稿的公开映射。
+- 网站内容直接从 `docs-md` 抽取，不反向定义 `docs-md` 的技术承诺。

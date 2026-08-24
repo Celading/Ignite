@@ -26,7 +26,7 @@ IGNITE_SAMPLE_SKIP_BUILD=1 \
 
 IGNITE_BENCH_URL="http://127.0.0.1:18880/plaintext" \
 IGNITE_BENCH_LABEL="ignite0800-native-h2-node-smoke" \
-IGNITE_BENCH_VERSION="IgniteNEXT" \
+IGNITE_BENCH_VERSION="current-checkout" \
 IGNITE_BENCH_BACKEND="native-h2" \
 IGNITE_BENCH_TRACK="internal" \
 IGNITE_BENCH_PROFILE="interop-smoke" \

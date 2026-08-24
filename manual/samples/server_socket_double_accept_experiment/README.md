@@ -1,6 +1,6 @@
 # Server Socket Double-Accept Sequential-Connection Experiment
 
-This sample runs the HQ-only `double-accept sequential-connection` loopback proof
+This sample runs the bounded `double-accept sequential-connection` loopback proof
 for `ignite.server.socket`.
 
 It proves:

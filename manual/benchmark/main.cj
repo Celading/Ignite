@@ -53,7 +53,7 @@ main() {
     })
 
     app.get("/json", { ctx =>
-        _ = ctx.json(#"{"framework":"ignite","version":"0.8.16","ok":true}"#)
+        _ = ctx.json(#"{"framework":"ignite","version":"0.8.17","ok":true}"#)
     })
 
     app.get("/bytes/64k", { ctx =>

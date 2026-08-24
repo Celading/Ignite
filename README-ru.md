@@ -1,17 +1,17 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Cangjie-Ignite-ff6b35?style=for-the-badge&labelColor=1a1a2e" alt="Ignite" />
-  <img src="https://img.shields.io/badge/version-0.8.16-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.8.17-orange?style=for-the-badge&labelColor=1a1a2e" alt="Version" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green?style=for-the-badge&labelColor=1a1a2e" alt="License" />
 </p>
 <div align="center">
 <pre style="background:#00000000">
 ┌─────────────────────────────────────────────────────┐
-│                 <span style="color:#88C0D0;">Ignite v0.8.16</span>                     │
+│                 <span style="color:#88C0D0;">Ignite v0.8.17</span>                     │
 │  <span style="color:#6EB186;">http://127.0.0.1:8080</span><span style="color:#9AA0A6;"> || (bound on 0.0.0.0:8080)</span>   │
 │                                                     │
 │ Touchpoints <span style="color:#666666;">.........</span> 16  Processes <span style="color:#666666;">............</span> 1  │
 │ Prefork <span style="color:#666666;">.......</span> Disabled  PID <span style="color:#666666;">..............</span> 67271  │
-│                                     <span style="color:#8A8A8A;"><i>_Ignite 0.8.16</i></span> │
+│                                     <span style="color:#8A8A8A;"><i>_Ignite 0.8.17</i></span> │
 └─────────────────────────────────────────────────────┘
 </pre>
 </div>
@@ -49,11 +49,13 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 
 Мы считаем, что хороший фреймворк должен быть лёгким, как лист, и высекать искру, как кремень. **«叶» (лист)** — за подвижность, **«燧» (кремень)** — за воспламенение; так родилось имя **叶燧 (Ignite)**.
 
-## Текущее состояние (0.8.16 Preview)
+## Текущее состояние (0.8.17 Preview)
 
 - HTTP/1.1 без TLS по умолчанию использует native H1 Ignite; доступен явный откат через `stdx-default`.
 - Native H1 client, WebSocket, SSE, потоковые ответы и лимит тела запроса подтверждены socket-тестами; обычный `app.ws(...)` использует реализацию Ignite при выбранном Native H1.
+- Native H1 Server/Client проверяют authority, request-target, framing, metadata, timeout и `Expect` до App dispatch или выдачи body; поддерживается 100-continue, а классифицированные ошибки получают фиксированные ответы без тела 400/408/414/417/431/505.
 - Native H2 server/client поддерживают ограниченное мультиплексирование, полный HPACK Huffman, ограниченную динамическую таблицу, восстановление flow control, параллельные cleartext/TLS stream lease и buffered/exact-length/unknown-length request stream; server по-прежнему требует явного cleartext prior-knowledge engine и не предоставляет H2 WebSocket.
+- Native H2 также покрывает bounded admission/deadline/priority, handler-time HEADERS/DATA, закрытие SSE, response transform и явный reconnect replay до response headers; это Preview, а не обещание production scheduling или автоматического retry.
 - HTTPS по умолчанию сохраняет стабильный stdx TLS; JinguiSSL native TLS/ALPN включается только экспериментально.
 - Native TLS client pool предоставляет ограниченный idle lifecycle и H1/H2 snapshot; native H1 показывает выбранный backend, причины fallback и счётчики соединений/запросов, а также подавляет ожидаемый шум timeout/reset.
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.

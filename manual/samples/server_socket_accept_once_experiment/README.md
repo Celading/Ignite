@@ -1,6 +1,6 @@
 # Server Socket Accept-Once Experiment
 
-This sample runs the HQ-only `accept-one / serve-once` loopback proof for
+This sample runs the bounded `accept-one / serve-once` loopback proof for
 `ignite.server.socket`.
 
 It proves one real local listener/client turn without touching:

@@ -25,7 +25,7 @@ trap cleanup EXIT INT TERM
 if [[ "${IGNITE_BENCH_APPEND:-0}" != "1" ]]; then
   : >"${OUTPUT}"
 fi
-echo "[benchmark] building and starting IgniteNEXT (${BACKEND})..."
+echo "[benchmark] building and starting the current Ignite checkout (${BACKEND})..."
 "${ROOT}/manual/samples/_shared/run_server_sample.sh" \
   "manual/benchmark/main.cj" "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
@@ -58,7 +58,7 @@ for concurrency in ${CONCURRENCIES}; do
     echo "[benchmark] running /${path} concurrency=${concurrency}"
     IGNITE_BENCH_URL="http://${HOST}:${PORT}/${path}" \
     IGNITE_BENCH_LABEL="ignite0800-${BACKEND}-${path//\//-}-c${concurrency}-${IGNITE_BENCH_RUN_LABEL:-r1}" \
-    IGNITE_BENCH_VERSION="${IGNITE_BENCH_VERSION:-IgniteNEXT}" \
+    IGNITE_BENCH_VERSION="${IGNITE_BENCH_VERSION:-current-checkout}" \
     IGNITE_BENCH_BACKEND="${BACKEND}" \
     IGNITE_BENCH_TRACK="${IGNITE_BENCH_TRACK:-public}" \
     IGNITE_BENCH_PROFILE="${IGNITE_BENCH_PROFILE:-balanced}" \

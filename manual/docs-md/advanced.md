@@ -34,7 +34,7 @@ WARN [HttpEngineConn1#readRequest] exception: ConnectionException: Socket is clo
 | 压测客户端主动 abort 或超时 | 压测侧行为 | 同步看客户端错误率和服务端成功响应数 |
 | 同时出现请求丢失、响应中断、固定接口必现 | 可行动传输问题 | 保留完整请求、响应、协议、并发数、超时配置再开复现单 |
 
-这份分类不是 stdx 日志级别修复；IgniteNEXT 当前只提供诊断口径和后续自研传输门禁，不会在框架层静默吞掉未知传输异常。
+这份分类不是 stdx 日志级别修复；当前 0800 代码只提供诊断口径和明确的自研传输边界，不会在框架层静默吞掉未知传输异常。
 
 ## WebSocket
 

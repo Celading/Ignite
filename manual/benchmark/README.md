@@ -1,6 +1,6 @@
-# Ignite 0.8.16 Benchmark Baseline
+# Ignite 0.8.17 Benchmark Baseline
 
-This directory owns the public Benchmark track for the `Ignite0800` 0.8.16
+This directory owns the public Benchmark track for the `Ignite0800` 0.8.17
 line. Public results compare only Ignite native and the explicit stdx rollback
 backend. Competitor comparisons stay in the workspace-internal Benchmark lab.
 
@@ -72,7 +72,7 @@ IGNITE_BENCH_CONCURRENCY=64 \
 IGNITE_BENCH_WARMUP=3 \
 IGNITE_BENCH_DURATION=15 \
 IGNITE_BENCH_REQUEST_TIMEOUT_MS=5000 \
-IGNITE_BENCH_VERSION=IgniteNEXT-d6c42b0 \
+IGNITE_BENCH_VERSION=ignite-0.8.17 \
 IGNITE_BENCH_OUTPUT=/tmp/ignite0800-run.jsonl \
 ./manual/benchmark/run.sh
 ```
@@ -106,12 +106,12 @@ to inflate throughput.
 
 Every Ignite performance packet must carry three roles in the same host window:
 
-1. the current `IgniteNEXT` control checkpoint;
+1. the current checkout control checkpoint;
 2. the candidate mutation, when one exists;
-3. the current `Ignite0700 / 0.7.7` release-line control.
+3. the `0.7.7` compatibility-line control.
 
 Interleave control and candidate turns when short-run host drift is visible.
-`Ignite0700` currently has a single-accepted-connection structural limit, so a
+The `0.7.7` compatibility line has a single-accepted-connection structural limit, so a
 requested concurrency greater than one may not be numerically comparable. In
 that case the packet must also run a concurrency-1 common denominator and
 report the higher-concurrency difference as a structural capability gap rather
