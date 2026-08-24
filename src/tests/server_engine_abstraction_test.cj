@@ -9758,7 +9758,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38145),
                 "POST /shell-invalid-chunked-trailer-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer seen\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -9806,7 +9806,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38146),
                 "POST /shell-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer seen: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -9972,7 +9972,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38154),
                 "POST /shell-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer: seen\r\nx-shell-trailer seen: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10020,7 +10020,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38155),
                 "POST /shell-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-trailer: seen\r\nx-shell-trailer seen\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10068,7 +10068,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38160),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10116,7 +10116,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38161),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10164,7 +10164,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38172),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10212,7 +10212,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38173),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10260,7 +10260,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38174),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10308,7 +10308,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38175),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10356,7 +10356,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38176),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-line-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10404,7 +10404,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38177),
                 "POST /shell-partial-match-later-invalid-chunked-trailer-field-name-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-invalid trailer: value\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10452,7 +10452,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38162),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10500,7 +10500,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38163),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10548,7 +10548,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38164),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10596,7 +10596,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38171),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-second-invalid-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid trailer: again\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10644,7 +10644,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38165),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10692,7 +10692,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38170),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-second-invalid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10740,7 +10740,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38166),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10788,7 +10788,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38167),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10836,7 +10836,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38168),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-line-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -10884,7 +10884,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38169),
                 "POST /shell-partial-match-multi-valid-lines-later-invalid-chunked-trailer-field-name-then-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-shared-trailer, x-shell-declared-extra\r\n\r\n3\r\nabc\r\n0\r\nx-shell-shared-trailer: seen\r\nx-shell-actual-extra: again\r\nx-shell-third-extra: more\r\nx-shell-invalid trailer: value\r\nx-shell-declared-extra: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11050,7 +11050,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38178),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11098,7 +11098,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38179),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11146,7 +11146,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38180),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-line-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-second-invalid-trailer\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11194,7 +11194,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38181),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-field-name-ordering-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-second-invalid trailer: value\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11242,7 +11242,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38182),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-later-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11290,7 +11290,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38183),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-later-valid-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-recovery-trailer: ok\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11338,7 +11338,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38184),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-line-then-later-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-first-invalid-trailer\r\nx-shell-declared-trailer: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(
@@ -11386,7 +11386,7 @@ public class ServerEngineAbstractionTestSuite {
                 UInt16(38185),
                 "POST /shell-declaration-mismatch-later-invalid-chunked-trailer-field-name-then-later-valid-declared-trailer-line-containment HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\nTrailer: x-shell-declared-trailer\r\n\r\n3\r\nabc\r\n0\r\nx-shell-actual-trailer: seen\r\nx-shell-invalid trailer: value\r\nx-shell-declared-trailer: recovered\r\n\r\n"
             )
-            @Assert(contains(firstResponseText, "HTTP/1.1"), false)
+            @Assert(contains(firstResponseText, "HTTP/1.1 400 Bad Request"), true)
             @Assert(contains(firstResponseText, "unexpected-ok"), false)
 
             let validResponseText = runSocketServerEngineShellClient(

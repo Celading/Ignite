@@ -176,7 +176,8 @@ native H2 preview 已经具备：
 逗号合并的 Host，以及字段值中的 NUL、DEL 和其他禁用控制字节，都会在进入
 App 路由前收到固定无正文 `400 Bad Request`，随后关闭当前连接；普通字段值两侧
 的水平制表空白仍按既有规则收敛。相同响应边界也覆盖已完整接收、被 session
-分帧或 request-target dispatch seed 明确拒绝的坏请求。
+分帧或 request-target dispatch seed 明确拒绝的坏请求，以及 body-stage 已经检测
+出的非法 chunk-size、chunk payload CRLF 和 trailer 字段名。
 
 request-head 的 typed 状态分类还会把请求目标/请求行超限映射为固定无正文
 `414 URI Too Long`，把请求头总字节或字段数超限映射为 `431 Request Header Fields
@@ -187,9 +188,10 @@ Too Large`，并把不支持的 HTTP 版本映射为 `505 HTTP Version Not Suppo
 不完整，默认 Native H1 会返回固定无正文 `408 Request Timeout`，关闭该连接并
 保留监听器继续接收后续连接。
 
-固定 400/408/414/431/505 不把未完整 EOF、peer abort、malformed body 或 handler
-异常转换为同类响应。当前没有自定义错误页 API，也不把同栈回归表述为独立代理链
-合规认证；既有请求 body 过大仍沿用 413 路径。
+固定 400/408/414/431/505 不把未完整 EOF、peer abort、chunk/trailer 元数据超限、
+不支持的 pipelining 或 handler 异常转换为同类响应。malformed chunked-body 400
+也不宣称完整 chunk-extension 或 trailer-value 语法覆盖。当前没有自定义错误页 API，
+也不把同栈回归表述为独立代理链合规认证；既有请求 body 过大仍沿用 413 路径。
 
 Host、absolute-form authority 与 CONNECT authority-form 还会复用同一个结构
 门：userinfo、坏百分号编码、坏括号、多冒号歧义和非十进制端口会被拒绝；

@@ -673,6 +673,58 @@ public class ServerSocketH1RuntimeBaselineTestSuite {
     }
 
     @TestCase
+    public func testDefaultNativeH1Returns400ForDetectedMalformedChunkedBodies(): Unit {
+        let port = reserveServerEngineAbstractionLoopbackPort()
+        let observation = SocketH1RuntimeBaselineMiddlewareObservation()
+        let app = App(config: Config(enableNetworkChangeNotice: false))
+        app.post("/malformed-chunk", { ctx =>
+            let _ = ctx.sendString(observation.nextLiveBody())
+        })
+        app.get("/after-malformed-chunk", { ctx =>
+            let _ = ctx.sendString(observation.nextLiveBody())
+        })
+
+        let serverFuture = spawn {
+            app.listen("127.0.0.1", port)
+        }
+        try {
+            waitForShellReady(app, port)
+            let invalidSize = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "POST /malformed-chunk HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\nZ\r\n"
+            )
+            let invalidPayloadDelimiter = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "POST /malformed-chunk HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n1\r\naX\r\n0\r\n\r\n"
+            )
+            let invalidTrailerName = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "POST /malformed-chunk HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nBad Trailer: value\r\n\r\n"
+            )
+            let expected =
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            @Assert(invalidSize, expected)
+            @Assert(invalidPayloadDelimiter, expected)
+            @Assert(invalidTrailerName, expected)
+            @Assert(observation.handlerRuns(), 0)
+
+            let accepted = runSocketServerEngineShellClient(
+                "127.0.0.1",
+                port,
+                "GET /after-malformed-chunk HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
+            @Assert(socketH1RuntimeBaselineContains(accepted, "HTTP/1.1 200 OK"), true)
+            @Assert(accepted.endsWith("live-body-1"), true)
+            @Assert(observation.handlerRuns(), 1)
+        } finally {
+            shutdownServerEngineAbstractionApp(app, serverFuture)
+        }
+    }
+
+    @TestCase
     public func testDefaultNativeH1StreamsFirstChunkBeforeInputCompletes(): Unit {
         let port = reserveServerEngineAbstractionLoopbackPort()
         let stream = SocketH1RuntimeBaselineDelayedStream()

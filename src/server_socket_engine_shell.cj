@@ -78,6 +78,12 @@ class SocketServerEngineShellRequestRejectionException <: Exception {
     }
 }
 
+class SocketServerEngineShellMalformedChunkedBodyException <: Exception {
+    init(message: String) {
+        super(message)
+    }
+}
+
 public class SocketServerEngineShellRuntimeControl {
     let _mtx = Mutex()
     let _runtimeCounters = SocketServerRuntimeCounters()
@@ -863,6 +869,11 @@ func serveSocketServerEngineShellSocketTurns(
                 requestStarted = false
                 moreTurns = false
                 continue
+            } catch (e: SocketServerEngineShellMalformedChunkedBodyException) {
+                throw SocketServerEngineShellRequestRejectionException(
+                    SocketServerEngineShellRequestRejectionKind.BadRequest,
+                    e.message
+                )
             } catch (e: SocketTimeoutException) {
                 throw SocketServerEngineShellRequestRejectionException(
                     SocketServerEngineShellRequestRejectionKind.RequestTimeout,
@@ -1251,7 +1262,7 @@ func socketServerEngineShellDecodeChunkedBody(
         }
         cursor += chunkSize
         if (network[cursor] != UInt8(13) || network[cursor + 1] != UInt8(10)) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut requires CRLF after each chunk payload"
             )
         }
@@ -1332,14 +1343,14 @@ func socketServerEngineShellValidateChunkedTrailerLine(
 ): Unit {
     let colon = socketServerEngineShellFindByteInRange(network, start, end, UInt8(58))
     if (colon <= start) {
-        throw SocketServerEngineShellException(
+        throw SocketServerEngineShellMalformedChunkedBodyException(
             "socket server engine shell chunked body-stage first cut received an invalid trailer line"
         )
     }
     var i = start
     while (i < colon) {
         if (!socketServerEngineShellIsHttp11TokenByte(network[i])) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut received an invalid trailer line"
             )
         }
@@ -1469,16 +1480,21 @@ func socketServerEngineShellParseChunkSizeLine(
         }
         let digit = socketServerEngineShellHexDigitValue(b)
         if (digit < 0) {
-            throw SocketServerEngineShellException(
+            throw SocketServerEngineShellMalformedChunkedBodyException(
                 "socket server engine shell chunked body-stage first cut received an invalid chunk size"
             )
         }
         seenDigit = true
+        if (out > 576460752303423487) {
+            throw SocketServerEngineShellMalformedChunkedBodyException(
+                "socket server engine shell chunked body-stage first cut received an overflowing chunk size"
+            )
+        }
         out = out * 16 + digit
         i += 1
     }
     if (!seenDigit) {
-        throw SocketServerEngineShellException(
+        throw SocketServerEngineShellMalformedChunkedBodyException(
             "socket server engine shell chunked body-stage first cut requires a chunk size"
         )
     }
