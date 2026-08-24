@@ -35,26 +35,23 @@ class WebSocketIncomingMessageTooLargeException <: Exception {
     }
 }
 
-interface NativeWebSocketUpgradeCarrier {
-    func upgradeNativeWebSocket(
+public interface WebSocketUpgradeCarrier {
+    func upgradeWebSocket(
         subProtocols: Array<String>,
         options: WebSocketOptions
     ): WsConn
 }
 
-func upgradeStdxWebSocketWithSubProtocols(
+func currentRequestCarrierUpgradeWebSocket(
     carrier: CurrentRequestCarrier,
     subProtocols: Array<String>,
     options: WebSocketOptions
 ): WsConn {
-    let allowed = ArrayList<String>()
-    for (protocol in subProtocols) { allowed.add(protocol) }
-    WsConn(
-        WebSocket.upgradeFromServer(
-            currentRequestCarrierRawHttpContextCompatibility(carrier),
-            subProtocols: allowed
-        ),
-        maxIncomingMessageBytes: options.maxIncomingMessageBytes
+    if (let Some(upgrader) <- (carrier as WebSocketUpgradeCarrier)) {
+        return upgrader.upgradeWebSocket(subProtocols, options)
+    }
+    throw Exception(
+        "current request carrier does not expose WebSocket upgrade capability"
     )
 }
 

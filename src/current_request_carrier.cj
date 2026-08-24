@@ -9,7 +9,6 @@ import stdx.net.http.{HttpContext, HttpHeaders, WebSocket}
 /// The current implementation is still stdx-backed, but `Ctx` no longer needs
 /// to be constructed directly from `HttpContext`.
 public interface CurrentRequestCarrier {
-    func upgradeWebSocketRaw(): WebSocket
     func openResponseTransportWriterRaw(): ResponseTransportWriter
     func requestMethod(): String
     func requestPath(): String
@@ -130,7 +129,7 @@ func urlQueryHexNibble(value: UInt8): Int64 {
     -1
 }
 
-public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & PreparedResponseBodyCarrier {
+public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier {
     let _httpCtx: HttpContext
 
     public init(httpCtx: HttpContext) {
@@ -141,8 +140,22 @@ public class StdxHttpContextCurrentRequestCarrier <: CurrentRequestCarrier & Std
         _httpCtx
     }
 
-    public override func upgradeWebSocketRaw(): WebSocket {
-        WebSocket.upgradeFromServer(_httpCtx)
+    public override func upgradeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        if (subProtocols.size == 0) {
+            return WsConn(
+                WebSocket.upgradeFromServer(_httpCtx),
+                maxIncomingMessageBytes: options.maxIncomingMessageBytes
+            )
+        }
+        let allowed = ArrayList<String>()
+        for (protocol in subProtocols) { allowed.add(protocol) }
+        WsConn(
+            WebSocket.upgradeFromServer(_httpCtx, subProtocols: allowed),
+            maxIncomingMessageBytes: options.maxIncomingMessageBytes
+        )
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -237,7 +250,7 @@ type CurrentRequestCarrierResponseWriterFactory = () -> ResponseTransportWriter
 
 let CURRENT_REQUEST_CARRIER_STREAM_COPY_BUFFER_SIZE: Int64 = 64 * 1024
 
-class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
+class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrier & StdxHttpContextCompatibilityCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let _downstream: CurrentRequestCarrier
     let _responseWriterFactory: CurrentRequestCarrierResponseWriterFactory
     var _responseWriter: ?ResponseTransportWriter = None
@@ -264,8 +277,15 @@ class ResponseTransportWriterBackedCurrentRequestCarrier <: CurrentRequestCarrie
         currentRequestCarrierRawHttpContextCompatibility(_downstream)
     }
 
-    public override func upgradeWebSocketRaw(): WebSocket {
-        _downstream.upgradeWebSocketRaw()
+    public override func upgradeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        currentRequestCarrierUpgradeWebSocket(
+            _downstream,
+            subProtocols,
+            options
+        )
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {

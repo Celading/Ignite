@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=边界` `CurrentRequestCarrier` 核心契约不再强制所有后端返回 stdx `WebSocket`；公开 `WebSocketUpgradeCarrier` 以 Ignite `WsConn`、子协议与 `WebSocketOptions` 表达可选升级能力，stdx adapter、Native H1 与透明响应 writer wrapper 通过该能力接入
+- `=边界` Native H1 WebSocket 真实 socket 回归保持通过；macOS Cangjie/stdx `1.1.3` 上新增的 stdx-default 真实升级探针在 provider `upgradeFromServer` 后可复现 `SIGABRT` 与 unsafe-libcrypto 警告，因此本次只确认 stdx adapter 编译兼容，不宣称其 live WebSocket 已认证，也不扩张到 WSS/H2WS 或 provider 修复
 - `=边界` `CurrentRequestCarrier` 核心契约不再强制所有 native/test carrier 暴露 stdx `HttpContext`；原有 `Ctx.httpContext()` 兼容入口改由可选 `StdxHttpContextCompatibilityCarrier` 能力提供，stdx carrier 与透明响应 writer wrapper 保持可用
 - `=边界` 未提供该可选能力的 native H1/H2/accepted-transport carrier 会在请求 raw context 时给出明确拒绝；本次不替换 WebSocket upgrade provider、请求体流、client response，也不移除最终 stdx 依赖
 - `=边界` `CurrentRequestCarrier` 的请求头/拖尾读取改用 Ignite 自有的扁平字段序列与单值拖尾契约；代理转发不再从 carrier 获取 stdx `HttpHeaders`，重复请求字段值仍完整保留

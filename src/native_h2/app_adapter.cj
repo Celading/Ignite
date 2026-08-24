@@ -10,7 +10,7 @@ import ignite.{
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
-import stdx.net.http.{HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 /// Serves the first native H2 stream through Ignite's existing App dispatch.
 public func serveNativeH2SingleStreamApp(
@@ -187,10 +187,6 @@ class NativeH2AppCurrentRequestCarrier <: CurrentRequestCarrier & ResponseCommit
         this.requestTrailersValue = trailers
         this.responseHeadCommit = responseHeadCommit
         this.responseDataCommit = responseDataCommit
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("native H2 first slice does not support WebSocket upgrade")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {

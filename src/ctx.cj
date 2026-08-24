@@ -991,13 +991,10 @@ public class Ctx {
 
     public func upgradeWebSocketWithOptions(options: WebSocketOptions): WsConn {
         _responded = true
-        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket([], options)
-        }
-        let ws = _currentRequestCarrier.upgradeWebSocketRaw()
-        WsConn(
-            ws,
-            maxIncomingMessageBytes: options.maxIncomingMessageBytes
+        currentRequestCarrierUpgradeWebSocket(
+            _currentRequestCarrier,
+            [],
+            options
         )
     }
 
@@ -1006,10 +1003,11 @@ public class Ctx {
         options: WebSocketOptions
     ): WsConn {
         _responded = true
-        if (let Some(nativeCarrier) <- (_currentRequestCarrier as NativeWebSocketUpgradeCarrier)) {
-            return nativeCarrier.upgradeNativeWebSocket(subProtocols, options)
-        }
-        upgradeStdxWebSocketWithSubProtocols(_currentRequestCarrier, subProtocols, options)
+        currentRequestCarrierUpgradeWebSocket(
+            _currentRequestCarrier,
+            subProtocols,
+            options
+        )
     }
 
     // ── Internal HttpContext access ──

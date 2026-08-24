@@ -3,7 +3,7 @@ package ignite.tests
 import ignite.*
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
-import stdx.net.http.{HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 @Test
 public class ServerSocketAppDispatchExecutionTestSuite {
@@ -156,6 +156,47 @@ public class ServerSocketAppDispatchExecutionTestSuite {
         } catch (_: WebSocketUpgradeSentinelException) {}
 
         @Assert(carrier.upgradeWebSocketCalls, Int64(1))
+        @Assert(carrier.subProtocols.size, Int64(0))
+        @Assert(
+            carrier.maxIncomingMessageBytes,
+            WebSocketOptions().maxIncomingMessageBytes
+        )
+    }
+
+    @TestCase
+    public func testWebSocketUpgradeCapabilityForwardsSubProtocolsAndOptions(): Unit {
+        let carrier = WebSocketUpgradeSentinelCarrier()
+        let ctx = Ctx(carrier, App())
+
+        try {
+            let _ = ctx.upgradeWebSocketWithSubProtocolsAndOptions(
+                ["chat.v2", "chat.v1"],
+                WebSocketOptions(maxIncomingMessageBytes: 2048)
+            )
+            @Fail("websocket upgrade should stop at the carrier seam sentinel")
+        } catch (_: WebSocketUpgradeSentinelException) {}
+
+        @Assert(carrier.upgradeWebSocketCalls, Int64(1))
+        @Assert(carrier.subProtocols.size, Int64(2))
+        @Assert(carrier.subProtocols[0], "chat.v2")
+        @Assert(carrier.subProtocols[1], "chat.v1")
+        @Assert(carrier.maxIncomingMessageBytes, Int64(2048))
+    }
+
+    @TestCase
+    public func testCoreCarrierRejectsOptionalWebSocketUpgradeWithoutProvider(): Unit {
+        let carrier = DispatchEntryTrackingCarrier("GET", "/carrier-entry")
+        let ctx = Ctx(carrier, App())
+
+        try {
+            let _ = ctx.upgradeWebSocket()
+            @Fail("core-only carrier should not expose WebSocket upgrade capability")
+        } catch (e: Exception) {
+            @Assert(
+                e.message,
+                "current request carrier does not expose WebSocket upgrade capability"
+            )
+        }
     }
 
     @TestCase
@@ -287,11 +328,18 @@ class WebSocketUpgradeSentinelException <: Exception {
     }
 }
 
-class WebSocketUpgradeSentinelCarrier <: CurrentRequestCarrier {
+class WebSocketUpgradeSentinelCarrier <: CurrentRequestCarrier & WebSocketUpgradeCarrier {
     public var upgradeWebSocketCalls: Int64 = 0
+    public var subProtocols: Array<String> = []
+    public var maxIncomingMessageBytes: Int64 = 0
     let body = EmptyCarrierInputStream()
 
-    public override func upgradeWebSocketRaw(): WebSocket {
+    public override func upgradeWebSocket(
+        subProtocols: Array<String>,
+        options: WebSocketOptions
+    ): WsConn {
+        this.subProtocols = subProtocols
+        maxIncomingMessageBytes = options.maxIncomingMessageBytes
         upgradeWebSocketCalls += 1
         throw WebSocketUpgradeSentinelException("carrier upgrade seam reached")
     }
@@ -397,7 +445,6 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
     let pathText: String
     let body = EmptyCarrierInputStream()
     let responseHeaders = HashMap<String, String>()
-    public var upgradeWebSocketCalls: Int64 = 0
     public var responseStatus: UInt16 = 200
     public var responseBody: String = ""
 
@@ -408,11 +455,6 @@ class DispatchEntryTrackingCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        upgradeWebSocketCalls += 1
-        throw Exception("websocket upgrade should not run in dispatch entry tests")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {
@@ -510,10 +552,6 @@ class ResponseTransportSeamTrackingCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in response transport seam test")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {

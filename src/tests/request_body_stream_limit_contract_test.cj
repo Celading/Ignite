@@ -5,7 +5,7 @@ import ignite.middleware.*
 import std.collection.HashMap
 import std.fs.{exists, removeIfExists}
 import std.io.InputStream
-import stdx.net.http.{HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 @Test
 public class RequestBodyStreamLimitContractTestSuite {
@@ -113,10 +113,6 @@ class RequestBodyStreamOverflowTestCarrier <: CurrentRequestCarrier {
 
     public func header(name: String): ?String {
         responseHeaders.get(name.trimAscii().toAsciiLower())
-    }
-
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw Exception("websocket upgrade should not run in request body stream limit tests")
     }
 
     public override func openResponseTransportWriterRaw(): ResponseTransportWriter {

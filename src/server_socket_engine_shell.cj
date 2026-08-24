@@ -24,7 +24,7 @@ import std.net.{
     TcpSocket
 }
 import std.sync.Mutex
-import stdx.net.http.{HttpHeaders, WebSocket}
+import stdx.net.http.HttpHeaders
 
 let SOCKET_SERVER_ENGINE_SHELL_CHUNK_SIZE_LINE_LIMIT: Int64 = 1024
 let SOCKET_SERVER_ENGINE_SHELL_TRAILER_LINE_LIMIT: Int64 = 16 * 1024
@@ -1952,7 +1952,7 @@ class SocketServerEngineShellLiveResponseTransportWriter <: ResponseTransportWri
     }
 }
 
-class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & NativeWebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
+class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & WebSocketUpgradeCarrier & PreparedResponseBodyCarrier & ResponseCommitStateCarrier {
     let request: SocketHttp11SessionRequest
     let seed: SocketHttp11DispatchSeed
     let remoteAddress: String
@@ -1992,13 +1992,7 @@ class SocketServerEngineShellCurrentRequestCarrier <: CurrentRequestCarrier & Na
         this.responseBodyAppendBufferValue = None
     }
 
-    public override func upgradeWebSocketRaw(): WebSocket {
-        throw SocketServerEngineShellException(
-            "socket server engine shell cleartext first-runnable path does not support WebSocket upgrade"
-        )
-    }
-
-    public override func upgradeNativeWebSocket(
+    public override func upgradeWebSocket(
         subProtocols: Array<String>,
         options: WebSocketOptions
     ): WsConn {
