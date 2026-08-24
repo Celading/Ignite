@@ -61,7 +61,7 @@ Cangjie — язык программирования от Huawei. **Ignite** �
 - SeaJson предоставляет путь `JsonWriterEncodable -> OutputStream`; обычный `ctx.json(String)` по-прежнему отправляет готовую строку.
 - Динамические gzip/deflate используют безопасные codec Ignite на Cangjie; Zstd и Brotli имеют отключённые по умолчанию RAW/RLE Preview, а статические `.zst/.br` файлы по-прежнему поддерживаются.
 
-Полные границы 0800 и варианты отката описаны в [`manual/docs-md/ig0800-preview.md`](manual/docs-md/ig0800-preview.md), а исполняемый путь Native H2 server/client — в [`manual/docs-md/h2-quickstart-0800.md`](manual/docs-md/h2-quickstart-0800.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
+Полные границы 0800 и варианты отката описаны в [документе 0800 Preview](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/ig0800-preview.md), а исполняемый путь Native H2 server/client — в [кратком руководстве Native H2](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/h2-quickstart-0800.md). Шкала публичных версий остаётся в `CHANGELOG.MD` и `CHANGELOG-en.MD`.
 
 ```
                 ┌─────────────────────────────────────────┐

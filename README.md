@@ -111,7 +111,7 @@ Ignite 的价值不是替代官方底层，而是把这些高频重复劳动收�
 - 仓颉标准扩展库 [`cangjie-stdx`](https://gitcode.com/Cangjie/cangjie_stdx/releases/v1.1.0-beta.24.1)
   >如需[`仓颉 nightly[含stdx链接]`](https://gitcode.com/Cangjie/nightly_build)
 - 支持平台：详见下方《支持平台》矩阵（已区分 OpenHarmony、HarmonyOS、EulerOS 与通用 Linux）
-- 依赖接入：稳定版可走中心仓，0800 Preview 必须选择 GitCode 或 GitHub 的 `ig0800` 分支；完整说明见 [`manual/docs-md/Guide.md`](manual/docs-md/Guide.md)。
+- 依赖接入：稳定版可走中心仓，0800 Preview 必须选择 GitCode 或 GitHub 的 `ig0800` 分支；完整说明见 [安装指南](https://gitcode.com/cinyu/ignite-cangjie/blob/ig0800/manual/docs-md/Guide.md)。
 
 稳定版中心仓：
 
