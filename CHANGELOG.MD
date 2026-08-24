@@ -5,6 +5,7 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=依赖` JWT 中间件的签名后 header/claims DOM 解析改用 Ignite-owned SeaJson 值契约，不再直接导入 stdx JSON；HS256、String/数字时间声明和现有拒绝分类保持兼容
 - `+安全` 默认 Native H1 现在会把已检测到的非法 chunk-size、chunk payload 分隔符和 trailer 字段名映射为固定无正文 `400 Bad Request`，随后关闭该连接并保持监听器继续服务
 - `=边界` malformed chunked-body 400 不覆盖未完整 EOF、peer abort、超时、chunk/trailer 元数据超限、不支持的 pipelining、完整 chunk-extension 语法或自定义错误体
 - `+安全` 默认 Native H1 现在会在 `readHeaderTimeout` 到期而请求头仍不完整，或 `readTimeout` 到期而请求体仍不完整时，返回固定无正文 `408 Request Timeout`，随后关闭该连接并保持监听器继续服务

@@ -9,6 +9,7 @@ import seajson.{
     JsonWriterEncodable as SeaJsonWriterEncodable,
     defaultJsonEncoder as seaJsonDefaultJsonEncoder,
     parseJson as seaJsonParseJson,
+    isJsonObject as seaJsonIsObject,
     jsonField as seaJsonField,
     jsonFieldString as seaJsonFieldString,
     jsonFieldInt as seaJsonFieldInt
@@ -159,6 +160,12 @@ func defaultJsonEncoder(obj: JsonEncodable): String {
 /// Parse one buffered JSON document through SeaJson.
 public func parseJsonValue(json: String): JsonValue {
     seaJsonParseJson(json)
+}
+
+/// Return whether a parsed value is a JSON object without exposing the
+/// provider enum shape.
+public func jsonValueIsObject(value: JsonValue): Bool {
+    seaJsonIsObject(value)
 }
 
 /// Return an object field without exposing the provider helper namespace.
