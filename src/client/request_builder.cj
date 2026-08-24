@@ -894,19 +894,19 @@ public class RequestBuilder {
         selectionDecision: TransportSelectionDecision
     ): Unit {
         try {
-            resp.headers.add("x-ignite-observe-duration-ms", "${durationMs}")
-            resp.headers.add("x-ignite-observe-retry-count", "${retryCount}")
-            resp.headers.add("x-ignite-observe-error-class", if (errorClass.size == 0) { "NONE" } else { errorClass })
-            resp.headers.add("x-ignite-observe-fields", if (fields.size == 0) { "-" } else { fields })
-            resp.headers.add("x-ignite-observe-backend-id", selectionDecision.selectedBackend)
-            resp.headers.add("x-ignite-observe-provider-id", selectionDecision.providerId)
-            resp.headers.add("x-ignite-observe-crypto-provider-id", selectionDecision.cryptoProviderId)
-            resp.headers.add("x-ignite-observe-public-path", selectionDecision.publicPath)
-            resp.headers.add("x-ignite-observe-risk-level", selectionDecision.riskLevel)
-            resp.headers.add("x-ignite-observe-transport-tags", selectionDecision.observabilityTags)
-            resp.headers.add("x-ignite-observe-selected-reason", selectionDecision.selectedReason)
-            resp.headers.add("x-ignite-observe-fallback-chain", selectionDecision.fallbackChain)
-            resp.headers.add("x-ignite-observe-candidate-order", selectionDecision.candidateOrder)
+            resp.appendHeader("x-ignite-observe-duration-ms", "${durationMs}")
+            resp.appendHeader("x-ignite-observe-retry-count", "${retryCount}")
+            resp.appendHeader("x-ignite-observe-error-class", if (errorClass.size == 0) { "NONE" } else { errorClass })
+            resp.appendHeader("x-ignite-observe-fields", if (fields.size == 0) { "-" } else { fields })
+            resp.appendHeader("x-ignite-observe-backend-id", selectionDecision.selectedBackend)
+            resp.appendHeader("x-ignite-observe-provider-id", selectionDecision.providerId)
+            resp.appendHeader("x-ignite-observe-crypto-provider-id", selectionDecision.cryptoProviderId)
+            resp.appendHeader("x-ignite-observe-public-path", selectionDecision.publicPath)
+            resp.appendHeader("x-ignite-observe-risk-level", selectionDecision.riskLevel)
+            resp.appendHeader("x-ignite-observe-transport-tags", selectionDecision.observabilityTags)
+            resp.appendHeader("x-ignite-observe-selected-reason", selectionDecision.selectedReason)
+            resp.appendHeader("x-ignite-observe-fallback-chain", selectionDecision.fallbackChain)
+            resp.appendHeader("x-ignite-observe-candidate-order", selectionDecision.candidateOrder)
         } catch (_: Exception) {}
     }
 

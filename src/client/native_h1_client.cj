@@ -4,7 +4,6 @@ import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
-import stdx.net.http.HttpHeaders
 
 let NATIVE_H1_CLIENT_BACKEND = "ignite-native-h1-client"
 let NATIVE_H1_RESPONSE_TRAILER_LIMIT: Int64 = 65536
@@ -130,12 +129,12 @@ class NativeH1ClientHeaderReadResult {
 class NativeH1ClientParsedResponseHead {
     let version: String
     let status: Int64
-    let headers: HttpHeaders
+    let headerFields: Array<(String, String)>
 
-    init(version: String, status: Int64, headers: HttpHeaders) {
+    init(version: String, status: Int64, headerFields: Array<(String, String)>) {
         this.version = version
         this.status = status
-        this.headers = headers
+        this.headerFields = headerFields
     }
 }
 
@@ -610,17 +609,21 @@ func parseNativeH1ResponseHead(headerBytes: Array<UInt8>): NativeH1ClientParsedR
     if (statusValue < 100 || statusValue > 599) {
         throw Exception("native H1 response status is invalid")
     }
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     var lineIndex: Int64 = 1
     while (lineIndex < lines.size) {
-        addNativeH1ResponseFieldLine(headers, lines[lineIndex])
+        addNativeH1ResponseFieldLine(headerFields, lines[lineIndex])
         lineIndex += 1
     }
-    NativeH1ClientParsedResponseHead(statusParts[0], statusValue, headers)
+    NativeH1ClientParsedResponseHead(
+        statusParts[0],
+        statusValue,
+        headerFields.toArray()
+    )
 }
 
 func addNativeH1ResponseFieldLine(
-    headers: HttpHeaders,
+    headerFields: ArrayList<(String, String)>,
     line: String,
     section!: String = "header"
 ): Unit {
@@ -635,7 +638,7 @@ func addNativeH1ResponseFieldLine(
     }
     let rawValue = nativeH1RuneSlice(runes, colon + 1, runes.size)
     validateNativeH1ResponseHeaderValue(rawValue, section: section)
-    headers.add(name, rawValue.trimAscii())
+    headerFields.add((name, rawValue.trimAscii()))
 }
 
 func validateNativeH1ResponseTrailerLine(line: String, consumedBytes: Int64): Int64 {
@@ -644,7 +647,7 @@ func validateNativeH1ResponseTrailerLine(line: String, consumedBytes: Int64): In
         throw Exception("native H1 response trailers exceed 65536 bytes")
     }
     if (line.size > 0) {
-        let ignored = HttpHeaders()
+        let ignored = ArrayList<(String, String)>()
         addNativeH1ResponseFieldLine(ignored, line, section: "trailer")
     }
     nextBytes
@@ -710,14 +713,14 @@ func readNativeH1Response(
     }
     let statusValue = parsedHead.status
     validateNativeH1RestResponseStatus(statusValue)
-    let headers = parsedHead.headers
-    let framing = resolveNativeH1ResponseFraming(headers)
+    let headerFields = parsedHead.headerFields
+    let framing = resolveNativeH1ResponseFraming(headerFields)
     let responseReusable = requestReusable && parsedHead.version == "HTTP/1.1" &&
-        !nativeH1HeaderContains(headers, "connection", "close")
+        !nativeH1HeaderContains(headerFields, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" ||
         statusValue == 204 || statusValue == 304) {
         settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
-        return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+        return ClientResponse(UInt16(statusValue), headerFields, NativeH1ClientBytesInputStream(Array<UInt8>()))
     }
     if (framing.mode == "chunked") {
         let stream = NativeH1ClientResponseInputStream(
@@ -725,7 +728,7 @@ func readNativeH1Response(
         )
         return ClientResponse(
             UInt16(statusValue),
-            headers,
+            headerFields,
             stream,
             closeHook: { => stream.close() }
         )
@@ -734,14 +737,14 @@ func readNativeH1Response(
         let length = framing.contentLength
         if (length == 0) {
             settleNativeH1BodylessSocket(socket, pool, origin, responseReusable, readResult.prefetchedBody)
-            return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream(Array<UInt8>()))
+            return ClientResponse(UInt16(statusValue), headerFields, NativeH1ClientBytesInputStream(Array<UInt8>()))
         }
         let stream = NativeH1ClientResponseInputStream(
             socket, readResult.prefetchedBody, "length", length, pool, origin, responseReusable
         )
         return ClientResponse(
             UInt16(statusValue),
-            headers,
+            headerFields,
             stream,
             closeHook: { => stream.close() }
         )
@@ -751,7 +754,7 @@ func readNativeH1Response(
     )
     ClientResponse(
         UInt16(statusValue),
-        headers,
+        headerFields,
         stream,
         closeHook: { => stream.close() }
     )
@@ -763,9 +766,17 @@ func validateNativeH1RestResponseStatus(status: Int64): Unit {
     }
 }
 
-func resolveNativeH1ResponseFraming(headers: HttpHeaders): NativeH1ResponseFraming {
-    let transferEncodingValues = collectNativeH1ResponseHeaderValues(headers, "transfer-encoding")
-    let contentLengthValues = collectNativeH1ResponseHeaderValues(headers, "content-length")
+func resolveNativeH1ResponseFraming(
+    headerFields: Array<(String, String)>
+): NativeH1ResponseFraming {
+    let transferEncodingValues = collectNativeH1ResponseHeaderValues(
+        headerFields,
+        "transfer-encoding"
+    )
+    let contentLengthValues = collectNativeH1ResponseHeaderValues(
+        headerFields,
+        "content-length"
+    )
     if (transferEncodingValues.size > 0 && contentLengthValues.size > 0) {
         throw Exception("native H1 response mixes Transfer-Encoding and Content-Length")
     }
@@ -797,10 +808,16 @@ func resolveNativeH1ResponseFraming(headers: HttpHeaders): NativeH1ResponseFrami
     NativeH1ResponseFraming("close", -1)
 }
 
-func collectNativeH1ResponseHeaderValues(headers: HttpHeaders, name: String): Array<String> {
+func collectNativeH1ResponseHeaderValues(
+    headerFields: Array<(String, String)>,
+    name: String
+): Array<String> {
     let out = ArrayList<String>()
-    for (value in headers.get(name)) {
-        out.add(value)
+    let normalized = name.trimAscii().toAsciiLower()
+    for ((candidateName, value) in headerFields) {
+        if (candidateName.trimAscii().toAsciiLower() == normalized) {
+            out.add(value)
+        }
     }
     out.toArray()
 }
@@ -931,9 +948,15 @@ func nativeH1HeaderValueContains(
     false
 }
 
-func nativeH1HeaderContains(headers: HttpHeaders, name: String, target: String): Bool {
-    for (value in headers.get(name)) {
-        if (nativeH1IndexOf(value.toAsciiLower(), target.toAsciiLower()) >= 0) {
+func nativeH1HeaderContains(
+    headerFields: Array<(String, String)>,
+    name: String,
+    target: String
+): Bool {
+    let normalized = name.trimAscii().toAsciiLower()
+    for ((candidateName, value) in headerFields) {
+        if (candidateName.trimAscii().toAsciiLower() == normalized &&
+            nativeH1IndexOf(value.toAsciiLower(), target.toAsciiLower()) >= 0) {
             return true
         }
     }

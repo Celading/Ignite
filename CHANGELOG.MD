@@ -5,6 +5,8 @@
 
 ### v0.8.1 `Ignite Preview`
 
+- `=边界` `ClientResponse` 核心存储新增 Ignite 自有扁平响应字段入口；Native H1 的响应解析/分帧和 Native H2 的五条 response adapter 不再构造 stdx `HttpHeaders`，observe 元数据也改走自有 append seam
+- `=兼容` 公开 `ClientResponse(HttpResponse)` 与 `headers: HttpHeaders` 继续保留为 stdx 兼容面，并保持重复字段顺序、大小写无关读取及既有 raw-header mutation 可见性；proxy `HttpResponse`、request builder provider 与最终 stdx 删除仍是后续独立工作
 - `=边界` `CurrentRequestCarrier` 核心契约不再强制所有后端返回 stdx `WebSocket`；公开 `WebSocketUpgradeCarrier` 以 Ignite `WsConn`、子协议与 `WebSocketOptions` 表达可选升级能力，stdx adapter、Native H1 与透明响应 writer wrapper 通过该能力接入
 - `=边界` Native H1 WebSocket 真实 socket 回归保持通过；macOS Cangjie/stdx `1.1.3` 上新增的 stdx-default 真实升级探针在 provider `upgradeFromServer` 后可复现 `SIGABRT` 与 unsafe-libcrypto 警告，因此本次只确认 stdx adapter 编译兼容，不宣称其 live WebSocket 已认证，也不扩张到 WSS/H2WS 或 provider 修复
 - `=边界` `CurrentRequestCarrier` 核心契约不再强制所有 native/test carrier 暴露 stdx `HttpContext`；原有 `Ctx.httpContext()` 兼容入口改由可选 `StdxHttpContextCompatibilityCarrier` 能力提供，stdx carrier 与透明响应 writer wrapper 保持可用

@@ -2,7 +2,6 @@ package ignite.client
 
 import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
-import stdx.net.http.HttpHeaders
 import ignite.transport.NativeByteTransport
 
 class NativeH1TransportReader {
@@ -325,10 +324,10 @@ func readNativeH1TransportResponse(
     }
     let statusValue = parsedHead.status
     validateNativeH1RestResponseStatus(statusValue)
-    let headers: HttpHeaders = parsedHead.headers
-    let framing = resolveNativeH1ResponseFraming(headers)
+    let headerFields = parsedHead.headerFields
+    let framing = resolveNativeH1ResponseFraming(headerFields)
     var responseReusable = reusable &&
-        !nativeH1HeaderContains(headers, "connection", "close")
+        !nativeH1HeaderContains(headerFields, "connection", "close")
     if (method.trimAscii().toAsciiUpper() == "HEAD" || statusValue == 204 || statusValue == 304) {
         responseReusable = responseReusable && readResult.prefetchedBody.size == 0
         if (let Some(settle) <- settleHook) {
@@ -336,7 +335,7 @@ func readNativeH1TransportResponse(
         } else {
             transport.close()
         }
-        return ClientResponse(UInt16(statusValue), headers, NativeH1ClientBytesInputStream([]))
+        return ClientResponse(UInt16(statusValue), headerFields, NativeH1ClientBytesInputStream([]))
     }
     let stream = if (framing.mode == "chunked") {
         NativeH1TransportResponseInputStream(
@@ -368,7 +367,7 @@ func readNativeH1TransportResponse(
     }
     ClientResponse(
         UInt16(statusValue),
-        headers,
+        headerFields,
         stream,
         closeHook: { => stream.close() }
     )

@@ -16,7 +16,6 @@ import std.collection.{ArrayList, HashMap}
 import std.io.InputStream
 import std.net.TcpSocket
 import std.sync.Mutex
-import stdx.net.http.HttpHeaders
 import ignite.transport.NativeByteTransport
 
 let NATIVE_H2_CLIENT_BACKEND = "ignite-native-h2-client"
@@ -826,13 +825,13 @@ func adaptNativeH2Response(
     origin: String,
     pool: NativeH2ClientConnectionPool
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { =>
             response.close()
@@ -846,25 +845,25 @@ func adaptNativeH2Response(
 }
 
 func adaptNativeH2BufferedResponse(response: NativeH2ClientResponse): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         NativeH1ClientBytesInputStream(response.body)
     )
 }
 
 func adaptNativeH2MultiplexResponse(response: NativeH2MultiplexResponse): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { => response.close() }
     )
@@ -875,13 +874,13 @@ func adaptNativeH2TransportResponse(
     protocol: NativeH2ClientConnection,
     transport: NativeByteTransport
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         response.bodyStream(),
         closeHook: { =>
             response.close()
@@ -896,14 +895,14 @@ func adaptNativeH2PooledTransportResponse(
     transport: NativeByteTransport,
     settle: (Bool) -> Unit
 ): ClientResponse {
-    let headers = HttpHeaders()
+    let headerFields = ArrayList<(String, String)>()
     for (header in response.headers) {
-        headers.add(header.name, header.value)
+        headerFields.add((header.name, header.value))
     }
     let stream = NativeH2PooledResponseInputStream(response, transport, settle)
     ClientResponse(
         response.status,
-        headers,
+        headerFields.toArray(),
         stream,
         closeHook: { => stream.close() }
     )
